@@ -133,20 +133,20 @@ def initialize():
     images_path = session_path + "\\Extracted Files"
     logfile_path = session_path + "\\logfile.txt"
 
-    timestamp = datetime.now().strftime("Scantelligent log file created on %Y-%m-%d at %H:%M:%S\n")
+    timestamp = datetime.now().strftime("Scantelligent log file created on %Y-%m-%d at %H:%M:%S")
     logprint("Scantelligent session initialized. " + timestamp, logfile = logfile_path)
 
     try:
         with open(logfile_path, "x") as f:
             f.write(timestamp)
-            f.write("\nMeasurement session folder: " + session_path)
+            f.write("\n\nMeasurement session folder: " + session_path)
             f.write("\nImages and spectra extracted to: " + images_path)
             f.write("\n\n")
 
     except FileExistsError:
         with open(logfile_path, "w") as f:
             f.write(timestamp)
-            f.write("\nMeasurement session folder: " + session_path)
+            f.write("\n\nMeasurement session folder: " + session_path)
             f.write("\nImages and spectra extracted to: " + images_path)
             f.write("\n\n")
         pass
@@ -259,7 +259,7 @@ def get_parameters(verbose: bool = True):
             logprint("Scan parameters:", timestamp = False, logfile = logfile)
             logprint(f"  Center (x_center, y_center) = ({round(x_center * 1E9, 3)}, {round(y_center * 1E9, 3)}) nm; Size (width, height) = ({round(scan_width * 1E9, 3)}, {round(scan_height * 1E9, 3)}) nm; Rotation angle (angle) = {round(scan_angle, 3)} degree.", timestamp = False, logfile = logfile)
             logprint(f"  Scan speed (v_fwd, v_bwd) = ({round(v_fwd * 1E9, 3)}, {round(v_bwd * 1E9, 3)}) nm/s; Time per line (t_fwd, t_bwd) = ({round(t_fwd, 3)}, {round(t_bwd, 3)}) s; Speed ratio (v_ratio) = {round(v_ratio, 3)}.", timestamp = False, logfile = logfile)
-            logprint("\n          End of report.", timestamp = False, logfile = logfile)
+            logprint("\n          End of report.\n", timestamp = False, logfile = logfile)
     
     finally:
         NTCP.close_connection()
