@@ -25,6 +25,43 @@ TCP_IP = "192.168.236.1"                           # Local host
 TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
 version_number = 13520
 
+# Object classes
+
+class imagestatistics:
+    def __init__(self, data_sorted, n_data, range_min, Q1, range_mean, Q3, range_max, range_total, standard_deviation, histogram):
+        self.sorted = data_sorted
+        self.n = n_data
+        self.min = range_min
+        self.mean = range_mean
+        self.max = range_max
+        self.range = range_total
+        self.Q1 = Q1
+        self.Q3 = Q3
+        self.IQR = Q3 - Q1
+        self.standard_deviation = standard_deviation
+        self.histogram = histogram
+
+class sessionfiles:
+    def __init__(self, image_files, spectroscopy_files, image_indices, spectroscopy_indices, current_image_index, current_spectroscopy_index):
+        self.image_files = image_files
+        self.spectroscopy_files = spectroscopy_files
+        self.image_indices = image_indices
+        self.spectroscopy_indices = spectroscopy_indices
+        self.current_image_index = current_image_index
+        self.current_spectroscopy_index = current_spectroscopy_index
+
+class scandata:
+    def __init__(self, scans, header, channels, angle, pixels, date, time, center, size):
+        self.scans = scans
+        self.header = header
+        self.channels = channels
+        self.angle = angle
+        self.pixels = pixels
+        self.date = date
+        self.time = time
+        self.center = center
+        self.size = size
+
 # Miscellaneous
 
 def on_release(key):
@@ -72,15 +109,6 @@ def get_file_data(session_path):
     if len(spectroscopy_indices) > 0: current_spectroscopy_index = max(spectroscopy_indices)
     else: current_spectroscopy_index = 0
 
-    class sessionfiles:
-        def __init__(self, image_files, spectroscopy_files, image_indices, spectroscopy_indices, current_image_index, current_spectroscopy_index):
-            self.image_files = image_files
-            self.spectroscopy_files = spectroscopy_files
-            self.image_indices = image_indices
-            self.spectroscopy_indices = spectroscopy_indices
-            self.current_image_index = current_image_index
-            self.current_spectroscopy_index = current_spectroscopy_index
-
     return sessionfiles(image_files, spectroscopy_files, image_indices, spectroscopy_indices, current_image_index, current_spectroscopy_index)
 
 def get_scan(file_name, crop_unfinished: bool = True):
@@ -114,18 +142,6 @@ def get_scan(file_name, crop_unfinished: bool = True):
         center = scan_header.get("scan_offset", np.array([0, 0], dtype = float))
         size = scan_header.get("scan_range", np.array([1E-7, 1E-7], dtype = float))
 
-        class scandata:
-            def __init__(self, scans, header, channels, angle, pixels, date, time, center, size):
-                self.scans = scans
-                self.header = header
-                self.channels = channels
-                self.angle = angle
-                self.pixels = pixels
-                self.date = date
-                self.time = time
-                self.center = center
-                self.size = size
-
         return scandata(all_scans_processed, scan_header, channels, angle, pixels, date, time, center, size)
 
 def initialize():
@@ -157,6 +173,61 @@ def initialize():
 
 # Image functions
 
+def get_image_statistics(image, pixels_per_bin: int = 200):
+    data_sorted = np.sort(image.flatten())
+    n_data = len(data_sorted)
+    data_firsthalf = data_sorted[:int(n_data / 2)]
+    data_secondhalf = data_sorted[-int(n_data / 2):]
+
+    range_mean = np.mean(data_sorted) # Calculate the mean
+    Q1 = np.mean(data_firsthalf) # Calculate the first and third quartiles
+    Q3 = np.mean(data_secondhalf)
+    range_min, range_max = (data_sorted[0], data_sorted[-1]) # Calculate the total range
+    range_total = range_max - range_min
+    standard_deviation = np.sum(np.sqrt((data_sorted - range_mean) ** 2) / n_data) # Calculate the standard deviation
+    
+    n_bins = int(np.floor(n_data / pixels_per_bin))
+    counts, bounds = np.histogram(data_sorted, bins = n_bins)
+    binsize = bounds[1] - bounds[0]
+    padded_counts = np.pad(counts, 1, mode = "constant")
+    bincenters = np.concatenate([[bounds[0] - .5 * binsize], np.convolve(bounds, [.5, .5], mode = "valid"), [bounds[-1] + .5 * binsize]])
+    histogram = np.array([bincenters, padded_counts])
+    
+    return imagestatistics(data_sorted, n_data, range_min, Q1, range_mean, Q3, range_max, range_total, standard_deviation, histogram)
+
+def clip_range(image, method: str = "standard_deviation", values = [-2, 2], default_to_data_range: bool = True, tie_to_zero = [False, False]):
+    stats = get_image_statistics(image)
+    clip_values = [0, 0]
+    
+    if type(values) == int or type(values) == float:
+        if method == "percentiles":
+            values = np.sort([values, 1 - values])
+        values = [-values, values]
+    if method == "IQR": clip_values = [stats.Q1 + values[0] * stats.IQR, stats.Q3 + values[1] * stats.IQR]
+    elif method == "standard_deviation": clip_values = [stats.mean + values[0] * stats.standard_deviation, stats.Q3 + values[1] * stats.standard_deviation]
+    elif method == "percentiles": clip_values = [stats.min + values[0] * stats.range, stats.min + values[1] * stats.range]
+    else: print("No valid clipping method selected")
+    
+    if tie_to_zero[0]: clip_values[0] = 0
+    if tie_to_zero[1]: clip_values[1] = 0
+    
+    if clip_values[0] < stats.min:
+        print("Warning: Lower limit is below the lower limit of the data.")
+        if default_to_data_range:
+            print("Resetting lower limit to the lower limit of the data.")
+            clip_values[0] = stats.min
+    if clip_values[1] > stats.max:
+        print("Warning: Upper limit is above the upper limit of the data.")
+        if default_to_data_range:
+            print("Resetting upper limit to the upper limit of the data.")
+            clip_values[1] = stats.max
+    
+    if clip_values[1] < clip_values[0]:
+        print("Warning: Lower limit is set to a lower value than the upper limit. Inverting.")
+        clip_values = [clip_values[1], clip_values[0]]
+    
+    return clip_values
+
 def image_gradient(image):
     sobel_x = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
     sobel_y = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
@@ -165,15 +236,6 @@ def image_gradient(image):
     gradient_image = .125 * ddx + .125 * 1j * ddy
 
     return gradient_image
-
-def image_clip(image, clip_fraction: float = .1):
-    values_list = np.sort(image.flatten())
-    minmax_index = round(len(values_list) * clip_fraction / 2)
-    min_value = values_list[minmax_index]
-    max_value = values_list[-minmax_index - 1]
-    image_clipped = np.array([[max(min(image[i, j], max_value), min_value) for j in range(len(image[0]))] for i in range(len(image))])
-
-    return image_clipped
 
 def background_subtract(image, mode: str = "plane"):
     avg_image = np.mean(image.flatten()) # The average value of the image, or the offset
@@ -300,8 +362,6 @@ def change_bias(V: float = 1., dt: float = .01, dV: float = .02, dz: float = 1E-
     finally:
         NTCP.close_connection()
         sleep(.05)
-    
-    return
 
 def change_feedback(I = None, p_gain = None, t_const = None, controller = None, withdraw: bool = False, verbose: bool = True):
     logfile = get_session_path() + "\\logfile.txt"
