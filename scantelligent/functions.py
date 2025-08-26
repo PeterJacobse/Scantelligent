@@ -64,6 +64,38 @@ class scandata:
         self.center = center
         self.size = size
 
+class parameters:
+    def __init__(self, v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio, V, V_ac, f_ac, phase_ac, lockin_status, I_fb, p_gain, t_const, i_gain, x_center, y_center, scan_width, scan_height, scan_angle, pixels, lines, z_min, z_max, scan_channels):
+        self.v_fwd = v_fwd
+        self.v_bwd = v_bwd
+        self.t_fwd = t_fwd
+        self.t_bwd = t_bwd
+        self.lock_parameter = lock_parameter
+        self.v_ratio = v_ratio
+        self.V = V
+        self.V_ac = V_ac
+        self.f_ac = f_ac
+        self.phase_ac = phase_ac
+        self.lockin_status = lockin_status
+        self.I_fb = I_fb
+        self.p_gain = p_gain
+        self.t_const = t_const
+        self.i_gain = i_gain
+        self.x_center = x_center
+        self.y_center = y_center
+        self.center = [x_center, y_center]
+        self.scan_width = scan_width
+        self.scan_height = scan_height
+        self.size = [scan_width, scan_height]
+        self.pixels = pixels
+        self.lines = lines
+        self.grid = [pixels, lines]
+        self.scan_angle = scan_angle
+        self.z_min = z_min
+        self.z_max = z_max
+        self.z_range = [z_min, z_max]
+        self.scan_channels = scan_channels
+
 # Miscellaneous
 
 def on_release(key):
@@ -96,8 +128,7 @@ def get_session_path():
     finally:
         NTCP.close_connection()
         sleep(.05)
-    
-    return session_path
+        return session_path
 
 def get_file_data(session_path):
     image_files = [str(file) for file in Path(session_path).glob("*.sxm")]
@@ -169,9 +200,9 @@ def initialize():
             f.write("\n\n")
         pass
     
-    get_parameters(verbose = True)
+    parameters = get_parameters(verbose = True)
     
-    return session_path, images_path, logfile_path
+    return session_path, images_path, logfile_path, parameters
 
 # Image functions
 
@@ -290,74 +321,103 @@ def get_parameters(verbose: bool = False):
         biasspectr = BiasSpectr(NTCP)
         tipshaper = TipShaper(NTCP)
         
-        v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio = scan.SpeedGet() # Get the current scan parameters
-        V = bias.Get()
-        V_ac = lockin.ModAmpGet(modulator_number = 1)
+        x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True ) # Get the current scan parameters
+        v_tip = folme.SpeedGet()[0] # Tip positions and speed (FolMe)
+        x_tip *= 1E9
+        y_tip *= 1E9
+        v_tip *= 1E9
+        
+        V = bias.Get() # Bias
+        V_ac = lockin.ModAmpGet(modulator_number = 1) # Lockin
         f_ac = lockin.ModPhasFreqGet(modulator_number = 1)
         phase_ac = lockin.DemodPhasGet(demod_number = 1)
         lockin_status = lockin.ModOnOffGet(modulator_number = 1)
-        I = zcontroller.SetpntGet()
+        
+        I_fb = zcontroller.SetpntGet() * 1E12 # Z controller
         p_gain, t_const, i_gain = zcontroller.GainGet()
-        x_center, y_center, scan_width, scan_height, scan_angle = scan.FrameGet()
+        p_gain *= 1E12
+        t_const *= 1E6
+        i_gain *= 1E9
         z_max, z_min = zcontroller.LimitsGet()
-        spectr_advprops = biasspectr.AdvPropsGet()
-        spectr_props = biasspectr.PropsGet_v0()
-        spectr_timing = biasspectr.TimingGet()
-        tipshaper_props = tipshaper.PropsGet()
-        
-        #channels = np.array(signals.NamesGet())
-        #x_channel_index = np.where(channels == "X (m)")[0][0]
-        #y_channel_index = np.where(channels == "Y (m)")[0][0]
-        #z_channel_index = np.where(channels == "Z (m)")[0][0]
-        #[x_tip, y_tip, z_tip] = [signals.ValGet(index) for index in [x_channel_index, y_channel_index, z_channel_index]]
-        
-        x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True)
         z_tip = zcontroller.ZPosGet()
-        v_tip = folme.SpeedGet()[0]
+        z_tip *= 1E9
+        z_min *= 1E9
+        z_max *= 1E9
+        z_range = [z_min, z_max]
         fb = zcontroller.OnOffGet()
         
+        v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio = scan.SpeedGet() # Scan
+        x_center, y_center, scan_width, scan_height, scan_angle = scan.FrameGet()   
+        [scan_num_channels, scan_channels, pixels, lines] = scan.BufferGet()
+        x_center *= 1E9
+        y_center *= 1E9
+        scan_width *= 1E9
+        scan_height *= 1E9
+        v_fwd *= 1E9
+        v_bwd *= 1E9
+        
+        spectr_advprops = biasspectr.AdvPropsGet() # Spectroscopy
+        spectr_props = biasspectr.PropsGet_v0()
+        spectr_timing = biasspectr.TimingGet()
+        print(spectr_timing)
         reset_bias = spectr_advprops.get("reset_bias", 1)
         z_controller_hold = spectr_advprops.get("z_controller_hold", 1)
         num_sweeps = spectr_props.get("num_sweeps", 1)
         
-        if verbose:
-            logprint("Report of parameters:\n", logfile = logfile)
-            
-            logprint("Tip parameters:", timestamp = False, logfile = logfile)
-            logprint(f"  Location (x_tip, y_tip, z_tip) = ({round(x_tip * 1E9, 3)}, {round(y_tip * 1E9, 3)}, {round(z_tip * 1E9, 3)}) nm. Tip displacement speed (v_tip) = {round(v_tip * 1E9)} nm/s.", timestamp = False, logfile = logfile)
-            
-            logprint("Bias parameters:", timestamp = False, logfile = logfile)
-            logprint(f"  Bias voltage (V) = {round(V, 3)} V.", timestamp = False, logfile = logfile)
-            logprint(f"  Lockin modulation voltage (V_ac) = {round(V_ac, 3)} V; Lockin modulation frequency (f_ac) = {round(f_ac, 3)} Hz; Lockin phase (phase_ac) = {round(phase_ac, 3)} degree.", timestamp = False, logfile = logfile)
-            if bool(lockin_status): logprint("  Lockin is switched on.", timestamp = False, logfile = logfile)
-            else: logprint("  Lockin is switched off.", timestamp = False, logfile = logfile)
+        tipshaper_props = tipshaper.PropsGet() # Tip shaper
+        
+        #channels = np.array(signals.NamesGet()) # Alternative way to extract the tip positions
+        #x_channel_index = np.where(channels == "X (m)")[0][0]
+        #y_channel_index = np.where(channels == "Y (m)")[0][0]
+        #z_channel_index = np.where(channels == "Z (m)")[0][0]
+        #[x_tip, y_tip, z_tip] = [signals.ValGet(index) for index in [x_channel_index, y_channel_index, z_channel_index]]
 
-            logprint("Z controller parameters:", timestamp = False, logfile = logfile)
-            if bool(fb): logprint(f"  Feedback current (I) = {round(I * 1E12, 2)} pA. Feedback is switched on (fb = 1).", timestamp = False, logfile = logfile)
-            else: logprint(f"  Feedback current (I) = {round(I * 1E12, 2)} pA. Feedback is switched off (fb = 0).", timestamp = False, logfile = logfile)
-            logprint(f"  Gains (p_gain, t_const, i_gain) = ({round(p_gain * 1E12, 3)} pm, {round(t_const * 1E6, 3)} us, {round(i_gain * 1E9, 3)} nm/s).", timestamp = False, logfile = logfile)
-            logprint(f"  Limits (z_min, z_max) = ({round(z_min * 1E9, 3)}, {round(z_max * 1E9, 3)}) nm.", timestamp = False, logfile = logfile)
-
-            logprint("Scan parameters:", timestamp = False, logfile = logfile)
-            logprint(f"  Center (x_center, y_center) = ({round(x_center * 1E9, 3)}, {round(y_center * 1E9, 3)}) nm; Size (width, height) = ({round(scan_width * 1E9, 3)}, {round(scan_height * 1E9, 3)}) nm; Rotation angle (angle) = {round(scan_angle, 3)} degree.", timestamp = False, logfile = logfile)
-            logprint(f"  Scan speed (v_fwd, v_bwd) = ({round(v_fwd * 1E9, 3)}, {round(v_bwd * 1E9, 3)}) nm/s; Time per line (t_fwd, t_bwd) = ({round(t_fwd, 3)}, {round(t_bwd, 3)}) s; Speed ratio (v_ratio) = {round(v_ratio, 3)}.", timestamp = False, logfile = logfile)
-            
-            logprint("Bias spectroscopy parameters:", timestamp = False, logfile = logfile)
-            logprint(str(spectr_advprops), timestamp = False, logfile = logfile)
-            logprint(str(spectr_props), timestamp = False, logfile = logfile)
-            logprint(str(spectr_timing), timestamp = False, logfile = logfile)
-            
-            logprint("Tip shaper properties:", timestamp = False, logfile = logfile)
-            logprint(" ".join(str(item) for item in tipshaper_props), timestamp = False, logfile = logfile)
-
-            logprint("\n          End of report.\n", timestamp = False, logfile = logfile)
-    
     finally:
         NTCP.close_connection()
         sleep(.05)
 
-def change_bias(V: float = 1., dt: float = .01, dV: float = .02, dz: float = 1E-9, verbose: bool = True):
+    if verbose:
+        logprint("Report of parameters:\n", logfile = logfile)
+        
+        logprint("Tip parameters:", timestamp = False, logfile = logfile)
+        logprint(f"  Location (x_tip, y_tip, z_tip) = ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm. Tip displacement speed (v_tip) = {round(v_tip)} nm/s.", timestamp = False, logfile = logfile)
+        
+        logprint("Bias parameters:", timestamp = False, logfile = logfile)
+        logprint(f"  Bias voltage (V) = {round(V, 3)} V.", timestamp = False, logfile = logfile)
+        logprint(f"  Lockin modulation voltage (V_ac) = {round(V_ac, 3)} V; Lockin modulation frequency (f_ac) = {round(f_ac, 3)} Hz; Lockin phase (phase_ac) = {round(phase_ac, 3)} degree.", timestamp = False, logfile = logfile)
+        if bool(lockin_status): logprint("  Lockin is switched on (lockin_status = 1).", timestamp = False, logfile = logfile)
+        else: logprint("  Lockin is switched off (lockin_status = 0).", timestamp = False, logfile = logfile)
+
+        logprint("Z controller parameters:", timestamp = False, logfile = logfile)
+        if bool(fb): logprint(f"  Feedback current (I_fb) = {round(I_fb, 3)} pA. Feedback is switched on (fb = 1).", timestamp = False, logfile = logfile)
+        else: logprint(f"  Feedback current (I_fb) = {round(I_fb, 3)} pA. Feedback is switched off (fb = 0).", timestamp = False, logfile = logfile)
+        logprint(f"  Gains (p_gain, t_const, i_gain) = ({round(p_gain, 3)} pm, {round(t_const, 3)} us, {round(i_gain, 3)} nm/s).", timestamp = False, logfile = logfile)
+        logprint(f"  Limits (z_range = [z_min, z_max]) = [{round(z_min, 3)}, {round(z_max, 3)}] nm.", timestamp = False, logfile = logfile)
+
+        logprint("Scan parameters:", timestamp = False, logfile = logfile)
+        logprint(f"  Center (center = [x_center, y_center]) = [{round(x_center, 3)}, {round(y_center, 3)}] nm. Size (size = [width, height]) = [{round(scan_width, 3)}, {round(scan_height, 3)}] nm. Rotation angle (angle) = {round(scan_angle, 3)} degree.", timestamp = False, logfile = logfile)
+        logprint(f"  Number of pixels and lines (grid = [pixels, lines]) = [{pixels}, {lines}]. Time per line (t_fwd, t_bwd) = ({round(t_fwd, 3)}, {round(t_bwd, 3)}) s.", timestamp = False, logfile = logfile)
+        logprint(f"  Scan speed (v_fwd, v_bwd) = ({round(v_fwd, 3)}, {round(v_bwd, 3)}) nm/s. Speed ratio (v_ratio) = {round(v_ratio, 3)}.", timestamp = False, logfile = logfile)
+        
+        logprint("Bias spectroscopy parameters:", timestamp = False, logfile = logfile)
+        logprint(f"  Reset bias after spectroscopy (reset_bias) = {str(bool(reset_bias))}. Number of sweeps = {str(num_sweeps)}", timestamp = False, logfile = logfile)
+        logprint(str(spectr_advprops), timestamp = False, logfile = logfile)
+        logprint(str(spectr_props), timestamp = False, logfile = logfile)
+        logprint(str(spectr_timing), timestamp = False, logfile = logfile)
+        
+        logprint("Tip shaper properties:", timestamp = False, logfile = logfile)
+        logprint(" ".join(str(item) for item in tipshaper_props), timestamp = False, logfile = logfile)
+
+        logprint("\n          End of report.\n", timestamp = False, logfile = logfile)
+    
+    return parameters(v_fwd = v_fwd, v_bwd = v_bwd, t_fwd = t_fwd, t_bwd = t_bwd, lock_parameter = lock_parameter, v_ratio = v_ratio, V = V, V_ac = V_ac, f_ac = f_ac, phase_ac = phase_ac, lockin_status = lockin_status, I_fb = I_fb, p_gain = p_gain, t_const = t_const, i_gain = i_gain, x_center = x_center, y_center = y_center, scan_width = scan_width, scan_height = scan_height, scan_angle = scan_angle, pixels = pixels, lines = lines, z_min = z_min, z_max = z_max, scan_channels = scan_channels);
+
+def change_bias(V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, verbose: bool = True):
     logfile = get_session_path() + "\\logfile.txt"
+    
+    if V == None:
+        if verbose: logprint("No new bias set. Returning.", logfile = logfile)
+        return
     
     try:
         NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
@@ -435,9 +495,131 @@ def change_feedback(I = None, p_gain = None, t_const = None, controller = None, 
     finally:
         NTCP.close_connection()
         sleep(.05)
-        return I_old * 1E12, p_gain_old * 1E12, t_const_old * 1E6
+        return (I_old * 1E12, p_gain_old * 1E12, t_const_old * 1E6)
 
-def auto_phase(V_ac = False, f_ac = False, verbose: bool = True):
+def change_scan_window(center = None, size = None, grid = None, angle = None, verbose: bool = True):
+    logfile = get_session_path() + "\\logfile.txt"
+    parameters = get_parameters() # Use get_parameters to extract all the old scan parameters
+    scan_channels = parameters.scan_channels
+    grid_old = parameters.grid
+    size_old = parameters.size
+    angle_old = parameters.scan_angle
+    center_old = parameters.center
+    
+    if type(center) == int or type(center) == float: center = None # Do not change the scan window location if only a single value is given
+    if center == None: center = center_old
+    center = [center[0], center[1]]
+    if type(angle) != int and type(angle) != float: angle = angle_old # Do not change the scan angle if no value is given
+    if type(size) == int or type(size) == float: size = [size, size] # If a single value is given for the scan window size, make a square window
+    if size == None: size = size_old # If no scan size was given, retain the old scan window size
+    size = [size[0], size[1]]
+    aspect_ratio = size[1] / size[0] # Calculate the aspect ratio of the scan window
+    
+    if type(grid) == int or type(grid) == float:
+        grid = [int(16 * np.round(grid / 16)), 0] # The number of pixels always needs to be a multiple of 16 in Nanonis
+        grid[1] = int(grid[0] * aspect_ratio) # If only the horizontal number of pixels is given, calculate the number of lines based on the aspect ratio of the scan window
+    elif type(grid) == list or type(grid) == np.ndarray or type(grid) == tuple: grid = [int(16 * np.round(grid[0] / 16)), int(grid[1])]
+    if grid == None: grid = grid_old
+    
+    try:
+        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
+        scan = Scan(NTCP)
+        scan.BufferSet(scan_channels, grid[0], grid[1])
+        scan.FrameSet(center[0] * 1E-9, center[1] * 1E-9, size[0] * 1E-9, size[1] * 1E-9, angle)
+        if verbose: logprint(f"Scan window parameters changed. Center: ({round(center[0], 3)}, {round(center[1], 3)}) nm. Size: ({round(size[0], 3)}, {round(size[1], 3)}) nm. Grid: ({grid[0]}, {grid[1]}) pixels. Angle = {angle} degrees.", logfile = logfile)
+
+    finally:
+        NTCP.close_connection()
+        sleep(.05)        
+        return (center_old, size_old, grid_old, angle_old)
+
+def tip_tracker(sampling_time: float = .5, velocity_threshold: float = .02, timeout: float = 30, exit_when_still: bool = True, N_no_motion: int = 4, verbose: bool = True, tracking_info: bool = False, monitor_roughness: bool = False, measurement_interval = 10, max_z_range: float = 20):
+    logfile = get_session_path() + "\\logfile.txt"
+    #listener = keyboard.Listener(on_release = on_release)
+
+    try:
+        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
+        folme = FolMe(NTCP)
+        zcontroller = ZController(NTCP)
+        
+        start_time = time.monotonic() # Obtain the first tip position and time data
+        current_time = start_time
+        elapsed_time = 0
+        no_motion = 0
+        x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True)
+        x_tip *= 1E9 # Use nm as the natural unit for tip distances
+        y_tip *= 1E9
+        z_tip = zcontroller.ZPosGet() * 1E9
+        x_tip_old, y_tip_old, z_tip_old = (x_tip, y_tip, z_tip)
+        x_list = [x_tip_old]
+        y_list = [y_tip_old]
+        z_list = [z_tip_old]
+        t_list = [0]
+        velocity_threshold2 = velocity_threshold ** 2
+        
+        if verbose: logprint("Tip tracker started.", logfile = logfile)
+        if tracking_info: logprint(f"Tip position: ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm.")
+        exit_flag = False
+        #listener.start()
+        sleep(sampling_time)
+        
+        while True:
+            x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True) # Get new data
+            x_tip *= 1E9
+            y_tip *= 1E9
+            z_tip = zcontroller.ZPosGet() * 1E9
+            current_time = time.monotonic() # Keep track of the time and check for a timeout with each iteration
+            elapsed_time = current_time - start_time
+            
+            delta_pos = [x_tip - x_tip_old, y_tip - y_tip_old, z_tip - z_tip_old] # Calculate displacement and velocity
+            displacement2 = delta_pos[0] ** 2 + delta_pos[1] ** 2 + delta_pos[2] ** 2
+            min_velocity2 = displacement2 / sampling_time
+            x_tip_old, y_tip_old, z_tip_old = (x_tip, y_tip, z_tip)
+            
+            x_list.append(x_tip) # Save the position and time information
+            y_list.append(y_tip)
+            z_list.append(z_tip)
+            t_list.append(elapsed_time)
+        
+            if tracking_info:
+                min_velocity = np.sqrt(min_velocity2)
+                logprint(f"Tip position: ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm. Displacement vector since last measurement: ({round(delta_pos[0], 3)}, {round(delta_pos[1], 3)}, {round(delta_pos[2], 3)}) nm. Minimum velocity: {round(min_velocity, 3)} nm/s.")
+            
+            if min_velocity2 < velocity_threshold2: # Routine to handle the tip being detected to be no longer moving
+                if tracking_info: logprint("Tip appears to be at rest.", logfile = logfile)
+                no_motion += 1 # no_motion counts the number of samples that no tip motion has been detected. After N_no_motion samples of no motion, the tip is assumed to be at rest.
+            else: no_motion = 0 # Reset the no_motion parameter if motion is detected
+            if no_motion > N_no_motion - 1 and exit_when_still:
+                if verbose: logprint("Tip deemed to be at rest. Exiting tip tracker.", logfile = logfile)
+                break
+            
+            if elapsed_time > timeout: # Routine to handle timeouts
+                if verbose: logprint("Tip tracker experienced a timeout.", logfile = logfile)
+                break
+            
+            if monitor_roughness:
+                if np.mod(np.floor(elapsed_time), measurement_interval) == 0: # Calculate the roughness every measurement_interval seconds
+                    n_list = len(z_list)
+                    z_list_np = np.array(z_list)
+                    z_avg = np.mean(z_list_np)
+                    z_minmax = [np.min(z_list_np), np.max(z_list_np)]
+                    z_diff = (z_list_np - z_avg) ** 2
+                    z_rms = np.sqrt(np.sum(z_diff) / n_list)
+                    logprint(f"Surface roughness monitoring. [z_min, z_avg, z_max] = [{z_minmax[0]}, {z_avg}, {z_minmax[1]}] nm. RMS deviation from average: [{z_rms}] nm.")
+            
+            if exit_flag:
+                if verbose: logprint("Exit keystroke detected. Aborting tip tracker.", logfile = logfile)
+                break
+            
+            sleep(sampling_time)
+
+    finally:
+        NTCP.close_connection()
+        #listener.stop()
+        sleep(.05)        
+        return np.array([t_list, x_list, y_list, z_list])
+
+def auto_phase(V_ac = None, f_ac = None, verbose: bool = True):
     try:
         NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
         lockin = LockIn(NTCP)
@@ -475,91 +657,13 @@ def auto_phase(V_ac = False, f_ac = False, verbose: bool = True):
         lockin.ModPhasFreqSet(modulator_number = 1, frequency = f_ac_old)
         lockin.ModAmpSet(modulator_number = 1, amplitude = V_ac_old)
 
-        logprint(f"Lockin has been autophased at a frequency of {round(f_ac, 3)} Hz. The demodulator phase was set to phi = {new_phase} degree.")
+        logprint(f"Lockin autophased at a frequency of {round(f_ac, 3)} Hz. Demodulator phase set to phi = {round(new_phase, 3)} degree.")
 
     finally:
         NTCP.close_connection()
         sleep(.05)
 
-def tip_tracker(sampling_time: float = .5, velocity_threshold: float = .02, timeout: float = 30, exit_when_still: bool = True, N_no_motion: int = 4, verbose: bool = True, tracking_info: bool = False, return_positions: bool = False):
-    logfile = get_session_path() + "\\logfile.txt"
-    #listener = keyboard.Listener(on_release = on_release)
-
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        folme = FolMe(NTCP)
-        zcontroller = ZController(NTCP)
-        
-        start_time = time.monotonic() # Obtain the first tip position and time data
-        current_time = start_time
-        elapsed_time = 0
-        no_motion = 0
-        x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True)
-        x_tip *= 1E9 # Use nm as the natural unit for tip distances
-        y_tip *= 1E9
-        z_tip = zcontroller.ZPosGet() * 1E9
-        x_tip_old, y_tip_old, z_tip_old = (x_tip, y_tip, z_tip)
-        x_list = [x_tip_old]
-        y_list = [y_tip_old]
-        z_list = [z_tip_old]
-        t_list = [0]
-        velocity_threshold2 = velocity_threshold ** 2
-        
-        if verbose: logprint("Tip tracker started.", logfile = logfile)
-        if tracking_info: logprint(f"Tip position: ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm.", logfile = logfile)
-        exit_flag = False
-        #listener.start()
-        sleep(sampling_time)
-        
-        while True:
-            x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True) # Get new data
-            x_tip *= 1E9
-            y_tip *= 1E9
-            z_tip = zcontroller.ZPosGet() * 1E9
-            current_time = time.monotonic() # Keep track of the time and check for a timeout with each iteration
-            elapsed_time = current_time - start_time
-            
-            delta_pos = [x_tip - x_tip_old, y_tip - y_tip_old, z_tip - z_tip_old] # Calculate displacement and velocity
-            displacement2 = delta_pos[0] ** 2 + delta_pos[1] ** 2 + delta_pos[2] ** 2
-            min_velocity2 = displacement2 / sampling_time
-            x_tip_old, y_tip_old, z_tip_old = (x_tip, y_tip, z_tip)
-            if return_positions:
-                x_list.append(x_tip)
-                y_list.append(y_tip)
-                z_list.append(z_tip)
-                t_list.append(elapsed_time)
-            
-            if tracking_info:
-                min_velocity = np.sqrt(min_velocity2)
-                logprint(f"Tip position: ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm. Displacement vector since last measurement: ({round(delta_pos[0], 3)}, {round(delta_pos[1], 3)}, {round(delta_pos[2], 3)}) nm. Minimum velocity: {round(min_velocity, 3)} nm/s.", logfile = logfile)
-            
-            if min_velocity2 < velocity_threshold2: # Routine to handle the tip being detected to be no longer moving
-                if tracking_info: logprint("Tip appears to be at rest.", logfile = logfile)
-                no_motion += 1 # no_motion counts the number of samples that no tip motion has been detected. After N_no_motion samples of no motion, the tip is assumed to be at rest.
-            else: no_motion = 0 # Reset the no_motion parameter if motion is detected
-            if no_motion > N_no_motion - 1 and exit_when_still:
-                if verbose: logprint("Tip deemed to be at rest. Exiting tip tracker.", logfile = logfile)
-                break
-            
-            if elapsed_time > timeout: # Routine to handle timeouts
-                if verbose: logprint("Tip tracker experienced a timeout.", logfile = logfile)
-                break
-            
-            if exit_flag:
-                if verbose: logprint("Exit keystroke detected. Aborting tip tracker.", logfile = logfile)
-                break
-            
-            sleep(sampling_time)
-
-    finally:
-        NTCP.close_connection()
-        #listener.stop()
-        sleep(.05)
-        
-        if return_positions: return np.array([t_list, x_list, y_list, z_list])
-        else: return
-
-def auto_approach(wait: bool = True, verbose: bool = True, timeout = 1000, I_approach: float = 100, p_gain_approach: float = 40, t_const_approach: float = 167, z_voltage: float = 210, land_tip: bool = True):
+def auto_approach(verbose: bool = True, timeout = 1000, I_approach: float = 100, p_gain_approach: float = 40, t_const_approach: float = 167, z_voltage: float = 210, land_tip: bool = True, adjust_percentile: float =  75, velocity_threshold: float = .02):
     logfile = get_session_path() + "\\logfile.txt"
     I_old, p_gain_old, t_const_old = change_feedback(I = I_approach, p_gain = p_gain_approach, t_const = t_const_approach, withdraw = True) # Change to the approach settings while withdrawing the tip
 
@@ -567,8 +671,15 @@ def auto_approach(wait: bool = True, verbose: bool = True, timeout = 1000, I_app
         NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
         autoapproach = AutoApproach(NTCP)
         motor = Motor(NTCP)
+        zcontroller = ZController(NTCP)
         
         motor_frequency_old, motor_voltage_old = motor.FreqAmpGet()
+        [z_max, z_min] = zcontroller.LimitsGet()
+        z_min *= 1E9
+        z_max *= 1E9
+        z_range = z_max - z_min
+        if adjust_percentile < 50 or adjust_percentile > 100: adjust_percentile = 90
+        z_limits = [z_max - .01 * adjust_percentile * z_range, z_min + .01 * adjust_percentile * z_range] # If the tip comes to rest outside of these limits, do a coarse step and reapproach
         if type(z_voltage) == int or type(z_voltage) == float: motor.FreqAmpSet(frequency = motor_frequency_old, amplitude = z_voltage)
         autoapproach.OnOffSet(1) # Start the auto approach
         if verbose: logprint("Auto approach initiated.", logfile = logfile)
@@ -577,16 +688,36 @@ def auto_approach(wait: bool = True, verbose: bool = True, timeout = 1000, I_app
         NTCP.close_connection()
         sleep(.05)
 
-    if wait:
-        tip_tracker(sampling_time = .5, timeout = timeout, velocity_threshold = .001, exit_when_still = True, N_no_motion = 4, verbose = verbose, tracking_info = False) # Use tip tracker to monitor when the approach is done
-        if verbose: logprint("Auto approach done.", logfile = logfile)
+    tip_tracker(sampling_time = .5, timeout = timeout, velocity_threshold = .001, exit_when_still = True, N_no_motion = 2, verbose = verbose, tracking_info = False) # Use tip tracker to monitor when the approach is done
+    if verbose: logprint("Surface detected.", logfile = logfile)
 
-        change_feedback(I = I_old, p_gain = p_gain_old, t_const = t_const_old, withdraw = True) # Change the feedback settings back to the scan settings
-        sleep(.5)
-        auto_phase() # Autophase the lock-in amplifier to zero
-        if land_tip: change_feedback(controller = True) # Land the tip if desired
-        tip_tracker(sampling_time = .5, timeout = 180, velocity_threshold = .02, exit_when_still = True, N_no_motion = 4, verbose = verbose, tracking_info = False) # Use tip tracker to monitor when the tip has landed
-    
+    change_feedback(I = I_old, p_gain = p_gain_old, t_const = t_const_old, withdraw = True) # Change the feedback settings back to the scan settings
+    sleep(.4)
+    auto_phase() # Autophase the lock-in amplifier to zero
+      
+    if land_tip:
+        adjust_iteration = 0
+        in_range = False
+        while not in_range and adjust_iteration < 10: # Loop for tip adjustments to get the tip in the desired range
+            change_feedback(controller = True) # Land the tip if desired
+            txyz = tip_tracker(sampling_time = .5, timeout = 8, exit_when_still = False, N_no_motion = 4, verbose = False, tracking_info = False) # Use tip tracker to gauge where the tip has landed
+            z_avg = np.mean(txyz[3, -3:])
+            adjust_iteration += 1
+            
+            if z_avg < z_limits[0]:
+                if verbose: logprint(f"Tip landed too low in the z range ({round(z_avg, 3)} nm < {round(z_limits[0], 3)} nm). Adjusting by going down one coarse step.", logfile = logfile)
+                change_feedback(withdraw = True)
+                coarse_move(steps = 1, direction = "Z-", z_voltage = z_voltage, verbose = False)
+            elif z_avg > z_limits[1]:
+                if verbose: logprint(f"Tip landed too high in the z range ({round(z_avg, 3)} nm > {round(z_limits[1], 3)} nm). Adjusting by retracting one coarse step.", logfile = logfile)
+                change_feedback(withdraw = True)
+                coarse_move(steps = 1, direction = "Z+", z_voltage = z_voltage, verbose = False)
+            else:
+                if verbose: logprint(f"Success! Tip landed in the desired z range ({round(z_limits[0], 3)} nm < {round(z_avg, 3)} nm < {round(z_limits[1])} nm).", logfile = logfile)
+                in_range = True
+        
+        txyz = tip_tracker(sampling_time = .5, timeout = 180, exit_when_still = True, velocity_threshold = velocity_threshold, N_no_motion = 4, verbose = verbose, tracking_info = False) # Use tip tracker to let the drift settle
+
     try: # Reset the motor voltage if it was changed
         NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
         motor = Motor(NTCP)
@@ -595,31 +726,7 @@ def auto_approach(wait: bool = True, verbose: bool = True, timeout = 1000, I_app
     finally:
         NTCP.close_connection()
         sleep(.05)
-
-def scan_control(action: str = "stop", scan_direction: str = "down", verbose: bool = True):
-    logfile = get_session_path() + "\\logfile.txt"
-
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        scan = Scan(NTCP)
-        
-        if scan_direction != "down": scan_direction = "up"
-        if action == "start":
-            scan.Action(action, scan_direction)
-            if verbose: logprint("Scan started in the " + scan_direction + " direction.", logfile = logfile)
-        elif action == "stop":
-            scan.Action(action)
-            if verbose: logprint("Scan stopped.", logfile = logfile)
-        elif action == "pause":
-            scan.Action(action)
-            if verbose: logprint("Scan paused.", logfile = logfile)
-        elif action == "resume":
-            scan.Action(action)
-            if verbose: logprint("Scan resumed.", logfile = logfile)
-
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
+        if verbose: logprint("Auto approach sequence completed.", logfile = logfile)
 
 def coarse_move(direction: str = "up", steps: int = 1, xy_voltage: float = 240, z_voltage: float = 210, motor_frequency = False, override: bool = False, verbose: bool = True):
     logfile = get_session_path() + "\\logfile.txt"
@@ -670,15 +777,42 @@ def coarse_move(direction: str = "up", steps: int = 1, xy_voltage: float = 240, 
         NTCP.close_connection()
         sleep(.05)
 
-def move_over(direction: str = "west", steps: int = 20, z_steps: int = 10, I_approach: float = 100, p_gain_approach: float = 40, t_const_approach: float = 167, xy_voltage: float = 240, z_voltage: float = 220, land_tip: bool = True):
+def move_over(direction: str = "north", steps: int = 20, z_steps: int = 10, I_approach: float = 100, p_gain_approach: float = 40, t_const_approach: float = 167, xy_voltage: float = 240, z_voltage: float = 220, adjust_percentile: float =  75, velocity_threshold: float = .02):
     scan_control(action = "stop")
     I_old, p_gain_old, t_const_old = change_feedback(withdraw = True)
     coarse_move(direction = "lift", steps = z_steps, xy_voltage = xy_voltage, z_voltage = z_voltage)
     coarse_move(direction = direction, steps = steps, xy_voltage = xy_voltage, z_voltage = z_voltage)
-    auto_approach(I_approach = I_approach, p_gain_approach = p_gain_approach, t_const_approach = t_const_approach, wait = True)
+    auto_approach(I_approach = I_approach, p_gain_approach = p_gain_approach, t_const_approach = t_const_approach, land_tip = True, adjust_percentile = adjust_percentile, velocity_threshold = velocity_threshold)
+
+def scan_control(action: str = "stop", scan_direction: str = "down", verbose: bool = True, monitor: bool = True, sampling_time: float = 4, velocity_threshold: float = .4):
+    logfile = get_session_path() + "\\logfile.txt"
+
+    try:
+        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
+        scan = Scan(NTCP)
+        
+        if scan_direction != "down": scan_direction = "up"
+        if action == "start":
+            scan.Action(action, scan_direction)
+            if verbose: logprint("Scan started in the " + scan_direction + " direction.", logfile = logfile)
+        elif action == "stop":
+            scan.Action(action)
+            if verbose: logprint("Scan stopped.", logfile = logfile)
+        elif action == "pause":
+            scan.Action(action)
+            if verbose: logprint("Scan paused.", logfile = logfile)
+        elif action == "resume":
+            scan.Action(action)
+            if verbose: logprint("Scan resumed.", logfile = logfile)
+
+    finally:
+        NTCP.close_connection()
+        sleep(.05)
     
-    if land_tip: change_feedback(I = I_old, p_gain = p_gain_old, t_const = t_const_old, controller = True)
-    else: change_feedback(I = I_old, p_gain = p_gain_old, t_const = t_const_old, withdraw = True)
+    if action == "start" or action == "resume":
+        if monitor: # Continue monitoring the progress of the scan until it is done
+            txyz = tip_tracker(sampling_time = sampling_time, velocity_threshold = velocity_threshold, timeout = 100000, exit_when_still = True, N_no_motion = 4, verbose = verbose, monitor_roughness = False)
+    return
 
 def scan_mode(mode: str = "topo", bwd_speed: float = 34, verbose: bool = True, topo_channels = np.array(["Z (m)"]), const_height_channels = np.array(["Current (A)", "LI Demod 1 X (A)", "LI Demod 1 Y (A)", "LI Demod 2 X (A)", "LI Demod 2 X (A)"])):
     logfile = get_session_path() + "\\logfile.txt"
