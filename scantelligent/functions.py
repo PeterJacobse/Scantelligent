@@ -53,7 +53,7 @@ class sessionfiles:
         self.current_spectroscopy_index = current_spectroscopy_index
 
 class scandata:
-    def __init__(self, scans, header, channels, angle, pixels, date, time, center, size):
+    def __init__(self, scans, header, channels, angle, pixels, date, time, center, size, V):
         self.scans = scans
         self.header = header
         self.channels = channels
@@ -63,6 +63,7 @@ class scandata:
         self.time = time
         self.center = center
         self.size = size
+        self.V = V
 
 class parameters:
     def __init__(self, v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio, V, V_ac, f_ac, phase_ac, lockin_status, I_fb, p_gain, t_const, i_gain, x_center, y_center, scan_width, scan_height, scan_angle, pixels, lines, z_min, z_max, scan_channels):
@@ -174,8 +175,9 @@ def get_scan(file_name, crop_unfinished: bool = True):
         time = scan_header.get("rec_time", "00:00:00")
         center = scan_header.get("scan_offset", np.array([0, 0], dtype = float))
         size = scan_header.get("scan_range", np.array([1E-7, 1E-7], dtype = float))
+        V = scan_data.header.get("bias", 0)
 
-        return scandata(all_scans_processed, scan_header, channels, angle, pixels, date, time, center, size)
+        return scandata(all_scans_processed, scan_header, channels, angle, pixels, date, time, center, size, V)
 
 def initialize():
     session_path = get_session_path()
@@ -200,6 +202,12 @@ def initialize():
             f.write("\n\n")
         pass
     
+    try:
+        os.makedirs(images_path, exist_ok = True)
+        logprint(f"Directory '{images_path}' created successfully or already existed.", timestamp = False, logfile = logfile_path)
+    except OSError as e:
+        logprint(f"Error creating directory '{images_path}': {e}", timestamp = False, logfile = logfile_path)
+
     parameters = get_parameters(verbose = True)
     
     return session_path, images_path, logfile_path, parameters
@@ -238,7 +246,7 @@ def clip_range(image, method: str = "standard_deviation", values = [-2, 2], defa
         values = [-values, values]
     if method == "IQR": clip_values = [stats.Q1 + values[0] * stats.IQR, stats.Q3 + values[1] * stats.IQR]
     elif method == "standard_deviation": clip_values = [stats.mean + values[0] * stats.standard_deviation, stats.Q3 + values[1] * stats.standard_deviation]
-    elif method == "percentiles": clip_values = [stats.min + values[0] * stats.range, stats.min + values[1] * stats.range]
+    elif method == "percentiles": clip_values = [stats.min + .01 * values[0] * stats.range, stats.min + .01 * values[1] * stats.range]
     else: print("No valid clipping method selected")
     
     if tie_to_zero[0]: clip_values[0] = 0
