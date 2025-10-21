@@ -11,7 +11,6 @@ from nanonisTCP.Util import Util
 from nanonisTCP.FolMe import FolMe
 from nanonisTCP.BiasSpectr import BiasSpectr
 from nanonisTCP.TipShaper import TipShaper
-import nanonispy as nap
 import numpy as np
 from datetime import datetime
 import time

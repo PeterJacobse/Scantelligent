@@ -11,7 +11,7 @@ from nanonisTCP.Util import Util
 from nanonisTCP.FolMe import FolMe
 from nanonisTCP.BiasSpectr import BiasSpectr
 from nanonisTCP.TipShaper import TipShaper
-import nanonispy as nap
+import nanonispy2 as nap
 import numpy as np
 from datetime import datetime
 import time
@@ -315,7 +315,7 @@ def get_parameters(verbose: bool = False):
         folme = FolMe(NTCP)
         signals = Signals(NTCP)
         biasspectr = BiasSpectr(NTCP)
-        tipshaper = TipShaper(NTCP)
+        #tipshaper = TipShaper(NTCP)
         
         x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True ) # Get the current scan parameters
         v_tip = folme.SpeedGet()[0] # Tip positions and speed (FolMe)
@@ -360,7 +360,7 @@ def get_parameters(verbose: bool = False):
         z_controller_hold = spectr_advprops.get("z_controller_hold", 1)
         num_sweeps = spectr_props.get("num_sweeps", 1)
         
-        tipshaper_props = tipshaper.PropsGet() # Tip shaper
+        #tipshaper_props = tipshaper.PropsGet() # Tip shaper
         
         #channels = np.array(signals.NamesGet()) # Alternative way to extract the tip positions
         #x_channel_index = np.where(channels == "X (m)")[0][0]
@@ -402,7 +402,7 @@ def get_parameters(verbose: bool = False):
         logprint(str(spectr_timing), timestamp = False, logfile = logfile)
         
         logprint("Tip shaper properties:", timestamp = False, logfile = logfile)
-        logprint(" ".join(str(item) for item in tipshaper_props), timestamp = False, logfile = logfile)
+        #logprint(" ".join(str(item) for item in tipshaper_props), timestamp = False, logfile = logfile)
 
         logprint("\n          End of report.\n", timestamp = False, logfile = logfile)
     

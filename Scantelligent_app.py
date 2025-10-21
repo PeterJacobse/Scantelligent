@@ -3,7 +3,8 @@ import sys
 import yaml
 import numpy as np
 import socket
-from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, QFileDialog, QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit
+import cv2
+from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, QFileDialog, QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit, QCheckBox
 from PyQt6.QtCore import Qt, QSize, QByteArray, QProcess
 from pathlib import Path
 import pyqtgraph as pg
@@ -18,7 +19,7 @@ from scantelligent.functions import get_session_path
 TCP_IP = "127.0.0.1"
 TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
 version_number = 13520
-
+camera_argument = 0
 
 
 class AppWindow(QMainWindow):
@@ -67,7 +68,7 @@ class AppWindow(QMainWindow):
         # Parameter initialization
         self.check_nanonis_connection()
 
-    # Draw all the buttons
+    # Draw all the buttons    
     def draw_buttons(self):
         column_group = QVBoxLayout()
 
@@ -79,16 +80,72 @@ class AppWindow(QMainWindow):
         self.nanonis_online_button.setStyleSheet("background-color: red;")
         self.mla_online_button.setStyleSheet("background-color: red;")
         self.nanonis_online_button.clicked.connect(self.check_nanonis_connection)
-        connections_group.addWidget(self.nanonis_online_button)
-        connections_group.addWidget(self.mla_online_button)
+        
+        connections_group.addWidget(self.nanonis_online_button, 0, 0)
+        connections_group.addWidget(self.tip_status_button, 0, 1)
+        connections_group.addWidget(self.mla_online_button, 1, 0)
+        connections_group.addWidget(self.oscillation_on_button, 1, 1)
+        connections_group.addWidget(self.camera_online_button, 2, 0)
+        connections_group.addWidget(self.view_swap_button, 2, 1)
         connections_box.setLayout(connections_group)
         column_group.addWidget(connections_box)
 
         # Coarse motion group
-        coarse_motion_box = QGroupBox("Coarse motion")
+        coarse_motion_box = QGroupBox("Coarse motion (arrow buttons combine checked actions)")
         coarse_motion_group = QHBoxLayout()
-        retract_label = QLabel("Retract 10 steps and")
-        coarse_motion_group.addWidget(retract_label)
+        
+        # Coarse actions        
+        coarse_actions_group = QGridLayout()
+        
+        self.withdraw_checkbox = QCheckBox()
+        self.withdraw_checkbox.setChecked(True)
+        coarse_actions_group.addWidget(self.withdraw_checkbox, 0, 0)
+        self.withdraw_button = QPushButton("Withdraw,")
+        coarse_actions_group.addWidget(self.withdraw_button, 0, 1)
+        
+        self.retract_checkbox = QCheckBox()
+        self.retract_checkbox.setChecked(True)
+        coarse_actions_group.addWidget(self.retract_checkbox, 1, 0)
+        self.retract_button = QPushButton("Retract")
+        coarse_actions_group.addWidget(self.retract_button, 1, 1)
+        self.z_steps_box = QLineEdit("10")
+        self.z_steps = int(self.z_steps_box.text())
+        coarse_actions_group.addWidget(self.z_steps_box, 1, 2)
+        coarse_actions_group.addWidget(QLabel("steps"), 1, 3)
+        
+        self.move_checkbox = QCheckBox()
+        self.move_checkbox.setChecked(True)
+        coarse_actions_group.addWidget(self.move_checkbox, 2, 0)
+        coarse_actions_group.addWidget(QLabel("move"), 2, 1)
+        self.h_steps_box = QLineEdit("30")
+        coarse_actions_group.addWidget(self.h_steps_box, 2, 2)
+        steps_in_direction_label = QLabel("steps in direction")
+        coarse_actions_group.addWidget(steps_in_direction_label, 2, 3)
+        
+        self.go_down_checkbox = QCheckBox()
+        self.go_down_checkbox.setChecked(False)
+        coarse_actions_group.addWidget(self.go_down_checkbox, 3, 0)
+        self.go_down_button = QPushButton("adVance")
+        coarse_actions_group.addWidget(self.go_down_button, 3, 1)
+        self.minus_z_steps_box = QLineEdit("2")
+        coarse_actions_group.addWidget(self.minus_z_steps_box, 3, 2)
+        coarse_actions_group.addWidget(QLabel("steps, and"), 3, 3)
+        
+        self.approach_checkbox = QCheckBox()
+        self.approach_checkbox.setChecked(True)
+        coarse_actions_group.addWidget(self.approach_checkbox, 4, 0)
+        self.approach_button = QPushButton("Auto approach")
+        coarse_actions_group.addWidget(self.approach_button, 4, 1)
+        
+        self.coarse_action_buttons = [self.withdraw_checkbox, self.withdraw_button, self.move_checkbox]
+        
+        #actions_before_move_group.addLayout(withdraw_group)
+        coarse_motion_group.addLayout(coarse_actions_group)
+        
+        #retract_group = QHBoxLayout()
+        
+        #retract_label = QLabel("Retract 10 steps and")
+        #coarse_motion_group.addWidget(retract_label)
         self.horizontal_steps = 10
         
         arrow_keys = QWidget()
@@ -157,6 +214,20 @@ class AppWindow(QMainWindow):
 
         return column_group
 
+    def update_buttons(self):
+        if self.nanonis_online:
+            self.nanonis_online_button.setText("Nanonis: online")
+            self.nanonis_online_button.setStyleSheet("background-color: green;")
+            
+            [button.setEnabled(True) for button in self.coarse_action_buttons]
+            [button.setEnabled(True) for button in [self.n_button, self.e_button]]
+        else:
+            self.nanonis_online_button.setText("Nanonis: offline")
+            self.nanonis_online_button.setStyleSheet("background-color: red;")
+            
+            [button.setEnabled(False) for button in self.coarse_action_buttons]
+            [button.setEnabled(False) for button in [self.n_button, self.e_button]]
+
     # Check TCP_IP connections
     def check_nanonis_connection(self):
         try:
@@ -167,19 +238,21 @@ class AppWindow(QMainWindow):
             self.nanonis_online = True
         except socket.timeout:
             self.nanonis_online = False
-        
-        if self.nanonis_online:
-            self.nanonis_online_button.setText("Nanonis: online")
-            self.nanonis_online_button.setStyleSheet("background-color: green;")
-            self.session_path_button.setEnabled(True)
-            (button.setEnabled(True) for button in [self.ne_button, self.n_button, self.nw_button, self.e_button, self.zero_button, self.w_button, self.sw_button, self.s_button, self.se_button])
-        else:
-            self.nanonis_online_button.setText("Nanonis: offline")
-            self.nanonis_online_button.setStyleSheet("background-color: red;")
-            self.session_path_button.setEnabled(False)
-            (button.setEnabled(False) for button in [self.ne_button, self.n_button, self.nw_button, self.e_button, self.zero_button, self.w_button, self.sw_button, self.s_button, self.se_button])
+        self.update_buttons()
 
-    # Start a Scanalyzer instance
+    # Check camera
+    def check_camera(self, argument):
+        cap = cv2.VideoCapture(argument)
+
+        if not cap.isOpened(): # Check if the camera opened successfully
+            print("Error: Could not open camera.")
+            exit()
+        else:
+            print("Success!")
+        
+        cap.release()
+
+    # Start Scanalyzer
     def on_launch_scanalyzer(self):
         if hasattr(self, "scanalyzer_path"):
             try:
@@ -195,6 +268,14 @@ class AppWindow(QMainWindow):
     # Coarse motion
     def on_coarse_move(self, direction: str = "N", horizontal_steps: int = 10):
         print(f"I will move {horizontal_steps} steps in the {direction} direction")
+        
+        if direction == "N": self.nanonis_online = True
+        else: self.nanonis_online = False
+        self.update_buttons()
+        
+        if direction == "S":
+            print("time to check on the camera")
+            self.check_camera(camera_argument)
 
     def on_get_session_path(self):
         path = get_session_path()
@@ -208,6 +289,7 @@ class AppWindow(QMainWindow):
 
 
 
+# Main program
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = AppWindow()
