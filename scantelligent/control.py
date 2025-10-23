@@ -25,6 +25,57 @@ TCP_IP = "192.168.236.1"                           # Local host
 TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
 version_number = 13520
 
+def coarse_move(direction: str = "up", steps: int = 1, xy_voltage: float = 240, z_voltage: float = 210, motor_frequency = False, override: bool = False, verbose: bool = True):
+    #logfile = get_session_path() + "\\logfile.txt"
+
+    try:
+        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
+        motor = Motor(NTCP)
+        zcontroller = ZController(NTCP)
+        
+        motor_frequency_old, motor_voltage_old = motor.FreqAmpGet()
+        #feedback = bool(zcontroller.OnOffGet())
+        #if feedback:
+        #    if override:
+        #        if verbose: logprint("Coarse motion attempted with the tip still in feedback. Overridden.", logfile = logfile)
+        #    else:
+        #        if verbose: logprint("Coarse motion attempted with the tip still in feedback. Blocked.", logfile = logfile)
+        #        return
+        motor_frequency_new = motor_frequency_old
+        if type(motor_frequency) == int or type(motor_frequency) == float: motor_frequency_new = motor_frequency
+        
+        dirxn = "Z+" # Select the direction and motor voltage
+        motor_voltage = min([xy_voltage, z_voltage])
+        dirxn = direction.lower()
+        if dirxn in ["away", "y+", "north", "n"]:
+            dirxn = "Y+"
+            motor_voltage = xy_voltage
+        if dirxn in ["towards", "y-", "south", "s"]:
+            dirxn = "Y-"
+            motor_voltage = xy_voltage
+        if dirxn in ["left", "x-", "west", "w"]:
+            dirxn = "X-"
+            motor_voltage = xy_voltage
+        if dirxn in ["right", "x+", "east", "e"]:
+            dirxn = "X+"
+            motor_voltage = xy_voltage
+        if dirxn in ["up", "z+", "lift"]:
+            dirxn = "Z+"
+            motor_voltage = z_voltage
+        if dirxn in ["down", "z-", "approach", "advance"]:
+            dirxn = "Z-"
+            motor_voltage = z_voltage
+        motor.FreqAmpSet(frequency = motor_frequency_new, amplitude = motor_voltage)
+        sleep(.05)
+        
+        motor.StartMove(direction = dirxn, steps = steps, wait_until_finished = True)
+        #if verbose: logprint("Coarse motion: " + str(steps) + " steps in the " + dirxn + " direction.", logfile = logfile)
+        sleep(.05)
+
+    finally:
+        NTCP.close_connection()
+        sleep(.05)
+
 def scan_control(tcp_ip, tcp_port, version_number, action: str = "stop", scan_direction: str = "down", verbose: bool = True, monitor: bool = True, sampling_time: float = 4, velocity_threshold: float = .4):
     # logfile = get_session_path() + "\\logfile.txt"
 
