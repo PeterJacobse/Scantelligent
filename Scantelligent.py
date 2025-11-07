@@ -4,7 +4,10 @@ import yaml
 import numpy as np
 import socket
 import cv2
-from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, QFileDialog, QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit, QCheckBox, QFrame
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, QFileDialog,
+    QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit, QCheckBox, QFrame, QTextEdit
+)
 from PyQt6.QtCore import QObject, Qt, QProcess, QThread, pyqtSignal, pyqtSlot
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
@@ -13,47 +16,75 @@ import scantelligent.functions as st
 from datetime import datetime
 from scantelligent.image_functions import apply_gaussian, apply_fft, image_gradient, compute_normal, apply_laplace, complex_image_to_colors, background_subtract, get_image_statistics
 from scantelligent.control import HelperFunctions, Experiments, CameraWorker, MeasurementWorker
-from time import sleep
+from time import sleep, time
 from scipy.interpolate import griddata
 
 # Establish a TCP/IP connection
 # TCP_IP = "192.168.236.1"                           # Local host
-TCP_IP = "127.0.0.1"
-TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
-version_number = 13520
+# TCP_IP = "127.0.0.1"
+# TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
+# version_number = 13520
 camera_argument = 0
 
 
 
+class StreamRedirector(QObject):
+    output_written = pyqtSignal(str)
+
+    def write(self, text):
+        self.output_written.emit(text)
+
+    def flush(self):
+        # Required for file-like objects, but can be empty if not needed
+        pass
+
+
+
 class AppWindow(QMainWindow):
-    request_start = pyqtSignal(object, object, object, int, int)
+    request_start = pyqtSignal(object, int)
     request_stop = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Scantelligent by Peter H. Jacobse") # Make the app window
         self.setGeometry(100, 100, 1400, 800) # x, y, width, height
-
-        # Initialize PyQtgraph widget
-        # pg.setConfigOptions(imageAxisOrder = "row-major")
-        self.image_view = pg.ImageView(view = pg.PlotItem())
-        self.hist = self.image_view.getHistogramWidget()
-        self.hist_item = self.hist.item
-
-        # Initialize parameters       
-        self.parameters_init()
         
-        # Set the central widget of the QMainWindow
+        # Initialize parameters
+        self.parameters_init()
+
+        # Create a central widget and main horizontal layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.addWidget(self.image_view, 3)
-        main_layout.addLayout(self.draw_buttons(), 1)
+        main_layout = QHBoxLayout(central_widget) # Main layout is horizontal
 
-        # Activate buttons and keys
-        self.connect_buttons()
-        #self.connect_keys()
-        
+        # --- Left Section: Graphic and Console (grouped vertically) ---
+        left_v_container = QWidget()
+        left_v_layout = QVBoxLayout(left_v_container)
+        left_v_layout.setContentsMargins(0, 0, 0, 0) # Optional: remove inner margins
+
+        # 1a. Create the pyqtgraph PlotWidget (Top of left section)
+        self.image_view = pg.ImageView(view = pg.PlotItem())
+        left_v_layout.addWidget(self.image_view, stretch = 4) 
+
+        # Initialize the console
+        self.console_output = QTextEdit()
+        self.console_output.setReadOnly(False)
+        left_v_layout.addWidget(self.console_output, stretch = 1)
+
+        # Add the left container to the main horizontal layout
+        # The stretch factor here determines the graphic's relative width to the buttons
+        main_layout.addWidget(left_v_container, stretch = 4) 
+        main_layout.addLayout(self.draw_buttons(), 1)
+                
+        # Redirect output to the console
+        self.stdout_redirector = StreamRedirector()
+        self.stdout_redirector.output_written.connect(self.append_to_console)
+        sys.stdout = self.stdout_redirector
+        self.stderr_redirector = StreamRedirector()
+        self.stderr_redirector.output_written.connect(self.append_to_console)
+        sys.stderr = self.stderr_redirector
+        self.logprint("Opening Scantelligent")
+
         # Ensure the central widget can receive keyboard focus
         central_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         central_widget.setFocus()
@@ -61,19 +92,12 @@ class AppWindow(QMainWindow):
         self.setFocus()
         self.activateWindow()
 
-        # Create a QProcess handle for opening of Scanalyzer
-        self.process = QProcess(self)
-        try: # Read the config yaml file
-            with open(self.scantelligent_folder + "\\config.yml", "r") as file:
-                config = yaml.safe_load(file)
-                self.scanalyzer_path = config.get("scanalyzer_path")
-        except:
-            print("Could not link to Scanalyzer")
-            self.scanalyzer_button.setEnabled(False)
-            pass
-        
-        # Check / set up hardware connections
-        self.helper_functions = HelperFunctions(TCP_IP, TCP_PORT, version_number)
+        # Activate buttons and keys
+        self.connect_buttons()
+        #self.connect_keys()
+
+        # Check / set up hardware connections after creating an instance of HelperFunctions
+        self.helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
         self.connect_nanonis()
         """
         self.check_camera_connection(camera_argument)
@@ -83,8 +107,8 @@ class AppWindow(QMainWindow):
         self.is_camera_running = False
         """
 
-        # Set up the experiments class and thread and connect signals and slots
-        self.experiments = Experiments(TCP_IP, TCP_PORT, version_number)
+        # Set up the Experiments class and thread and connect signals and slots
+        self.experiments = Experiments(self.tcp_ip, self.tcp_port, self.version_number)
         self.experiment_thread = QThread()
         self.experiments.moveToThread(self.experiment_thread)
 
@@ -112,33 +136,86 @@ class AppWindow(QMainWindow):
         self.max_std_dev = 2
         self.view_index = 0
         self.experiment_running = False
+        self.process = QProcess(self)
+        
+        # Read the config file
+        try:
+            with open(self.scantelligent_folder + "\\config.yml", "r") as file:
+                config = yaml.safe_load(file)
+                try:
+                    scanalyzer_path = config["scanalyzer_path"]
+                except Exception as e:
+                    print("Error: could not link to Scanalyzer")
+                    scanalyzer_path = ""
+                    self.scanalyzer_button.setEnabled(False)
+                
+                try:
+                    nanonis_settings = config["nanonis"]
+                    tcp_ip = nanonis_settings.get("tcp_ip", "127.0.0.1")
+                    tcp_port = nanonis_settings.get("tcp_port", 6501)
+                    version_number = nanonis_settings.get("version_number", 13520)
+                except Exception as e:
+                    print("Error: could not retrieve the Nanonis TCP settings.")
+        except Exception as e:
+            print(f"Error: problem loading config.yaml: {e}")
+        self.tcp_ip = tcp_ip
+        self.tcp_port = tcp_port
+        self.version_number = version_number
+        self.scanalyzer_path = scanalyzer_path
    
     def draw_buttons(self):
 
         def draw_connections_group():
-            # Connections group
-            connections_box = QGroupBox("Connections (push to check)")
+            connections_box = QGroupBox("Connections (push to check/refresh)")
             connections_layout = QGridLayout()
-            [self.nanonis_online_button, self.tip_status_button, self.mla_online_button, self.oscillation_on_button, self.camera_online_button, self.view_swap_button] = [
-                QPushButton("Nanonis: offline"), QPushButton("Tip status: withdrawn"), QPushButton("MLA: offline"), QPushButton("MLA oscillation: off"), QPushButton("Camera: offline"), QPushButton("Active view: scan")
+            connections_layout.setSpacing(1)
+
+            [self.scanalyzer_button, self.exit_button, self.nanonis_online_button, self.tip_status_button, self.mla_online_button, self.oscillation_on_button, self.camera_online_button, self.view_swap_button] = [
+                QPushButton("Scanalyzer: open"), QPushButton("Exit Scantelligent"), QPushButton("Nanonis: offline"), QPushButton("Tip status: withdrawn"),
+                QPushButton("MLA: offline"), QPushButton("MLA oscillation: off"), QPushButton("Camera: offline"), QPushButton("Active view: scan")
                 ]
             self.nanonis_online_button.setStyleSheet("background-color: darkred;")
             self.mla_online_button.setStyleSheet("background-color: darkred;")
             
-            connections_layout.addWidget(self.nanonis_online_button, 0, 0)
-            connections_layout.addWidget(self.tip_status_button, 0, 1)
-            connections_layout.addWidget(self.mla_online_button, 1, 0)
-            connections_layout.addWidget(self.oscillation_on_button, 1, 1)
-            connections_layout.addWidget(self.camera_online_button, 2, 0)
-            connections_layout.addWidget(self.view_swap_button, 2, 1)
+            connections_layout.addWidget(self.scanalyzer_button, 0, 0)
+            connections_layout.addWidget(self.exit_button, 0, 1)
+            connections_layout.addWidget(self.nanonis_online_button, 1, 0)
+            connections_layout.addWidget(self.tip_status_button, 1, 1)
+            connections_layout.addWidget(self.mla_online_button, 2, 0)
+            connections_layout.addWidget(self.oscillation_on_button, 2, 1)
+            connections_layout.addWidget(self.camera_online_button, 3, 0)
+            connections_layout.addWidget(self.view_swap_button, 3, 1)
             connections_box.setLayout(connections_layout)
         
             return connections_box
+
+        def draw_parameters_group():
+            parameters_group = QGroupBox("Scan parameters")
+            parameters_layout = QGridLayout()
+            parameters_layout.setSpacing(1)
+
+            [self.nanonis_bias_box, self.swap_bias_button, self.mla_bias_box, self.I_fb_box, self.p_gain_box, self.t_const_box] = self.parameter_boxes = [
+                QLineEdit(), QPushButton("<swap>"), QLineEdit(), QLineEdit(), QLineEdit(), QLineEdit()
+                ]
+            [self.nanonis_bias_button, self.mla_bias_button, self.I_fb_button, self.p_gain_button, self.I_gain_button] = self.parameter_buttons = [
+                QPushButton("V_Nanonis"), QPushButton("V_MLA"), QPushButton("I_fb"), QPushButton("p_gain"), QPushButton("I_gain")
+                ]
+            
+            bias_box_layout = QHBoxLayout()
+            [bias_box_layout.addWidget(box) for box in self.parameter_boxes[:3]]
+            parameters_layout.addLayout(bias_box_layout, 0, 0, 1, 2)
+
+            [parameters_layout.addWidget(self.parameter_boxes[i], 0, i - 1) for i in range(2, len(self.parameter_boxes))]
+            [parameters_layout.addWidget(self.parameter_buttons[i], 1, i) for i in range(len(self.parameter_buttons))]
+            parameters_group.setLayout(parameters_layout)
+
+            return parameters_group
 
         def draw_coarse_motion_group():
             # Coarse motion group
             coarse_motion_group = QGroupBox("Coarse motion (arrow buttons combine checked actions)")
             coarse_motion_layout = QHBoxLayout()
+            coarse_motion_layout.setSpacing(1)
             
             # Coarse actions        
             coarse_actions_layout = QGridLayout()
@@ -201,6 +278,7 @@ class AppWindow(QMainWindow):
         def draw_experiments_group():
             experiments_group = QGroupBox("Experiments")
             experiments_layout = QGridLayout()
+            experiments_layout.setSpacing(1)
 
             self.experiment_box = QComboBox()
             self.experiment_box.addItems(["Grid sampling", "Simple scan"])
@@ -236,7 +314,7 @@ class AppWindow(QMainWindow):
             # Group them for exclusive selection
             self.bg_button_group = QButtonGroup(self)
             [self.bg_button_group.addButton(button) for button in background_buttons]
-            
+            """
             # Set default according to self.background_subtraction
             if self.background_subtraction == "plane":
                 self.bg_plane_radio.setChecked(True)
@@ -246,7 +324,7 @@ class AppWindow(QMainWindow):
                 self.bg_linewise_radio.setChecked(True)
             else:
                 self.bg_none_radio.setChecked(True)
-            
+            """
             # Add radio buttons to the layout
             bg_layout.addWidget(self.bg_none_radio, 0, 0)
             bg_layout.addWidget(self.bg_plane_radio, 0, 1)
@@ -311,12 +389,12 @@ class AppWindow(QMainWindow):
             [box.setEnabled(False) for box in [self.min_range_box, self.max_range_box]]
 
             [self.min_percentile_box, self.min_percentile_set, self.set_percentile_button, self.max_percentile_set, self.max_percentile_box] = percentile_boxes = [QLineEdit(), QRadioButton(), QPushButton("by peRcentiles"), QRadioButton(), QLineEdit()]
-            self.min_percentile_box.setText(str(self.min_percentile))
-            self.max_percentile_box.setText(str(self.max_percentile))
+            # self.min_percentile_box.setText(str(self.min_percentile))
+            # self.max_percentile_box.setText(str(self.max_percentile))
 
             [self.min_std_dev_box, self.min_std_dev_set, self.set_std_dev_button, self.max_std_dev_set, self.max_std_dev_box] = std_dev_boxes = [QLineEdit(), QRadioButton(), QPushButton("by standard deViations"), QRadioButton(), QLineEdit()]
-            self.min_std_dev_box.setText(str(self.min_std_dev))
-            self.max_std_dev_box.setText(str(self.max_std_dev))
+            # self.min_std_dev_box.setText(str(self.min_std_dev))
+            # self.max_std_dev_box.setText(str(self.max_std_dev))
 
             [self.min_abs_val_box, self.min_abs_val_set, self.set_abs_val_button, self.max_abs_val_set, self.max_abs_val_box] = abs_val_boxes = [QLineEdit(), QRadioButton(), QPushButton("by Absolute values"), QRadioButton(), QLineEdit()]
             self.min_abs_val_box.setText("0")
@@ -338,19 +416,6 @@ class AppWindow(QMainWindow):
 
             return im_proc_group
 
-        def draw_miscellaneous_group():
-            misc_group = QGroupBox("Miscellaneous")
-            misc_layout = QVBoxLayout()
-            self.scanalyzer_button = QPushButton("Launch Scanalyzer")
-            self.exit_button = QPushButton("Exit Scantelligent")
-
-            misc_layout.addWidget(self.scanalyzer_button)
-            misc_layout.addWidget(self.exit_button)
-
-            misc_group.setLayout(misc_layout)
-
-            return misc_group
-
         # To be deprecated
         def draw_camera_group():
             # Camera buttons (to be deprecated)
@@ -371,7 +436,7 @@ class AppWindow(QMainWindow):
         button_layout = QVBoxLayout()
         button_layout.setSpacing(1)
         button_layout.setContentsMargins(4, 4, 4, 4)
-        [button_layout.addWidget(group) for group in [draw_connections_group(), draw_coarse_motion_group(), draw_experiments_group(), draw_image_processing_group(), draw_miscellaneous_group(), draw_camera_group()]]
+        [button_layout.addWidget(group) for group in [draw_connections_group(), draw_coarse_motion_group(), draw_parameters_group(), draw_experiments_group(), draw_image_processing_group(), draw_camera_group()]]
         button_layout.addStretch(1) # Add a stretch at the end to push buttons up
 
         return button_layout
@@ -393,6 +458,9 @@ class AppWindow(QMainWindow):
         self.s_button.clicked.connect(lambda: self.on_coarse_move(direction = "S", horizontal_steps = self.horizontal_steps))
         self.se_button.clicked.connect(lambda: self.on_coarse_move(direction = "SE", horizontal_steps = self.horizontal_steps))
     
+        # Scan parameters group
+        self.nanonis_bias_button.clicked.connect(self.on_bias_change)
+
         # Experiments group
         self.start_stop_button.clicked.connect(self.start_stop_experiment)
 
@@ -404,39 +472,54 @@ class AppWindow(QMainWindow):
         self.camera_start_button.clicked.connect(self.start_camera)
         self.camera_stop_button.clicked.connect(self.stop_camera)
 
+    def logprint(self, message, timestamp: bool = True):
+        current_time = datetime.now().strftime("%H:%M:%S")
+        if timestamp: timestamped_message = current_time + f">>  {message}"
+        else: timestamped_message = f"            {message}"
+        print(timestamped_message, end = "")
+
+    def append_to_console(self, text):
+        self.console_output.append(text)
+
 
 
     # Check TCP_IP connections
     def connect_nanonis(self):
+        self.logprint("Connecting to Nanonis")
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)
-            sock.connect((TCP_IP, TCP_PORT))
+            sock.connect((self.tcp_ip, self.tcp_port))
             sock.close()
             sleep(.05) # Short delay before requesting the tip status
             self.nanonis_online = True
 
             tip_status = self.helper_functions.tip()
             if tip_status == False:
-                print("Error retrieving the tip status.")
+                self.logprint("Error retrieving the tip status.")
                 self.nanonis_online = False
             else:
                 self.tip_status = tip_status
             
-            session_path = self.helper_functions.get_session_path()
-            if session_path == False:
-                print("Error retrieving the session path.")
+            parameters = self.helper_functions.get_parameters()
+            if parameters == False:
+                self.logprint("Error retrieving the scan parameters.")
                 self.nanonis_online = False
             else:
-                self.session_path = session_path
-
+                self.parameters = parameters
+                self.session_path = parameters.session_path
+    
         except socket.timeout:
+            self.nanonis_online = False
+        except Exception:
             self.nanonis_online = False
         
         finally:
+            if self.nanonis_online: self.logprint("Success!")
+            else: self.logprint("Fail!")
             self.update_buttons()
 
-    # Enable or disable the buttons according to the available hardware connections
+    # Enable or disable the buttons according to the available hardware connections and parameters
     def update_buttons(self):
         if self.nanonis_online:
             self.nanonis_online_button.setText("Nanonis: online")
@@ -444,19 +527,21 @@ class AppWindow(QMainWindow):
             
             [button.setEnabled(True) for button in self.action_buttons]
             [button.setEnabled(True) for button in self.arrow_buttons]
+            [button.setEnabled(True) for button in self.parameter_buttons]
         else:
             self.nanonis_online_button.setText("Nanonis: offline")
             self.nanonis_online_button.setStyleSheet("background-color: darkred;")
             
             [button.setEnabled(False) for button in self.action_buttons]
             [button.setEnabled(False) for button in self.arrow_buttons]
+            [button.setEnabled(False) for button in self.parameter_buttons]
         
+        # if not hasattr(self, "tip_status"):
+        #    self.connect_nanonis()
         if not hasattr(self, "tip_status"):
-            self.connect_nanonis()
-        if not hasattr(self, "tip_status"):
-            print("Error: tip status unknown.")
+            self.logprint("Error: tip status unknown.")
             return False
-        
+
         if self.tip_status.withdrawn:
             self.tip_status_button.setText("Tip status: withdrawn")
             self.tip_status_button.setStyleSheet("background-color: darkred;")
@@ -471,20 +556,33 @@ class AppWindow(QMainWindow):
             else:
                 self.tip_status_button.setText("Tip status: constant height")
                 self.tip_status_button.setStyleSheet("background-color: darkorange;")
-                self.withdraw_button.setText("Land")
-                self.withdraw_checkbox.setEnabled(False)
+                self.withdraw_button.setText("Withdraw,")
+                self.withdraw_checkbox.setEnabled(True)
 
-    # Withdraw function
+        # if not hasattr(self, "scan_parameters"):
+        #    self.connect_nanonis()
+        if not hasattr(self, "parameters"):
+            self.logprint("Error: parameters could not be retrieved.")
+            return False
+    
+        self.nanonis_bias_box.setText(f"{np.round(self.parameters.bias, 3)}")
+        self.I_fb_box.setText(f"{np.round(self.parameters.I_fb * 1E12, 3)}") # In pA
+        self.p_gain_box.setText(f"{np.round(self.parameters.p_gain * 1E12, 3)}") # In pm
+        self.t_const_box.setText(f"{np.round(self.parameters.t_const * 1E6, 3)}") # In us
+
+    # Simple Nanonis functions
     def toggle_withdraw(self):
         if not hasattr(self, "tip_status"):
             self.connect_nanonis()
         if not hasattr(self, "tip_status"):
-            print("Error: tip status unknown.")
+            self.logprint("Error: tip status unknown.")
             return False
         
         if self.tip_status.withdrawn:
+            self.logprint("tip_status = helper_functions.tip(feedback = True)")
             self.tip_status = self.helper_functions.tip(feedback = True)
         else:
+            self.logprint("tip_status = helper_functions.tip(withdraw = True)")
             self.tip_status = self.helper_functions.tip(withdraw = True)
         
         self.update_buttons()
@@ -498,12 +596,25 @@ class AppWindow(QMainWindow):
             return False
         
         if self.tip_status.withdrawn: # Land if withdrawn
+            self.logprint("tip_status = helper_functions.tip(feedback = True)")
             self.tip_status = self.helper_functions.tip(feedback = True)
         else: # Toggle the feedback
+            self.logprint("tip_status = helper_functions.tip(feedback = not tip_status.feedback)")
             self.tip_status = self.helper_functions.tip(feedback = not self.tip_status.feedback)
         
         self.update_buttons()
         return True
+
+    def on_bias_change(self, target: str = "Nanonis"):
+        V_new = float(self.nanonis_bias_box.text())
+        
+        self.logprint(f"V_old = helper_functions.change_bias({V_new})")
+        V_old = self.helper_functions.change_bias(V_new)
+        
+        if type(V_old) == bool:
+            return False
+        else:
+            return True
 
     # Experiments (with QThreading)
     def start_stop_experiment(self):
@@ -518,7 +629,7 @@ class AppWindow(QMainWindow):
         if not self.nanonis_online:
             self.check_nanonis_connection()
             if not self.nanonis_online:
-                print("Error! Could not establish a connection to Nanonis")
+                self.logprint("Error! Could not establish a connection to Nanonis")
                 self.update_buttons()
                 return False
 
@@ -527,12 +638,14 @@ class AppWindow(QMainWindow):
         
         # Grid sampling
         if experiment == "Grid sampling":
+
+            self.logprint(f"Starting experiment {experiment}")
             
             # Read the current grid from Nanonis and set the pyqtgraph widget size accordingly
-            self.grid = self.experiments.get_grid()
+            self.grid = self.helper_functions.get_grid()
             
             if type(self.grid) == bool:
-                print("Error! Could not determine the grid.")
+                self.logprint("Error! Could not determine the grid.")
                 return False
             
             [self.x_grid, self.y_grid] = [self.grid.x_grid, self.grid.y_grid]
@@ -544,21 +657,20 @@ class AppWindow(QMainWindow):
             except:
                 pass
             # self.request_start.connect(self.experiments.sample_grid)
-            self.request_start.connect(self.experiments.active_measurement_loop)
+            self.request_start.connect(self.experiments.sample_grid)
 
             # Start the experiment
             self.experiment_running = True
             self.experiment_status.setText("Running (0 %)")
             self.update_start_stop_icon()
             
-            self.data_array = np.empty((points, 6), dtype = float)
+            self.data_array = np.empty((points, 3), dtype = float)
             self.current_index = 0
-            # Emit the grid and points; the call will be queued into the
-            # Experiments object's thread and run there.
-            self.request_start.emit([2, 1.9, 1.8], None, None, 12, 0)
+            self.request_start.emit(self.grid, points)
+            # self.request_start.emit([2, 1.9, 1.8], None, None, 12, 0)
 
         else:
-            print("Sorry, I don't know this experiment yet.")
+            self.logprint("Sorry, I don't know this experiment yet.")
             return False
 
     def update(self, data_chunk):
@@ -578,10 +690,6 @@ class AppWindow(QMainWindow):
         self.image_view.setImage(processed_z_grid, autoRange = True)
 
     def update_start_stop_icon(self):
-        """Set the start/stop button icon according to the experiment state.
-
-        Uses the platform standard media Play/Stop icons when available.
-        """
         try:
             if self.experiment_running:
                 icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
@@ -600,16 +708,6 @@ class AppWindow(QMainWindow):
         # Update the start/stop icon back to the start (play) icon
         self.update_start_stop_icon()
         return True
-
-    def closeEvent(self, event):
-        """Ensure thread is stopped when the main window is closed."""
-        self.experiments.stop() # Set stop flag
-        self.experiment_thread.quit() # Quit the thread's event loop
-        self.experiment_thread.wait() # Wait for the thread to actually finish
-        event.accept()
-        return True
-
-
 
     # Manage the camera thread
     def update_image_display(self, frame):
@@ -714,12 +812,12 @@ class AppWindow(QMainWindow):
         if hasattr(self, "scanalyzer_path"):
             try:
                 python_executable = sys.executable
-                print(f"Starting script: {python_executable} {self.scanalyzer_path}")
-                self.process.start(python_executable, [self.scanalyzer_path])                
+                self.logprint(f"Starting script: {python_executable} {self.scanalyzer_path}")
+                self.process.start(python_executable, [self.scanalyzer_path])
             except:
-                print("Failed to load Scanalyzer")
+                self.logprint("Failed to load Scanalyzer")
         else:
-            print("Scanalyzer path unknown")
+            self.logprint("Scanalyzer path unknown")
 
 
 
@@ -727,7 +825,7 @@ class AppWindow(QMainWindow):
     def on_exit(self):
         #if self.is_camera_running:
         #    self.stop_camera()
-        print("Thank you for using Scantelligent!")
+        self.logprint("Thank you for using Scantelligent!")
         QApplication.instance().quit()
 
     def closeEvent(self, event):
@@ -735,7 +833,12 @@ class AppWindow(QMainWindow):
         #if self.is_camera_running:
         #    self.stop_camera()
         #event.accept()
-        pass
+        self.logprint("Thank you for using Scantelligent!")
+        self.experiments.stop() # Set stop flag
+        self.experiment_thread.quit() # Quit the thread's event loop
+        self.experiment_thread.wait() # Wait for the thread to actually finish
+        event.accept()
+        return True
 
 
 

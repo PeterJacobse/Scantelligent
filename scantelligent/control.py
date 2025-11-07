@@ -38,7 +38,15 @@ class HelperFunctions:
         self.tcp_port = tcp_port
         self.version_number = version_number
 
+    def logprint(self, message, timestamp: bool = True):
+        current_time = datetime.now().strftime("%H:%M:%S")
+        if timestamp: timestamped_message = current_time + f">>  {message}"
+        else: timestamped_message = f"            {message}"
+        print(timestamped_message, end = "")
+
     def clean_lists(self, V_list, x_list, y_list, V_limit = 10, x_limit = 1E-7, y_limit = 1E-7):
+        self.logprint("[V_list, x_list, y_list, iterations] = helper_functions.clean_lists(V_list, x_list, y_list)")
+
         if type(V_list) == int or type(V_list) == float: V_list = [V_list]
         if type(x_list) == int or type(x_list) == float: x_list = [x_list]
         if type(y_list) == int or type(y_list) == float: y_list = [y_list]
@@ -76,26 +84,27 @@ class HelperFunctions:
             n_y = iterations
         
         # Check if all elements are within the limits
-        print(x_list)
         if n_V > -1:
             for element in V_list:
                 if np.abs(element) > V_limit:
-                    print(f"Error! Elements in V_list exceed the limits (-{V_limit} < {element} < {V_limit} = False)")
+                    self.logprint(f"Error! Elements in V_list exceed the limits (-{V_limit} < {element} < {V_limit} = False)")
                     return False
         if n_x > -1:
             for element in x_list:
                 if np.abs(element) > x_limit:
-                    print(f"Error! Elements in x_list exceed the limits (-{x_limit} < {element} < {x_limit} = False)")
+                    self.logprint(f"Error! Elements in x_list exceed the limits (-{x_limit} < {element} < {x_limit} = False)")
                     return False
         if n_y > -1:
             for element in y_list:
                 if np.abs(element) > y_limit:
-                    print(f"Error! Elements in x_list exceed the limits (-{y_limit} < {element} < {y_limit} = False)")
+                    self.logprint(f"Error! Elements in x_list exceed the limits (-{y_limit} < {element} < {y_limit} = False)")
                     return False
 
         return [V_list, x_list, y_list, iterations]
 
     def get_grid(self): # Retrieve the grid data
+        self.logprint("grid = helper_functions.get_grid()")
+
         try:
             NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
             try:
@@ -184,6 +193,7 @@ class HelperFunctions:
                 #fb_number = zcontroller.StatusGet()
                 #if fb_number == 2: feedback = True
                 #else: feedback = False
+                sleep(.1)
 
                 tip_status = SimpleNamespace()
                 setattr(tip_status, "height", z_pos)
@@ -203,16 +213,79 @@ class HelperFunctions:
             print(f"{e}")
             return False
 
-    def get_session_path(self):
+    def get_parameters(self):
         try:
-            sleep(.2)
-            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
+            sleep(.1)
+            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
             try:
                 util = Util(NTCP)
+                zcontroller = ZController(NTCP)
+                bias = Bias(NTCP)
+                
                 session_path = util.SessionPathGet() # Read the session path
+                I_fb = zcontroller.SetpntGet()
+                p_gain, t_const, i_gain = zcontroller.GainGet()
+                V = bias.Get()
+                sleep(.1)
+                
+                parameters = SimpleNamespace()
+                setattr(parameters, "bias", V)
+                setattr(parameters, "I_fb", I_fb)
+                setattr(parameters, "p_gain", p_gain)
+                setattr(parameters, "t_const", t_const)
+                setattr(parameters, "i_gain", i_gain)
+                setattr(parameters, "session_path", session_path)
+
+                return parameters
+
+            except Exception as e:
+                NTCP.close_connection()
+                sleep(.1)
+                print(f"Error: {e}")
+                return False
+
+        except Exception as e:
+            print(f"{e}")
+            return False
+
+    def change_bias(self, V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, V_limits = 10):
+        if type(V) != float and type(V) != int:
+            self.logprint("Wrong bias supplied")
+            return False
+        if type(V_limits) == float or type(V_limits) == int:
+            if np.abs(V) > np.abs(V_limits):
+                self.logprint("Bias outside of limits")
+                return False
+
+        try:
+            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
+            try:
+                bias = Bias(NTCP)
+                zcontroller = ZController(NTCP)
+                
+                V0 = bias.Get() # Read data from Nanonis
+                feedback = zcontroller.OnOffGet()
+                tip_height = zcontroller.ZPosGet()
+                
+                polarity_difference = int(np.abs(np.sign(V) - np.sign(V0)) / 2) # Calculate the polarity and voltage slew values
+                if V > V0: delta_V = dV
+                else: delta_V = -dV
+                slew = np.arange(V0, V, delta_V)
+
+                if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
+                    zcontroller.OnOffSet(False)
+                    sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
+                    zcontroller.ZPosSet(tip_height + dz)
+
+                for V_t in slew: # Perform the slew to the new bias voltage
+                    bias.Set(V_t)
+                    sleep(dt)
+                bias.Set(V) # Final bias value
+            
+                if bool(feedback) and bool(polarity_difference): zcontroller.OnOffSet(True) # Turn the feedback back on
                 sleep(.1)
 
-                return session_path
+                return V0
 
             except Exception as e:
                 NTCP.close_connection()
@@ -330,12 +403,13 @@ class Experiments(QObject):
         self.tcp_port = tcp_port
         self.version_number = version_number
         self._running = False
+        self.helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
 
     @pyqtSlot()
     def active_measurement_loop(self, V_list = None, x_list = None, y_list = None, chunk_size = 10, delay = 0):
         # Determine what biases and locations to iterate over
-        helper = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
-        lists = helper.clean_lists(V_list, x_list, y_list)
+        helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
+        lists = helper_functions.clean_lists(V_list, x_list, y_list)
         if type(lists) == list: # clean_lists will return False if a problem is found in the supplied data
             [V_list, x_list, y_list, iterations] = lists
         else:
@@ -424,8 +498,8 @@ class Experiments(QObject):
     @pyqtSlot()
     def grid_scan(self, direction: str = "up", chunk_size = 10, delay = 0):
         try:
-            helper = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_numbe)
-            grid = helper.get_grid()
+            helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_numbe)
+            grid = helper_functions.get_grid()
             [x_grid, y_grid] = [grid.x_grid, grid.y_grid]
             [pixels_x, pixels_y] = grid.pixels
             match direction:
@@ -440,6 +514,7 @@ class Experiments(QObject):
     @pyqtSlot(object, int)
     def sample_grid(self, grid, points):
         try:
+            self.helper_functions.logprint(f"experiments.sample_grid(grid, points = {points})")
             # Ensure the running flag is True at the start of each new
             # measurement invocation. This allows aborting (which sets
             # _running = False) to be followed by starting a new experiment.
@@ -509,6 +584,7 @@ class Experiments(QObject):
                 NTCP.close_connection() # Close the TCP connection
                 sleep(.05)
                 self.finished.emit()
+                self.helper_functions.logprint("Experiment finished")
 
                 return True
 
@@ -608,43 +684,3 @@ def scan_control(tcp_ip, tcp_port, version_number, action: str = "stop", scan_di
     #    if monitor: # Continue monitoring the progress of the scan until it is done
     #        txyz = tip_tracker(sampling_time = sampling_time, velocity_threshold = velocity_threshold, timeout = 100000, exit_when_still = True, N_no_motion = 4, verbose = verbose, monitor_roughness = False)
 
-def change_bias(V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, verbose: bool = True):
-    #logfile = get_session_path() + "\\logfile.txt"
-    
-    if V == None:
-        #if verbose: logprint("No new bias set. Returning.", logfile = logfile)
-        return
-    
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        bias = Bias(NTCP)
-        zcontroller = ZController(NTCP)
-        
-        V_old = bias.Get() # Read data from Nanonis
-        feedback = zcontroller.OnOffGet()
-        tip_height = zcontroller.ZPosGet()
-        
-        polarity_difference = int(np.abs(np.sign(V) - np.sign(V_old)) / 2) # Calculate the polarity and voltage slew values
-        if V > V_old: delta_V = dV
-        else: delta_V = -dV
-        slew = np.arange(V_old, V, delta_V)
-
-        if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
-            zcontroller.OnOffSet(False)
-            sleep(.05) # If the tip height is set too quickly, the controller won't be off yet
-            zcontroller.ZPosSet(tip_height + dz)
-            #if verbose: logprint("Bias polarity change detected while in feedback. Tip retracted by = " + str(round(dz * 1E9, 3)) + " nm during slew.", logfile = logfile)
-
-        for V_t in slew: # Perform the slew to the new bias voltage
-            bias.Set(V_t)
-            sleep(dt)
-        bias.Set(V)
-        
-        if bool(feedback) and bool(polarity_difference): zcontroller.OnOffSet(True) # Turn the feedback back on
-        
-        #if verbose: logprint("Bias changed from V = " + str(round(V_old, 3)) + " V to V = " + str(round(V, 3)) + " V.", logfile = logfile)
-
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
-        return V_old
