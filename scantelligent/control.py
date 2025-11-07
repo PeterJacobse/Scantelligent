@@ -24,11 +24,65 @@ from datetime import datetime
 from time import sleep, time
 import traceback
 
-# Establish a TCP/IP connection
-#TCP_IP = "192.168.236.1"                           # Local host
-TCP_IP = "127.0.0.1"
-TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
-version_number = 13520
+
+
+class CameraWorker(QObject):
+    """
+    Worker to handle the time-consuming cv2.VideoCapture loop.
+    It runs in a separate QThread and emits frames as NumPy arrays.
+    """
+    # Signal to send the processed RGB NumPy frame data back to the GUI
+    frameCaptured = pyqtSignal(np.ndarray)  
+    # Signal to indicate that the capture loop has finished
+    finished = pyqtSignal()
+    
+    def __init__(self, camera_index=0):
+        super().__init__()
+        self.camera_index = camera_index
+        self._running = False
+        self.cap = None
+
+    def start_capture(self):
+        """Initializes VideoCapture and starts the frame-reading loop."""
+        if self._running:
+            return
+
+        self._running = True
+        # Initialize VideoCapture
+        self.cap = cv2.VideoCapture(self.camera_index)
+        
+        if not self.cap.isOpened():
+            print(f"Error: Could not open camera {self.camera_index}. Check connections.")
+            self._running = False
+            self.finished.emit()
+            return
+            
+        # Optimization: Set a reasonable resolution
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            
+        # Main video-reading loop controlled by the _running flag
+        while self._running:
+            ret, frame = self.cap.read()
+            if ret:
+                # IMPORTANT: Convert BGR (OpenCV default) to RGB 
+                # as pyqtgraph expects RGB or Grayscale data.
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self.frameCaptured.emit(rgb_frame)
+            else:
+                # Exit loop if frame read fails (e.g., camera unplugged)
+                print("Warning: Failed to read frame from camera.")
+                break 
+                
+        # Cleanup code runs when the while loop exits
+        if self.cap:
+             self.cap.release()
+        self._running = False
+        self.finished.emit() # Notify the main thread that the work is done
+
+    def stop_capture(self):
+        """Sets the flag to stop the capture loop cleanly."""
+        self._running = False
 
 
 
@@ -300,76 +354,18 @@ class HelperFunctions:
 
 
 class WorkerSignals(QObject):
-    data = pyqtSignal(np.ndarray)
+    result = pyqtSignal(np.ndarray)
     finished = pyqtSignal()
     interrupted = pyqtSignal()
-
-
-
-class CameraWorker(QObject):
-    """
-    Worker to handle the time-consuming cv2.VideoCapture loop.
-    It runs in a separate QThread and emits frames as NumPy arrays.
-    """
-    # Signal to send the processed RGB NumPy frame data back to the GUI
-    frameCaptured = pyqtSignal(np.ndarray)  
-    # Signal to indicate that the capture loop has finished
-    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    progress = pyqtSignal(str) # Custom signal to report progress/status
     
-    def __init__(self, camera_index=0):
-        super().__init__()
-        self.camera_index = camera_index
-        self._running = False
-        self.cap = None
-
-    def start_capture(self):
-        """Initializes VideoCapture and starts the frame-reading loop."""
-        if self._running:
-            return
-
-        self._running = True
-        # Initialize VideoCapture
-        self.cap = cv2.VideoCapture(self.camera_index)
-        
-        if not self.cap.isOpened():
-            print(f"Error: Could not open camera {self.camera_index}. Check connections.")
-            self._running = False
-            self.finished.emit()
-            return
-            
-        # Optimization: Set a reasonable resolution
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            
-        # Main video-reading loop controlled by the _running flag
-        while self._running:
-            ret, frame = self.cap.read()
-            if ret:
-                # IMPORTANT: Convert BGR (OpenCV default) to RGB 
-                # as pyqtgraph expects RGB or Grayscale data.
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                self.frameCaptured.emit(rgb_frame)
-            else:
-                # Exit loop if frame read fails (e.g., camera unplugged)
-                print("Warning: Failed to read frame from camera.")
-                break 
-                
-        # Cleanup code runs when the while loop exits
-        if self.cap:
-             self.cap.release()
-        self._running = False
-        self.finished.emit() # Notify the main thread that the work is done
-
-    def stop_capture(self):
-        """Sets the flag to stop the capture loop cleanly."""
-        self._running = False
-
 
 
 class MeasurementWorker(QRunnable):
-    def __init__(self, measurement_func, *args, **kwargs):
+    def __init__(self, experiment_func, *args, **kwargs):
         super().__init__()
-        self.measurement_func = measurement_func
+        self.experiment_func = experiment_func
         self.args = args,
         self.kwargs = kwargs,
         self.signals = WorkerSignals()
@@ -381,7 +377,7 @@ class MeasurementWorker(QRunnable):
         """
         try:
             # Pass the progress signal to the measurement function
-            result = self.measurement_func(self.signals.progress, *self.args, **self.kwargs)
+            result = self.experiment_func(self.signals.progress, *self.args, **self.kwargs)
             self.signals.result.emit(result)
         except:
             traceback.print_exc()
@@ -404,12 +400,31 @@ class Experiments(QObject):
         self.version_number = version_number
         self._running = False
         self.helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
+        self.logprint = self.helper_functions.logprint
+
+    def simple_scan(self, direction: str = "up", chunk_size: int = 10, delay: int = 10):
+        try:
+            grid = self.helper_functions.get_grid()
+            [x_grid, y_grid] = [grid.x_grid, grid.y_grid]
+            [pixels_x, pixels_y] = grid.pixels
+            match direction:
+                case "up":
+                    x_list = x_grid.ravel()
+                    y_list = y_grid.ravel()
+                case _:
+                    self.logprint("Unknown scan direction")
+                    return False
+        except Exception as e:
+            self.loprint(f"Error: {e}")
+            return False
+         
+        return [V_list, x_list, y_list, chunk_size, delay]
 
     @pyqtSlot()
     def active_measurement_loop(self, V_list = None, x_list = None, y_list = None, chunk_size = 10, delay = 0):
+
         # Determine what biases and locations to iterate over
-        helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
-        lists = helper_functions.clean_lists(V_list, x_list, y_list)
+        lists = self.helper_functions.clean_lists(V_list, x_list, y_list)
         if type(lists) == list: # clean_lists will return False if a problem is found in the supplied data
             [V_list, x_list, y_list, iterations] = lists
         else:
@@ -495,25 +510,10 @@ class Experiments(QObject):
             print(f"{e}. Measurement failed.")
             return False
 
-    @pyqtSlot()
-    def grid_scan(self, direction: str = "up", chunk_size = 10, delay = 0):
+    @pyqtSlot(int, int)
+    def sample_grid(self, points, chunk_size):
         try:
-            helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_numbe)
-            grid = helper_functions.get_grid()
-            [x_grid, y_grid] = [grid.x_grid, grid.y_grid]
-            [pixels_x, pixels_y] = grid.pixels
-            match direction:
-                case "up":
-                    x_list = x_grid.ravel()
-                    y_list = y_grid.ravel()
-
-        
-        except Exception as e:
-            print("Error: {e}. Measurement failed.")
-
-    @pyqtSlot(object, int)
-    def sample_grid(self, grid, points):
-        try:
+            grid = self.helper_functions.get_grid()
             self.helper_functions.logprint(f"experiments.sample_grid(grid, points = {points})")
             # Ensure the running flag is True at the start of each new
             # measurement invocation. This allows aborting (which sets
@@ -523,25 +523,33 @@ class Experiments(QObject):
             [x_grid, y_grid] = [grid.x_grid, grid.y_grid]
             [pixels_x, pixels_y] = grid.pixels
             
+            self.logprint("I am starting the measurement")
             flat_index_list = np.arange(x_grid.size)
-            z_grid = np.zeros_like(x_grid)
-            x_list = []
-            y_list = []
-            z_list = []
-            chunk = 10
-            data_chunk = np.zeros((chunk, 3), dtype = float)
+            chunk = 100
+            data_chunk = np.zeros((chunk, 6), dtype = float)
 
             # Initiate the Nanonis TCP connection
             NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
             try:
                 # Initialize modules for measurement and control
-                folme = FolMe(NTCP)
-                zcontroller = ZController(NTCP)
+                t0 = time() # t
+                bias = Bias(NTCP) # V
+                folme = FolMe(NTCP) # x, y
+                zcontroller = ZController(NTCP) # z
+                current = Current(NTCP) # I
+
+                V0 = float(bias.Get())
+                [x0, y0] = folme.XYPosGet(Wait_for_newest_data = True)
+                z0 = float(zcontroller.ZPosGet())
+                I0 = float(current.Get())
+
+                [t, V, x, y, z, I] = [t0, V0, x0, y0, z0, I0]
 
                 # The first four data points are the grid corners
                 for iteration in range(4):
                     if not self._running:
                         break
+
                     match iteration:
                         case 0: [x_index, y_index] = [0, 0]
                         case 1: [x_index, y_index] = [pixels_x - 1, 0]
@@ -553,8 +561,10 @@ class Experiments(QObject):
                     folme.XYPosSet(x, y, Wait_end_of_move = True)
 
                     # Measure
+                    t = time() - t0
                     z = zcontroller.ZPosGet()
-                    data_chunk[iteration] = [x, y, z]
+                    I = current.Get()
+                    data_chunk[iteration] = [t, V, x, y, z, I]
 
                 # Measurement loop
                 for iteration in range(4, points):
@@ -563,7 +573,10 @@ class Experiments(QObject):
                         break
 
                     # Choose a random index and map it to the 2D x and y grids
-                    flat_index = np.random.choice(flat_index_list)
+                    # flat_index = np.random.choice(flat_index_list)
+                    if iteration % 2 == 0: flat_index = iteration
+                    else: flat_index = np.random.choice(flat_index_list)
+
                     flat_index_list[flat_index] += 1
                     x_index, y_index = np.unravel_index(flat_index, x_grid.shape)
                     [x, y] = [x_grid[x_index, y_index], y_grid[x_index, y_index]]
@@ -572,11 +585,11 @@ class Experiments(QObject):
                     folme.XYPosSet(x, y, Wait_end_of_move = True)
 
                     # Measure
+                    t = time() - t0
                     z = zcontroller.ZPosGet()
+                    I = current.Get()
 
-                    z_grid[x_index, y_index] = z
-
-                    data_chunk[modulo_iteration] = [x, y, z]
+                    data_chunk[modulo_iteration] = [t, V, x, y, z, I]
 
                     if iteration % chunk == chunk - 1:
                         self.data.emit(data_chunk) # Emit the data to Scantelligent
@@ -591,11 +604,11 @@ class Experiments(QObject):
             except Exception as e:
                 NTCP.close_connection()
                 sleep(.05)
-                print(f"Error: {e}")
+                print(f"Error: {e}. Experiment aborted.")
                 return False
 
         except Exception as e:
-            print(f"{e}")
+            print(f"Error: {e}. Experiment aborted.")
             return False
 
     def stop(self):
