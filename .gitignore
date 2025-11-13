@@ -1,1 +1,7 @@
+<<<<<<< HEAD
+.vscode/launch.json
+=======
 scantelligent_control.ipynb
+>>>>>>> 85d75e25cadd8b259c03297b9d1c3d856faf7bc4
+scantelligent/__pycache__/__init__.cpython-312.pyc
+scantelligent/__pycache__/control.cpython-312.pyc
