@@ -114,7 +114,7 @@ class AppWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        right_column = self.draw_right_column()
+        right_column = self.draw_buttons()
 
         # Combine nested layouts: image view and right column
         main_layout.addWidget(self.image_view, 3)
@@ -150,7 +150,7 @@ class AppWindow(QMainWindow):
 
 
     # Draw all the buttons    
-    def draw_right_column(self):
+    def draw_buttons(self):
         column_group = QVBoxLayout()
 
         # Connections group
@@ -266,6 +266,126 @@ class AppWindow(QMainWindow):
         column_group.addWidget(scan_control_box)
         
         # Image processing group
+        def draw_image_processing_group(): # Image processing group            
+            im_proc_group = QGroupBox("Image processing")
+            im_proc_layout = QVBoxLayout()
+            im_proc_layout.setSpacing(1)
+            
+            back_sub_label = QLabel("Background subtraction")
+            back_sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            im_proc_layout.addWidget(back_sub_label)
+            
+            # Background subtraction group
+            bg_layout = QGridLayout()
+            [self.bg_none_radio, self.bg_plane_radio, self.bg_inferred_radio, self.bg_linewise_radio] = background_buttons = [QRadioButton("none (0)"), QRadioButton("Plane"), QRadioButton("Inferred"), QRadioButton("lineWise")]
+            # Group them for exclusive selection
+            self.bg_button_group = QButtonGroup(self)
+            [self.bg_button_group.addButton(button) for button in background_buttons]
+            
+            # Set default according to self.background_subtraction
+            if self.background_subtraction == "plane":
+                self.bg_plane_radio.setChecked(True)
+            elif self.background_subtraction == "inferred":
+                self.bg_inferred_radio.setChecked(True)
+            elif self.background_subtraction == "linewise":
+                self.bg_linewise_radio.setChecked(True)
+            else:
+                self.bg_none_radio.setChecked(True)
+            
+            # Add radio buttons to the layout
+            bg_layout.addWidget(self.bg_none_radio, 0, 0)
+            bg_layout.addWidget(self.bg_plane_radio, 0, 1)
+            bg_layout.addWidget(self.bg_inferred_radio, 1, 0)
+            bg_layout.addWidget(self.bg_linewise_radio, 1, 1)
+            im_proc_layout.addLayout(bg_layout)
+
+            # Create the horizontal line separator
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)  # Set the shape to a horizontal line
+            line.setLineWidth(1) # Optional: Set the line width
+            im_proc_layout.addWidget(line) # Add the line to the QVBoxLayout
+
+
+
+            # Matrix operations
+            back_sub_label = QLabel("Matrix operations")
+            back_sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            im_proc_layout.addWidget(back_sub_label)
+
+            matrix_layout = QGridLayout()
+            matrix_layout.setSpacing(1)
+            [self.sobel_button, self.normal_button, self.laplace_button, self.gauss_button, self.fft_button, self.project_complex_box] = matrix_buttons = [QCheckBox("soBel (d/dx + i d/dy)"), QCheckBox("Normal_z"), QCheckBox("laplaCe (∇2)"), QCheckBox("Gaussian"), QCheckBox("Fft"), QComboBox()]
+            #self.derivative_button_group = QButtonGroup(self)
+            #[self.derivative_button_group.addButton(button) for button in [self.sobel_button, self.normal_button, self.laplace_button]]
+            self.project_complex_box.addItems(["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"])
+
+            gaussian_width_label = QLabel("width (nm):")
+            gaussian_width_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.gaussian_width_box = QLineEdit("1")
+            show_label = QLabel("sHow:")
+            show_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            matrix_layout.addWidget(self.sobel_button, 0, 0)
+            matrix_layout.addWidget(self.normal_button, 0, 1)
+            matrix_layout.addWidget(self.laplace_button, 0, 2)
+            matrix_layout.addWidget(self.gauss_button, 1, 0)
+            matrix_layout.addWidget(gaussian_width_label, 1, 1)
+            matrix_layout.addWidget(self.gaussian_width_box, 1, 2)
+            matrix_layout.addWidget(self.fft_button, 2, 0)
+            matrix_layout.addWidget(show_label, 2, 1)
+            matrix_layout.addWidget(self.project_complex_box, 2, 2)
+
+            im_proc_layout.addLayout(matrix_layout)
+
+            # Add another line
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setLineWidth(1)
+            im_proc_layout.addWidget(line)
+
+
+
+            # Histogram control group: put the statistics/info label here
+            limits_label = QLabel("Set limits (toggle using the - and = buttons)")
+            limits_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            im_proc_layout.addWidget(limits_label)
+
+            limits_layout = QGridLayout()
+            limits_layout.setSpacing(1)            
+            [self.min_range_box, self.min_range_set, self.full_scale_button, self.max_range_set, self.max_range_box] = range_boxes = [QLineEdit(), QRadioButton(), QPushButton("by fUll data range"), QRadioButton(), QLineEdit()]
+            [box.setEnabled(False) for box in [self.min_range_box, self.max_range_box]]
+
+            [self.min_percentile_box, self.min_percentile_set, self.set_percentile_button, self.max_percentile_set, self.max_percentile_box] = percentile_boxes = [QLineEdit(), QRadioButton(), QPushButton("by peRcentiles"), QRadioButton(), QLineEdit()]
+            self.min_percentile_box.setText(str(self.min_percentile))
+            self.max_percentile_box.setText(str(self.max_percentile))
+
+            [self.min_std_dev_box, self.min_std_dev_set, self.set_std_dev_button, self.max_std_dev_set, self.max_std_dev_box] = std_dev_boxes = [QLineEdit(), QRadioButton(), QPushButton("by standard deViations"), QRadioButton(), QLineEdit()]
+            self.min_std_dev_box.setText(str(self.min_std_dev))
+            self.max_std_dev_box.setText(str(self.max_std_dev))
+
+            [self.min_abs_val_box, self.min_abs_val_set, self.set_abs_val_button, self.max_abs_val_set, self.max_abs_val_box] = abs_val_boxes = [QLineEdit(), QRadioButton(), QPushButton("by Absolute values"), QRadioButton(), QLineEdit()]
+            self.min_abs_val_box.setText("0")
+            self.max_abs_val_box.setText("1")
+
+            [limits_layout.addWidget(range_boxes[index], 0, index) for index in range(len(range_boxes))]
+            [limits_layout.addWidget(percentile_boxes[index], 1, index) for index in range(len(percentile_boxes))]
+            [limits_layout.addWidget(std_dev_boxes[index], 2, index) for index in range(len(std_dev_boxes))]
+            [limits_layout.addWidget(abs_val_boxes[index], 3, index) for index in range(len(abs_val_boxes))]
+
+            # Min and max buttons are exclusive
+            self.min_button_group = QButtonGroup(self)
+            [self.min_button_group.addButton(button) for button in [self.min_range_set, self.min_percentile_set, self.min_std_dev_set, self.min_abs_val_set]]
+            self.max_button_group = QButtonGroup(self)
+            [self.max_button_group.addButton(button) for button in [self.max_range_set, self.max_percentile_set, self.max_std_dev_set, self.max_abs_val_set]]
+            
+            im_proc_layout.addLayout(limits_layout)
+            im_proc_group.setLayout(im_proc_layout)
+
+            return im_proc_group
+        
+        column_group.addWidget(draw_image_processing_group())
+        
+        """
         im_proc_group = QGroupBox("Image processing")
         im_proc_layout = QVBoxLayout()
         im_proc_layout.setSpacing(1)
@@ -393,7 +513,9 @@ class AppWindow(QMainWindow):
         im_proc_layout.addLayout(limits_layout)
 
         im_proc_group.setLayout(im_proc_layout)
-        column_group.addWidget(im_proc_group)
+        """
+        
+        #column_group.addWidget(im_proc_group)
         
         # Macro group
         macro_box = QGroupBox("Macros")
