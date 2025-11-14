@@ -1,7 +1,10 @@
+<<<<<<< HEAD
+=======
 nanonis:
  tcp_ip: "127.0.0.1"
  tcp_port: 6501
  version_number: 13520
 camera:
  argument: 0
+>>>>>>> 1c5014e3392d19fc4c054637caa6e4ff91fde6c1
 scanalyzer_path: C:\Scripts\Scanalyzer\Scanalyzer.py
