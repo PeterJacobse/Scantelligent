@@ -58,12 +58,12 @@ class AppWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget) # Main layout is horizontal
 
-        # --- Left Section: Graphic and Console (grouped vertically) ---
+        # Left Section: Graphic and Console (grouped vertically) ---
         left_v_container = QWidget()
         left_v_layout = QVBoxLayout(left_v_container)
         left_v_layout.setContentsMargins(0, 0, 0, 0) # Optional: remove inner margins
 
-        # 1a. Create the pyqtgraph PlotWidget (Top of left section)
+        # Create the pyqtgraph PlotWidget (Top of left section)
         self.image_view = pg.ImageView(view = pg.PlotItem())
         left_v_layout.addWidget(self.image_view, stretch = 4) 
 
@@ -72,11 +72,10 @@ class AppWindow(QMainWindow):
         self.console_output.setReadOnly(False)
         left_v_layout.addWidget(self.console_output, stretch = 1)
 
-        # Add the left container to the main horizontal layout
-        # The stretch factor here determines the graphic's relative width to the buttons
+        # Add the left container to the main horizontal layout, then add the buttons/controls on the right
         main_layout.addWidget(left_v_container, stretch = 4) 
         main_layout.addLayout(self.draw_buttons(), 1)
-                
+
         # Redirect output to the console
         self.stdout_redirector = StreamRedirector()
         self.stdout_redirector.output_written.connect(self.append_to_console)
@@ -84,7 +83,7 @@ class AppWindow(QMainWindow):
         self.stderr_redirector = StreamRedirector()
         self.stderr_redirector.output_written.connect(self.append_to_console)
         sys.stderr = self.stderr_redirector
-        self.logprint("Opening Scantelligent")
+        self.logprint("Opening Scantelligent", color = "white")
 
         # Ensure the central widget can receive keyboard focus
         central_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -126,7 +125,14 @@ class AppWindow(QMainWindow):
 
 
     def parameters_init(self):
-        self.script_path = os.path.abspath(__file__) # The full path of Scanalyzer.py
+        self.paths = {
+            "script": os.path.abspath(__file__), # The full path of Scanalyzer.py
+            "parent_folder": os.path.dirname(os.path.abspath(__file__)),            
+        }
+        self.paths["package_folder"] = os.path.join(self.paths["parent_folder"], "scantelligent")
+        self.paths["config_file"] = os.path.join(self.paths["package_folder"], "config.yml")        
+        
+        self.script_path = os.path.abspath(__file__) 
         self.script_folder = os.path.dirname(self.script_path) # The parent directory of Scanalyzer.py
         self.scantelligent_folder = self.script_folder + "\\scantelligent" # The directory of the scanalyzer package
         self.folder = self.scantelligent_folder
@@ -142,10 +148,13 @@ class AppWindow(QMainWindow):
         
         # Read the config file
         try:
-            with open(self.scantelligent_folder + "\\config.yml", "r") as file:
+            with open(self.paths.get("config_file"), "r") as file:
                 config = yaml.safe_load(file)
                 try:
                     scanalyzer_path = config["scanalyzer_path"]
+                    self.paths["scanalyzer_path"] = scanalyzer_path
+                    print(config)
+
                 except Exception as e:
                     print("Error: could not link to Scanalyzer")
                     scanalyzer_path = ""
@@ -163,7 +172,15 @@ class AppWindow(QMainWindow):
         self.tcp_ip = tcp_ip
         self.tcp_port = tcp_port
         self.version_number = version_number
-        self.scanalyzer_path = scanalyzer_path
+        
+        self.hardware = {
+            "nanonis_ip": tcp_ip,
+            "nanonis_port": tcp_port,
+            "nanonis_version": version_number,
+            "camera_argument": 0
+        }
+        
+        self.paths["scanalyzer"] = scanalyzer_path
 
     def draw_buttons(self):
 

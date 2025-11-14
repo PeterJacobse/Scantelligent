@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "python": "C:\\Users\\peter\\.conda\\envs\\scantelligent\\python"
+            "python": "C:\\Users\\LTAFM\\.conda\\envs\\scantelligent\\python"
         }
     ]
 }
