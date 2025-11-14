@@ -1,5 +1,6 @@
 import os
 import sys
+import html
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy import sqrt
@@ -23,6 +24,10 @@ from scipy.interpolate import Rbf
 from datetime import datetime
 from time import sleep, time
 import traceback
+import cv2
+import h5py
+
+colors = {"red": "#ff4040", "green": "#00ff00", "white": "#ffffff", "blue": "#0080ff"}
 
 
 
@@ -92,14 +97,37 @@ class HelperFunctions:
         self.tcp_port = tcp_port
         self.version_number = version_number
 
-    def logprint(self, message, timestamp: bool = True):
+    def logprint(self, message, timestamp: bool = True, color: str = None):
+        """Print a timestamped message to the redirected stdout.
+
+        Parameters:
+        - message: text to print
+        - timestamp: whether to prepend HH:MM:SS timestamp
+        - color: optional CSS color name or hex (e.g. 'red' or '#ff0000')
+        """
         current_time = datetime.now().strftime("%H:%M:%S")
-        if timestamp: timestamped_message = current_time + f">>  {message}"
-        else: timestamped_message = f"            {message}"
-        print(timestamped_message, end = "")
+        if timestamp:
+            timestamped_message = current_time + f">>  {message}"
+        else:
+            timestamped_message = f"            {message}"
+
+        # Escape HTML to avoid accidental tag injection, then optionally
+        # wrap in a colored span so QTextEdit renders it in color.
+        escaped = html.escape(timestamped_message)
+        final = escaped
+        if color:
+            if type(color) == hex:
+                final = f"<span style=\"color:{color}\">{escaped}</span>"
+            elif type(color) == str:
+                if color in colors.keys():
+                    hex_value = colors[color]
+                    final = f"<span style=\"color:{hex_value}\">{escaped}</span>"
+
+        # Print HTML text (QTextEdit.append will render it as rich text).
+        print(final, flush = True)
 
     def clean_lists(self, V_list, x_list, y_list, V_limit = 10, x_limit = 1E-7, y_limit = 1E-7):
-        self.logprint("[V_list, x_list, y_list, iterations] = helper_functions.clean_lists(V_list, x_list, y_list)")
+        self.logprint("  [V_list, x_list, y_list, iterations] = functions.clean_lists(V_list, x_list, y_list)", color = "blue")
 
         if type(V_list) == int or type(V_list) == float: V_list = [V_list]
         if type(x_list) == int or type(x_list) == float: x_list = [x_list]
@@ -141,23 +169,23 @@ class HelperFunctions:
         if n_V > -1:
             for element in V_list:
                 if np.abs(element) > V_limit:
-                    self.logprint(f"Error! Elements in V_list exceed the limits (-{V_limit} < {element} < {V_limit} = False)")
+                    self.logprint(f"Error! Elements in V_list exceed the limits (-{V_limit} < {element} < {V_limit} = False)", color = "red")
                     return False
         if n_x > -1:
             for element in x_list:
                 if np.abs(element) > x_limit:
-                    self.logprint(f"Error! Elements in x_list exceed the limits (-{x_limit} < {element} < {x_limit} = False)")
+                    self.logprint(f"Error! Elements in x_list exceed the limits (-{x_limit} < {element} < {x_limit} = False)", color = "red")
                     return False
         if n_y > -1:
             for element in y_list:
                 if np.abs(element) > y_limit:
-                    self.logprint(f"Error! Elements in x_list exceed the limits (-{y_limit} < {element} < {y_limit} = False)")
+                    self.logprint(f"Error! Elements in x_list exceed the limits (-{y_limit} < {element} < {y_limit} = False)", color = "red")
                     return False
-
+        
         return [V_list, x_list, y_list, iterations]
 
     def get_grid(self): # Retrieve the grid data
-        self.logprint("grid = helper_functions.get_grid()")
+        self.logprint("  [obj] grid = functions.get_grid()", color = "blue")
 
         try:
             NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
@@ -183,7 +211,7 @@ class HelperFunctions:
                 setattr(grid, "pixel_ratio", buffer_data[3] / buffer_data[2])
 
                 if np.abs(grid.aspect_ratio - grid.pixel_ratio) > 0.001:
-                    print("Warning! The aspect ratio of the scan frame does not correspond to that of the pixels. This will result in rectangular pixels!")
+                    self.logprint("Warning! The aspect ratio of the scan frame does not correspond to that of the pixels. This will result in rectangular pixels!", color = "red")
 
                 # Construct a local grid with the same size as the Nanonis grid, whose center is at (0, 0)
                 x_coords_local = np.linspace(- grid.width / 2, grid.width / 2, grid.pixels[0])
@@ -214,11 +242,11 @@ class HelperFunctions:
             except Exception as e:
                 NTCP.close_connection()
                 sleep(.05)
-                print(f"Error: {e}")
+                self.logprint(f"Error: {e}", color = "red")
                 return False
 
         except Exception as e:
-            print(f"{e}")
+            self.logprint(f"{e}", color = "red")
             return False
 
     def tip(self, withdraw: bool = False, feedback = None):
@@ -260,11 +288,11 @@ class HelperFunctions:
             except Exception as e:
                 NTCP.close_connection()
                 sleep(.1)
-                print(f"Error: {e}")
+                self.logprint(f"Error: {e}", color = "red")
                 return False
 
         except Exception as e:
-            print(f"{e}")
+            self.logprint(f"{e}", color = "red")
             return False
 
     def get_parameters(self):
@@ -295,16 +323,16 @@ class HelperFunctions:
             except Exception as e:
                 NTCP.close_connection()
                 sleep(.1)
-                print(f"Error: {e}")
+                self.logprint(f"Error: {e}", color = colors["red"])
                 return False
 
         except Exception as e:
-            print(f"{e}")
+            self.logprint(f"{e}", color = colors["red"])
             return False
 
     def change_bias(self, V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, V_limits = 10):
         if type(V) != float and type(V) != int:
-            self.logprint("Wrong bias supplied")
+            self.logprint("Wrong bias supplied", color = colors["red"])
             return False
         if type(V_limits) == float or type(V_limits) == int:
             if np.abs(V) > np.abs(V_limits):
@@ -344,12 +372,16 @@ class HelperFunctions:
             except Exception as e:
                 NTCP.close_connection()
                 sleep(.1)
-                print(f"Error: {e}")
+                self.logprint(f"Error: {e}", color = colors["red"])
                 return False
 
         except Exception as e:
-            print(f"{e}")
+            self.logprint(f"{e}", color = colors["red"])
             return False
+
+    def get_pixels(n_pix: int = 2, data_format: str = "complex", unit: str = "calibrated", first_bufpos = None):
+        pixel = np.random.rand(64)
+        return pixel
 
 
 
@@ -390,6 +422,7 @@ class MeasurementWorker(QRunnable):
 
 class Experiments(QObject):
     data = pyqtSignal(np.ndarray)
+    message = pyqtSignal(str, str)
     finished = pyqtSignal()
     interrupted = pyqtSignal()
 
@@ -415,7 +448,7 @@ class Experiments(QObject):
                     self.logprint("Unknown scan direction")
                     return False
         except Exception as e:
-            self.loprint(f"Error: {e}")
+            self.logprint(f"Error: {e}")
             return False
          
         return [V_list, x_list, y_list, chunk_size, delay]
@@ -510,11 +543,13 @@ class Experiments(QObject):
             print(f"{e}. Measurement failed.")
             return False
 
-    @pyqtSlot(int, int)
-    def sample_grid(self, points, chunk_size):
+    @pyqtSlot(str, int, int)
+    def sample_grid(self, file_name, points, chunk_size):
         try:
             grid = self.helper_functions.get_grid()
-            self.helper_functions.logprint(f"experiments.sample_grid(grid, points = {points})")
+            self.message.emit(f"  experiments.sample_grid(grid, points = {points})", "blue")
+            #self.helper_functions.logprint(f"experiments.sample_grid(grid, points = {points})")
+            #self.helper_functions.logprint(f"Data will be emitted and saved to {file_name} in chunks of ({chunk_size} data points by 71 channels))")
             # Ensure the running flag is True at the start of each new
             # measurement invocation. This allows aborting (which sets
             # _running = False) to be followed by starting a new experiment.
@@ -523,10 +558,8 @@ class Experiments(QObject):
             [x_grid, y_grid] = [grid.x_grid, grid.y_grid]
             [pixels_x, pixels_y] = grid.pixels
             
-            self.logprint("I am starting the measurement")
             flat_index_list = np.arange(x_grid.size)
-            chunk = 100
-            data_chunk = np.zeros((chunk, 6), dtype = float)
+            data_chunk = np.zeros((chunk_size, 71), dtype = float)
 
             # Initiate the Nanonis TCP connection
             NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
@@ -542,8 +575,13 @@ class Experiments(QObject):
                 [x0, y0] = folme.XYPosGet(Wait_for_newest_data = True)
                 z0 = float(zcontroller.ZPosGet())
                 I0 = float(current.Get())
+                mla_pixel = self.helper_functions.get_pixels()
 
                 [t, V, x, y, z, I] = [t0, V0, x0, y0, z0, I0]
+                data_pixel = np.array([t, V, x, y, z, I, 0])
+                data_pixel = np.concatenate((data_pixel, mla_pixel))
+                
+
 
                 # The first four data points are the grid corners
                 for iteration in range(4):
@@ -564,35 +602,43 @@ class Experiments(QObject):
                     t = time() - t0
                     z = zcontroller.ZPosGet()
                     I = current.Get()
-                    data_chunk[iteration] = [t, V, x, y, z, I]
-
+                    mla_pixel = self.helper_functions.get_pixels()
+                    data_chunk[iteration] = np.concatenate((np.array([t, V, x, y, z, I, 0]), mla_pixel))
+                
                 # Measurement loop
-                for iteration in range(4, points):
-                    modulo_iteration = iteration % chunk
-                    if not self._running: # Abort the measurement
-                        break
+                self.message.emit("Initializing the data file {file_name} and starting the measurement loop", "white")
+                with h5py.File(file_name, "w") as file:
+                    dataset = file.create_dataset("measurement_data", shape = (0, 71), maxshape = (None, 71), dtype = "f8")
 
-                    # Choose a random index and map it to the 2D x and y grids
-                    # flat_index = np.random.choice(flat_index_list)
-                    if iteration % 2 == 0: flat_index = iteration
-                    else: flat_index = np.random.choice(flat_index_list)
+                    for iteration in range(4, points):
+                        modulo_iteration = iteration % chunk_size
+                        if not self._running: # Abort the measurement
+                            break
 
-                    flat_index_list[flat_index] += 1
-                    x_index, y_index = np.unravel_index(flat_index, x_grid.shape)
-                    [x, y] = [x_grid[x_index, y_index], y_grid[x_index, y_index]]
+                        # Choose a random index and map it to the 2D x and y grids
+                        flat_index = np.random.choice(flat_index_list)
+                        flat_index_list[flat_index] += 1
 
-                    # Act
-                    folme.XYPosSet(x, y, Wait_end_of_move = True)
+                        x_index, y_index = np.unravel_index(flat_index, x_grid.shape)
+                        [x, y] = [x_grid[x_index, y_index], y_grid[x_index, y_index]]
 
-                    # Measure
-                    t = time() - t0
-                    z = zcontroller.ZPosGet()
-                    I = current.Get()
+                        # Act
+                        folme.XYPosSet(x, y, Wait_end_of_move = True)
 
-                    data_chunk[modulo_iteration] = [t, V, x, y, z, I]
+                        # Measure
+                        t = time() - t0
+                        z = zcontroller.ZPosGet()
+                        I = current.Get()
+                        mla_pixel = self.helper_functions.get_pixels()
+                        data_chunk[modulo_iteration] = np.concatenate((np.array([t, V, x, y, z, I, 0]), mla_pixel))
 
-                    if iteration % chunk == chunk - 1:
-                        self.data.emit(data_chunk) # Emit the data to Scantelligent
+                        # Save and emit
+                        if iteration % chunk_size == chunk_size - 1:
+                            # Emit the data to Scantelligent
+                            self.data.emit(data_chunk)
+                            
+                            dataset.resize(dataset.shape[0] + chunk_size, axis = 0)
+                            dataset[-chunk_size:] = data_chunk
 
                 NTCP.close_connection() # Close the TCP connection
                 sleep(.05)
@@ -604,15 +650,16 @@ class Experiments(QObject):
             except Exception as e:
                 NTCP.close_connection()
                 sleep(.05)
-                print(f"Error: {e}. Experiment aborted.")
+                self.message.emit(f"Error: {e}. Experiment aborted.", "red")
                 return False
 
         except Exception as e:
-            print(f"Error: {e}. Experiment aborted.")
+            self.message.emit(f"Error: {e}. Experiment aborted.", "red")
             return False
 
     def stop(self):
         # Set the experiment running flag to False to abort the experiment
+        self.message.emit("Experiment aborted by user", "red")
         self._running = False
 
 
