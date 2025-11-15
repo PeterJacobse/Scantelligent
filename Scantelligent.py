@@ -15,20 +15,14 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
 from PyQt6.QtGui import QImage, QImageWriter
 import scantelligent.functions as st
-from datetime import datetime
 from scantelligent.image_functions import apply_gaussian, apply_fft, image_gradient, compute_normal, apply_laplace, complex_image_to_colors, background_subtract, get_image_statistics
-from scantelligent.control import HelperFunctions, Experiments, CameraWorker, MeasurementWorker
+from scantelligent.control import HelperFunctions, Experiments, CameraWorker, MeasurementWorker, NanonisFunctions
+from scantelligent.hardware import NanonisHardware
 from time import sleep, time
 from scipy.interpolate import griddata
+from datetime import datetime
 
-# Establish a TCP/IP connection
-# TCP_IP = "192.168.236.1"                           # Local host
-# TCP_IP = "127.0.0.1"
-# TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
-# version_number = 13520
-camera_argument = 0
-
-colors = {"red": "#ff4040", "green": "#00ff00", "white": "#ffffff", "blue": "#0080ff"}
+colors = {"red": "#ff4040", "darkred": "#800000", "green": "#00ff00", "darkgreen": "#005000", "white": "#ffffff", "blue": "#0080ff"}
 
 
 
@@ -63,18 +57,16 @@ class AppWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Scantelligent by Peter H. Jacobse") # Make the app window
+        # Make the app window
+        self.setWindowTitle("Scantelligent by Peter H. Jacobse")
         self.setGeometry(100, 100, 1400, 800) # x, y, width, height
         
-        # Initialize parameters
-        self.parameters_init()
-
         # Create a central widget and main horizontal layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget) # Main layout is horizontal
 
-        # Left Section: Graphic and Console (grouped vertically) ---
+        # Left Section: Graphic and Console (grouped vertically)
         left_v_container = QWidget()
         left_v_layout = QVBoxLayout(left_v_container)
         left_v_layout.setContentsMargins(0, 0, 0, 0) # Optional: remove inner margins
@@ -88,10 +80,6 @@ class AppWindow(QMainWindow):
         self.console_output.setReadOnly(False)
         left_v_layout.addWidget(self.console_output, stretch = 1)
 
-        # Add the left container to the main horizontal layout, then add the buttons/controls on the right
-        main_layout.addWidget(left_v_container, stretch = 4) 
-        main_layout.addLayout(self.draw_buttons(), 1)
-
         # Redirect output to the console
         self.stdout_redirector = StreamRedirector()
         self.stdout_redirector.output_written.connect(self.append_to_console)
@@ -99,7 +87,11 @@ class AppWindow(QMainWindow):
         self.stderr_redirector = StreamRedirector()
         self.stderr_redirector.output_written.connect(self.append_to_console)
         sys.stderr = self.stderr_redirector
-        self.logprint("Opening Scantelligent", color = "white")
+        now = datetime.now()
+        self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), color = "white")
+        
+        # Initialize parameters
+        self.parameters_init()
 
         # Ensure the central widget can receive keyboard focus
         central_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -107,15 +99,21 @@ class AppWindow(QMainWindow):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus()
         self.activateWindow()
+        
+        # Add the left container to the main horizontal layout, then add the buttons/controls to the right
+        main_layout.addWidget(left_v_container, stretch = 4)
+        main_layout.addLayout(self.draw_buttons(), 1)
 
         # Activate buttons and keys
         self.connect_buttons()
         #self.connect_keys()
 
         # Check / set up hardware connections after creating an instance of HelperFunctions
-        self.logprint("Opening Scantelligent", color = "white")
         self.helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
         self.connect_nanonis()
+        if self.nanonis_online:
+            self.nanonis_functions = NanonisFunctions(self.hardware)
+            self.get_parameters()
         """
         self.check_camera_connection(camera_argument)
         
@@ -152,7 +150,8 @@ class AppWindow(QMainWindow):
         self.script_folder = os.path.dirname(self.script_path) # The parent directory of Scanalyzer.py
         self.scantelligent_folder = self.script_folder + "\\scantelligent" # The directory of the scanalyzer package
         self.folder = self.scantelligent_folder
-
+        
+        self.nanonis_online = False
         self.background_subtraction = "plane"
         self.min_percentile = 2
         self.max_percentile = 98
@@ -169,10 +168,8 @@ class AppWindow(QMainWindow):
                 try:
                     scanalyzer_path = config["scanalyzer_path"]
                     self.paths["scanalyzer_path"] = scanalyzer_path
-                    print(config)
-
                 except Exception as e:
-                    self.logprint("Error: could not link to Scanalyzer", color = "red")
+                    self.logprint("Warning: config file has no path to Scanalyzer", color = "red")
                     scanalyzer_path = ""
                     self.scanalyzer_button.setEnabled(False)
                 
@@ -181,6 +178,16 @@ class AppWindow(QMainWindow):
                     tcp_ip = nanonis_settings.get("tcp_ip", "127.0.0.1")
                     tcp_port = nanonis_settings.get("tcp_port", 6501)
                     version_number = nanonis_settings.get("version_number", 13520)
+                    self.hardware = {
+                        "nanonis_ip": tcp_ip,
+                        "nanonis_port": tcp_port,
+                        "nanonis_version": version_number,
+                        "camera_argument": 0
+                    }
+                    self.logprint("I found the config.yml file and was able to set up the following dictionary:", color = "green")
+                    self.logprint(f"  [dict] hardware.keys() = {self.hardware.keys()}", color = "blue")
+                    self.logprint(f"  [dict] hardware.values() = {self.hardware.values()}", color = "blue")
+                    
                 except Exception as e:
                     self.logprint("Error: could not retrieve the Nanonis TCP settings.", color = "red")
         except Exception as e:
@@ -188,13 +195,6 @@ class AppWindow(QMainWindow):
         self.tcp_ip = tcp_ip
         self.tcp_port = tcp_port
         self.version_number = version_number
-        
-        self.hardware = {
-            "nanonis_ip": tcp_ip,
-            "nanonis_port": tcp_port,
-            "nanonis_version": version_number,
-            "camera_argument": 0
-        }
         
         self.paths["scanalyzer"] = scanalyzer_path
 
@@ -526,7 +526,7 @@ class AppWindow(QMainWindow):
     def connect_keys(self):
         pass
 
-    def logprint(self, message, timestamp: bool = True, color: str = None):
+    def logprint(self, message, timestamp: bool = True, color: str = "white"):
         """Print a timestamped message to the redirected stdout.
 
         Parameters:
@@ -564,32 +564,14 @@ class AppWindow(QMainWindow):
     def connect_nanonis(self):
         self.logprint("Connecting to Nanonis", color = "white")
         try:
+            # This is a low-level TCP-IP connection attempt
+            self.logprint(f"  sock.connect(({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]}))", color = "blue")
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)
-            sock.connect((self.tcp_ip, self.tcp_port))
+            sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
             sock.close()
-            sleep(.05) # Short delay before requesting the tip status
+            sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
             self.nanonis_online = True
-
-            tip_status = self.helper_functions.tip()
-            if tip_status == False:
-                self.logprint("Error retrieving the tip status.", color = "red")
-                self.nanonis_online = False
-            else:
-                self.tip_status = tip_status
-            
-            parameters = self.helper_functions.get_parameters()
-            if parameters == False:
-                self.logprint("Error retrieving the scan parameters.", color = "red")
-                self.nanonis_online = False
-            else:
-                self.parameters = parameters
-                self.session_path = parameters.session_path
-                self.session_folder_button.setText(self.session_path)
-
-                experiment = self.experiment_box.currentText()
-                self.experiment_filename = self.get_next_indexed_filename(self.session_path, experiment, ".hdf5")
-                self.save_to_button.setText(self.experiment_filename)
     
         except socket.timeout:
             self.nanonis_online = False
@@ -600,6 +582,38 @@ class AppWindow(QMainWindow):
             if self.nanonis_online: self.logprint("Success!", color = "green")
             else: self.logprint("Error: Failed to connect!", color = "red")
             self.update_buttons()
+    
+    def get_parameters(self):
+        self.logprint("Obtaining the tip status", color = "white")
+        self.logprint("  [dict] tip_status = nanonis_functions.tip()", color = "blue")
+
+        try:
+            tip_status = self.nanonis_functions.tip()
+            if tip_status == False:
+                self.logprint("Error retrieving the tip status.", color = "red")
+                self.nanonis_online = False
+            else:
+                self.tip_status = tip_status
+            
+            self.logprint("Obtaining the scan parameters", color = "white")
+            self.logprint("  [dict] tip_status = nanonis_functions.tip()", color = "blue")
+            
+            parameters = self.helper_functions.get_parameters()
+            if parameters == False:
+                self.logprint("Error retrieving the scan parameters.", color = "red")
+                self.nanonis_online = False
+            else:
+                self.parameters = parameters
+                self.session_path = parameters.session_path
+                self.paths["session_path"] = parameters.session_path
+                self.session_folder_button.setText(self.session_path)
+
+                experiment = self.experiment_box.currentText()
+                self.experiment_filename = self.get_next_indexed_filename(self.session_path, experiment, ".hdf5")
+                self.save_to_button.setText(self.experiment_filename)
+        except Exception as e:
+            self.logprint("{e}", color = "red")
+            return False
 
     def get_next_indexed_filename(self, folder_path, base_name, extension):
         # Pattern to match files with the base name and exactly 3 digits for the index
@@ -700,6 +714,12 @@ class AppWindow(QMainWindow):
 
     # Simple Nanonis functions
     def toggle_withdraw(self):
+        
+        nanonisfunctions = NanonisFunctions(self.hardware)
+        grid = nanonisfunctions.get_grid()
+        self.logprint(grid.keys())
+        
+        #nanonis_functions = NanonisFunctions()
         if not hasattr(self, "tip_status"):
             self.connect_nanonis()
         if not hasattr(self, "tip_status"):
@@ -708,6 +728,7 @@ class AppWindow(QMainWindow):
         
         if self.tip_status.withdrawn:
             self.logprint("  [obj] tip_status = helper_functions.tip(feedback = True)", color = "blue")
+            # self.tip_status = nanonis_functions.tip(feedback = True)
             self.tip_status = self.helper_functions.tip(feedback = True)
         else:
             self.logprint("  [obj] tip_status = helper_functions.tip(withdraw = True)", color = "blue")

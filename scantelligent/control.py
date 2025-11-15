@@ -18,6 +18,7 @@ from nanonisTCP.Util import Util
 from nanonisTCP.FolMe import FolMe
 from nanonisTCP.BiasSpectr import BiasSpectr
 from nanonisTCP.TipShaper import TipShaper
+from .hw import NanonisHardware
 from time import sleep
 from types import SimpleNamespace
 from scipy.interpolate import Rbf
@@ -385,13 +386,212 @@ class HelperFunctions:
 
 
 
-class WorkerSignals(QObject):
-    result = pyqtSignal(np.ndarray)
-    finished = pyqtSignal()
-    interrupted = pyqtSignal()
-    error = pyqtSignal(tuple)
-    progress = pyqtSignal(str) # Custom signal to report progress/status
-    
+class NanonisFunctions(NanonisHardware):
+    def __init__(self, hardware: dict):
+        super().__init__(hardware = hardware)
+        self.helper_functions = HelperFunctions(hardware["nanonis_ip"], hardware["nanonis_port"], hardware["nanonis_version"])
+        self.logprint = self.helper_functions.logprint
+
+    def get_grid(self):
+        error_flag = False
+        
+        self.logprint("  [dict] grid = nanonis_functions.get_grid()", color = "blue")
+
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect_control()
+            grid_data = self.scan.FrameGet()
+            buffer_data = self.scan.BufferGet()
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+        
+        if error_flag:
+            return False
+
+        # Save the data to a dictionary
+        grid = {
+            "x": grid_data[0],
+            "y": grid_data[1],
+            "center": [grid_data[0], grid_data[1]],
+            "width": grid_data[2],
+            "height": grid_data[3],
+            "size": [grid_data[2], grid_data[3]],
+            "angle": grid_data[4],
+            "pixels": [buffer_data[2], buffer_data[3]],
+            "aspect_ratio": grid_data[3] / grid_data[2],
+            "pixel_width": grid_data[2] / buffer_data[2],
+            "pixel_height": grid_data[3] / buffer_data[3],
+            "pixel_ratio": buffer_data[3] / buffer_data[2]
+        }
+
+        if np.abs(grid["aspect_ratio"] - grid["pixel_ratio"]) > 0.001:
+            self.logprint("Warning! The aspect ratio of the scan frame does not correspond to that of the pixels. This will result in rectangular pixels!", color = "red")
+
+        # Construct a local grid with the same size as the Nanonis grid, whose center is at (0, 0)
+        x_coords_local = np.linspace(- grid["width"] / 2, grid["width"] / 2, grid["pixels"][0])
+        y_coords_local = np.linspace(- grid["height"] / 2, grid["height"] / 2, grid["pixels"][1])
+        x_grid_local, y_grid_local = np.meshgrid(x_coords_local, y_coords_local, indexing = "ij")
+
+        # Apply a rotation
+        cos = np.cos(grid["angle"])
+        sin = np.sin(grid["angle"])
+        x_grid = np.zeros_like(x_grid_local)
+        y_grid = np.zeros_like(y_grid_local)
+
+        for i in range(grid["pixels"][0]):
+            for j in range(grid["pixels"][1]):
+                x_grid[i, j] = x_grid_local[i, j] * cos + y_grid_local[i, j] * sin
+                y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
+
+        # Apply a translation
+        x_grid += grid["x"]
+        y_grid += grid["y"]
+
+        # Add the meshgrids to the grid dictionary
+        grid["x_grid"] = x_grid
+        grid["y_grid"] = y_grid
+        
+        self.logprint(f"  grid.keys() = {grid.keys()}", color = "blue")
+
+        return grid
+
+    def tip(self, withdraw: bool = False, feedback = None):
+        error_flag = False
+        
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect_log()
+            zcontroller = self.zcontroller
+            z_pos = self.get_height()
+            [z_max, z_min] = zcontroller.LimitsGet()
+
+            # Switch the feedback if desired, and retrieve the feedback status
+            if type(feedback) == bool: self.set_feedback(bool)
+            
+            withdrawn = False # Initialize the withdrawn parameter, which tells whether the tip is withdrawn
+            if not feedback and np.abs(z_pos - z_max) < 1E-11: # Tip is already withdrawn
+                withdrawn = True
+            if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
+                self.withdraw
+                withdrawn = True
+
+            # Retrieve the feedback status
+            sleep(.1)
+            feedback_new = self.get_feedback()
+            sleep(.1)
+            
+            tip_status = {
+                "height": z_pos,
+                "limits": [z_min, z_max],
+                "feedback": feedback_new,
+                "withdrawn": withdrawn
+            }
+
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            
+            if error_flag:
+                return False
+            else:
+                return tip_status
+
+    def get_parameters(self):
+        try:
+            sleep(.1)
+            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
+            try:
+                util = Util(NTCP)
+                zcontroller = ZController(NTCP)
+                bias = Bias(NTCP)
+                
+                session_path = util.SessionPathGet() # Read the session path
+                I_fb = zcontroller.SetpntGet()
+                p_gain, t_const, i_gain = zcontroller.GainGet()
+                V = bias.Get()
+                sleep(.1)
+                
+                parameters = SimpleNamespace()
+                setattr(parameters, "bias", V)
+                setattr(parameters, "I_fb", I_fb)
+                setattr(parameters, "p_gain", p_gain)
+                setattr(parameters, "t_const", t_const)
+                setattr(parameters, "i_gain", i_gain)
+                setattr(parameters, "session_path", session_path)
+
+                return parameters
+
+            except Exception as e:
+                NTCP.close_connection()
+                sleep(.1)
+                self.logprint(f"Error: {e}", color = colors["red"])
+                return False
+
+        except Exception as e:
+            self.logprint(f"{e}", color = colors["red"])
+            return False
+
+    def change_bias(self, V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, V_limits = 10):
+        if type(V) != float and type(V) != int:
+            self.logprint("Wrong bias supplied", color = colors["red"])
+            return False
+        if type(V_limits) == float or type(V_limits) == int:
+            if np.abs(V) > np.abs(V_limits):
+                self.logprint("Bias outside of limits")
+                return False
+
+        try:
+            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
+            try:
+                bias = Bias(NTCP)
+                zcontroller = ZController(NTCP)
+                
+                V0 = bias.Get() # Read data from Nanonis
+                feedback = zcontroller.OnOffGet()
+                tip_height = zcontroller.ZPosGet()
+                
+                polarity_difference = int(np.abs(np.sign(V) - np.sign(V0)) / 2) # Calculate the polarity and voltage slew values
+                if V > V0: delta_V = dV
+                else: delta_V = -dV
+                slew = np.arange(V0, V, delta_V)
+
+                if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
+                    zcontroller.OnOffSet(False)
+                    sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
+                    zcontroller.ZPosSet(tip_height + dz)
+
+                for V_t in slew: # Perform the slew to the new bias voltage
+                    bias.Set(V_t)
+                    sleep(dt)
+                bias.Set(V) # Final bias value
+            
+                if bool(feedback) and bool(polarity_difference): zcontroller.OnOffSet(True) # Turn the feedback back on
+                sleep(.1)
+
+                return V0
+
+            except Exception as e:
+                NTCP.close_connection()
+                sleep(.1)
+                self.logprint(f"Error: {e}", color = colors["red"])
+                return False
+
+        except Exception as e:
+            self.logprint(f"{e}", color = colors["red"])
+            return False
+
+
+
+class MLA_Functions:
+    def get_pixels(n_pix: int = 2, data_format: str = "complex", unit: str = "calibrated", first_bufpos = None):
+        pixel = np.random.rand(64)
+        return pixel
+
 
 
 class MeasurementWorker(QRunnable):

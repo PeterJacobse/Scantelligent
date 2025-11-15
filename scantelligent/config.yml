@@ -1,5 +1,5 @@
 nanonis:
- tcp_ip: "127.0.0.1"
+ tcp_ip: "192.168.236.1"
  tcp_port: 6501
  version_number: 13520
 camera:
