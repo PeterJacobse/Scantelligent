@@ -16,13 +16,12 @@ from pyqtgraph.Qt import QtCore, QtWidgets
 from PyQt6.QtGui import QImage, QImageWriter
 import scantelligent.functions as st
 from scantelligent.image_functions import apply_gaussian, apply_fft, image_gradient, compute_normal, apply_laplace, complex_image_to_colors, background_subtract, get_image_statistics
-from scantelligent.control import HelperFunctions, Experiments, CameraWorker, MeasurementWorker, NanonisFunctions
-from scantelligent.hardware import NanonisHardware
+from scantelligent.control import Experiments, CameraWorker, NanonisFunctions, Worker
 from time import sleep, time
 from scipy.interpolate import griddata
 from datetime import datetime
 
-colors = {"red": "#ff4040", "darkred": "#800000", "green": "#00ff00", "darkgreen": "#005000", "white": "#ffffff", "blue": "#0080ff"}
+colors = {"red": "#ff4040", "darkred": "#800000", "green": "#00ff00", "darkgreen": "#005000", "white": "#ffffff", "blue": "#1090ff"}
 
 
 
@@ -108,23 +107,21 @@ class AppWindow(QMainWindow):
         self.connect_buttons()
         #self.connect_keys()
 
-        # Check / set up hardware connections after creating an instance of HelperFunctions
-        self.helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
+        # Check / set up hardware connections
         self.connect_nanonis()
-        if self.nanonis_online:
-            self.nanonis_functions = NanonisFunctions(self.hardware)
-            self.get_parameters()
+        if hasattr(self, "nanonis_functions"): self.nanonis_functions.disconnect()
+        self.check_camera_connection(self.hardware["camera_argument"])
         """
-        self.check_camera_connection(camera_argument)
-        
         self.thread = None
         self.worker = None
         self.is_camera_running = False
         """
 
         # Set up the Experiments class and thread and connect signals and slots
-        self.thread_pool = QThreadPool.globalInstance() # Use this in the near future
-        self.experiments = Experiments(self.tcp_ip, self.tcp_port, self.version_number)
+        self.thread_pool = QThreadPool() # Use this in the near future
+        
+        #self.experiments = Experiments(self.tcp_ip, self.tcp_port, self.version_number)
+        """
         self.experiment_thread = QThread()
         self.experiments.moveToThread(self.experiment_thread)
 
@@ -135,8 +132,7 @@ class AppWindow(QMainWindow):
         self.experiment_thread.finished.connect(self.experiments.deleteLater)
         self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
         self.experiment_thread.start()
-
-
+        """
 
     def parameters_init(self):
         self.paths = {
@@ -145,11 +141,6 @@ class AppWindow(QMainWindow):
         }
         self.paths["package_folder"] = os.path.join(self.paths["parent_folder"], "scantelligent")
         self.paths["config_file"] = os.path.join(self.paths["package_folder"], "config.yml")        
-        
-        self.script_path = os.path.abspath(__file__) 
-        self.script_folder = os.path.dirname(self.script_path) # The parent directory of Scanalyzer.py
-        self.scantelligent_folder = self.script_folder + "\\scantelligent" # The directory of the scanalyzer package
-        self.folder = self.scantelligent_folder
         
         self.nanonis_online = False
         self.background_subtraction = "plane"
@@ -160,17 +151,22 @@ class AppWindow(QMainWindow):
         self.view_index = 0
         self.experiment_running = False
         self.process = QProcess(self)
-        
+
         # Read the config file
         try:
             with open(self.paths.get("config_file"), "r") as file:
                 config = yaml.safe_load(file)
                 try:
                     scanalyzer_path = config["scanalyzer_path"]
-                    self.paths["scanalyzer_path"] = scanalyzer_path
+                    scanalyzer_exists = os.path.exists(scanalyzer_path)
+                    if scanalyzer_exists:
+                        self.paths["scanalyzer_path"] = scanalyzer_path
+                        self.logprint("Scanalyzer found and linked", "green")
+                    else:
+                        self.logprint("Warning: config file has a scanalyzer_path entry, but it doesn't point to an existing file.", "red")
+                        self.scanalyzer_button.setEnabled(False)
                 except Exception as e:
-                    self.logprint("Warning: config file has no path to Scanalyzer", color = "red")
-                    scanalyzer_path = ""
+                    self.logprint("Warning: scanalyzer path could not be read. {e}", color = "red")
                     self.scanalyzer_button.setEnabled(False)
                 
                 try:
@@ -178,26 +174,28 @@ class AppWindow(QMainWindow):
                     tcp_ip = nanonis_settings.get("tcp_ip", "127.0.0.1")
                     tcp_port = nanonis_settings.get("tcp_port", 6501)
                     version_number = nanonis_settings.get("version_number", 13520)
+
+                    camera_settings = config.get("camera")
+                    camera_argument = camera_settings.get("argument", 0)
+
                     self.hardware = {
                         "nanonis_ip": tcp_ip,
                         "nanonis_port": tcp_port,
                         "nanonis_version": version_number,
-                        "camera_argument": 0
+                        "camera_argument": camera_argument
                     }
-                    self.logprint("I found the config.yml file and was able to set up the following dictionary:", color = "green")
-                    self.logprint(f"  [dict] hardware.keys() = {self.hardware.keys()}", color = "blue")
-                    self.logprint(f"  [dict] hardware.values() = {self.hardware.values()}", color = "blue")
+                    self.logprint("I found the config.yml file and was able to set up a dictionary called 'hardware'", color = "green")
+                    self.logprint(f"  hardware.keys() = {self.hardware.keys()}", color = "blue")
+                    self.logprint(f"  hardware.values() = {self.hardware.values()}", color = "blue")
                     
                 except Exception as e:
                     self.logprint("Error: could not retrieve the Nanonis TCP settings.", color = "red")
         except Exception as e:
-            self.logprint(f"Error: problem loading config.yaml: {e}", color = "red")
-        self.tcp_ip = tcp_ip
-        self.tcp_port = tcp_port
-        self.version_number = version_number
-        
-        self.paths["scanalyzer"] = scanalyzer_path
+            self.logprint(f"Error: problem loading config.yml: {e}", color = "red")
 
+
+
+    # GUI
     def draw_buttons(self):
 
         def draw_connections_group():
@@ -234,22 +232,22 @@ class AppWindow(QMainWindow):
             parameters_layout = QGridLayout()
             parameters_layout.setSpacing(1)
 
-            [self.nanonis_bias_box, self.swap_bias_button, self.mla_bias_box, self.I_fb_box, self.p_gain_box, self.t_const_box] = self.parameter_boxes = [
-                QLineEdit(), QPushButton("<swap>"), QLineEdit(), QLineEdit(), QLineEdit(), QLineEdit()
+            [self.nanonis_bias_box, self.swap_bias_button, self.mla_bias_box, self.I_fb_box] = self.parameter_boxes = [
+                QLineEdit(), QPushButton("<swap>"), QLineEdit(), QLineEdit()
                 ]
-            [self.nanonis_bias_button, self.mla_bias_button, self.I_fb_button, self.p_gain_button, self.I_gain_button] = self.parameter_buttons = [
-                QPushButton("V_Nanonis"), QPushButton("V_MLA"), QPushButton("I_fb"), QPushButton("p_gain"), QPushButton("I_gain")
+            [self.nanonis_bias_button, self.mla_bias_button, self.I_fb_button] = self.parameter_buttons = [
+                QPushButton("V_Nanonis"), QPushButton("V_MLA"), QPushButton("I_fb")
                 ]
             self.parameters_button = QPushButton("scan\nparameters")
             
-            bias_box_layout = QHBoxLayout()
-            [bias_box_layout.addWidget(box) for box in self.parameter_boxes[:3]]
-            parameters_layout.addLayout(bias_box_layout, 0, 0, 1, 2)
+            bias_button_layout = QHBoxLayout()
+            [bias_button_layout.addWidget(box, 1) for box in self.parameter_buttons[:2]]
 
-            [parameters_layout.addWidget(self.parameter_boxes[i], 0, i - 1) for i in range(2, len(self.parameter_boxes))]
-            [parameters_layout.addWidget(self.parameter_buttons[i], 1, i) for i in range(len(self.parameter_buttons))]
-            parameters_layout.addWidget(self.parameters_button, 0, len(self.parameter_buttons), 2, 1)
+            [parameters_layout.addWidget(self.parameter_boxes[i], 0, i) for i in range(len(self.parameter_boxes))]
+            parameters_layout.addLayout(bias_button_layout, 1, 0, 1, 3)
+            parameters_layout.addWidget(self.I_fb_button, 1, 3)
             parameters_group.setLayout(parameters_layout)
+            parameters_layout.addWidget(self.parameters_button, 0, len(self.parameter_boxes), 2, 1)
 
             return parameters_group
 
@@ -346,11 +344,18 @@ class AppWindow(QMainWindow):
 
             return experiments_group
        
-        def draw_image_processing_group(): # Image processing group            
+        def draw_image_processing_group():
             im_proc_group = QGroupBox("Image processing")
             im_proc_layout = QVBoxLayout()
             im_proc_layout.setSpacing(1)
-            
+
+            channel_select_layout = QHBoxLayout()
+            self.channel_select_box = QComboBox()
+            self.direction_select_button = QPushButton("direXion: forward")
+            self.get_scan_button = QPushButton("Get Nanonis scan")
+            [channel_select_layout.addWidget(widget, 1) for widget in [self.channel_select_box, self.direction_select_button, self.get_scan_button]]
+            im_proc_layout.addLayout(channel_select_layout)
+
             back_sub_label = QLabel("Background subtraction")
             back_sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             im_proc_layout.addWidget(back_sub_label)
@@ -490,12 +495,12 @@ class AppWindow(QMainWindow):
 
     def connect_buttons(self):
         # Connections group
+        self.session_folder_button.clicked.connect(self.open_session_folder)
         self.nanonis_online_button.clicked.connect(self.connect_nanonis)
         self.tip_status_button.clicked.connect(self.change_tip_status)
         self.view_swap_button.clicked.connect(self.view_toggle)
         self.scanalyzer_button.clicked.connect(self.launch_scanalyzer)
         self.exit_button.clicked.connect(self.on_exit)
-        self.session_folder_button.clicked.connect(self.open_session_folder)
 
         # Coarse motion group
         self.withdraw_button.clicked.connect(self.toggle_withdraw)
@@ -511,17 +516,19 @@ class AppWindow(QMainWindow):
     
         # Scan parameters group
         self.nanonis_bias_button.clicked.connect(self.on_bias_change)
+        self.I_fb_button.clicked.connect(self.on_setpoint_change)
+        self.parameters_button.clicked.connect(self.on_frame_request)
 
         # Experiments group
         self.experiment_box.currentIndexChanged.connect(self.on_experiment_change)
         self.start_stop_button.clicked.connect(self.start_stop_experiment)
-
+        self.save_to_button.clicked.connect(self.open_session_folder)
         # Camera
         # self.camera_start_button.clicked.connect(self.start_camera)
         # self.camera_stop_button.clicked.connect(self.stop_camera)
 
-        # Experiments group
-        self.save_to_button.clicked.connect(self.open_session_folder)
+        # Image processing group
+        self.get_scan_button.clicked.connect(self.on_nanonis_scan_request)
 
     def connect_keys(self):
         pass
@@ -535,22 +542,25 @@ class AppWindow(QMainWindow):
         - color: optional CSS color name or hex (e.g. 'red' or '#ff0000')
         """
         current_time = datetime.now().strftime("%H:%M:%S")
+        if color == "blue": timestamp = False
         if timestamp:
             timestamped_message = current_time + f">>  {message}"
         else:
-            timestamped_message = f"            {message}"
+            timestamped_message = f"{message}"
 
         # Escape HTML to avoid accidental tag injection, then optionally
         # wrap in a colored span so QTextEdit renders it in color.
         escaped = html.escape(timestamped_message)
         final = escaped
-        if color:
-            if type(color) == hex:
-                final = f"<span style=\"color:{color}\">{escaped}</span>"
-            elif type(color) == str:
-                if color in colors.keys():
-                    hex_value = colors[color]
-                    final = f"<span style=\"color:{hex_value}\">{escaped}</span>"
+        
+        if type(color) == str:
+            if color in colors.keys():
+                color = colors[color]
+        
+        if timestamp:
+            final = f"<span style=\"color:{color}\">{escaped}</span></pre>"
+        else:
+            final = f"<pre><span style=\"color:{color}\">        {escaped}</span></pre>"
 
         # Print HTML text (QTextEdit.append will render it as rich text).
         print(final, flush = True)
@@ -558,62 +568,58 @@ class AppWindow(QMainWindow):
     def append_to_console(self, text):
         self.console_output.append(text)
 
-
-
-    # Check TCP_IP connections
-    def connect_nanonis(self):
-        self.logprint("Connecting to Nanonis", color = "white")
-        try:
-            # This is a low-level TCP-IP connection attempt
-            self.logprint(f"  sock.connect(({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]}))", color = "blue")
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
-            sock.close()
-            sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
-            self.nanonis_online = True
-    
-        except socket.timeout:
-            self.nanonis_online = False
-        except Exception:
-            self.nanonis_online = False
-        
-        finally:
-            if self.nanonis_online: self.logprint("Success!", color = "green")
-            else: self.logprint("Error: Failed to connect!", color = "red")
-            self.update_buttons()
-    
-    def get_parameters(self):
-        self.logprint("Obtaining the tip status", color = "white")
-        self.logprint("  [dict] tip_status = nanonis_functions.tip()", color = "blue")
-
-        try:
-            tip_status = self.nanonis_functions.tip()
-            if tip_status == False:
-                self.logprint("Error retrieving the tip status.", color = "red")
-                self.nanonis_online = False
-            else:
-                self.tip_status = tip_status
+    def update_buttons(self):
+        if self.nanonis_online:
+            self.tip_status_button.setEnabled(True)
+            self.nanonis_online_button.setText("Nanonis: online")
+            self.nanonis_online_button.setStyleSheet(f"background-color: {colors["darkgreen"]};")
             
-            self.logprint("Obtaining the scan parameters", color = "white")
-            self.logprint("  [dict] tip_status = nanonis_functions.tip()", color = "blue")
+            [button.setEnabled(True) for button in self.action_buttons]
+            [button.setEnabled(True) for button in self.arrow_buttons]
+            [button.setEnabled(True) for button in self.parameter_buttons]
+        else:
+            self.nanonis_online_button.setText("Nanonis: offline")
+            self.nanonis_online_button.setStyleSheet(f"background-color: {colors["darkred"]};")
             
-            parameters = self.helper_functions.get_parameters()
-            if parameters == False:
-                self.logprint("Error retrieving the scan parameters.", color = "red")
-                self.nanonis_online = False
-            else:
-                self.parameters = parameters
-                self.session_path = parameters.session_path
-                self.paths["session_path"] = parameters.session_path
-                self.session_folder_button.setText(self.session_path)
+            [button.setEnabled(False) for button in self.action_buttons]
+            [button.setEnabled(False) for button in self.arrow_buttons]
+            [button.setEnabled(False) for button in self.parameter_buttons]
+            
+            if hasattr(self, "tip_status"): delattr(self, "tip_status")
+            if hasattr(self, "nanonis_functions"): delattr(self, "nanonis_functions")
+            if hasattr(self, "parameters"): delattr(self, "parameters")
 
-                experiment = self.experiment_box.currentText()
-                self.experiment_filename = self.get_next_indexed_filename(self.session_path, experiment, ".hdf5")
-                self.save_to_button.setText(self.experiment_filename)
-        except Exception as e:
-            self.logprint("{e}", color = "red")
+        if not hasattr(self, "tip_status"):
+            self.tip_status_button.setEnabled(False)
+            self.logprint("Error: tip status unknown.", "red")
+            self.tip_status_button.setText("Tip status: unknown")
             return False
+
+        if self.tip_status["withdrawn"]:
+            self.tip_status_button.setText("Tip status: withdrawn")
+            self.tip_status_button.setStyleSheet("background-color: darkred;")
+            self.withdraw_button.setText("Land")
+            self.withdraw_checkbox.setEnabled(False)
+        else:
+            if self.tip_status["feedback"]:
+                self.tip_status_button.setText("Tip status: in feedback")
+                self.tip_status_button.setStyleSheet(f"background-color: {colors["darkgreen"]};")
+                self.withdraw_button.setText("Withdraw,")
+                self.withdraw_checkbox.setEnabled(True)
+            else:
+                self.tip_status_button.setText("Tip status: constant height")
+                self.tip_status_button.setStyleSheet("background-color: darkorange;")
+                self.withdraw_button.setText("Withdraw,")
+                self.withdraw_checkbox.setEnabled(True)
+
+        if not hasattr(self, "parameters"):
+            self.logprint("Error: parameters could not be retrieved.")
+            return False
+
+        self.nanonis_bias_box.setText(f"{np.round(self.parameters["bias"], 3)}")
+        self.I_fb_box.setText(f"{np.round(self.parameters["I_fb"] * 1E12, 3)}") # In pA
+        #self.p_gain_box.setText(f"{np.round(self.parameters["p_gain"] * 1E12, 3)}") # In pm
+        #self.t_const_box.setText(f"{np.round(self.parameters["t_const"] * 1E6, 3)}") # In us
 
     def get_next_indexed_filename(self, folder_path, base_name, extension):
         # Pattern to match files with the base name and exactly 3 digits for the index
@@ -648,57 +654,6 @@ class AppWindow(QMainWindow):
         
         return f"{base_name}_{formatted_index}{extension}"
 
-    # Enable or disable the buttons according to the available hardware connections and parameters
-    def update_buttons(self):
-        if self.nanonis_online:
-            self.nanonis_online_button.setText("Nanonis: online")
-            self.nanonis_online_button.setStyleSheet("background-color: darkgreen;")
-            
-            [button.setEnabled(True) for button in self.action_buttons]
-            [button.setEnabled(True) for button in self.arrow_buttons]
-            [button.setEnabled(True) for button in self.parameter_buttons]
-        else:
-            self.nanonis_online_button.setText("Nanonis: offline")
-            self.nanonis_online_button.setStyleSheet("background-color: darkred;")
-            
-            [button.setEnabled(False) for button in self.action_buttons]
-            [button.setEnabled(False) for button in self.arrow_buttons]
-            [button.setEnabled(False) for button in self.parameter_buttons]
-        
-        # if not hasattr(self, "tip_status"):
-        #    self.connect_nanonis()
-        if not hasattr(self, "tip_status"):
-            self.logprint("Error: tip status unknown.", "red")
-            return False
-
-        if self.tip_status.withdrawn:
-            self.tip_status_button.setText("Tip status: withdrawn")
-            self.tip_status_button.setStyleSheet("background-color: darkred;")
-            self.withdraw_button.setText("Land")
-            self.withdraw_checkbox.setEnabled(False)
-        else:
-            if self.tip_status.feedback:
-                self.tip_status_button.setText("Tip status: in feedback")
-                self.tip_status_button.setStyleSheet("background-color: darkgreen;")
-                self.withdraw_button.setText("Withdraw,")
-                self.withdraw_checkbox.setEnabled(True)
-            else:
-                self.tip_status_button.setText("Tip status: constant height")
-                self.tip_status_button.setStyleSheet("background-color: darkorange;")
-                self.withdraw_button.setText("Withdraw,")
-                self.withdraw_checkbox.setEnabled(True)
-
-        # if not hasattr(self, "scan_parameters"):
-        #    self.connect_nanonis()
-        if not hasattr(self, "parameters"):
-            self.logprint("Error: parameters could not be retrieved.")
-            return False
-    
-        self.nanonis_bias_box.setText(f"{np.round(self.parameters.bias, 3)}")
-        self.I_fb_box.setText(f"{np.round(self.parameters.I_fb * 1E12, 3)}") # In pA
-        self.p_gain_box.setText(f"{np.round(self.parameters.p_gain * 1E12, 3)}") # In pm
-        self.t_const_box.setText(f"{np.round(self.parameters.t_const * 1E6, 3)}") # In us
-
     def update_start_stop_icon(self):
         try:
             if self.experiment_running:
@@ -712,58 +667,214 @@ class AppWindow(QMainWindow):
             # keep the arrow indicator.
             pass
 
+    def view_toggle(self):
+        # Toggle view between camera and scan
+        print(f"View index is {self.view_index}")
+
+        self.view_index = 1 - self.view_index
+        
+        if self.view_index == 1:
+            self.view_swap_button.setText("View: camera")
+            self.start_camera()
+        else:
+            self.view_swap_button.setText("View: scan")
+            self.stop_camera()
+        print(f"View index is {self.view_index}")
+
+    def launch_scanalyzer(self):
+        try:
+            scanalyzer_path = self.paths["scanalyzer_path"]
+            python_executable = sys.executable
+            self.logprint(f"Executing command: {python_executable} {scanalyzer_path}", color = "white")
+            self.process.start(python_executable, [self.paths["scanalyzer_path"]])
+        except Exception as e:
+            self.logprint("Failed to launch Scanalyzer: {e}", color = "red")
+
+    def open_session_folder(self):
+        try:
+            session_path = self.paths["session_folder"]
+            self.logprint("Opening the session folder", color = "white")
+            os.startfile(session_path)
+        except:
+            self.logprint("Error. Session folder unknown.", color = "red")
+        return
+
+    def on_exit(self):
+        """Ensures the thread is stopped when the window is closed."""
+        #if self.is_camera_running:
+        #    self.stop_camera()
+        #event.accept()
+        """
+        self.experiments.stop() # Set stop flag
+        self.experiment_thread.quit() # Quit the thread's event loop
+        self.experiment_thread.wait() # Wait for the thread to actually finish
+        """
+        self.logprint("Thank you for using Scantelligent!", color = "green")
+        QApplication.instance().quit()
+
+    def closeEvent(self, event):
+        self.on_exit()
+
+
+
+    # Nanonis
+    # Connect
+    def connect_nanonis(self):
+        self.logprint("Connecting to Nanonis", color = "white")
+        try:
+            # This is a low-level TCP-IP connection attempt
+            self.logprint(f"  sock.connect(({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]}))", color = "blue")
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
+            sock.close()
+            sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
+            self.nanonis_online = True
+    
+        except socket.timeout:
+            self.nanonis_online = False
+        except Exception:
+            self.nanonis_online = False
+        
+        finally:
+            if self.nanonis_online:
+                self.nanonis_functions = NanonisFunctions(hardware = self.hardware) # Make the NanonisFunctions available
+                self.logprint("Success! I also created an instance of NanonisFunctions() called 'nanonis_functions'", color = "green")
+                self.on_parameters_request()
+                self.on_frame_request()
+            else:
+                self.logprint("Error: Failed to connect!", color = "red")
+            self.update_buttons()
+
+    def on_parameters_request(self):
+        try:
+            self.logprint("  tip_status = nanonis_functions.tip()", color = "blue")
+            tip_status = self.nanonis_functions.tip()
+            if tip_status == False:
+                self.logprint("Error retrieving the tip status.", color = "red")
+                self.nanonis_online = False
+            else:
+                self.tip_status = tip_status
+            
+            self.logprint("  parameters = nanonis_functions.get_parameters()", color = "blue")
+            parameters = self.nanonis_functions.get_parameters()
+
+            if parameters == False:
+                self.logprint("Error retrieving the scan parameters.", color = "red")
+                self.nanonis_online = False
+            else:
+                self.parameters = parameters
+                self.paths["session_path"] = parameters["session_path"]
+                self.session_folder_button.setText(self.paths["session_path"])
+
+                experiment = self.experiment_box.currentText()
+                self.paths["experiment_file"] = self.get_next_indexed_filename(self.paths["session_path"], experiment, ".hdf5")
+                self.save_to_button.setText(self.paths["experiment_file"])
+
+                self.logprint("I was able to retrieve the tip status and scan parameters and saved them to dictionaries called 'tip_status' and 'parameters'", color = "green")
+                self.logprint(f"  tip_status.keys() = {tip_status.keys()};", color = "blue")
+                self.logprint(f"  tip_status.values() = {tip_status.values()}", color = "blue")
+                self.logprint(f"  parameters.keys() = {parameters.keys()};", color = "blue")
+                self.logprint("The session_path that I obtained from Nanonis was added to the 'paths' dictionary", color = "white")
+
+        except Exception as e:
+            self.logprint("{e}", color = "red")
+            return False
+
+    def on_frame_request(self):
+        try:
+            if hasattr(self, "nanonis_functions"):
+                self.logprint(f"  frame = nanonis_functions.get_frame()", color = "blue")
+                frame = self.nanonis_functions.get_frame()
+
+            if type(frame) == dict:
+                self.frame = frame
+                channels = frame["channel_names"]
+                if type(channels) == list:
+                    self.channel_select_box.addItems(channels)
+                
+                self.logprint("I was able to read the scan frame data from Nanonis and saved it in a dictionary called 'frame'", color = "green")
+                self.logprint(f"  frame.keys() = {self.frame.keys()}", color = "blue")
+        except Exception as e:
+            self.logprint({e}, color = "red")
+
+    def on_nanonis_scan_request(self):
+        direction = 0
+        try:
+            if hasattr(self, "frame"):
+                channel_indices = self.frame["channel_indices"]
+                channel_index = channel_indices[self.channel_select_box.currentIndex()]
+                
+                selected_scan = self.nanonis_functions.get_scan(channel_index, direction)
+                self.logprint(selected_scan)
+                if type(selected_scan) == np.ndarray:
+                    self.selected_scan = selected_scan
+                    self.image_view.setImage(self.selected_scan)
+                    self.image_view.autoRange()
+            else:
+                self.logprint("No dictionary 'frame' found", color = "red")
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+
     # Simple Nanonis functions
     def toggle_withdraw(self):
-        
-        nanonisfunctions = NanonisFunctions(self.hardware)
-        grid = nanonisfunctions.get_grid()
-        self.logprint(grid.keys())
-        
-        #nanonis_functions = NanonisFunctions()
-        if not hasattr(self, "tip_status"):
-            self.connect_nanonis()
         if not hasattr(self, "tip_status"):
             self.logprint("Error: tip status unknown.")
             return False
         
-        if self.tip_status.withdrawn:
-            self.logprint("  [obj] tip_status = helper_functions.tip(feedback = True)", color = "blue")
-            # self.tip_status = nanonis_functions.tip(feedback = True)
-            self.tip_status = self.helper_functions.tip(feedback = True)
+        if self.tip_status.get("withdrawn", True):
+            self.logprint("  [dict] tip_status = nanonis_functions.tip(feedback = True)", color = "blue")
+            tip_status = self.nanonis_functions.tip(feedback = True)
+            if type(tip_status) == dict: self.tip_status = tip_status
         else:
-            self.logprint("  [obj] tip_status = helper_functions.tip(withdraw = True)", color = "blue")
-            self.tip_status = self.helper_functions.tip(withdraw = True)
-        
+            self.logprint("  [dict] tip_status = nanonis_functions.tip(withdraw = True)", color = "blue")
+            tip_status = self.nanonis_functions.tip(withdraw = True)
+            if type(tip_status) == dict: self.tip_status = tip_status
+
         self.update_buttons()
         return True
-    
+
     def change_tip_status(self):
-        if not hasattr(self, "tip_status"):
-            self.connect_nanonis()
         if not hasattr(self, "tip_status"):
             self.logprint("Error: tip status unknown.", color = "red")
             return False
         
-        if self.tip_status.withdrawn: # Land if withdrawn
-            self.logprint("  [obj] tip_status = helper_functions.tip(feedback = True)", color = "blue")
-            self.tip_status = self.helper_functions.tip(feedback = True)
+        if self.tip_status.get("withdrawn", True): # Land if withdrawn
+            self.logprint("  [dict] tip_status = nanonis_functions.tip(feedback = True)", color = "blue")
+            tip_status = self.nanonis_functions.tip(feedback = True)
+            if type(tip_status) == dict: self.tip_status = tip_status
         else: # Toggle the feedback
-            self.logprint("  [obj] tip_status = helper_functions.tip(feedback = not tip_status.feedback)", color = "blue")
-            self.tip_status = self.helper_functions.tip(feedback = not self.tip_status.feedback)
+            self.logprint("  [dict] tip_status = nanonis_functions.tip(feedback = not tip_status[\"feedback\"])", color = "blue")
+            tip_status = self.nanonis_functions.tip(feedback = not self.tip_status["feedback"])
+            if type(tip_status) == dict: self.tip_status = tip_status
         
         self.update_buttons()
         return True
 
     def on_bias_change(self, target: str = "Nanonis"):
+        # Extract the target bias from the QLineEdit textbox
         V_new = float(self.nanonis_bias_box.text())
+
+        self.nanonis_functions.get_scan_data()
+
+        self.logprint(f"  [float] V_old = nanonis_functions.change_bias({V_new})", color = "blue")
         
-        self.logprint(f"  [float] V_old = functions.change_bias({V_new})", color = "blue")
-        V_old = self.helper_functions.change_bias(V_new)
-        
-        if type(V_old) == bool:
-            return False
-        else:
-            return True
+        #V_old = self.nanonis_functions.change_bias(V_new)
+        # ^ This is the old-fashioned, non-threaded way
+        self.worker = Worker(self.nanonis_functions.change_bias, V_new)
+        self.worker.signals.finished.connect(self.on_worker_finished)
+        self.thread_pool.start(self.worker)
+
+        return True
+
+    def on_setpoint_change(self):
+        I_fb = float(self.I_fb_box.text())
+        I_fb *= 1E-12
+
+        self.logprint(f"  [float] I_old = nanonis_functions.change_setpoint({I_fb})", color = "blue")
+        I_old = self.nanonis_functions.change_feedback(I_fb)
+
+        return True
 
     def on_experiment_change(self):
         experiment = self.experiment_box.currentText()
@@ -771,7 +882,7 @@ class AppWindow(QMainWindow):
         self.save_to_button.setText(self.experiment_filename)
         return
 
-    # Experiments (with QThreading)
+    # Experiments and thread management
     def start_stop_experiment(self):
         # If an experiment is running, stop it
         if self.experiment_running:
@@ -888,7 +999,35 @@ class AppWindow(QMainWindow):
 
         return True
 
-    # Manage the camera thread
+    def on_worker_finished(self):
+        self.worker.deleteLater()
+        if hasattr(self, "nanonis_functions"):
+            self.nanonis_functions.disconnect()
+        return
+
+
+
+    # Camera
+    def check_camera_connection(self, argument):
+        try:
+            cap = cv2.VideoCapture(argument)
+        except:
+            self.camera_online = False
+
+        if not cap.isOpened(): # Check if the camera opened successfully
+            self.logprint("Error: Could not open camera.", color = "red")
+            self.camera_online = False
+        else:
+            cap.release()
+            self.camera_online = True
+        
+        if self.camera_online:
+            self.camera_online_button.setText("Camera: online")
+            self.camera_online_button.setStyleSheet(f"background-color: {colors["darkgreen"]};")
+        else:
+            self.camera_online_button.setText("Camera: offline")
+            self.camera_online_button.setStyleSheet(f"background-color: {colors["darkred"]};")
+
     def update_image_display(self, frame):
         """Slot to receive the RGB frame and update the ImageView."""
         # pyqtgraph efficiently handles the NumPy array.
@@ -950,78 +1089,6 @@ class AppWindow(QMainWindow):
         self.is_camera_running = False
         self.camera_start_button.setEnabled(True) 
         self.camera_stop_button.setEnabled(False)
-
-    # Check camera
-    def check_camera_connection(self, argument):
-        try:
-            cap = cv2.VideoCapture(argument)
-        except:
-            self.camera_online = False
-
-        if not cap.isOpened(): # Check if the camera opened successfully
-            print("Error: Could not open camera.")
-            self.camera_online = False
-        else:
-            cap.release()
-            self.camera_online = True
-        
-        if self.camera_online:
-            self.camera_online_button.setText("Camera: online")
-            self.camera_online_button.setStyleSheet("background-color: darkgreen;")
-        else:
-            self.camera_online_button.setText("Camera: offline")
-            self.camera_online_button.setStyleSheet("background-color: darkred;")
-
-    # Toggle view between camera and scan
-    def view_toggle(self):
-        print(f"View index is {self.view_index}")
-
-        self.view_index = 1 - self.view_index
-        
-        if self.view_index == 1:
-            self.view_swap_button.setText("View: camera")
-            self.start_camera()
-        else:
-            self.view_swap_button.setText("View: scan")
-            self.stop_camera()
-        print(f"View index is {self.view_index}")
-
-    # Start Scanalyzer
-    def launch_scanalyzer(self):
-        if hasattr(self, "scanalyzer_path"):
-            try:
-                python_executable = sys.executable
-                self.logprint(f"Starting script: {python_executable} {self.scanalyzer_path}", color = "white")
-                self.process.start(python_executable, [self.scanalyzer_path])
-            except:
-                self.logprint("Failed to load Scanalyzer", color = "red")
-        else:
-            self.logprint("Scanalyzer path unknown", color = "red")
-
-    def open_session_folder(self):
-        if hasattr(self, "session_path"):
-            self.logprint("Opening the session folder", color = "white")
-            os.startfile(self.session_path)
-        else:
-            self.logprint("Error. Session folder unknown.", color = "red")
-        return
-
-
-
-    # Exit button
-    def on_exit(self):
-        """Ensures the thread is stopped when the window is closed."""
-        #if self.is_camera_running:
-        #    self.stop_camera()
-        #event.accept()
-        self.experiments.stop() # Set stop flag
-        self.experiment_thread.quit() # Quit the thread's event loop
-        self.experiment_thread.wait() # Wait for the thread to actually finish
-        self.logprint("Thank you for using Scantelligent!", color = "green")
-        QApplication.instance().quit()
-
-    def closeEvent(self, event):
-        self.on_exit()
 
 
 

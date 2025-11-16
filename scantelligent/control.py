@@ -37,28 +37,26 @@ class CameraWorker(QObject):
     Worker to handle the time-consuming cv2.VideoCapture loop.
     It runs in a separate QThread and emits frames as NumPy arrays.
     """
-    # Signal to send the processed RGB NumPy frame data back to the GUI
-    frameCaptured = pyqtSignal(np.ndarray)  
-    # Signal to indicate that the capture loop has finished
-    finished = pyqtSignal()
-    
-    def __init__(self, camera_index=0):
+    frameCaptured = pyqtSignal(np.ndarray) # Signal to send the processed RGB NumPy frame data back to the GUI
+    finished = pyqtSignal() # Signal to indicate that the capture loop has finished
+    message = pyqtSignal(str, str)
+
+    def __init__(self, camera_index = 0):
         super().__init__()
         self.camera_index = camera_index
         self._running = False
         self.cap = None
 
     def start_capture(self):
-        """Initializes VideoCapture and starts the frame-reading loop."""
+        # Initializes video capture and starts the frame-reading loop.
         if self._running:
             return
 
         self._running = True
-        # Initialize VideoCapture
         self.cap = cv2.VideoCapture(self.camera_index)
         
         if not self.cap.isOpened():
-            print(f"Error: Could not open camera {self.camera_index}. Check connections.")
+            self.message.emit(f"Error: Could not open camera {self.camera_index}. Check connections.", "red")
             self._running = False
             self.finished.emit()
             return
@@ -77,9 +75,9 @@ class CameraWorker(QObject):
                 self.frameCaptured.emit(rgb_frame)
             else:
                 # Exit loop if frame read fails (e.g., camera unplugged)
-                print("Warning: Failed to read frame from camera.")
-                break 
-                
+                self.message.emit("Warning: Failed to read frame from camera.")
+                break
+
         # Cleanup code runs when the while loop exits
         if self.cap:
              self.cap.release()
@@ -93,12 +91,10 @@ class CameraWorker(QObject):
 
 
 class HelperFunctions:
-    def __init__(self, tcp_ip, tcp_port, version_number):
-        self.tcp_ip = tcp_ip
-        self.tcp_port = tcp_port
-        self.version_number = version_number
+    def __init__(self):
+        pass
 
-    def logprint(self, message, timestamp: bool = True, color: str = None):
+    def logprint(self, message, timestamp: bool = True, color: str = "white"):
         """Print a timestamped message to the redirected stdout.
 
         Parameters:
@@ -107,22 +103,25 @@ class HelperFunctions:
         - color: optional CSS color name or hex (e.g. 'red' or '#ff0000')
         """
         current_time = datetime.now().strftime("%H:%M:%S")
+        if color == "blue": timestamp = False
         if timestamp:
             timestamped_message = current_time + f">>  {message}"
         else:
-            timestamped_message = f"            {message}"
+            timestamped_message = f"{message}"
 
         # Escape HTML to avoid accidental tag injection, then optionally
         # wrap in a colored span so QTextEdit renders it in color.
         escaped = html.escape(timestamped_message)
         final = escaped
-        if color:
-            if type(color) == hex:
-                final = f"<span style=\"color:{color}\">{escaped}</span>"
-            elif type(color) == str:
-                if color in colors.keys():
-                    hex_value = colors[color]
-                    final = f"<span style=\"color:{hex_value}\">{escaped}</span>"
+        
+        if type(color) == str:
+            if color in colors.keys():
+                color = colors[color]
+        
+        if timestamp:
+            final = f"<span style=\"color:{color}\">{escaped}</span></pre>"
+        else:
+            final = f"<pre><span style=\"color:{color}\">        {escaped}</span></pre>"
 
         # Print HTML text (QTextEdit.append will render it as rich text).
         print(final, flush = True)
@@ -185,217 +184,47 @@ class HelperFunctions:
         
         return [V_list, x_list, y_list, iterations]
 
-    def get_grid(self): # Retrieve the grid data
-        self.logprint("  [obj] grid = functions.get_grid()", color = "blue")
 
+
+class WorkerSignals(QObject):
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    result = pyqtSignal(object)
+    progress = pyqtSignal(int)
+
+
+
+class Worker(QRunnable):
+    def __init__(self, target_function, *args, **kwargs):
+        super().__init__()
+        self.target_function = target_function
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+    
+    @pyqtSlot()
+    def run(self):
         try:
-            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
-            try:
-                scan = Scan(NTCP)
-                grid_data = scan.FrameGet() # Request the data from Nanonis
-                buffer_data = scan.BufferGet()
-                NTCP.close_connection() # Close the TCP connection
-                sleep(.05)
-
-                grid = SimpleNamespace() # Set up a grid object with attributes reflecting the grid data
-                setattr(grid, "x", grid_data[0])
-                setattr(grid, "y", grid_data[1])
-                setattr(grid, "center", [grid_data[0], grid_data[1]])
-                setattr(grid, "width", grid_data[2])
-                setattr(grid, "height", grid_data[3])
-                setattr(grid, "size", [grid_data[2], grid_data[3]])
-                setattr(grid, "angle", grid_data[4])
-                setattr(grid, "pixels", [buffer_data[2], buffer_data[3]])
-                setattr(grid, "aspect_ratio", grid_data[3] / grid_data[2])
-                setattr(grid, "pixel_width", grid_data[2] / buffer_data[2])
-                setattr(grid, "pixel_height", grid_data[3] / buffer_data[3])
-                setattr(grid, "pixel_ratio", buffer_data[3] / buffer_data[2])
-
-                if np.abs(grid.aspect_ratio - grid.pixel_ratio) > 0.001:
-                    self.logprint("Warning! The aspect ratio of the scan frame does not correspond to that of the pixels. This will result in rectangular pixels!", color = "red")
-
-                # Construct a local grid with the same size as the Nanonis grid, whose center is at (0, 0)
-                x_coords_local = np.linspace(- grid.width / 2, grid.width / 2, grid.pixels[0])
-                y_coords_local = np.linspace(- grid.height / 2, grid.height / 2, grid.pixels[1])
-                x_grid_local, y_grid_local = np.meshgrid(x_coords_local, y_coords_local, indexing = "ij")
-
-                # Apply a rotation
-                cos = np.cos(grid.angle)
-                sin = np.sin(grid.angle)
-                x_grid = np.zeros_like(x_grid_local)
-                y_grid = np.zeros_like(y_grid_local)
-
-                for i in range(grid.pixels[0]):
-                    for j in range(grid.pixels[1]):
-                        x_grid[i, j] = x_grid_local[i, j] * cos + y_grid_local[i, j] * sin
-                        y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
-
-                # Apply a translation
-                x_grid += grid.x
-                y_grid += grid.y
-
-                # Add the meshgrids as attributes to the grid object
-                setattr(grid, "x_grid", x_grid)
-                setattr(grid, "y_grid", y_grid)
-
-                return grid
-
-            except Exception as e:
-                NTCP.close_connection()
-                sleep(.05)
-                self.logprint(f"Error: {e}", color = "red")
-                return False
-
-        except Exception as e:
-            self.logprint(f"{e}", color = "red")
-            return False
-
-    def tip(self, withdraw: bool = False, feedback = None):
-        try:
-            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
-            try:
-                zcontroller = ZController(NTCP)
-                
-                # Get the current height and lmits
-                z_pos = zcontroller.ZPosGet()
-                [z_max, z_min] = zcontroller.LimitsGet()
-
-                # Switch the feedback if desired, and retrieve the feedback status
-                if type(feedback) == bool: zcontroller.OnOffSet(feedback)
-
-                withdrawn = False
-                if not feedback and np.abs(z_pos - z_max) < 1E-11: # Tip is already withdrawn
-                    withdrawn = True
-                if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
-                    zcontroller.Withdraw(wait_until_finished = True)
-                    withdrawn = True
-
-                # Retrieve the feedback status
-                sleep(.1)
-                feedback_new = bool(zcontroller.OnOffGet())
-                #fb_number = zcontroller.StatusGet()
-                #if fb_number == 2: feedback = True
-                #else: feedback = False
-                sleep(.1)
-
-                tip_status = SimpleNamespace()
-                setattr(tip_status, "height", z_pos)
-                setattr(tip_status, "limits", [z_min, z_max])
-                setattr(tip_status, "feedback", feedback_new)
-                setattr(tip_status, "withdrawn", withdrawn)
-
-                return tip_status
-
-            except Exception as e:
-                NTCP.close_connection()
-                sleep(.1)
-                self.logprint(f"Error: {e}", color = "red")
-                return False
-
-        except Exception as e:
-            self.logprint(f"{e}", color = "red")
-            return False
-
-    def get_parameters(self):
-        try:
-            sleep(.1)
-            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
-            try:
-                util = Util(NTCP)
-                zcontroller = ZController(NTCP)
-                bias = Bias(NTCP)
-                
-                session_path = util.SessionPathGet() # Read the session path
-                I_fb = zcontroller.SetpntGet()
-                p_gain, t_const, i_gain = zcontroller.GainGet()
-                V = bias.Get()
-                sleep(.1)
-                
-                parameters = SimpleNamespace()
-                setattr(parameters, "bias", V)
-                setattr(parameters, "I_fb", I_fb)
-                setattr(parameters, "p_gain", p_gain)
-                setattr(parameters, "t_const", t_const)
-                setattr(parameters, "i_gain", i_gain)
-                setattr(parameters, "session_path", session_path)
-
-                return parameters
-
-            except Exception as e:
-                NTCP.close_connection()
-                sleep(.1)
-                self.logprint(f"Error: {e}", color = colors["red"])
-                return False
-
-        except Exception as e:
-            self.logprint(f"{e}", color = colors["red"])
-            return False
-
-    def change_bias(self, V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, V_limits = 10):
-        if type(V) != float and type(V) != int:
-            self.logprint("Wrong bias supplied", color = colors["red"])
-            return False
-        if type(V_limits) == float or type(V_limits) == int:
-            if np.abs(V) > np.abs(V_limits):
-                self.logprint("Bias outside of limits")
-                return False
-
-        try:
-            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
-            try:
-                bias = Bias(NTCP)
-                zcontroller = ZController(NTCP)
-                
-                V0 = bias.Get() # Read data from Nanonis
-                feedback = zcontroller.OnOffGet()
-                tip_height = zcontroller.ZPosGet()
-                
-                polarity_difference = int(np.abs(np.sign(V) - np.sign(V0)) / 2) # Calculate the polarity and voltage slew values
-                if V > V0: delta_V = dV
-                else: delta_V = -dV
-                slew = np.arange(V0, V, delta_V)
-
-                if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
-                    zcontroller.OnOffSet(False)
-                    sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
-                    zcontroller.ZPosSet(tip_height + dz)
-
-                for V_t in slew: # Perform the slew to the new bias voltage
-                    bias.Set(V_t)
-                    sleep(dt)
-                bias.Set(V) # Final bias value
-            
-                if bool(feedback) and bool(polarity_difference): zcontroller.OnOffSet(True) # Turn the feedback back on
-                sleep(.1)
-
-                return V0
-
-            except Exception as e:
-                NTCP.close_connection()
-                sleep(.1)
-                self.logprint(f"Error: {e}", color = colors["red"])
-                return False
-
-        except Exception as e:
-            self.logprint(f"{e}", color = colors["red"])
-            return False
-
-    def get_pixels(n_pix: int = 2, data_format: str = "complex", unit: str = "calibrated", first_bufpos = None):
-        pixel = np.random.rand(64)
-        return pixel
+            # Perform your long-running task here
+            result = self.target_function(*self.args, **self.kwargs)
+            self.signals.result.emit(result)
+        #except Exception as e:
+        #    self.signals.error.emit((type(e), e, e.__traceback__))
+        finally:
+            self.signals.finished.emit() # Emit finished signal regardle
 
 
 
 class NanonisFunctions(NanonisHardware):
     def __init__(self, hardware: dict):
         super().__init__(hardware = hardware)
-        self.helper_functions = HelperFunctions(hardware["nanonis_ip"], hardware["nanonis_port"], hardware["nanonis_version"])
+        self.helper_functions = HelperFunctions()
         self.logprint = self.helper_functions.logprint
 
-    def get_grid(self):
+    def get_grid(self, verbose: bool = True):
         error_flag = False
         
-        self.logprint("  [dict] grid = nanonis_functions.get_grid()", color = "blue")
+        if verbose: self.logprint("  [dict] grid = nanonis_functions.get_grid()", color = "blue")
 
         # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
         try:
@@ -407,6 +236,7 @@ class NanonisFunctions(NanonisHardware):
             error_flag = True
         finally:
             self.disconnect()
+            sleep(.1)
         
         if error_flag:
             return False
@@ -424,10 +254,12 @@ class NanonisFunctions(NanonisHardware):
             "aspect_ratio": grid_data[3] / grid_data[2],
             "pixel_width": grid_data[2] / buffer_data[2],
             "pixel_height": grid_data[3] / buffer_data[3],
-            "pixel_ratio": buffer_data[3] / buffer_data[2]
+            "pixel_ratio": buffer_data[3] / buffer_data[2],
+            "num_channels": buffer_data[0],
+            "channel_indices": buffer_data[1]
         }
 
-        if np.abs(grid["aspect_ratio"] - grid["pixel_ratio"]) > 0.001:
+        if np.abs(grid["aspect_ratio"] - grid["pixel_ratio"]) > 0.001 and verbose:
             self.logprint("Warning! The aspect ratio of the scan frame does not correspond to that of the pixels. This will result in rectangular pixels!", color = "red")
 
         # Construct a local grid with the same size as the Nanonis grid, whose center is at (0, 0)
@@ -454,7 +286,7 @@ class NanonisFunctions(NanonisHardware):
         grid["x_grid"] = x_grid
         grid["y_grid"] = y_grid
         
-        self.logprint(f"  grid.keys() = {grid.keys()}", color = "blue")
+        if verbose: self.logprint(f"  grid.keys() = {grid.keys()}", color = "blue")
 
         return grid
 
@@ -463,25 +295,25 @@ class NanonisFunctions(NanonisHardware):
         
         # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
         try:
-            self.connect_log()
-            zcontroller = self.zcontroller
-            z_pos = self.get_height()
-            [z_max, z_min] = zcontroller.LimitsGet()
+            self.connect_log()            
+            z_pos = self.get_z()
+            [z_max, z_min] = self.zcontroller.LimitsGet()
 
             # Switch the feedback if desired, and retrieve the feedback status
-            if type(feedback) == bool: self.set_feedback(bool)
+            if type(feedback) == bool: self.set_feedback(feedback)
             
             withdrawn = False # Initialize the withdrawn parameter, which tells whether the tip is withdrawn
             if not feedback and np.abs(z_pos - z_max) < 1E-11: # Tip is already withdrawn
                 withdrawn = True
             if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
-                self.withdraw
+                self.zcontroller.Withdraw(wait_until_finished = True)
                 withdrawn = True
 
             # Retrieve the feedback status
-            sleep(.1)
+            sleep(.2)
             feedback_new = self.get_feedback()
-            sleep(.1)
+
+            self.zcontroller
             
             tip_status = {
                 "height": z_pos,
@@ -495,6 +327,7 @@ class NanonisFunctions(NanonisHardware):
             error_flag = True
         finally:
             self.disconnect()
+            sleep(.1)
             
             if error_flag:
                 return False
@@ -502,41 +335,50 @@ class NanonisFunctions(NanonisHardware):
                 return tip_status
 
     def get_parameters(self):
+        error_flag = False
+        
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
         try:
-            sleep(.1)
-            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
-            try:
-                util = Util(NTCP)
-                zcontroller = ZController(NTCP)
-                bias = Bias(NTCP)
-                
-                session_path = util.SessionPathGet() # Read the session path
-                I_fb = zcontroller.SetpntGet()
-                p_gain, t_const, i_gain = zcontroller.GainGet()
-                V = bias.Get()
-                sleep(.1)
-                
-                parameters = SimpleNamespace()
-                setattr(parameters, "bias", V)
-                setattr(parameters, "I_fb", I_fb)
-                setattr(parameters, "p_gain", p_gain)
-                setattr(parameters, "t_const", t_const)
-                setattr(parameters, "i_gain", i_gain)
-                setattr(parameters, "session_path", session_path)
+            self.connect_control()
+            
+            V = self.get_V()
+            I_fb = self.get_setpoint()
+            [p_gain, t_const, i_gain] = gains = self.get_gains()
+            [v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio] = self.scan.SpeedGet()
+            v_move = self.get_speed()
+            session_path = self.get_path()
 
-                return parameters
-
-            except Exception as e:
-                NTCP.close_connection()
-                sleep(.1)
-                self.logprint(f"Error: {e}", color = colors["red"])
-                return False
+            parameters = {
+                "bias": V,
+                "gains": gains,
+                "I_fb": I_fb,
+                "p_gain": p_gain,
+                "t_const": t_const,
+                "i_gain": i_gain,
+                #"v_fwd": v_fwd,
+                #"v_bwd": v_bwd,
+                #"t_fwd": t_fwd,
+                #"t_bwd": t_bwd,
+                #"v_ratio": v_ratio,
+                "v_move": v_move,
+                "session_path": session_path
+            }
 
         except Exception as e:
-            self.logprint(f"{e}", color = colors["red"])
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
             return False
+        else:
+            return parameters
 
     def change_bias(self, V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, V_limits = 10):
+        error_flag = False
+
         if type(V) != float and type(V) != int:
             self.logprint("Wrong bias supplied", color = colors["red"])
             return False
@@ -546,44 +388,131 @@ class NanonisFunctions(NanonisHardware):
                 return False
 
         try:
-            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number)
-            try:
-                bias = Bias(NTCP)
-                zcontroller = ZController(NTCP)
-                
-                V0 = bias.Get() # Read data from Nanonis
-                feedback = zcontroller.OnOffGet()
-                tip_height = zcontroller.ZPosGet()
-                
-                polarity_difference = int(np.abs(np.sign(V) - np.sign(V0)) / 2) # Calculate the polarity and voltage slew values
-                if V > V0: delta_V = dV
-                else: delta_V = -dV
-                slew = np.arange(V0, V, delta_V)
-
-                if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
-                    zcontroller.OnOffSet(False)
-                    sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
-                    zcontroller.ZPosSet(tip_height + dz)
-
-                for V_t in slew: # Perform the slew to the new bias voltage
-                    bias.Set(V_t)
-                    sleep(dt)
-                bias.Set(V) # Final bias value
+            self.connect_log()
+                            
+            V_old = self.get_V() # Read data from Nanonis
+            feedback = self.get_feedback()
+            tip_height = self.get_z()
+            polarity_difference = np.sign(V) * np.sign(V_old) < 0 # Calculate the polarity and voltage slew values
             
-                if bool(feedback) and bool(polarity_difference): zcontroller.OnOffSet(True) # Turn the feedback back on
-                sleep(.1)
+            if V > V_old: delta_V = dV
+            else: delta_V = -dV
+            slew = np.arange(V_old, V, delta_V)
 
-                return V0
+            if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
+                self.set_feedback(False)
+                sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
+                self.set_z(tip_height + dz)
 
-            except Exception as e:
-                NTCP.close_connection()
-                sleep(.1)
-                self.logprint(f"Error: {e}", color = colors["red"])
-                return False
+            for V_t in slew: # Perform the slew to the new bias voltage
+                self.set_V(V_t)
+                sleep(dt)
+            self.set_V(V) # Final bias value
+        
+            if bool(feedback) and bool(polarity_difference):
+                self.set_feedback(True) # Turn the feedback back on
 
         except Exception as e:
-            self.logprint(f"{e}", color = colors["red"])
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
             return False
+        else:
+            return V_old
+
+    def change_feedback(self, I = None, p_gain = None, t_const = None):
+        error_flag = False
+
+        if type(I) == int or type(I) == float:
+            if np.abs(I) > 1E-3: I *= 1E-12
+
+        try:
+            self.connect_log()
+            I_old = self.get_setpoint()
+            if type(I) == int or type(I) == float: self.set_setpoint(I)
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
+            return False
+        else:
+            return I_old
+
+    def get_frame(self):
+        """
+        get_scan_data is an appended version of get_grid.
+        get_grid already gets data regarding the properties of the current scan frame
+        To get the names of the recorded channels and the save properties, the grid dictionary is appended
+        """
+        error_flag = False
+        
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            grid = self.get_grid(verbose = False)
+            channel_indices = grid.get("channel_indices") # The indices of the Nanonis signals being recorded in the scan
+            self.connect_control()
+            [signal_names, signal_indices] = self.signals.InSlotsGet()
+            scan_props = self.scan.PropsGet()
+            auto_save = bool(scan_props[1])
+            
+            channel_names = []
+            for channel_index in channel_indices:
+                channel_name = signal_names[channel_index]
+                channel_names.append(channel_name)
+            
+            frame = grid | {
+                "signal_names": signal_names,
+                "signal_indices": signal_indices,
+                "channel_names": channel_names,
+                "channel_indices": channel_indices,
+                "auto_save": auto_save
+                }
+
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
+            return False
+        else:
+            return frame
+
+    def get_scan(self, channel_index, direction):
+        """
+        get_scan_data is an appended version of get_grid.
+        get_grid already gets data regarding the properties of the current scan frame
+        To get the names of the recorded channels and the save properties, the grid dictionary is appended
+        """
+        error_flag = False
+        
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect_control()
+            frame_data = self.scan.FrameDataGrab(channel_index = channel_index, data_direction = direction)
+            scan_frame = frame_data[1]
+
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
+            return False
+        else:
+            return scan_frame
 
 
 
@@ -591,32 +520,6 @@ class MLA_Functions:
     def get_pixels(n_pix: int = 2, data_format: str = "complex", unit: str = "calibrated", first_bufpos = None):
         pixel = np.random.rand(64)
         return pixel
-
-
-
-class MeasurementWorker(QRunnable):
-    def __init__(self, experiment_func, *args, **kwargs):
-        super().__init__()
-        self.experiment_func = experiment_func
-        self.args = args,
-        self.kwargs = kwargs,
-        self.signals = WorkerSignals()
-    
-    @pyqtSlot()
-    def run(self):
-        """
-        Your code goes in this function.
-        """
-        try:
-            # Pass the progress signal to the measurement function
-            result = self.experiment_func(self.signals.progress, *self.args, **self.kwargs)
-            self.signals.result.emit(result)
-        except:
-            traceback.print_exc()
-            exctype, value = sys.exc_info()[:2]
-            self.signals.error.emit((exctype, value, traceback.format_exc()))
-        finally:
-            self.signals.finished.emit()
 
 
 
@@ -632,7 +535,7 @@ class Experiments(QObject):
         self.tcp_port = tcp_port
         self.version_number = version_number
         self._running = False
-        self.helper_functions = HelperFunctions(self.tcp_ip, self.tcp_port, self.version_number)
+        self.helper_functions = HelperFunctions()
         self.logprint = self.helper_functions.logprint
 
     def simple_scan(self, direction: str = "up", chunk_size: int = 10, delay: int = 10):
