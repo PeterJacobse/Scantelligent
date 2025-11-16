@@ -96,6 +96,18 @@ class NanonisHardware:
 
     def get_path(self):
         return self.util.SessionPathGet()
+    
+    def start_scan(self, direction: str = "up"):
+        return self.scan.Action("start", scan_direction = direction)
+
+    def stop_scan(self):
+        return self.scan.Action("stop")
+
+    def pause_scan(self):
+        return self.scan.Action("pause")
+    
+    def resume_scan(self):
+        return self.scan.Action("resume")
 
 
 

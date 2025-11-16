@@ -71,6 +71,7 @@ class AppWindow(QMainWindow):
         left_v_layout.setContentsMargins(0, 0, 0, 0) # Optional: remove inner margins
 
         # Create the pyqtgraph PlotWidget (Top of left section)
+        pg.setConfigOption("imageAxisOrder", "row-major")
         self.image_view = pg.ImageView(view = pg.PlotItem())
         left_v_layout.addWidget(self.image_view, stretch = 4) 
 
@@ -692,7 +693,7 @@ class AppWindow(QMainWindow):
 
     def open_session_folder(self):
         try:
-            session_path = self.paths["session_folder"]
+            session_path = self.paths["session_path"]
             self.logprint("Opening the session folder", color = "white")
             os.startfile(session_path)
         except:
@@ -806,9 +807,9 @@ class AppWindow(QMainWindow):
                 channel_index = channel_indices[self.channel_select_box.currentIndex()]
                 
                 selected_scan = self.nanonis_functions.get_scan(channel_index, direction)
-                self.logprint(selected_scan)
                 if type(selected_scan) == np.ndarray:
                     self.selected_scan = selected_scan
+
                     self.image_view.setImage(self.selected_scan)
                     self.image_view.autoRange()
             else:
@@ -855,10 +856,8 @@ class AppWindow(QMainWindow):
         # Extract the target bias from the QLineEdit textbox
         V_new = float(self.nanonis_bias_box.text())
 
-        self.nanonis_functions.get_scan_data()
-
         self.logprint(f"  [float] V_old = nanonis_functions.change_bias({V_new})", color = "blue")
-        
+
         #V_old = self.nanonis_functions.change_bias(V_new)
         # ^ This is the old-fashioned, non-threaded way
         self.worker = Worker(self.nanonis_functions.change_bias, V_new)
@@ -878,16 +877,19 @@ class AppWindow(QMainWindow):
 
     def on_experiment_change(self):
         experiment = self.experiment_box.currentText()
-        self.experiment_filename = self.get_next_indexed_filename(self.session_path, experiment, ".hdf5")
-        self.save_to_button.setText(self.experiment_filename)
+        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], experiment, ".hdf5")
+        self.save_to_button.setText(self.paths["experiment_filename"])
         return
 
     # Experiments and thread management
     def start_stop_experiment(self):
         # If an experiment is running, stop it
         if self.experiment_running:
-            self.experiments.stop()
-            self.experiment_status.setText("Status: Stopping...")
+            self.nanonis_functions.scan_control(action = "stop")
+            self.experiment_running = False
+
+            #self.experiments.stop()
+            #self.experiment_status.setText("Status: Stopping...")
             return
         
         # Else, if no experiment is running, start it
@@ -901,10 +903,13 @@ class AppWindow(QMainWindow):
 
         # Connect experiment file
         experiment = self.experiment_box.currentText()
+        self.paths["experiment_filename"] = experiment
+        """
         if not hasattr(self, "experiment_filename") or not hasattr(self, "session_path"):
             self.logprint("Error! Missing session path or experiment file name.", color = "red")
             return False
-        self.experiment_file = os.path.join(self.session_path, self.experiment_filename)
+        """
+        self.paths["experiment_file"] = os.path.join(self.paths["session_path"], self.paths["experiment_filename"])
 
 
 
@@ -912,7 +917,7 @@ class AppWindow(QMainWindow):
         # Grid sampling
         if experiment == "random_sampling":
             self.logprint(f"Starting experiment {experiment}", color = "white")
-            self.logprint(f"The experiment will be saved to {self.experiment_file}", color = "white")
+            self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}", color = "white")
 
             points = int(self.points_box.text())
             self.grid = self.helper_functions.get_grid()
@@ -938,10 +943,10 @@ class AppWindow(QMainWindow):
         # Simple scan
         elif experiment == "simple_scan":
             self.logprint(f"Starting experiment {experiment}")
-            self.logprint(f"The experiment will be saved to {self.experiment_file}")
+            self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
             
             points = int(self.points_box.text())
-
+            """
             # Connect the correct experiment
             try:
                 self.request_start.disconnect()
@@ -959,6 +964,9 @@ class AppWindow(QMainWindow):
             self.current_index = 0
             self.request_start.emit("up", 10, 0)
             # self.request_start.emit([2, 1.9, 1.8], None, None, 12, 0)
+            """
+            self.nanonis_functions.scan_control(action = "start", direction = "down")
+            self.experiment_running = True
 
         else:
             self.logprint("Sorry, I don't know this experiment yet.", color = "red")
@@ -1000,7 +1008,6 @@ class AppWindow(QMainWindow):
         return True
 
     def on_worker_finished(self):
-        self.worker.deleteLater()
         if hasattr(self, "nanonis_functions"):
             self.nanonis_functions.disconnect()
         return

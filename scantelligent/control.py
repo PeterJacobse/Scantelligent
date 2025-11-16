@@ -514,6 +514,36 @@ class NanonisFunctions(NanonisHardware):
         else:
             return scan_frame
 
+    def scan_control(self, action: str = "stop", direction: str = "down", verbose: bool = True, monitor: bool = False):
+        error_flag = False
+
+        try:
+            self.connect_control()
+            
+            dirxn = "up"
+            if direction == "down": dirxn = "down"
+            match action:
+                case "start":
+                    self.logprint(f"  nanonis_functions.start_scan({dirxn})", color = "blue")
+                    self.start_scan(dirxn)
+                case "pause":
+                    self.logprint(f"  nanonis_functions.pause_scan()", color = "blue")
+                    self.pause_scan()
+                case "resume":
+                    self.logprint(f"  nanonis_functions.resume_scan()", color = "blue")
+                    self.resume_scan()
+                case "stop":
+                    self.logprint(f"  nanonis_functions.stop_scan()", color = "blue")
+                    self.stop_scan()
+                case _:
+                    pass
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+        finally:
+            self.disconnect()
+            sleep(.1)
+            return
+
 
 
 class MLA_Functions:
