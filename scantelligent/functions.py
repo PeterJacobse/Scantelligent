@@ -1,729 +1,849 @@
-from nanonisTCP import nanonisTCP
-from nanonisTCP.ZController import ZController
-from nanonisTCP.Motor import Motor
-from nanonisTCP.AutoApproach import AutoApproach
-from nanonisTCP.Scan import Scan
-from nanonisTCP.Current import Current
-from nanonisTCP.LockIn import LockIn
-from nanonisTCP.Bias import Bias
-from nanonisTCP.Signals import Signals
-from nanonisTCP.Util import Util
-from nanonisTCP.FolMe import FolMe
-from nanonisTCP.BiasSpectr import BiasSpectr
-from nanonisTCP.TipShaper import TipShaper
-import nanonispy2 as nap
+import html
 import numpy as np
-from datetime import datetime
-import time
+from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
+from .hw import NanonisHardware
 from time import sleep
-from pathlib import Path
-from scipy.signal import convolve2d
-import os
+from datetime import datetime
+from time import sleep, time
+import cv2
 
-# Establish a TCP/IP connection
-TCP_IP = "192.168.236.1"                           # Local host
-#TCP_IP = "127.0.0.1"
-TCP_PORT = 6501                                    # Check available ports in NANONIS > File > Settings Options > TCP Programming Interface
-version_number = 13520
+colors = {"red": "#ff4040", "green": "#00ff00", "white": "#ffffff", "blue": "#0080ff"}
 
-# Object classes
 
-class imagestatistics:
-    def __init__(self, data_sorted, n_data, range_min, Q1, range_mean, Q3, range_max, range_total, standard_deviation, histogram):
-        self.sorted = data_sorted
-        self.n = n_data
-        self.min = range_min
-        self.mean = range_mean
-        self.max = range_max
-        self.range = range_total
-        self.Q1 = Q1
-        self.Q3 = Q3
-        self.IQR = Q3 - Q1
-        self.standard_deviation = standard_deviation
-        self.histogram = histogram
 
-class sessionfiles:
-    def __init__(self, image_files, spectroscopy_files, image_indices, spectroscopy_indices, current_image_index, current_spectroscopy_index):
-        self.image_files = image_files
-        self.spectroscopy_files = spectroscopy_files
-        self.image_indices = image_indices
-        self.spectroscopy_indices = spectroscopy_indices
-        self.current_image_index = current_image_index
-        self.current_spectroscopy_index = current_spectroscopy_index
+class CameraWorker(QObject):
+    """
+    Worker to handle the time-consuming cv2.VideoCapture loop.
+    It runs in a separate QThread and emits frames as NumPy arrays.
+    """
+    frameCaptured = pyqtSignal(np.ndarray) # Signal to send the processed RGB NumPy frame data back to the GUI
+    finished = pyqtSignal() # Signal to indicate that the capture loop has finished
+    message = pyqtSignal(str, str)
 
-class scandata:
-    def __init__(self, scans, header, channels, angle, pixels, date, time, center, size, V):
-        self.scans = scans
-        self.header = header
-        self.channels = channels
-        self.angle = angle
-        self.pixels = pixels
-        self.date = date
-        self.time = time
-        self.center = center
-        self.size = size
-        self.V = V
+    def __init__(self, camera_index = 0):
+        super().__init__()
+        self.camera_index = camera_index
+        self._running = False
+        self.cap = None
 
-class parameters:
-    def __init__(self, v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio, V, V_ac, f_ac, phase_ac, lockin_status, I_fb, p_gain, t_const, i_gain, x_center, y_center, scan_width, scan_height, scan_angle, pixels, lines, z_min, z_max, scan_channels):
-        self.v_fwd = v_fwd
-        self.v_bwd = v_bwd
-        self.t_fwd = t_fwd
-        self.t_bwd = t_bwd
-        self.lock_parameter = lock_parameter
-        self.v_ratio = v_ratio
-        self.V = V
-        self.V_ac = V_ac
-        self.f_ac = f_ac
-        self.phase_ac = phase_ac
-        self.lockin_status = lockin_status
-        self.I_fb = I_fb
-        self.p_gain = p_gain
-        self.t_const = t_const
-        self.i_gain = i_gain
-        self.x_center = x_center
-        self.y_center = y_center
-        self.center = [x_center, y_center]
-        self.scan_width = scan_width
-        self.scan_height = scan_height
-        self.size = [scan_width, scan_height]
-        self.pixels = pixels
-        self.lines = lines
-        self.grid = [pixels, lines]
-        self.scan_angle = scan_angle
-        self.z_min = z_min
-        self.z_max = z_max
-        self.z_range = [z_min, z_max]
-        self.scan_channels = scan_channels
+    def start_capture(self):
+        # Initializes video capture and starts the frame-reading loop.
+        if self._running:
+            return
 
-# Miscellaneous
-
-def logprint(message, timestamp: bool = True, logfile: str = ""):
-    current_time = datetime.now().strftime("%H:%M:%S")
-    if timestamp: timestamped_message = current_time + "  " + message
-    else: timestamped_message = "          " + message
-    if os.path.exists(logfile):
-        with open(logfile, "a") as f:
-            f.write(timestamped_message + "\n")
-    print(timestamped_message)
-
-def get_session_path():
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        util = Util(NTCP)
+        self._running = True
+        self.cap = cv2.VideoCapture(self.camera_index)
         
-        session_path = util.SessionPathGet() # Read the session path
+        if not self.cap.isOpened():
+            self.message.emit(f"Error: Could not open camera {self.camera_index}. Check connections.", "red")
+            self._running = False
+            self.finished.emit()
+            return
+            
+        # Optimization: Set a reasonable resolution
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            
+        # Main video-reading loop controlled by the _running flag
+        while self._running:
+            ret, frame = self.cap.read()
+            if ret:
+                # IMPORTANT: Convert BGR (OpenCV default) to RGB 
+                # as pyqtgraph expects RGB or Grayscale data.
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self.frameCaptured.emit(rgb_frame)
+            else:
+                # Exit loop if frame read fails (e.g., camera unplugged)
+                self.message.emit("Warning: Failed to read frame from camera.")
+                break
 
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
-        return session_path
+        # Cleanup code runs when the while loop exits
+        if self.cap:
+             self.cap.release()
+        self._running = False
+        self.finished.emit() # Notify the main thread that the work is done
 
-def get_file_data(session_path):
-    image_files = [str(file) for file in Path(session_path).glob("*.sxm")]
-    spectroscopy_files = [str(file) for file in Path(session_path).glob("*.dat")]
+    def stop_capture(self):
+        """Sets the flag to stop the capture loop cleanly."""
+        self._running = False
 
-    image_indices = [int(os.path.splitext(os.path.basename(file))[0][-4:]) for file in image_files]
-    spectroscopy_indices = [int(os.path.splitext(os.path.basename(file))[0][-4:]) for file in spectroscopy_files]
 
-    if len(image_indices) > 0: current_image_index = max(image_indices)
-    else: current_image_index = 0
-    if len(spectroscopy_indices) > 0: current_spectroscopy_index = max(spectroscopy_indices)
-    else: current_spectroscopy_index = 0
 
-    return sessionfiles(image_files, spectroscopy_files, image_indices, spectroscopy_indices, current_image_index, current_spectroscopy_index)
-
-def get_scan(file_name, crop_unfinished: bool = True):
-    if not os.path.exists(file_name):
-        print(f"Error: File '{file_name}' does not exist.")
-        return
-    else:
-        scan_data = nap.read.Scan(file_name)
-        channels = np.array([key for key in scan_data.signals.keys()])
-        scans = [scan_data.signals[key] for key in channels]
-        scan_header = scan_data.header
-        header_keys = [key for key in scan_header.keys()]
-        header_values = [scan_header[key] for key in header_keys]
-        up_or_down = scan_header.get("scan_dir", "down")
-
-        all_scans = np.stack([np.stack((np.array(scan_data.signals[channel]["forward"], dtype = float), np.flip(np.array(scan_data.signals[channel]["backward"], dtype = float), axis = 1))) for channel in channels])
-        if up_or_down == "up": all_scans = np.flip(all_scans, axis = 2)
-
-        if crop_unfinished:
-            # Determine which rows should be cropped off in an uncompleted scan
-            masked_array = np.isnan(all_scans[0, 1]) # The backward scan has more NaN values because the scan always starts in the forward direction
-            nan_counts = np.array([sum([int(masked_array[j, i]) for i in range(len(masked_array))]) for j in range(len(masked_array[0]))])
-            good_rows = np.where(nan_counts == 0)[0]
-            all_scans_processed = np.array([[all_scans[channel, 0, good_rows], all_scans[channel, 1, good_rows]] for channel in range(len(channels))])
-        else: all_scans_processed = all_scans
-
-        angle = float(scan_header.get("scan_angle", 0))
-        pixels = np.shape(all_scans_processed[0, 0])
-        date = scan_header.get("rec_date", "00.00.1900")
-        time = scan_header.get("rec_time", "00:00:00")
-        center = scan_header.get("scan_offset", np.array([0, 0], dtype = float))
-        size = scan_header.get("scan_range", np.array([1E-7, 1E-7], dtype = float))
-        V = scan_data.header.get("bias", 0)
-
-        return scandata(all_scans_processed, scan_header, channels, angle, pixels, date, time, center, size, V)
-
-def initialize():
-    session_path = get_session_path()
-    images_path = session_path + "\\Extracted Files"
-    logfile_path = session_path + "\\logfile.txt"
-
-    timestamp = datetime.now().strftime("Scantelligent log file created on %Y-%m-%d at %H:%M:%S")
-    logprint("Scantelligent session initialized. " + timestamp, logfile = logfile_path)
-
-    try:
-        with open(logfile_path, "x") as f:
-            f.write(timestamp)
-            f.write("\n\nMeasurement session folder: " + session_path)
-            f.write("\nImages and spectra extracted to: " + images_path)
-            f.write("\n\n")
-
-    except FileExistsError:
-        with open(logfile_path, "w") as f:
-            f.write(timestamp)
-            f.write("\n\nMeasurement session folder: " + session_path)
-            f.write("\nImages and spectra extracted to: " + images_path)
-            f.write("\n\n")
+class HelperFunctions:
+    def __init__(self):
         pass
+
+    def logprint(self, message, timestamp: bool = True, color: str = "white"):
+        """Print a timestamped message to the redirected stdout.
+
+        Parameters:
+        - message: text to print
+        - timestamp: whether to prepend HH:MM:SS timestamp
+        - color: optional CSS color name or hex (e.g. 'red' or '#ff0000')
+        """
+        current_time = datetime.now().strftime("%H:%M:%S")
+        if color == "blue": timestamp = False
+        if timestamp:
+            timestamped_message = current_time + f">>  {message}"
+        else:
+            timestamped_message = f"{message}"
+
+        # Escape HTML to avoid accidental tag injection, then optionally
+        # wrap in a colored span so QTextEdit renders it in color.
+        escaped = html.escape(timestamped_message)
+        final = escaped
+        
+        if type(color) == str:
+            if color in colors.keys():
+                color = colors[color]
+        
+        if timestamp:
+            final = f"<span style=\"color:{color}\">{escaped}</span></pre>"
+        else:
+            final = f"<pre><span style=\"color:{color}\">        {escaped}</span></pre>"
+
+        # Print HTML text (QTextEdit.append will render it as rich text).
+        print(final, flush = True)
+
+    def clean_lists(self, V_list, x_list, y_list, V_limit = 10, x_limit = 1E-7, y_limit = 1E-7):
+        self.logprint("  [V_list, x_list, y_list, iterations] = functions.clean_lists(V_list, x_list, y_list)", color = "blue")
+
+        if type(V_list) == int or type(V_list) == float: V_list = [V_list]
+        if type(x_list) == int or type(x_list) == float: x_list = [x_list]
+        if type(y_list) == int or type(y_list) == float: y_list = [y_list]
+
+        if type(V_list) == list: V_list = np.array(V_list, dtype = float)
+        if type(x_list) == list: x_list = np.array(x_list, dtype = float)
+        if type(y_list) == list: y_list = np.array(y_list, dtype = float)
+        
+        if type(V_list) == np.ndarray:
+            n_V = len(V_list)
+        else:
+            V_list = None
+            n_V = -1
+        if type(x_list) == np.ndarray:
+            n_x = len(x_list)
+        else:
+            x_list = None
+            n_x = -1
+        if type(y_list) == np.ndarray:
+            n_y = len(y_list)
+        else:
+            y_list = None
+            n_y = -1
+        
+        # Pad lists that are given but are not the same length as the longest one
+        iterations = np.max([n_V, n_x, n_y])
+        if n_V != -1 and n_V < iterations:
+            n_v = iterations
+            V_list = np.pad(V_list, (0, iterations - n_V), mode = "edge")
+        if n_x != -1 and n_x < iterations:
+            n_x = iterations
+            x_list = np.pad(x_list, (0, iterations - n_x), mode = "edge")
+        if n_y != -1 and n_y < iterations:
+            y_list = np.pad(y_list, (0, iterations - n_y), mode = "edge")
+            n_y = iterations
+        
+        # Check if all elements are within the limits
+        if n_V > -1:
+            for element in V_list:
+                if np.abs(element) > V_limit:
+                    self.logprint(f"Error! Elements in V_list exceed the limits (-{V_limit} < {element} < {V_limit} = False)", color = "red")
+                    return False
+        if n_x > -1:
+            for element in x_list:
+                if np.abs(element) > x_limit:
+                    self.logprint(f"Error! Elements in x_list exceed the limits (-{x_limit} < {element} < {x_limit} = False)", color = "red")
+                    return False
+        if n_y > -1:
+            for element in y_list:
+                if np.abs(element) > y_limit:
+                    self.logprint(f"Error! Elements in x_list exceed the limits (-{y_limit} < {element} < {y_limit} = False)", color = "red")
+                    return False
+        
+        return [V_list, x_list, y_list, iterations]
+
+
+
+class WorkerSignals(QObject):
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    result = pyqtSignal(object)
+    progress = pyqtSignal(int)
+
+
+
+class TaskWorker(QRunnable):
+    def __init__(self, target_function, *args, **kwargs):
+        super().__init__()
+        self.target_function = target_function
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
     
-    try:
-        os.makedirs(images_path, exist_ok = True)
-        logprint(f"Directory '{images_path}' created successfully or already existed.", timestamp = False, logfile = logfile_path)
-    except OSError as e:
-        logprint(f"Error creating directory '{images_path}': {e}", timestamp = False, logfile = logfile_path)
+    @pyqtSlot()
+    def run(self):
+        try:
+            # Perform your long-running task here
+            result = self.target_function(*self.args, **self.kwargs)
+            self.signals.result.emit(result)
+        finally:
+            self.signals.finished.emit() # Emit finished signal regardle
 
-    parameters = get_parameters(verbose = True)
-    
-    return session_path, images_path, logfile_path, parameters
 
-# Image functions
 
-def get_image_statistics(image, pixels_per_bin: int = 200):
-    data_sorted = np.sort(image.flatten())
-    n_data = len(data_sorted)
-    data_firsthalf = data_sorted[:int(n_data / 2)]
-    data_secondhalf = data_sorted[-int(n_data / 2):]
+class NanonisFunctions(NanonisHardware):
+    def __init__(self, hardware: dict):
+        super().__init__(hardware = hardware)
+        self.helper_functions = HelperFunctions()
+        self.logprint = self.helper_functions.logprint
 
-    range_mean = np.mean(data_sorted) # Calculate the mean
-    Q1 = np.mean(data_firsthalf) # Calculate the first and third quartiles
-    Q3 = np.mean(data_secondhalf)
-    range_min, range_max = (data_sorted[0], data_sorted[-1]) # Calculate the total range
-    range_total = range_max - range_min
-    standard_deviation = np.sum(np.sqrt((data_sorted - range_mean) ** 2) / n_data) # Calculate the standard deviation
-    
-    n_bins = int(np.floor(n_data / pixels_per_bin))
-    counts, bounds = np.histogram(data_sorted, bins = n_bins)
-    binsize = bounds[1] - bounds[0]
-    padded_counts = np.pad(counts, 1, mode = "constant")
-    bincenters = np.concatenate([[bounds[0] - .5 * binsize], np.convolve(bounds, [.5, .5], mode = "valid"), [bounds[-1] + .5 * binsize]])
-    histogram = np.array([bincenters, padded_counts])
-    
-    return imagestatistics(data_sorted, n_data, range_min, Q1, range_mean, Q3, range_max, range_total, standard_deviation, histogram)
-
-def clip_range(image, method: str = "standard_deviation", values = [-2, 2], default_to_data_range: bool = True, tie_to_zero = [False, False]):
-    stats = get_image_statistics(image)
-    clip_values = [0, 0]
-    
-    if type(values) == int or type(values) == float:
-        if method == "percentiles":
-            values = np.sort([values, 1 - values])
-        values = [-values, values]
-    if method == "IQR": clip_values = [stats.Q1 + values[0] * stats.IQR, stats.Q3 + values[1] * stats.IQR]
-    elif method == "standard_deviation": clip_values = [stats.mean + values[0] * stats.standard_deviation, stats.Q3 + values[1] * stats.standard_deviation]
-    elif method == "percentiles": clip_values = [stats.min + .01 * values[0] * stats.range, stats.min + .01 * values[1] * stats.range]
-    else: print("No valid clipping method selected")
-    
-    if tie_to_zero[0]: clip_values[0] = 0
-    if tie_to_zero[1]: clip_values[1] = 0
-    
-    if clip_values[0] < stats.min:
-        print("Warning: Lower limit is below the lower limit of the data.")
-        if default_to_data_range:
-            print("Resetting lower limit to the lower limit of the data.")
-            clip_values[0] = stats.min
-    if clip_values[1] > stats.max:
-        print("Warning: Upper limit is above the upper limit of the data.")
-        if default_to_data_range:
-            print("Resetting upper limit to the upper limit of the data.")
-            clip_values[1] = stats.max
-    
-    if clip_values[1] < clip_values[0]:
-        print("Warning: Lower limit is set to a lower value than the upper limit. Inverting.")
-        clip_values = [clip_values[1], clip_values[0]]
-    
-    return clip_values
-
-def image_gradient(image):
-    sobel_x = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
-    sobel_y = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
-    ddx = convolve2d(image, sobel_x, mode = "valid")
-    ddy = convolve2d(image, sobel_y, mode = "valid")
-    gradient_image = .125 * ddx + .125 * 1j * ddy
-
-    return gradient_image
-
-def background_subtract(image, mode: str = "plane"):
-    avg_image = np.mean(image.flatten()) # The average value of the image, or the offset
-    gradient_image = image_gradient(image) # The (complex) gradient of the image
-    avg_gradient = np.mean(gradient_image.flatten()) # The average value of the gradient
-
-    pix_y, pix_x = np.shape(image)
-    x_values = np.arange(-(pix_x - 1) / 2, pix_x / 2, 1)
-    y_values = np.arange(-(pix_y - 1) / 2, pix_y / 2, 1)
-
-    plane = np.array([[-x * np.real(avg_gradient) - y * np.imag(avg_gradient) for x in x_values] for y in y_values])
-
-    if mode == "plane":
-        return image - plane - avg_image
-    else:
-        return image - avg_image
-
-def get_latest_scan(preferred_channels = np.array(["Z", "LI Demod 1 X (A)"]), scan_direction: str = "forward", subtraction: str = "plane", clip_fraction: float = .1):
-    session_path = get_session_path()
-    session_files = get_file_data(session_path)
-    image_files = session_files.image_files
-    scan_data = get_scan(image_files[-1], crop_unfinished = True)
-
-    if len(np.where(scan_data.channels == preferred_channels[0])[0]): # First preference channel exists
-        channel_index = np.where(scan_data.channels == preferred_channels[0])[0][0]
-    elif len(np.where(scan_data.channels == preferred_channels[1])[0]): # Second preference channel exists
-        channel_index = np.where(scan_data.channels == preferred_channels[1])[0][0]
-    else: channel_index = 0 # No preferred channels found; defaulting to showing the first channel
-    if scan_direction == "backward": direction_index = 1
-    else: direction_index = 0
-
-    image = scan_data.scans[channel_index, direction_index]
-    image_processed = image_clip(background_subtract(image, mode = subtraction), clip_fraction = clip_fraction)
-
-    return image_processed
-
-# Nanonis functions
-
-def get_parameters(verbose: bool = False):
-    logfile = get_session_path() + "\\logfile.txt"
-
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        scan = Scan(NTCP)
-        zcontroller = ZController(NTCP)
-        bias = Bias(NTCP)
-        lockin = LockIn(NTCP)
-        folme = FolMe(NTCP)
-        signals = Signals(NTCP)
-        biasspectr = BiasSpectr(NTCP)
-        #tipshaper = TipShaper(NTCP)
+    def get_grid(self, verbose: bool = True):
+        error_flag = False
         
-        x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True ) # Get the current scan parameters
-        v_tip = folme.SpeedGet()[0] # Tip positions and speed (FolMe)
-        x_tip *= 1E9
-        y_tip *= 1E9
-        v_tip *= 1E9
-        
-        V = bias.Get() # Bias
-        V_ac = lockin.ModAmpGet(modulator_number = 1) # Lockin
-        f_ac = lockin.ModPhasFreqGet(modulator_number = 1)
-        phase_ac = lockin.DemodPhasGet(demod_number = 1)
-        lockin_status = lockin.ModOnOffGet(modulator_number = 1)
-        
-        I_fb = zcontroller.SetpntGet() * 1E12 # Z controller
-        p_gain, t_const, i_gain = zcontroller.GainGet()
-        p_gain *= 1E12
-        t_const *= 1E6
-        i_gain *= 1E9
-        z_max, z_min = zcontroller.LimitsGet()
-        z_tip = zcontroller.ZPosGet()
-        z_tip *= 1E9
-        z_min *= 1E9
-        z_max *= 1E9
-        z_range = [z_min, z_max]
-        fb = zcontroller.OnOffGet()
-        
-        v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio = scan.SpeedGet() # Scan
-        x_center, y_center, scan_width, scan_height, scan_angle = scan.FrameGet()   
-        [scan_num_channels, scan_channels, pixels, lines] = scan.BufferGet()
-        x_center *= 1E9
-        y_center *= 1E9
-        scan_width *= 1E9
-        scan_height *= 1E9
-        v_fwd *= 1E9
-        v_bwd *= 1E9
-        
-        spectr_advprops = biasspectr.AdvPropsGet() # Spectroscopy
-        spectr_props = biasspectr.PropsGet_v0()
-        spectr_timing = biasspectr.TimingGet()
-        print(spectr_timing)
-        reset_bias = spectr_advprops.get("reset_bias", 1)
-        z_controller_hold = spectr_advprops.get("z_controller_hold", 1)
-        num_sweeps = spectr_props.get("num_sweeps", 1)
-        
-        #tipshaper_props = tipshaper.PropsGet() # Tip shaper
-        
-        #channels = np.array(signals.NamesGet()) # Alternative way to extract the tip positions
-        #x_channel_index = np.where(channels == "X (m)")[0][0]
-        #y_channel_index = np.where(channels == "Y (m)")[0][0]
-        #z_channel_index = np.where(channels == "Z (m)")[0][0]
-        #[x_tip, y_tip, z_tip] = [signals.ValGet(index) for index in [x_channel_index, y_channel_index, z_channel_index]]
+        if verbose: self.logprint("  [dict] grid = nanonis_functions.get_grid()", color = "blue")
 
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
-
-    if verbose:
-        logprint("Report of parameters:\n", logfile = logfile)
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect_control()
+            grid_data = self.scan.FrameGet()
+            buffer_data = self.scan.BufferGet()
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
         
-        logprint("Tip parameters:", timestamp = False, logfile = logfile)
-        logprint(f"  Location (x_tip, y_tip, z_tip) = ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm. Tip displacement speed (v_tip) = {round(v_tip)} nm/s.", timestamp = False, logfile = logfile)
+        if error_flag:
+            return False
+
+        # Save the data to a dictionary
+        grid = {
+            "x": grid_data[0],
+            "y": grid_data[1],
+            "center": [grid_data[0], grid_data[1]],
+            "width": grid_data[2],
+            "height": grid_data[3],
+            "size": [grid_data[2], grid_data[3]],
+            "angle": grid_data[4],
+            "pixels": [buffer_data[2], buffer_data[3]],
+            "aspect_ratio": grid_data[3] / grid_data[2],
+            "pixel_width": grid_data[2] / buffer_data[2],
+            "pixel_height": grid_data[3] / buffer_data[3],
+            "pixel_ratio": buffer_data[3] / buffer_data[2],
+            "num_channels": buffer_data[0],
+            "channel_indices": buffer_data[1]
+        }
+
+        if np.abs(grid["aspect_ratio"] - grid["pixel_ratio"]) > 0.001 and verbose:
+            self.logprint("Warning! The aspect ratio of the scan frame does not correspond to that of the pixels. This will result in rectangular pixels!", color = "red")
+
+        # Construct a local grid with the same size as the Nanonis grid, whose center is at (0, 0)
+        x_coords_local = np.linspace(- grid["width"] / 2, grid["width"] / 2, grid["pixels"][0])
+        y_coords_local = np.linspace(- grid["height"] / 2, grid["height"] / 2, grid["pixels"][1])
+        x_grid_local, y_grid_local = np.meshgrid(x_coords_local, y_coords_local)
+
+        # Apply a rotation
+        cos = np.cos(np.deg2rad(grid["angle"]))
+        sin = np.sin(np.deg2rad(grid["angle"]))
+        x_grid = np.zeros_like(x_grid_local)
+        y_grid = np.zeros_like(y_grid_local)
+
+        for i in range(grid["pixels"][0]):
+            for j in range(grid["pixels"][1]):
+                x_grid[i, j] = x_grid_local[i, j] * cos + y_grid_local[i, j] * sin
+                y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
+
+        # Apply a translation
+        x_grid += grid["x"]
+        y_grid += grid["y"]
+
+        # Add the meshgrids to the grid dictionary
+        grid["x_grid"] = x_grid
+        grid["y_grid"] = y_grid
+
+        # Add vertex information
+        frame_vertices = np.asarray([[x_grid[0, 0], y_grid[0, 0]], [x_grid[-1, 0], y_grid[-1, 0]], [x_grid[-1, -1], y_grid[-1, -1]], [x_grid[0, -1], y_grid[0, -1]]])
+        bottom_left_corner = frame_vertices[0]
+        top_left_corner = frame_vertices[1]
+        grid["vertices"] = frame_vertices
+        grid["bottom_left_corner"] = bottom_left_corner
+        grid["top_left_corner"] = top_left_corner
         
-        logprint("Bias parameters:", timestamp = False, logfile = logfile)
-        logprint(f"  Bias voltage (V) = {round(V, 3)} V.", timestamp = False, logfile = logfile)
-        logprint(f"  Lockin modulation voltage (V_ac) = {round(V_ac, 3)} V; Lockin modulation frequency (f_ac) = {round(f_ac, 3)} Hz; Lockin phase (phase_ac) = {round(phase_ac, 3)} degree.", timestamp = False, logfile = logfile)
-        if bool(lockin_status): logprint("  Lockin is switched on (lockin_status = 1).", timestamp = False, logfile = logfile)
-        else: logprint("  Lockin is switched off (lockin_status = 0).", timestamp = False, logfile = logfile)
+        if verbose: self.logprint(f"  grid.keys() = {grid.keys()}", color = "blue")
 
-        logprint("Z controller parameters:", timestamp = False, logfile = logfile)
-        if bool(fb): logprint(f"  Feedback current (I_fb) = {round(I_fb, 3)} pA. Feedback is switched on (fb = 1).", timestamp = False, logfile = logfile)
-        else: logprint(f"  Feedback current (I_fb) = {round(I_fb, 3)} pA. Feedback is switched off (fb = 0).", timestamp = False, logfile = logfile)
-        logprint(f"  Gains (p_gain, t_const, i_gain) = ({round(p_gain, 3)} pm, {round(t_const, 3)} us, {round(i_gain, 3)} nm/s).", timestamp = False, logfile = logfile)
-        logprint(f"  Limits (z_range = [z_min, z_max]) = [{round(z_min, 3)}, {round(z_max, 3)}] nm.", timestamp = False, logfile = logfile)
+        return grid
 
-        logprint("Scan parameters:", timestamp = False, logfile = logfile)
-        logprint(f"  Center (center = [x_center, y_center]) = [{round(x_center, 3)}, {round(y_center, 3)}] nm. Size (size = [width, height]) = [{round(scan_width, 3)}, {round(scan_height, 3)}] nm. Rotation angle (angle) = {round(scan_angle, 3)} degree.", timestamp = False, logfile = logfile)
-        logprint(f"  Number of pixels and lines (grid = [pixels, lines]) = [{pixels}, {lines}]. Time per line (t_fwd, t_bwd) = ({round(t_fwd, 3)}, {round(t_bwd, 3)}) s.", timestamp = False, logfile = logfile)
-        logprint(f"  Scan speed (v_fwd, v_bwd) = ({round(v_fwd, 3)}, {round(v_bwd, 3)}) nm/s. Speed ratio (v_ratio) = {round(v_ratio, 3)}.", timestamp = False, logfile = logfile)
+    def tip(self, withdraw: bool = False, feedback = None):
+        error_flag = False
         
-        logprint("Bias spectroscopy parameters:", timestamp = False, logfile = logfile)
-        logprint(f"  Reset bias after spectroscopy (reset_bias) = {str(bool(reset_bias))}. Number of sweeps = {str(num_sweeps)}", timestamp = False, logfile = logfile)
-        logprint(str(spectr_advprops), timestamp = False, logfile = logfile)
-        logprint(str(spectr_props), timestamp = False, logfile = logfile)
-        logprint(str(spectr_timing), timestamp = False, logfile = logfile)
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect_log()            
+            z_pos = self.get_z()
+            [z_max, z_min] = self.zcontroller.LimitsGet()
+
+            # Switch the feedback if desired, and retrieve the feedback status
+            if type(feedback) == bool: self.set_feedback(feedback)
+            
+            withdrawn = False # Initialize the withdrawn parameter, which tells whether the tip is withdrawn
+            if not feedback and np.abs(z_pos - z_max) < 1E-11: # Tip is already withdrawn
+                withdrawn = True
+            if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
+                self.zcontroller.Withdraw(wait_until_finished = True)
+                withdrawn = True
+
+            # Retrieve the feedback status
+            sleep(.2)
+            feedback_new = self.get_feedback()
+
+            self.zcontroller
+            
+            tip_status = {
+                "height": z_pos,
+                "limits": [z_min, z_max],
+                "feedback": feedback_new,
+                "withdrawn": withdrawn
+            }
+
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+            
+            if error_flag:
+                return False
+            else:
+                return tip_status
+
+    def get_parameters(self):
+        error_flag = False
         
-        logprint("Tip shaper properties:", timestamp = False, logfile = logfile)
-        #logprint(" ".join(str(item) for item in tipshaper_props), timestamp = False, logfile = logfile)
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect_control()
+            
+            V = self.get_V()
+            I_fb = self.get_setpoint()
+            [p_gain, t_const, i_gain] = gains = self.get_gains()
+            [v_fwd, v_bwd, t_fwd, t_bwd, lock_parameter, v_ratio] = self.scan.SpeedGet()
+            v_move = self.get_speed()
+            session_path = self.get_path()
 
-        logprint("\n          End of report.\n", timestamp = False, logfile = logfile)
-    
-    return parameters(v_fwd = v_fwd, v_bwd = v_bwd, t_fwd = t_fwd, t_bwd = t_bwd, lock_parameter = lock_parameter, v_ratio = v_ratio, V = V, V_ac = V_ac, f_ac = f_ac, phase_ac = phase_ac, lockin_status = lockin_status, I_fb = I_fb, p_gain = p_gain, t_const = t_const, i_gain = i_gain, x_center = x_center, y_center = y_center, scan_width = scan_width, scan_height = scan_height, scan_angle = scan_angle, pixels = pixels, lines = lines, z_min = z_min, z_max = z_max, scan_channels = scan_channels);
+            parameters = {
+                "bias": V,
+                "gains": gains,
+                "I_fb": I_fb,
+                "p_gain": p_gain,
+                "t_const": t_const,
+                "i_gain": i_gain,
+                #"v_fwd": v_fwd,
+                #"v_bwd": v_bwd,
+                #"t_fwd": t_fwd,
+                #"t_bwd": t_bwd,
+                #"v_ratio": v_ratio,
+                "v_move": v_move,
+                "session_path": session_path
+            }
 
-def change_bias(V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, verbose: bool = True):
-    logfile = get_session_path() + "\\logfile.txt"
-    
-    if V == None:
-        if verbose: logprint("No new bias set. Returning.", logfile = logfile)
-        return
-    
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        bias = Bias(NTCP)
-        zcontroller = ZController(NTCP)
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
+            return False
+        else:
+            return parameters
+
+    def change_bias(self, V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, V_limits = 10):
+        error_flag = False
+
+        if type(V) != float and type(V) != int:
+            self.logprint("Wrong bias supplied", color = colors["red"])
+            return False
+        if type(V_limits) == float or type(V_limits) == int:
+            if np.abs(V) > np.abs(V_limits):
+                self.logprint("Bias outside of limits")
+                return False
+
+        try:
+            self.connect_log()
+                            
+            V_old = self.get_V() # Read data from Nanonis
+            feedback = self.get_feedback()
+            tip_height = self.get_z()
+            polarity_difference = np.sign(V) * np.sign(V_old) < 0 # Calculate the polarity and voltage slew values
+            
+            if V > V_old: delta_V = dV
+            else: delta_V = -dV
+            slew = np.arange(V_old, V, delta_V)
+
+            if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
+                self.set_feedback(False)
+                sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
+                self.set_z(tip_height + dz)
+
+            for V_t in slew: # Perform the slew to the new bias voltage
+                self.set_V(V_t)
+                sleep(dt)
+            self.set_V(V) # Final bias value
         
-        V_old = bias.Get() # Read data from Nanonis
-        feedback = zcontroller.OnOffGet()
-        tip_height = zcontroller.ZPosGet()
+            if bool(feedback) and bool(polarity_difference):
+                self.set_feedback(True) # Turn the feedback back on
+
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
+            return False
+        else:
+            return V_old
+
+    def change_feedback(self, I = None, p_gain = None, t_const = None):
+        error_flag = False
+
+        if type(I) == int or type(I) == float:
+            if np.abs(I) > 1E-3: I *= 1E-12
+
+        try:
+            self.connect_log()
+            I_old = self.get_setpoint()
+            if type(I) == int or type(I) == float: self.set_setpoint(I)
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
+            return False
+        else:
+            return I_old
+
+    def get_frame(self):
+        """
+        get_scan_data is an appended version of get_grid.
+        get_grid already gets data regarding the properties of the current scan frame
+        To get the names of the recorded channels and the save properties, the grid dictionary is appended
+        """
+        error_flag = False
         
-        polarity_difference = int(np.abs(np.sign(V) - np.sign(V_old)) / 2) # Calculate the polarity and voltage slew values
-        if V > V_old: delta_V = dV
-        else: delta_V = -dV
-        slew = np.arange(V_old, V, delta_V)
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            grid = self.get_grid(verbose = False)
+            channel_indices = grid.get("channel_indices") # The indices of the Nanonis signals being recorded in the scan
+            self.connect_control()
+            [signal_names, signal_indices] = self.signals.InSlotsGet()
+            scan_props = self.scan.PropsGet()
+            auto_save = bool(scan_props[1])
+            
+            channel_names = []
+            for channel_index in channel_indices:
+                channel_name = signal_names[channel_index]
+                channel_names.append(channel_name)
+            
+            frame = grid | {
+                "signal_names": signal_names,
+                "signal_indices": signal_indices,
+                "channel_names": channel_names,
+                "channel_indices": channel_indices,
+                "auto_save": auto_save
+                }
 
-        if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
-            zcontroller.OnOffSet(False)
-            sleep(.05) # If the tip height is set too quickly, the controller won't be off yet
-            zcontroller.ZPosSet(tip_height + dz)
-            if verbose: logprint("Bias polarity change detected while in feedback. Tip retracted by = " + str(round(dz * 1E9, 3)) + " nm during slew.", logfile = logfile)
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
 
-        for V_t in slew: # Perform the slew to the new bias voltage
-            bias.Set(V_t)
-            sleep(dt)
-        bias.Set(V)
+        if error_flag:
+            return False
+        else:
+            return frame
+
+    def get_scan(self, channel_index, direction):
+        """
+        get_scan_data is an appended version of get_grid.
+        get_grid already gets data regarding the properties of the current scan frame
+        To get the names of the recorded channels and the save properties, the grid dictionary is appended
+        """
+        error_flag = False
         
-        if bool(feedback) and bool(polarity_difference): zcontroller.OnOffSet(True) # Turn the feedback back on
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect_control()
+            frame_data = self.scan.FrameDataGrab(channel_index = channel_index, data_direction = direction)
+            scan_frame = frame_data[1]
+
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.disconnect()
+            sleep(.1)
+
+        if error_flag:
+            return False
+        else:
+            return scan_frame
+
+    def scan_control(self, action: str = "stop", direction: str = "down", verbose: bool = True, monitor: bool = False):
+        error_flag = False
+
+        try:
+            self.connect_control()
+            
+            dirxn = "up"
+            if direction == "down": dirxn = "down"
+            match action:
+                case "start":
+                    self.logprint(f"  nanonis_functions.start_scan({dirxn})", color = "blue")
+                    self.start_scan(dirxn)
+                case "pause":
+                    self.logprint(f"  nanonis_functions.pause_scan()", color = "blue")
+                    self.pause_scan()
+                case "resume":
+                    self.logprint(f"  nanonis_functions.resume_scan()", color = "blue")
+                    self.resume_scan()
+                case "stop":
+                    self.logprint(f"  nanonis_functions.stop_scan()", color = "blue")
+                    self.stop_scan()
+                case _:
+                    pass
+        except Exception as e:
+            self.logprint(f"{e}", color = "red")
+        finally:
+            self.disconnect()
+            sleep(.1)
+            return
+
+
+
+class MLA_Functions:
+    def get_pixels(n_pix: int = 2, data_format: str = "complex", unit: str = "calibrated", first_bufpos = None):
+        pixel = np.random.rand(64)
+        return pixel
+
+
+
+class Experiments(QObject):
+    data = pyqtSignal(np.ndarray)
+    message = pyqtSignal(str, str)
+    finished = pyqtSignal()
+    interrupted = pyqtSignal()
+    progress = pyqtSignal(int)
+
+    def __init__(self, hardware: dict, parent = None):
+        super().__init__()
+        self.nf = NanonisFunctions(hardware = hardware)
+        self.hf = HelperFunctions()
+        self.running = False
+
+    @pyqtSlot()
+    def tip_tracker(self, sampling_time: float = .5, chunk_size = 10, timeout = 10):
+        error_flag = False
+        self.running = True
+
+        try:
+            self.nf.connect_log()
+            # Get the initial state of the parameters
+            t0 = time()
+            V0 = self.nf.get_V()
+            [x0, y0] = self.nf.get_xy()
+            z0 = self.nf.get_z()
+            i0 = self.nf.get_I()
+            iteration = 0
+
+            [t, V, x, y, z, i] = [0, V0, x0, y0, z0, i0]
+            num_channels = len([t, V, x, y, z, i])
+            data_chunk = np.zeros((chunk_size, num_channels), dtype = float)
+            data_chunk[iteration] = [t, V, x, y, z, i]
+
+            # The measurement loop
+            while t < timeout:
+                if not self.running:
+                    self.nf.disconnect()
+                    sleep(.1)
+                    self.message.emit("Experiment aborted", "red")
+                    self.finished.emit
+                    break
+                sleep(sampling_time)
+
+                iteration += 1
+                modulo_iteration = iteration % chunk_size
+                
+                # Measure
+                t = time() - t0
+                V = self.nf.get_V()
+                [x, y] = self.nf.get_xy()
+                z = self.nf.get_z()
+                i = self.nf.get_I()
+                
+                # Save data
+                data_chunk[modulo_iteration] = [t, V, x, y, z, i]
+                
+                # Emit data
+                if modulo_iteration == chunk_size - 1:
+                    self.data.emit(data_chunk)
+                    self.progress.emit(int(100 * t / timeout))
+
+        except Exception as e:
+            self.message.emit(f"{e}", color = "red")
+            error_flag = True
+        finally:
+            self.nf.disconnect()
+            sleep(.1)
+            self.running = False
+            self.finished.emit()
+
+        if error_flag:
+            return False
+        else:
+            return True
+    """
+    def simple_scan(self, direction: str = "up", chunk_size: int = 10, delay: int = 10):
+        try:
+            grid = self.helper_functions.get_grid()
+            [x_grid, y_grid] = [grid.x_grid, grid.y_grid]
+            [pixels_x, pixels_y] = grid.pixels
+            match direction:
+                case "up":
+                    x_list = x_grid.ravel()
+                    y_list = y_grid.ravel()
+                case _:
+                    self.logprint("Unknown scan direction")
+                    return False
+        except Exception as e:
+            self.logprint(f"Error: {e}")
+            return False
+         
+        return [V_list, x_list, y_list, chunk_size, delay]
+
+    @pyqtSlot()
+    def active_measurement_loop(self, V_list = None, x_list = None, y_list = None, chunk_size = 10, delay = 0):
+
+        # Determine what biases and locations to iterate over
+        lists = self.helper_functions.clean_lists(V_list, x_list, y_list)
+        if type(lists) == list: # clean_lists will return False if a problem is found in the supplied data
+            [V_list, x_list, y_list, iterations] = lists
+        else:
+            print("Aborting the measurement.")
+            return False
+        # Determine what parameters to update in the measurement loop
+        if type(x_list) == np.ndarray: set_pos = True
+        else: set_pos = False
+        if type(V_list) == np.ndarray: set_bias = True
+        else: set_bias = False
+
+        # Determine the delays and the iterations
+        if type(delay) != int and type(delay) != float: delay = 0
+        if type(chunk_size) != int: chunk_size = 10
+
+        # Initialize the data object
+        self._running = True
+        data_chunk = np.zeros((chunk_size, 5), dtype = float)
         
-        if verbose: logprint("Bias changed from V = " + str(round(V_old, 3)) + " V to V = " + str(round(V, 3)) + " V.", logfile = logfile)
+        try:
+            # Initialize NTCP
+            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
+            try:
+                folme = FolMe(NTCP)
+                zcontroller = ZController(NTCP)
+                bias = Bias(NTCP)
+                current = Current(NTCP)
 
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
-        return V_old
+                # Get the initial state of the parameters
+                t0 = time
+                V0 = bias.Get()
+                [x0, y0] = folme.XYPosGet(Wait_for_newest_data = True)
+                z0 = zcontroller.ZPosGet()
+                i0 = current.Get()
+                [t, V, x, y, z] = [t0, V0, x0, y0, z0, i0]
 
-def change_feedback(I = None, p_gain = None, t_const = None, controller = None, withdraw: bool = False, verbose: bool = True):
-    logfile = get_session_path() + "\\logfile.txt"
-    
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        zcontroller = ZController(NTCP)
-        
-        I_old = zcontroller.SetpntGet() # Read data from Nanonis
-        p_gain_old, t_const_old, i_gain_old = zcontroller.GainGet()
-        controller_old = zcontroller.OnOffGet()
+                # Fill the x_list/y_list with current x/y values if it does not exist
+                if type(x_list) == np.ndarray and type(y_list) != np.ndarray:
+                    y_list = np.full_like(x_list, y)
+                if type(y_list) == np.ndarray and type(x_list) != np.ndarray:
+                    x_list = np.full_like(y_list, x)
 
-        if withdraw:
-            zcontroller.Withdraw(wait_until_finished = True)
-            if verbose: logprint("Tip withdrawn.", logfile = logfile)
-            sleep(.05)
 
-        if type(I) == float or type(I) == int: # Set the new current setpoint
-            if round(float(I), 3) != round(I_old * 1E12, 3):
-                zcontroller.SetpntSet(I * 1E-12)
-                if verbose: logprint("Current setpoint changed from I = " + str(round(I_old * 1E12, 3)) + " pA to I = " + str(round(I, 3)) + " pA.", logfile = logfile)
+
+                # The actual measurement loop
+                for iteration in range(iterations):
+                    modulo_iteration = iteration % chunk_size
+                    # Abort the measurement if the _running flag is set to False
+                    if not self._running:
+                        return False
+                    
+                    # ACT
+                    if set_bias:
+                        V = V_list[iteration]
+                        bias.Set(V)
+                    if set_pos:
+                        x = x_list[iteration]
+                        y = y_list[iteration]
+                        folme.XYPosSet(x, y, Wait_end_of_move = True)
+                    
+                    # DELAY
+                    sleep(delay)
+
+                    # MEASURE
+                    t = time - t0 # Elapsed time
+                    i = current.Get()
+                    # Measuring V, x, y is unnecessary: They are known if they are set and they remain V_0, x_0, y_0 if they are not set
+                    
+                    # SAVE / RELAY
+                    data_chunk[modulo_iteration] = [t, V, x, y, z, i]
+                    if iteration % chunk_size == chunk_size - 1:
+                        self.data.emit(data_chunk) # Emit the data to Scantelligent
+                
+                return True
+
+            except Exception as e:
+                NTCP.close_connection()
                 sleep(.05)
-        
-        p_gain_new = p_gain_old # Change the gain settings
-        t_const_new = t_const_old
-        if type(p_gain) == float or type(p_gain) == int: p_gain_new = p_gain * 1E-12
-        if type(t_const) == float or type(t_const) == int: t_const_new = t_const * 1E-6
-        if t_const_old != t_const_new or p_gain_old != p_gain_new:
-            zcontroller.GainSet(p_gain = p_gain_new, time_constant = t_const_new)
-            if verbose: logprint("Gains changed from p_gain = " + str(round(p_gain_old * 1E12, 3)) + " pm to p_gain = " + str(round(p_gain_new * 1E12, 3)) + " pm; t_const = " + str(round(t_const_old * 1E6)) + " us to t_const = " + str(round(t_const_new * 1E6)) + " us.", logfile = logfile)
-            sleep(.05)
+                print(f"Error: {e}. Measurement failed.")
+                return False
 
-        if type(controller) == int or type(controller) == bool: # Change the controller status
-            if int(controller) == 1 and controller_old == 0:
-                if verbose: logprint("z controller switched on.", logfile = logfile)
-                zcontroller.OnOffSet(1)
-            elif int(controller) == 0 and controller_old == 1:
-                if verbose: logprint("z controller switched off.", logfile = logfile)
-                zcontroller.OnOffSet(0)
+        except Exception as e:
+            print(f"{e}. Measurement failed.")
+            return False
 
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
-        return (I_old * 1E12, p_gain_old * 1E12, t_const_old * 1E6)
-
-def change_scan_window(center = None, size = None, grid = None, angle = None, verbose: bool = True):
-    logfile = get_session_path() + "\\logfile.txt"
-    parameters = get_parameters() # Use get_parameters to extract all the old scan parameters
-    scan_channels = parameters.scan_channels
-    grid_old = parameters.grid
-    size_old = parameters.size
-    angle_old = parameters.scan_angle
-    center_old = parameters.center
-    
-    if type(center) == int or type(center) == float: center = None # Do not change the scan window location if only a single value is given
-    if center == None: center = center_old
-    center = [center[0], center[1]]
-    if type(angle) != int and type(angle) != float: angle = angle_old # Do not change the scan angle if no value is given
-    if type(size) == int or type(size) == float: size = [size, size] # If a single value is given for the scan window size, make a square window
-    if size == None: size = size_old # If no scan size was given, retain the old scan window size
-    size = [size[0], size[1]]
-    aspect_ratio = size[1] / size[0] # Calculate the aspect ratio of the scan window
-    
-    if type(grid) == int or type(grid) == float:
-        grid = [int(16 * np.round(grid / 16)), 0] # The number of pixels always needs to be a multiple of 16 in Nanonis
-        grid[1] = int(grid[0] * aspect_ratio) # If only the horizontal number of pixels is given, calculate the number of lines based on the aspect ratio of the scan window
-    elif type(grid) == list or type(grid) == np.ndarray or type(grid) == tuple: grid = [int(16 * np.round(grid[0] / 16)), int(grid[1])]
-    if grid == None: grid = grid_old
-    
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        scan = Scan(NTCP)
-        scan.BufferSet(scan_channels, grid[0], grid[1])
-        scan.FrameSet(center[0] * 1E-9, center[1] * 1E-9, size[0] * 1E-9, size[1] * 1E-9, angle)
-        if verbose: logprint(f"Scan window parameters changed. Center: ({round(center[0], 3)}, {round(center[1], 3)}) nm. Size: ({round(size[0], 3)}, {round(size[1], 3)}) nm. Grid: ({grid[0]}, {grid[1]}) pixels. Angle = {angle} degrees.", logfile = logfile)
-
-    finally:
-        NTCP.close_connection()
-        sleep(.05)        
-        return (center_old, size_old, grid_old, angle_old)
-
-def tip_tracker(sampling_time: float = .5, velocity_threshold: float = .02, timeout: float = 30, exit_when_still: bool = True, N_no_motion: int = 4, verbose: bool = True, tracking_info: bool = False, monitor_roughness: bool = False, measurement_interval = 10, max_z_range: float = 20):
-    logfile = get_session_path() + "\\logfile.txt"
-
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        folme = FolMe(NTCP)
-        zcontroller = ZController(NTCP)
-        
-        start_time = time.monotonic() # Obtain the first tip position and time data
-        current_time = start_time
-        elapsed_time = 0
-        no_motion = 0
-        x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True)
-        x_tip *= 1E9 # Use nm as the natural unit for tip distances
-        y_tip *= 1E9
-        z_tip = zcontroller.ZPosGet() * 1E9
-        x_tip_old, y_tip_old, z_tip_old = (x_tip, y_tip, z_tip)
-        x_list = [x_tip_old]
-        y_list = [y_tip_old]
-        z_list = [z_tip_old]
-        t_list = [0]
-        velocity_threshold2 = velocity_threshold ** 2
-        
-        if verbose: logprint("Tip tracker started.", logfile = logfile)
-        if tracking_info: logprint(f"Tip position: ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm.")
-        exit_flag = False
-        sleep(sampling_time)
-        
-        while True:
-            x_tip, y_tip = folme.XYPosGet(Wait_for_newest_data = True) # Get new data
-            x_tip *= 1E9
-            y_tip *= 1E9
-            z_tip = zcontroller.ZPosGet() * 1E9
-            current_time = time.monotonic() # Keep track of the time and check for a timeout with each iteration
-            elapsed_time = current_time - start_time
+    @pyqtSlot(str, int, int)
+    def sample_grid(self, file_name, points, chunk_size):
+        try:
+            grid = self.helper_functions.get_grid()
+            self.message.emit(f"  experiments.sample_grid(grid, points = {points})", "blue")
+            #self.helper_functions.logprint(f"experiments.sample_grid(grid, points = {points})")
+            #self.helper_functions.logprint(f"Data will be emitted and saved to {file_name} in chunks of ({chunk_size} data points by 71 channels))")
+            # Ensure the running flag is True at the start of each new
+            # measurement invocation. This allows aborting (which sets
+            # _running = False) to be followed by starting a new experiment.
+            self._running = True
+            # Initialize parameters
+            [x_grid, y_grid] = [grid.x_grid, grid.y_grid]
+            [pixels_x, pixels_y] = grid.pixels
             
-            delta_pos = [x_tip - x_tip_old, y_tip - y_tip_old, z_tip - z_tip_old] # Calculate displacement and velocity
-            displacement2 = delta_pos[0] ** 2 + delta_pos[1] ** 2 + delta_pos[2] ** 2
-            min_velocity2 = displacement2 / sampling_time
-            x_tip_old, y_tip_old, z_tip_old = (x_tip, y_tip, z_tip)
-            
-            x_list.append(x_tip) # Save the position and time information
-            y_list.append(y_tip)
-            z_list.append(z_tip)
-            t_list.append(elapsed_time)
-        
-            if tracking_info:
-                min_velocity = np.sqrt(min_velocity2)
-                logprint(f"Tip position: ({round(x_tip, 3)}, {round(y_tip, 3)}, {round(z_tip, 3)}) nm. Displacement vector since last measurement: ({round(delta_pos[0], 3)}, {round(delta_pos[1], 3)}, {round(delta_pos[2], 3)}) nm. Minimum velocity: {round(min_velocity, 3)} nm/s.")
-            
-            if min_velocity2 < velocity_threshold2: # Routine to handle the tip being detected to be no longer moving
-                if tracking_info: logprint("Tip appears to be at rest.", logfile = logfile)
-                no_motion += 1 # no_motion counts the number of samples that no tip motion has been detected. After N_no_motion samples of no motion, the tip is assumed to be at rest.
-            else: no_motion = 0 # Reset the no_motion parameter if motion is detected
-            if no_motion > N_no_motion - 1 and exit_when_still:
-                if verbose: logprint("Tip deemed to be at rest. Exiting tip tracker.", logfile = logfile)
-                break
-            
-            if elapsed_time > timeout: # Routine to handle timeouts
-                if verbose: logprint("Tip tracker experienced a timeout.", logfile = logfile)
-                break
-            
-            if monitor_roughness:
-                if np.mod(np.floor(elapsed_time), measurement_interval) == 0: # Calculate the roughness every measurement_interval seconds
-                    n_list = len(z_list)
-                    z_list_np = np.array(z_list)
-                    z_avg = np.mean(z_list_np)
-                    z_minmax = [np.min(z_list_np), np.max(z_list_np)]
-                    z_diff = (z_list_np - z_avg) ** 2
-                    z_rms = np.sqrt(np.sum(z_diff) / n_list)
-                    logprint(f"Surface roughness monitoring. [z_min, z_avg, z_max] = [{z_minmax[0]}, {z_avg}, {z_minmax[1]}] nm. RMS deviation from average: [{z_rms}] nm.")
-            
-            if exit_flag:
-                if verbose: logprint("Exit keystroke detected. Aborting tip tracker.", logfile = logfile)
-                break
-            
-            sleep(sampling_time)
+            flat_index_list = np.arange(x_grid.size)
+            data_chunk = np.zeros((chunk_size, 71), dtype = float)
 
-    finally:
-        NTCP.close_connection()
-        #listener.stop()
-        sleep(.05)        
-        return np.array([t_list, x_list, y_list, z_list])
+            # Initiate the Nanonis TCP connection
+            NTCP = nanonisTCP(self.tcp_ip, self.tcp_port, self.version_number) # Initiate the connection and get the module handles
+            try:
+                # Initialize modules for measurement and control
+                t0 = time() # t
+                bias = Bias(NTCP) # V
+                folme = FolMe(NTCP) # x, y
+                zcontroller = ZController(NTCP) # z
+                current = Current(NTCP) # I
 
-def auto_phase(V_ac = None, f_ac = None, verbose: bool = True):
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        lockin = LockIn(NTCP)
-        signals = Signals(NTCP)
-        
-        V_ac_old = lockin.ModAmpGet(modulator_number = 1) # Read the old lockin settings
-        f_ac_old = lockin.ModPhasFreqGet(modulator_number = 1)
-        phase_ac_old = lockin.DemodPhasGet(demod_number = 1)
-        lockin_on_old = lockin.ModOnOffGet(modulator_number = 1)
-        rt_signals_old = lockin.DemodRTSignalsGet(demod_number = 1)
-            
-        if type(V_ac) != int and type(V_ac) != float: V_ac = V_ac_old # Set the lockin to the custom settings
-        if type(f_ac) != int and type(f_ac) != float: f_ac = f_ac_old
-        lockin.ModAmpSet(modulator_number = 1, amplitude = V_ac)
-        lockin.ModPhasFreqSet(modulator_number = 1, frequency = f_ac)
-        lockin.DemodRTSignalsSet(demod_number = 1, rt_signals = 1) # Use R/phi instead of X/Y
-        lockin.DemodPhasSet(demod_number = 1, phase_deg = 0)
-        lockin.ModOnOffSet(1, 1)
-        sleep(.1)
-        
-        channels = np.array(signals.NamesGet()) # The channel names are actively updated in Nanonis to use R/phi or X/Y
-        lockin_phi_index = np.where(channels == "LI Demod 1 Phi (deg)")[0][0]
-        
-        lockin_phi_av = 0
-        for samples in range(20):
-            lockin_phi_av += signals.ValGet(lockin_phi_index, wait_for_newest_data = True)
-        new_phase = lockin_phi_av / 20 - 90
-        if new_phase > 180: new_phase -= 360
-        if new_phase < -180: new_phase += 360
-        
-        lockin.DemodPhasSet(demod_number = 1, phase_deg = new_phase) # Set the new phase
-        lockin.DemodRTSignalsSet(demod_number = 1, rt_signals = rt_signals_old) # Reset to the old settings
+                V0 = float(bias.Get())
+                [x0, y0] = folme.XYPosGet(Wait_for_newest_data = True)
+                z0 = float(zcontroller.ZPosGet())
+                I0 = float(current.Get())
+                mla_pixel = self.helper_functions.get_pixels()
 
-        lockin.ModOnOffSet(1, lockin_on_old)
-        lockin.ModPhasFreqSet(modulator_number = 1, frequency = f_ac_old)
-        lockin.ModAmpSet(modulator_number = 1, amplitude = V_ac_old)
+                [t, V, x, y, z, I] = [t0, V0, x0, y0, z0, I0]
+                data_pixel = np.array([t, V, x, y, z, I, 0])
+                data_pixel = np.concatenate((data_pixel, mla_pixel))
+                
 
-        logprint(f"Lockin autophased at a frequency of {round(f_ac, 3)} Hz. Demodulator phase set to phi = {round(new_phase, 3)} degree.")
 
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
+                # The first four data points are the grid corners
+                for iteration in range(4):
+                    if not self._running:
+                        break
 
-def auto_approach(verbose: bool = True, timeout = 1000, I_approach: float = 100, p_gain_approach: float = 40, t_const_approach: float = 167, z_voltage: float = 210, land_tip: bool = True, adjust_percentile: float =  75, velocity_threshold: float = .02):
-    logfile = get_session_path() + "\\logfile.txt"
-    I_old, p_gain_old, t_const_old = change_feedback(I = I_approach, p_gain = p_gain_approach, t_const = t_const_approach, withdraw = True) # Change to the approach settings while withdrawing the tip
+                    match iteration:
+                        case 0: [x_index, y_index] = [0, 0]
+                        case 1: [x_index, y_index] = [pixels_x - 1, 0]
+                        case 2: [x_index, y_index] = [pixels_x - 1, pixels_y - 1]
+                        case 3: [x_index, y_index] = [0, pixels_y - 1]
 
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        autoapproach = AutoApproach(NTCP)
-        motor = Motor(NTCP)
-        zcontroller = ZController(NTCP)
-        
-        motor_frequency_old, motor_voltage_old = motor.FreqAmpGet()
-        [z_max, z_min] = zcontroller.LimitsGet()
-        z_min *= 1E9
-        z_max *= 1E9
-        z_range = z_max - z_min
-        if adjust_percentile < 50 or adjust_percentile > 100: adjust_percentile = 90
-        z_limits = [z_max - .01 * adjust_percentile * z_range, z_min + .01 * adjust_percentile * z_range] # If the tip comes to rest outside of these limits, do a coarse step and reapproach
-        if type(z_voltage) == int or type(z_voltage) == float: motor.FreqAmpSet(frequency = motor_frequency_old, amplitude = z_voltage)
-        autoapproach.OnOffSet(1) # Start the auto approach
-        if verbose: logprint("Auto approach initiated.", logfile = logfile)
+                    # Act
+                    [x, y] = [x_grid[x_index, y_index], y_grid[x_index, y_index]]
+                    folme.XYPosSet(x, y, Wait_end_of_move = True)
 
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
+                    # Measure
+                    t = time() - t0
+                    z = zcontroller.ZPosGet()
+                    I = current.Get()
+                    mla_pixel = self.helper_functions.get_pixels()
+                    data_chunk[iteration] = np.concatenate((np.array([t, V, x, y, z, I, 0]), mla_pixel))
+                
+                # Measurement loop
+                self.message.emit("Initializing the data file {file_name} and starting the measurement loop", "white")
+                with h5py.File(file_name, "w") as file:
+                    dataset = file.create_dataset("measurement_data", shape = (0, 71), maxshape = (None, 71), dtype = "f8")
 
-    tip_tracker(sampling_time = .5, timeout = timeout, velocity_threshold = .001, exit_when_still = True, N_no_motion = 2, verbose = verbose, tracking_info = False) # Use tip tracker to monitor when the approach is done
-    if verbose: logprint("Surface detected.", logfile = logfile)
+                    for iteration in range(4, points):
+                        modulo_iteration = iteration % chunk_size
+                        if not self._running: # Abort the measurement
+                            break
 
-    change_feedback(I = I_old, p_gain = p_gain_old, t_const = t_const_old, withdraw = True) # Change the feedback settings back to the scan settings
-    sleep(.4)
-    auto_phase() # Autophase the lock-in amplifier to zero
-      
-    if land_tip:
-        adjust_iteration = 0
-        in_range = False
-        while not in_range and adjust_iteration < 10: # Loop for tip adjustments to get the tip in the desired range
-            change_feedback(controller = True) # Land the tip if desired
-            txyz = tip_tracker(sampling_time = .5, timeout = 8, exit_when_still = False, N_no_motion = 4, verbose = False, tracking_info = False) # Use tip tracker to gauge where the tip has landed
-            z_avg = np.mean(txyz[3, -3:])
-            adjust_iteration += 1
-            
-            if z_avg < z_limits[0]:
-                if verbose: logprint(f"Tip landed too low in the z range ({round(z_avg, 3)} nm < {round(z_limits[0], 3)} nm). Adjusting by going down one coarse step.", logfile = logfile)
-                change_feedback(withdraw = True)
-                coarse_move(steps = 1, direction = "Z-", z_voltage = z_voltage, verbose = False)
-            elif z_avg > z_limits[1]:
-                if verbose: logprint(f"Tip landed too high in the z range ({round(z_avg, 3)} nm > {round(z_limits[1], 3)} nm). Adjusting by retracting one coarse step.", logfile = logfile)
-                change_feedback(withdraw = True)
-                coarse_move(steps = 1, direction = "Z+", z_voltage = z_voltage, verbose = False)
-            else:
-                if verbose: logprint(f"Success! Tip landed in the desired z range ({round(z_limits[0], 3)} nm < {round(z_avg, 3)} nm < {round(z_limits[1])} nm).", logfile = logfile)
-                in_range = True
-        
-        txyz = tip_tracker(sampling_time = .5, timeout = 180, exit_when_still = True, velocity_threshold = velocity_threshold, N_no_motion = 4, verbose = verbose, tracking_info = False) # Use tip tracker to let the drift settle
+                        # Choose a random index and map it to the 2D x and y grids
+                        flat_index = np.random.choice(flat_index_list)
+                        flat_index_list[flat_index] += 1
 
-    try: # Reset the motor voltage if it was changed
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        motor = Motor(NTCP)
-        motor.FreqAmpSet(frequency = motor_frequency_old, amplitude = motor_voltage_old)
-    
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
-        if verbose: logprint("Auto approach sequence completed.", logfile = logfile)
+                        x_index, y_index = np.unravel_index(flat_index, x_grid.shape)
+                        [x, y] = [x_grid[x_index, y_index], y_grid[x_index, y_index]]
 
+                        # Act
+                        folme.XYPosSet(x, y, Wait_end_of_move = True)
+
+                        # Measure
+                        t = time() - t0
+                        z = zcontroller.ZPosGet()
+                        I = current.Get()
+                        mla_pixel = self.helper_functions.get_pixels()
+                        data_chunk[modulo_iteration] = np.concatenate((np.array([t, V, x, y, z, I, 0]), mla_pixel))
+
+                        # Save and emit
+                        if iteration % chunk_size == chunk_size - 1:
+                            # Emit the data to Scantelligent
+                            self.data.emit(data_chunk)
+                            
+                            dataset.resize(dataset.shape[0] + chunk_size, axis = 0)
+                            dataset[-chunk_size:] = data_chunk
+
+                NTCP.close_connection() # Close the TCP connection
+                sleep(.05)
+                self.finished.emit()
+                self.helper_functions.logprint("Experiment finished")
+
+                return True
+
+            except Exception as e:
+                NTCP.close_connection()
+                sleep(.05)
+                self.message.emit(f"Error: {e}. Experiment aborted.", "red")
+                return False
+
+        except Exception as e:
+            self.message.emit(f"Error: {e}. Experiment aborted.", "red")
+            return False
+    """
+    def stop(self):
+        # Set the experiment running flag to False to abort the experiment
+        self.message.emit("Experiment aborted by user", "red")
+        self.running = False
+
+
+"""
 def coarse_move(direction: str = "up", steps: int = 1, xy_voltage: float = 240, z_voltage: float = 210, motor_frequency = False, override: bool = False, verbose: bool = True):
-    logfile = get_session_path() + "\\logfile.txt"
+    #logfile = get_session_path() + "\\logfile.txt"
 
     try:
         NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
@@ -731,55 +851,50 @@ def coarse_move(direction: str = "up", steps: int = 1, xy_voltage: float = 240, 
         zcontroller = ZController(NTCP)
         
         motor_frequency_old, motor_voltage_old = motor.FreqAmpGet()
-        feedback = bool(zcontroller.OnOffGet())
-        if feedback:
-            if override:
-                if verbose: logprint("Coarse motion attempted with the tip still in feedback. Overridden.", logfile = logfile)
-            else:
-                if verbose: logprint("Coarse motion attempted with the tip still in feedback. Blocked.", logfile = logfile)
-                return
+        #feedback = bool(zcontroller.OnOffGet())
+        #if feedback:
+        #    if override:
+        #        if verbose: logprint("Coarse motion attempted with the tip still in feedback. Overridden.", logfile = logfile)
+        #    else:
+        #        if verbose: logprint("Coarse motion attempted with the tip still in feedback. Blocked.", logfile = logfile)
+        #        return
         motor_frequency_new = motor_frequency_old
         if type(motor_frequency) == int or type(motor_frequency) == float: motor_frequency_new = motor_frequency
         
         dirxn = "Z+" # Select the direction and motor voltage
         motor_voltage = min([xy_voltage, z_voltage])
-        if direction == "away" or direction == "Y+" or direction == "north":
+        dirxn = direction.lower()
+        if dirxn in ["away", "y+", "north", "n"]:
             dirxn = "Y+"
             motor_voltage = xy_voltage
-        if direction == "towards" or direction == "Y-" or direction == "south":
+        if dirxn in ["towards", "y-", "south", "s"]:
             dirxn = "Y-"
             motor_voltage = xy_voltage
-        if direction == "left" or direction == "X-" or direction == "west":
+        if dirxn in ["left", "x-", "west", "w"]:
             dirxn = "X-"
             motor_voltage = xy_voltage
-        if direction == "right" or direction == "X+" or direction == "east":
+        if dirxn in ["right", "x+", "east", "e"]:
             dirxn = "X+"
             motor_voltage = xy_voltage
-        if direction == "up" or direction == "Z+" or direction == "lift":
+        if dirxn in ["up", "z+", "lift"]:
             dirxn = "Z+"
             motor_voltage = z_voltage
-        if direction == "down" or direction == "Z-" or direction == "approach":
+        if dirxn in ["down", "z-", "approach", "advance"]:
             dirxn = "Z-"
             motor_voltage = z_voltage
         motor.FreqAmpSet(frequency = motor_frequency_new, amplitude = motor_voltage)
         sleep(.05)
+        
         motor.StartMove(direction = dirxn, steps = steps, wait_until_finished = True)
-        if verbose: logprint("Coarse motion: " + str(steps) + " steps in the " + dirxn + " direction.", logfile = logfile)
+        #if verbose: logprint("Coarse motion: " + str(steps) + " steps in the " + dirxn + " direction.", logfile = logfile)
         sleep(.05)
 
     finally:
         NTCP.close_connection()
         sleep(.05)
 
-def move_over(direction: str = "north", steps: int = 20, z_steps: int = 10, I_approach: float = 100, p_gain_approach: float = 40, t_const_approach: float = 167, xy_voltage: float = 240, z_voltage: float = 220, adjust_percentile: float =  75, velocity_threshold: float = .02):
-    scan_control(action = "stop")
-    I_old, p_gain_old, t_const_old = change_feedback(withdraw = True)
-    coarse_move(direction = "lift", steps = z_steps, xy_voltage = xy_voltage, z_voltage = z_voltage)
-    coarse_move(direction = direction, steps = steps, xy_voltage = xy_voltage, z_voltage = z_voltage)
-    auto_approach(I_approach = I_approach, p_gain_approach = p_gain_approach, t_const_approach = t_const_approach, land_tip = True, adjust_percentile = adjust_percentile, velocity_threshold = velocity_threshold)
-
-def scan_control(action: str = "stop", scan_direction: str = "down", verbose: bool = True, monitor: bool = True, sampling_time: float = 4, velocity_threshold: float = .4):
-    logfile = get_session_path() + "\\logfile.txt"
+def scan_control(tcp_ip, tcp_port, version_number, action: str = "stop", scan_direction: str = "down", verbose: bool = True, monitor: bool = True, sampling_time: float = 4, velocity_threshold: float = .4):
+    # logfile = get_session_path() + "\\logfile.txt"
 
     try:
         NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
@@ -788,61 +903,22 @@ def scan_control(action: str = "stop", scan_direction: str = "down", verbose: bo
         if scan_direction != "down": scan_direction = "up"
         if action == "start":
             scan.Action(action, scan_direction)
-            if verbose: logprint("Scan started in the " + scan_direction + " direction.", logfile = logfile)
+            #if verbose: logprint("Scan started in the " + scan_direction + " direction.", logfile = logfile)
         elif action == "stop":
             scan.Action(action)
-            if verbose: logprint("Scan stopped.", logfile = logfile)
+            #if verbose: logprint("Scan stopped.", logfile = logfile)
         elif action == "pause":
             scan.Action(action)
-            if verbose: logprint("Scan paused.", logfile = logfile)
+            #if verbose: logprint("Scan paused.", logfile = logfile)
         elif action == "resume":
             scan.Action(action)
-            if verbose: logprint("Scan resumed.", logfile = logfile)
+            #if verbose: logprint("Scan resumed.", logfile = logfile)
 
     finally:
         NTCP.close_connection()
         sleep(.05)
     
-    if action == "start" or action == "resume":
-        if monitor: # Continue monitoring the progress of the scan until it is done
-            txyz = tip_tracker(sampling_time = sampling_time, velocity_threshold = velocity_threshold, timeout = 100000, exit_when_still = True, N_no_motion = 4, verbose = verbose, monitor_roughness = False)
-    return
-
-def scan_mode(mode: str = "topo", bwd_speed: float = 34, verbose: bool = True, topo_channels = np.array(["Z (m)"]), const_height_channels = np.array(["Current (A)", "LI Demod 1 X (A)", "LI Demod 1 Y (A)", "LI Demod 2 X (A)", "LI Demod 2 X (A)"])):
-    logfile = get_session_path() + "\\logfile.txt"
-
-    try:
-        NTCP = nanonisTCP(TCP_IP, TCP_PORT, version = version_number) # Initiate the connection and get the module handles
-        scan = Scan(NTCP)
-        signals = Signals(NTCP)
-        
-        speed_parameters = scan.SpeedGet() # Get the current scan parameters
-        fwd_speed_old = speed_parameters[0] * 1E9
-        channel_indices_old = np.array(scan.BufferGet()[1]) # Obtain the currently recorded channels, and the names of all channels
-        channel_names = np.array(signals.NamesGet())
-        
-        topo_channel_indices = np.array([np.where(channel_names == name)[0][0] for name in topo_channels], dtype = int)
-        const_height_channel_indices = np.array([np.where(channel_names == name)[0][0] for name in const_height_channels], dtype = int)
-        # Retain the channels that are being recorded
-        channels_old_indices = [channel for channel in channel_indices_old if not channel in np.concatenate((topo_channel_indices, const_height_channel_indices))]
-           
-        #scan_control(action = "stop") # Stop a scan if it happened to be running
-        
-        if mode == "constant height":
-            scan.SpeedSet(fwd_speed = fwd_speed_old * 1E-9, bwd_speed = bwd_speed * 1E-9) # In constant height mode, use a slow forward direction and a fast backward direction
-            if verbose: logprint("Constant height mode activated. Forward scan speed: " + str(round(fwd_speed_old, 3)) + " nm/s. Backward speed: " + str(round(bwd_speed, 3)) + " nm/s.", logfile = logfile)
-            target_channel_indices = np.concatenate((channels_old_indices, const_height_channel_indices))
-        else:
-            scan.SpeedSet(fwd_speed = fwd_speed_old * 1E-9, bwd_speed = fwd_speed_old * 1E-9) # In topographic imaging mode, set the forward and backward speeds equal.
-            if verbose: logprint("Topographic imaging mode activated. Forward scan speed: " + str(round(fwd_speed_old, 3)) + " nm/s. Backward speed: " + str(round(fwd_speed_old, 3)) + " nm/s.", logfile = logfile)
-            target_channel_indices = np.concatenate((channels_old_indices, topo_channel_indices))
-        
-        target_channels = [channel_names[index] for index in target_channel_indices]
-        #scan.BufferSet(channel_indexes = )
-        if verbose: logprint("Recording the following channels: " + "; ".join(target_channels))
-        
-    finally:
-        NTCP.close_connection()
-        sleep(.05)
-
-
+    #if action == "start" or action == "resume":
+    #    if monitor: # Continue monitoring the progress of the scan until it is done
+    #        txyz = tip_tracker(sampling_time = sampling_time, velocity_threshold = velocity_threshold, timeout = 100000, exit_when_still = True, N_no_motion = 4, verbose = verbose, monitor_roughness = False)
+"""

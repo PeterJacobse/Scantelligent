@@ -36,7 +36,7 @@ class NanonisHardware:
 
     # Simple functions    
     def get_xy(self):
-        return self.folme.XYPosGet(Wait_for_newest_data = True)
+        return list(self.folme.XYPosGet(Wait_for_newest_data = True))
 
     def set_xy(self, x, y):
         return self.folme.XYPosSet(x, y, Wait_end_of_move = True)

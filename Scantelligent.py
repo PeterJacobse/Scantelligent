@@ -8,15 +8,15 @@ import socket
 import cv2
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, QFileDialog,
-    QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit, QCheckBox, QFrame, QTextEdit
+    QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit, QCheckBox, QFrame, QTextEdit, QProgressBar
 )
-from PyQt6.QtCore import QObject, Qt, QProcess, QThread, pyqtSignal, pyqtSlot, QThreadPool
+from PyQt6.QtCore import QObject, Qt, QMetaObject, QProcess, QThread, pyqtSignal, pyqtSlot, QThreadPool, QSize, QTimer
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
-from PyQt6.QtGui import QImage, QImageWriter
-import scantelligent.functions as st
+from PyQt6.QtGui import QShortcut, QKeySequence
+import scantelligent.functions_old as st
 from scantelligent.image_functions import apply_gaussian, apply_fft, image_gradient, compute_normal, apply_laplace, complex_image_to_colors, background_subtract, get_image_statistics
-from scantelligent.control import Experiments, CameraWorker, NanonisFunctions, Worker
+from scantelligent.functions import Experiments, CameraWorker, NanonisFunctions, TaskWorker
 from time import sleep, time
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -52,6 +52,7 @@ class StreamRedirector(QObject):
 
 class AppWindow(QMainWindow):
     request_start = pyqtSignal(str, int, int)
+    start_tracking = pyqtSignal(float, int, int) # sampling time, chunk_size, timeout
     request_stop = pyqtSignal()
 
     def __init__(self):
@@ -106,12 +107,12 @@ class AppWindow(QMainWindow):
 
         # Activate buttons and keys
         self.connect_buttons()
-        #self.connect_keys()
+        self.connect_keys()
 
         # Check / set up hardware connections
         self.connect_nanonis()
         if hasattr(self, "nanonis_functions"): self.nanonis_functions.disconnect()
-        self.check_camera_connection(self.hardware["camera_argument"])
+        #self.check_camera_connection(self.hardware["camera_argument"])
         """
         self.thread = None
         self.worker = None
@@ -119,11 +120,12 @@ class AppWindow(QMainWindow):
         """
 
         # Set up the Experiments class and thread and connect signals and slots
-        self.thread_pool = QThreadPool() # Use this in the near future
-        
-        #self.experiments = Experiments(self.tcp_ip, self.tcp_port, self.version_number)
-        """
+        self.thread_pool = QThreadPool()
         self.experiment_thread = QThread()
+        self.timer = QTimer()
+        
+        """
+        
         self.experiments.moveToThread(self.experiment_thread)
 
         self.request_stop.connect(self.experiments.stop)
@@ -150,7 +152,7 @@ class AppWindow(QMainWindow):
         self.min_std_dev = 2
         self.max_std_dev = 2
         self.view_index = 0
-        self.experiment_running = False
+        self.experiment_status = "idle"
         self.process = QProcess(self)
 
         # Read the config file
@@ -322,10 +324,10 @@ class AppWindow(QMainWindow):
             experiments_layout.setSpacing(1)
 
             self.experiment_box = QComboBox()
-            self.experiment_box.addItems(["random_sampling", "simple_scan"])
-            self.start_stop_button = QToolButton()
-            self.update_start_stop_icon()
-            self.experiment_status = QLabel("Ready")
+            self.experiment_box.addItems(["simple_scan", "grid_sampling"])
+            self.direction_box = QComboBox()
+            self.direction_box.addItems(["nearest tip", "down", "up", "random"])
+            
             points_label = QLabel("Points:")
             points_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.points_box = QLineEdit("200")
@@ -333,14 +335,31 @@ class AppWindow(QMainWindow):
             save_to_label.setAlignment(Qt.AlignmentFlag.AlignRight)
             self.save_to_button = QPushButton()
 
+            start_stop_layout = QHBoxLayout()
+            self.progress_bar = QProgressBar()
+            self.progress_bar.setMinimum(0)
+            self.progress_bar.setMaximum(100)
+            self.progress_bar.setValue(0)
+
+            self.start_stop_button = QToolButton()
+            self.start_stop_button.setIconSize(QSize(20, 20))
+            self.pause_button = QToolButton()
+            pause_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPause)
+            self.pause_button.setIcon(pause_icon)
+            self.pause_button.setIconSize(QSize(20, 20))
+            start_stop_layout.addWidget(self.progress_bar)
+            start_stop_layout.addWidget(self.start_stop_button)
+            start_stop_layout.addWidget(self.pause_button)
+            self.update_icons()
+
             experiments_layout.addWidget(self.experiment_box, 0, 0)
-            experiments_layout.addWidget(self.start_stop_button, 0, 1)
-            experiments_layout.addWidget(self.experiment_status, 0, 2)
+            experiments_layout.addWidget(self.direction_box, 0, 1)
+            #experiments_layout.addWidget(self.experiment_status, 0, 2)
             experiments_layout.addWidget(points_label, 1, 0)
             experiments_layout.addWidget(self.points_box, 1, 1)
             experiments_layout.addWidget(save_to_label, 2, 0)
             experiments_layout.addWidget(self.save_to_button, 2, 1)
-
+            experiments_layout.addLayout(start_stop_layout, 3, 0, 3, 1)
             experiments_group.setLayout(experiments_layout)
 
             return experiments_group
@@ -352,9 +371,9 @@ class AppWindow(QMainWindow):
 
             channel_select_layout = QHBoxLayout()
             self.channel_select_box = QComboBox()
-            self.direction_select_button = QPushButton("direXion: forward")
+            self.direction_button = QPushButton("direXion: forward")
             self.get_scan_button = QPushButton("Get Nanonis scan")
-            [channel_select_layout.addWidget(widget, 1) for widget in [self.channel_select_box, self.direction_select_button, self.get_scan_button]]
+            [channel_select_layout.addWidget(widget, 1) for widget in [self.channel_select_box, self.direction_button, self.get_scan_button]]
             im_proc_layout.addLayout(channel_select_layout)
 
             back_sub_label = QLabel("Background subtraction")
@@ -522,7 +541,8 @@ class AppWindow(QMainWindow):
 
         # Experiments group
         self.experiment_box.currentIndexChanged.connect(self.on_experiment_change)
-        self.start_stop_button.clicked.connect(self.start_stop_experiment)
+        self.direction_button.clicked.connect(self.on_toggle_direction)
+        self.start_stop_button.clicked.connect(self.change_experiment_status)
         self.save_to_button.clicked.connect(self.open_session_folder)
         # Camera
         # self.camera_start_button.clicked.connect(self.start_camera)
@@ -532,7 +552,73 @@ class AppWindow(QMainWindow):
         self.get_scan_button.clicked.connect(self.on_nanonis_scan_request)
 
     def connect_keys(self):
-        pass
+        # Open folder in file explorer
+        open_session_folder_shortcut = QShortcut(QKeySequence(Qt.Key.Key_1), self)
+        open_session_folder_shortcut.activated.connect(self.open_session_folder)
+        
+        # Channel toggling
+        previous_channel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
+        previous_channel_shortcut.activated.connect(self.on_previous_chan)
+        next_channel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Up), self)
+        next_channel_shortcut.activated.connect(self.on_next_chan)
+
+        # Direction
+        direction_toggle_shortcut = QShortcut(QKeySequence(Qt.Key.Key_X), self)
+        direction_toggle_shortcut.activated.connect(self.on_toggle_direction)
+
+        withdraw_shortcut = QShortcut(QKeySequence(Qt.Key.Key_W), self)
+        withdraw_shortcut.activated.connect(self.toggle_withdraw)
+
+        """
+        # Image processing group
+        # Background subtraction toggle buttons
+        background_none_shortcut = QShortcut(QKeySequence(Qt.Key.Key_0), self)
+        background_none_shortcut.activated.connect(lambda: self.on_bg_change("none"))
+        background_plane_shortcut = QShortcut(QKeySequence(Qt.Key.Key_P), self)
+        background_plane_shortcut.activated.connect(lambda: self.on_bg_change("plane"))
+        background_inferred_shortcut = QShortcut(QKeySequence(Qt.Key.Key_I), self)
+        background_inferred_shortcut.activated.connect(lambda: self.on_bg_change("inferred"))
+        background_linewise_shortcut = QShortcut(QKeySequence(Qt.Key.Key_W), self)
+        background_linewise_shortcut.activated.connect(lambda: self.on_bg_change("linewise"))
+
+        # Matrix operations
+        sobel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_B), self)
+        sobel_shortcut.activated.connect(lambda: self.toggle_matrix_processing("sobel", not self.sobel_button.isChecked()))
+        normal_shortcut = QShortcut(QKeySequence(Qt.Key.Key_N), self)
+        normal_shortcut.activated.connect(lambda: self.toggle_matrix_processing("normal", not self.normal_button.isChecked()))
+        gauss_shortcut = QShortcut(QKeySequence(Qt.Key.Key_G), self)
+        gauss_shortcut.activated.connect(lambda: self.toggle_matrix_processing("gaussian", not self.gauss_button.isChecked()))
+        laplace_shortcut = QShortcut(QKeySequence(Qt.Key.Key_C), self)
+        laplace_shortcut.activated.connect(lambda: self.toggle_matrix_processing("laplace", not self.laplace_button.isChecked()))
+        fft_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F), self)
+        fft_shortcut.activated.connect(lambda: self.toggle_matrix_processing("fft", not self.fft_button.isChecked()))
+        toggle_projections_shortcut = QShortcut(QKeySequence(Qt.Key.Key_H), self)
+        toggle_projections_shortcut.activated.connect(self.toggle_projections)
+
+        # Limits control group
+        full_scale_shortcut = QShortcut(QKeySequence(Qt.Key.Key_U), self)
+        full_scale_shortcut.activated.connect(lambda: self.on_full_scale("both"))
+        percentile_shortcut = QShortcut(QKeySequence(Qt.Key.Key_R), self)
+        percentile_shortcut.activated.connect(lambda: self.on_percentiles("both"))
+        std_dev_shortcut = QShortcut(QKeySequence(Qt.Key.Key_D), self)
+        std_dev_shortcut.activated.connect(lambda: self.on_standard_deviations("both"))
+        abs_val_shortcut = QShortcut(QKeySequence(Qt.Key.Key_A), self)
+        abs_val_shortcut.activated.connect(lambda: self.on_absolute_values("both"))
+
+        toggle_min_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Minus), self)
+        toggle_min_shortcut.activated.connect(lambda: self.toggle_limits("min"))
+        toggle_max_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Equal), self)
+        toggle_max_shortcut.activated.connect(lambda: self.toggle_limits("max"))
+
+        # Associated spectra group
+        open_spectrum_shortcut = QShortcut(QKeySequence(Qt.Key.Key_O), self)
+        open_spectrum_shortcut.activated.connect(self.load_spectroscopy_window)
+        """
+        # I/O group
+        exit_shortcuts = [QShortcut(QKeySequence(keystroke), self) for keystroke in [Qt.Key.Key_Q, Qt.Key.Key_E, Qt.Key.Key_Escape]]
+        [exit_shortcut.activated.connect(self.on_exit) for exit_shortcut in exit_shortcuts]
+        session_folder_shortcut = QShortcut(QKeySequence(Qt.Key.Key_T), self)
+        session_folder_shortcut.activated.connect(self.open_session_folder)
 
     def logprint(self, message, timestamp: bool = True, color: str = "white"):
         """Print a timestamped message to the redirected stdout.
@@ -597,11 +683,20 @@ class AppWindow(QMainWindow):
             return False
 
         if self.tip_status["withdrawn"]:
+            self.retract_button.setEnabled(True)
+            self.advance_button.setEnabled(True)
+            self.approach_button.setEnabled(True)
+
             self.tip_status_button.setText("Tip status: withdrawn")
             self.tip_status_button.setStyleSheet("background-color: darkred;")
-            self.withdraw_button.setText("Land")
+            self.withdraw_button.setText("land (W)")
             self.withdraw_checkbox.setEnabled(False)
+
         else:
+            self.retract_button.setEnabled(False)
+            self.advance_button.setEnabled(False)
+            self.approach_button.setEnabled(False)
+        
             if self.tip_status["feedback"]:
                 self.tip_status_button.setText("Tip status: in feedback")
                 self.tip_status_button.setStyleSheet(f"background-color: {colors["darkgreen"]};")
@@ -621,6 +716,28 @@ class AppWindow(QMainWindow):
         self.I_fb_box.setText(f"{np.round(self.parameters["I_fb"] * 1E12, 3)}") # In pA
         #self.p_gain_box.setText(f"{np.round(self.parameters["p_gain"] * 1E12, 3)}") # In pm
         #self.t_const_box.setText(f"{np.round(self.parameters["t_const"] * 1E6, 3)}") # In us
+
+    def on_next_chan(self):
+        pass
+
+    def on_previous_chan(self):
+        pass
+
+    def on_toggle_direction(self):
+        if hasattr(self, "scan_direction") and self.scan_direction == "forward": self.scan_direction = "backward"
+        else: self.scan_direction = "forward"
+
+        self.direction_button.disconnect()
+        self.direction_button.setChecked(self.scan_direction == "backward")
+        self.direction_button.setText(f"direXion: {self.scan_direction}")
+        self.direction_button.clicked.connect(self.on_toggle_direction)
+
+        try:
+            if hasattr(self, 'image_files') and len(self.image_files) > 0:
+                self.load_process_display(new_scan = True)
+        except Exception as e:
+            print("Error toggling the scan direction")
+            pass
 
     def get_next_indexed_filename(self, folder_path, base_name, extension):
         # Pattern to match files with the base name and exactly 3 digits for the index
@@ -655,17 +772,27 @@ class AppWindow(QMainWindow):
         
         return f"{base_name}_{formatted_index}{extension}"
 
-    def update_start_stop_icon(self):
+    def update_icons(self):
         try:
-            if self.experiment_running:
-                icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
-            else:
-                icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay)
-            self.start_stop_button.setIcon(icon)
+            match self.experiment_status:
+                case "running":
+                    start_stop_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
+                    self.pause_button.setEnabled(True)
+                    [box.setEnabled(False) for box in [self.experiment_box, self.direction_box]]
+                case "idle":
+                    start_stop_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay)
+                    self.pause_button.setEnabled(False)
+                    [box.setEnabled(True) for box in [self.experiment_box, self.direction_box]]
+                case "paused":
+                    start_stop_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
+                    self.pause_button.setEnabled(True)
+                    self.pause_button.setChecked(True)
+                    [box.setEnabled(False) for box in [self.experiment_box, self.direction_box]]
+                case _:
+                    pass
+            self.start_stop_button.setIcon(start_stop_icon)
         except Exception as e:
             self.logprint(e, color = "red")
-            # If for some reason standard icons aren't available, do nothing and
-            # keep the arrow indicator.
             pass
 
     def view_toggle(self):
@@ -683,20 +810,26 @@ class AppWindow(QMainWindow):
         print(f"View index is {self.view_index}")
 
     def launch_scanalyzer(self):
-        try:
-            scanalyzer_path = self.paths["scanalyzer_path"]
-            python_executable = sys.executable
-            self.logprint(f"Executing command: {python_executable} {scanalyzer_path}", color = "white")
-            self.process.start(python_executable, [self.paths["scanalyzer_path"]])
-        except Exception as e:
-            self.logprint("Failed to launch Scanalyzer: {e}", color = "red")
+        if hasattr(self, "paths") and "scanalyzer_path" in list(self.paths.keys()):
+            try:
+                scanalyzer_path = self.paths["scanalyzer_path"]
+                python_executable = sys.executable
+                self.logprint(f"Executing command: {python_executable} {scanalyzer_path}", color = "white")
+                self.process.start(python_executable, [self.paths["scanalyzer_path"]])
+            except Exception as e:
+                self.logprint(f"Failed to launch Scanalyzer: {e}", color = "red")
+        else:
+            self.logprint("Error. Scanalyzer path unknown.", color = "red")
 
     def open_session_folder(self):
-        try:
-            session_path = self.paths["session_path"]
-            self.logprint("Opening the session folder", color = "white")
-            os.startfile(session_path)
-        except:
+        if hasattr(self, "paths") and "session_path" in list(self.paths.keys()):
+            try:
+                session_path = self.paths["session_path"]
+                self.logprint("Opening the session folder", color = "white")
+                os.startfile(session_path)
+            except Exception as e:
+                self.logprint(f"Failed to open session folder: {e}", color = "red")
+        else:
             self.logprint("Error. Session folder unknown.", color = "red")
         return
 
@@ -792,6 +925,7 @@ class AppWindow(QMainWindow):
                 self.frame = frame
                 channels = frame["channel_names"]
                 if type(channels) == list:
+                    self.channel_select_box.clear()
                     self.channel_select_box.addItems(channels)
                 
                 self.logprint("I was able to read the scan frame data from Nanonis and saved it in a dictionary called 'frame'", color = "green")
@@ -809,6 +943,18 @@ class AppWindow(QMainWindow):
                 selected_scan = self.nanonis_functions.get_scan(channel_index, direction)
                 if type(selected_scan) == np.ndarray:
                     self.selected_scan = selected_scan
+
+                    # Check if scan is complete
+                    nan_mask = np.isnan(selected_scan)
+                    num_nans = np.count_nonzero(nan_mask)
+                    num_values = np.count_nonzero(~nan_mask)
+
+                    if self.experiment_status == "running":
+                        if num_nans == 0: # Scan is finished because there were no NaN values found
+                            self.logprint("Experiment completed!", color = "green")
+                            self.change_experiment_status(request = "stop")
+                        self.progress_bar.setValue(int(100 * num_values / (num_nans + num_values)))
+                    
 
                     self.image_view.setImage(self.selected_scan)
                     self.image_view.autoRange()
@@ -860,9 +1006,9 @@ class AppWindow(QMainWindow):
 
         #V_old = self.nanonis_functions.change_bias(V_new)
         # ^ This is the old-fashioned, non-threaded way
-        self.worker = Worker(self.nanonis_functions.change_bias, V_new)
-        self.worker.signals.finished.connect(self.on_worker_finished)
-        self.thread_pool.start(self.worker)
+        self.task_worker = TaskWorker(self.nanonis_functions.change_bias, V_new)
+        self.thread_pool.start(self.task_worker)
+        self.parameters["bias"] = V_new
 
         return True
 
@@ -873,26 +1019,54 @@ class AppWindow(QMainWindow):
         self.logprint(f"  [float] I_old = nanonis_functions.change_setpoint({I_fb})", color = "blue")
         I_old = self.nanonis_functions.change_feedback(I_fb)
 
+        self.parameters["I_fb"] = I_fb
+
         return True
 
+    # Experiments and thread management
     def on_experiment_change(self):
-        experiment = self.experiment_box.currentText()
-        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], experiment, ".hdf5")
+        self.experiment = self.experiment_box.currentText()
+        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment, ".hdf5")
         self.save_to_button.setText(self.paths["experiment_filename"])
         return
 
-    # Experiments and thread management
-    def start_stop_experiment(self):
-        # If an experiment is running, stop it
-        if self.experiment_running:
-            self.nanonis_functions.scan_control(action = "stop")
-            self.experiment_running = False
+    def change_experiment_status(self, request: str = "stop"):
+        self.logprint(f"Request = {request}", color = "white")
+        match request:
+            case "pause":
+                if self.experiment_status == "running":
+                    self.nanonis_functions.scan_control(action = "pause")
+                    self.experiment_status = "paused"
+                    self.update_icons()
+                    return
+                else:
+                    return
+            case "stop":
+                self.logprint(f"{self.timer}", color = "white")
+                if hasattr(self, "timer"):
+                    self.timer.stop()
+                if self.experiment_status in ["idle", "paused", "running"]:
+                    self.experiment_status = "idle"
+                    self.nanonis_functions.scan_control(action = "stop")
+                    self.update_icons()
+                return
+            case "resume":
+                if self.experiment_status == "paused":
+                    self.nanonis_functions.scan_control(action = "resume")
+                    self.experiment_status = "running"
+                    self.update_icons()
+                return
+            case _: # This is start
+                if self.experiment_status == "running":
+                    self.nanonis_functions.scan_control(action = "stop")
+                    self.experiment_status = "idle"
+                    if hasattr(self, "timer"):
+                        self.timer.stop()
+                    self.update_icons()
+                    return
+                else: # Only when no experiment is running and a start is requested will the code below be evaluated
+                    pass
 
-            #self.experiments.stop()
-            #self.experiment_status.setText("Status: Stopping...")
-            return
-        
-        # Else, if no experiment is running, start it
         # First, check if the TCP connection is okay
         if not self.nanonis_online:
             self.connect_nanonis()
@@ -901,82 +1075,144 @@ class AppWindow(QMainWindow):
                 self.update_buttons()
                 return False
 
-        # Connect experiment file
-        experiment = self.experiment_box.currentText()
-        self.paths["experiment_filename"] = experiment
-        """
-        if not hasattr(self, "experiment_filename") or not hasattr(self, "session_path"):
-            self.logprint("Error! Missing session path or experiment file name.", color = "red")
-            return False
-        """
+        # Read the experiment type and parameters
+        self.experiment = self.experiment_box.currentText()
+        self.direction = self.direction_box.currentText()
+        self.paths["experiment_filename"] = self.experiment
         self.paths["experiment_file"] = os.path.join(self.paths["session_path"], self.paths["experiment_filename"])
 
+        # Choose the experiment
+        match self.experiment:
+            case "simple_scan":
+                self.start_simple_scan()
+            case "grid_sampling":
+                self.start_grid_sampling()
+            case _:
+                self.logprint("Sorry, I don't know this experiment yet.", color = "red")
+                return False
 
+    def start_simple_scan(self):
+        self.logprint(f"Starting experiment {self.experiment}")
+        self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
 
-        # Read which experiment will be carried out
-        # Grid sampling
-        if experiment == "random_sampling":
-            self.logprint(f"Starting experiment {experiment}", color = "white")
-            self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}", color = "white")
+        # Initialize the experiment
+        self.frame = self.nanonis_functions.get_frame()
+        self.x_grid = self.frame["x_grid"]
+        self.y_grid = self.frame["y_grid"]
 
-            points = int(self.points_box.text())
-            self.grid = self.helper_functions.get_grid()
-            [self.x_grid, self.y_grid] = [self.grid.x_grid, self.grid.y_grid]
+        # Read the direction
+        dirxn = "down"
+        match self.direction_box.currentText():
+            case "down":
+                dirxn = "down"
+            case "up":
+                dirxn = "up"
+            case "nearest tip":
+                # Retrieve the tip position
+                self.nanonis_functions.connect_log()
+                tip_position = self.nanonis_functions.get_xy()
+                self.nanonis_functions.disconnect()
+                sleep(.1)
 
-            # Connect the correct experiment
-            try:
-                self.request_start.disconnect()
-            except:
-                pass
-            self.request_start.connect(self.experiments.sample_grid)
+                bottom_left_corner = self.frame["bottom_left_corner"]
+                top_left_corner = self.frame["top_left_corner"]
 
-            # Start the experiment
-            self.experiment_running = True
-            self.experiment_status.setText("Running (0 %)")
-            self.update_start_stop_icon()
-            
-            self.data_array = np.empty((points, 71), dtype = float) # Initialize an empty numpy array for storing data
-            self.current_index = 0
-            chunk_size = 30
-            self.request_start.emit(self.experiment_file, points, chunk_size)
+                dx_bottom = tip_position[0] - bottom_left_corner[0]
+                dy_bottom = tip_position[1] - bottom_left_corner[1]
+                dx_top = tip_position[0] - top_left_corner[0]
+                dy_top = tip_position[1] - top_left_corner[1]
+                dist_bottom2 = dx_bottom ** 2 + dy_bottom ** 2
+                dist_top2 = dx_top ** 2 + dy_top ** 2
 
-        # Simple scan
-        elif experiment == "simple_scan":
-            self.logprint(f"Starting experiment {experiment}")
-            self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
-            
-            points = int(self.points_box.text())
-            """
-            # Connect the correct experiment
-            try:
-                self.request_start.disconnect()
-            except:
-                pass
-            # self.request_start.connect(self.experiments.sample_grid)
-            self.request_start.connect(self.experiments.sample_grid)
+                if dist_bottom2 < dist_top2: # Tip is closer to the bottom
+                    dirxn = "up"
+                else:
+                    dirxn = "down"
+            case _:
+                self.logprint("I haven't learned how to do this direction yet", "red")
+                dirxn = "down"
+        
+        self.experiment_status = "running"
+        self.progress_bar.setValue(0)
+        self.experiment_status = "running"
+        [box.setEnabled(False) for box in [self.experiment_box, self.direction_box]]
+        self.update_icons()
 
-            # Start the experiment
-            self.experiment_running = True
-            self.experiment_status.setText("Running (0 %)")
-            self.update_start_stop_icon()
-            
-            self.data_array = np.empty((points, 6), dtype = float)
-            self.current_index = 0
-            self.request_start.emit("up", 10, 0)
-            # self.request_start.emit([2, 1.9, 1.8], None, None, 12, 0)
-            """
-            self.nanonis_functions.scan_control(action = "start", direction = "down")
-            self.experiment_running = True
+        self.channels = ["t (s)", "V (V)", "x (m)", "y (m)", "z (m)", "I (A)"]
+        self.data_array = np.empty((100000, len(self.channels)), dtype = float)
+        self.current_index = 0
+        
+        self.nanonis_functions.scan_control(action = "start", direction = dirxn)
+        if not hasattr(self, "timer"):
+            self.timer = QTimer(self)
+        self.timer.timeout.connect(self.on_nanonis_scan_request)
+        self.timer.start(3000)
 
-        else:
-            self.logprint("Sorry, I don't know this experiment yet.", color = "red")
-            return False
+        """
+        sampling_time = 1
+        chunk_size = 12
+        timeout = 100
 
-    def new_data(self, data_chunk):
+        # Set up the threading connections
+        self.worker = Experiments(self.hardware)
+        self.experiment_thread = QThread()
+        self.worker.moveToThread(self.experiment_thread)
+
+        # Connect the start_tracking signal to the worker's tip_tracker slot
+
+        self.start_tracking.connect(lambda: self.worker.tip_tracker(sampling_time, chunk_size, timeout))
+        self.request_stop.connect(self.worker.stop)
+        self.worker.data.connect(self.receive_data)
+        self.worker.message.connect(self.receive_message)
+        self.worker.progress.connect(self.receive_progress)
+        self.worker.finished.connect(self.experiment_finished)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
+
+        self.experiment_thread.start()
+        # Emit the signal after the thread has started, so it runs in the worker thread
+        self.start_tracking.emit(sampling_time, chunk_size, timeout)
+
+        self.worker.finished.connect(self.experiment_finished)
+        self.experiment_thread.finished.connect(self.experiments.deleteLater)
+        self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
+        self.experiment_thread.start()
+        """
+
+    def start_grid_sampling(self):
+        self.logprint(f"Starting experiment {self.experiment}")
+        self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
+        return False
+        """
+        self.logprint(f"Starting experiment {self.experiment}", color = "white")
+        self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}", color = "white")
+
+        points = int(self.points_box.text())
+        self.grid = self.helper_functions.get_grid()
+        [self.x_grid, self.y_grid] = [self.grid.x_grid, self.grid.y_grid]
+
+        # Connect the correct experiment
+        try:
+            self.request_start.disconnect()
+        except:
+            pass
+        self.request_start.connect(self.experiments.sample_grid)
+
+        # Start the experiment
+        self.experiment_status = "running"
+        self.update_icons()
+        
+        self.data_array = np.empty((points, 71), dtype = float) # Initialize an empty numpy array for storing data
+        self.current_index = 0
+        chunk_size = 30
+        self.request_start.emit(self.experiment_file, points, chunk_size)
+        """
+
+    def receive_data(self, data_chunk):
         chunk_size = data_chunk.shape[0]
         self.data_array[self.current_index : self.current_index + chunk_size] = data_chunk
         self.current_index += chunk_size
-        
+
         xy_points = self.data_array[: self.current_index, 2:4]
         z_points = self.data_array[: self.current_index, 4]
 
@@ -985,32 +1221,30 @@ class AppWindow(QMainWindow):
         except:
             z_grid = np.zeros_like(self.x_grid)
         
-        processed_z_grid = apply_gaussian(z_grid, sigma = 1)
+        processed_z_grid = z_grid
 
-        progress = self.current_index / int(self.points_box.text())
-        self.experiment_status.setText(f"Running ({int(100 * progress)} %)")
         self.image_view.setImage(processed_z_grid, autoRange = True)
 
-    def new_message(self, message_text, color_string):
+    def receive_message(self, message_text, color_string):
         if color_string in colors.keys():
             self.logprint(message_text, color = color_string)
         else:
             self.logprint(message_text, color = "white")
 
+    def receive_progress(self, progress):
+        self.progress_bar.setValue(progress)
+
     def experiment_finished(self):
         self.logprint("Experiment finished", color = "green")
-        self.experiment_status.setText("Experiment finished")
-        self.experiment_running = False
-        self.update_start_stop_icon()
-        self.experiment_filename = self.get_next_indexed_filename(self.session_path, "Experiment", ".hdf5")
-        self.save_to_button.setText(self.experiment_filename)
+        self.nanonis_functions.scan_control(action = "stop")
+        if hasattr(self, "experiment_thread"): self.experiment_thread.quit
+        self.experiment_status = "idle"
+        self.update_icons()
+        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment, ".hdf5")
+        self.save_to_button.setText(self.paths["experiment_filename"])
+        self.nanonis_functions.scan_control(action = "stop")
 
         return True
-
-    def on_worker_finished(self):
-        if hasattr(self, "nanonis_functions"):
-            self.nanonis_functions.disconnect()
-        return
 
 
 
