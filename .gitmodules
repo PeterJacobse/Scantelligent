@@ -1,0 +1,3 @@
+[submodule "ScopeFoundryHW/andor_camera"]
+	path = ScopeFoundryHW/andor_camera
+	url = https://github.com/ScopeFoundry/HW_andor_camera
