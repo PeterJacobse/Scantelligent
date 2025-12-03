@@ -1,0 +1,19 @@
+[project]
+name = "scantelligent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=7.1.0",
+    "nanonispy2>=1.2.0",
+    "nanonistcp>=1.1.4",
+    "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
+    "pip>=25.3",
+    "pyqt6>=6.10.0",
+    "pyqtgraph>=0.14.0",
+    "pyyaml>=6.0.3",
+    "scipy>=1.16.3",
+    "scopefoundry>=2.2.1",
+]
