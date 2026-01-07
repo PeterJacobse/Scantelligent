@@ -10,13 +10,14 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, QFileDialog,
     QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit, QCheckBox, QFrame, QTextEdit, QProgressBar
 )
+from PyQt6 import QtWidgets, QtGui, QtCore
 from PyQt6.QtCore import QObject, Qt, QMetaObject, QProcess, QThread, pyqtSignal, pyqtSlot, QThreadPool, QSize, QTimer
 import pyqtgraph as pg
-from pyqtgraph.Qt import QtCore, QtWidgets
 from PyQt6.QtGui import QShortcut, QKeySequence
-import scantelligent.functions_old as st
-from scantelligent.image_functions import apply_gaussian, apply_fft, image_gradient, compute_normal, apply_laplace, complex_image_to_colors, background_subtract, get_image_statistics
-from scantelligent.functions import Experiments, CameraWorker, NanonisFunctions, TaskWorker
+import lib.functions_old as st
+from lib.image_functions import apply_gaussian, apply_fft, image_gradient, compute_normal, apply_laplace, complex_image_to_colors, background_subtract, get_image_statistics
+from lib.functions import Experiments, CameraWorker, NanonisFunctions, TaskWorker
+from lib.gui_functions import GUIFunctions
 from time import sleep, time
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -61,6 +62,10 @@ class AppWindow(QMainWindow):
         self.setWindowTitle("Scantelligent by Peter H. Jacobse")
         self.setGeometry(100, 100, 1400, 800) # x, y, width, height
         
+        # Initialize parameters
+        self.parameters_init()
+        self.make_gui_items()
+
         # Create a central widget and main horizontal layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -90,9 +95,6 @@ class AppWindow(QMainWindow):
         sys.stderr = self.stderr_redirector
         now = datetime.now()
         self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), color = "white")
-        
-        # Initialize parameters
-        self.parameters_init()
 
         # Ensure the central widget can receive keyboard focus
         central_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -112,38 +114,31 @@ class AppWindow(QMainWindow):
         # Check / set up hardware connections
         self.connect_nanonis()
         if hasattr(self, "nanonis_functions"): self.nanonis_functions.disconnect()
-        #self.check_camera_connection(self.hardware["camera_argument"])
-        """
-        self.thread = None
-        self.worker = None
-        self.is_camera_running = False
-        """
 
         # Set up the Experiments class and thread and connect signals and slots
         self.thread_pool = QThreadPool()
         self.experiment_thread = QThread()
         self.timer = QTimer()
-        
-        """
-        
-        self.experiments.moveToThread(self.experiment_thread)
-
-        self.request_stop.connect(self.experiments.stop)
-        self.experiments.data.connect(self.new_data)
-        self.experiments.message.connect(self.new_message)
-        self.experiments.finished.connect(self.experiment_finished)
-        self.experiment_thread.finished.connect(self.experiments.deleteLater)
-        self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
-        self.experiment_thread.start()
-        """
 
     def parameters_init(self):
         self.paths = {
             "script": os.path.abspath(__file__), # The full path of Scanalyzer.py
             "parent_folder": os.path.dirname(os.path.abspath(__file__)),            
         }
-        self.paths["package_folder"] = os.path.join(self.paths["parent_folder"], "scantelligent")
-        self.paths["config_file"] = os.path.join(self.paths["package_folder"], "config.yml")        
+        self.paths["lib"] = os.path.join(self.paths["parent_folder"], "lib")
+        self.paths["sys"] = os.path.join(self.paths["parent_folder"], "sys")
+        self.paths["config_file"] = os.path.join(self.paths["sys"], "config.yml")
+        self.paths["icon_folder"] = os.path.join(self.paths["parent_folder"], "icons")
+
+        icon_files = os.listdir(self.paths["icon_folder"])
+        self.icons = {}
+        for icon_file in icon_files:
+            [icon_name, extension] = os.path.splitext(os.path.basename(icon_file))
+            try:
+                if extension == ".png": self.icons.update({icon_name: QtGui.QIcon(os.path.join(self.paths["icon_folder"], icon_file))})
+            except:
+                pass
+        self.setWindowIcon(self.icons.get("scanalyzer"))
         
         self.nanonis_online = False
         self.background_subtraction = "plane"
@@ -154,6 +149,7 @@ class AppWindow(QMainWindow):
         self.view_index = 0
         self.experiment_status = "idle"
         self.process = QProcess(self)
+        self.gui_functions = GUIFunctions()
 
         # Read the config file
         try:
@@ -167,10 +163,8 @@ class AppWindow(QMainWindow):
                         self.logprint("Scanalyzer found and linked", "green")
                     else:
                         self.logprint("Warning: config file has a scanalyzer_path entry, but it doesn't point to an existing file.", "red")
-                        self.scanalyzer_button.setEnabled(False)
                 except Exception as e:
                     self.logprint("Warning: scanalyzer path could not be read. {e}", color = "red")
-                    self.scanalyzer_button.setEnabled(False)
                 
                 try:
                     nanonis_settings = config["nanonis"]
@@ -199,6 +193,139 @@ class AppWindow(QMainWindow):
 
 
     # GUI
+    def make_gui_items(self) -> None:
+        make_button = lambda *args, **kwargs: self.gui_functions.make_button(*args, parent = self, **kwargs)
+        make_label = self.gui_functions.make_label
+        make_radio_button = self.gui_functions.make_radio_button
+        make_checkbox = self.gui_functions.make_checkbox
+        make_combobox = self.gui_functions.make_combobox
+        make_line_edit = self.gui_functions.make_line_edit
+        make_layout = self.gui_functions.make_layout
+        make_groupbox = self.gui_functions.make_groupbox
+        QKey = QtCore.Qt.Key
+
+        self.buttons = {
+            "direction": make_button("", self.on_exit, "Change scan direction (X)", icon = self.icons.get("triple_arrow"), key_shortcut = QKey.Key_X),
+
+            """
+
+            "folder_name": make_button("Open folder", self.open_data_folder, "Open the data folder (1)", self.icons.get("folder_blue"), key_shortcut = QKey.Key_1),
+
+            "full_data_range": make_button("", self.on_full_scale, "Set the image value range to the full data range (U)", self.icons.get("100"), key_shortcut = QKey.Key_U),
+            "percentiles": make_button("", self.on_percentiles, "Set the image value range by percentiles (R)", self.icons.get("percentiles"), key_shortcut = QKey.Key_R),
+            "standard_deviation": make_button("", self.on_standard_deviations, "Set the image value range by standard deviations (D)", self.icons.get("deviation"), key_shortcut = QKey.Key_D),
+            "absolute_values": make_button("", self.on_absolute_values, "Set the image value range by absolute values (A)", self.icons.get("numbers"), key_shortcut = QKey.Key_A),
+
+            "spec_locations": make_button("", self.on_toggle_spec_locations, "View the spectroscopy locations (3)", self.icons.get("spec_locations"), key_shortcut = QKey.Key_3),
+            "spectrum_viewer": make_button("", self.open_spectrum_viewer, "Open Spectrum Viewer (O)", self.icons.get("graph"), key_shortcut = QKey.Key_O),
+
+            "save_png": make_button("", self.on_save_png, "Save as png file (S)", self.icons.get("floppy"), key_shortcut = QKey.Key_S),
+            "save_hdf5": make_button("", self.on_save_png, "Save as hdf5 file (5)", self.icons.get("h5"), key_shortcut = QKey.Key_5),
+            "output_folder": make_button("Output folder", self.open_output_folder, "Open output folder (T)", self.icons.get("folder_blue"), key_shortcut = QKey.Key_T),
+
+            """
+            "exit": make_button("", self.on_exit, "Exit scanalyzer (Esc/X/E)", self.icons.get("escape"))
+        }
+        """
+        self.buttons["direction"].setCheckable(True)
+        self.buttons["spec_locations"].setCheckable(True)
+        exit_shortcuts = [QtGui.QShortcut(QtGui.QKeySequence(keystroke), self) for keystroke in [QKey.Key_Q, QKey.Key_E, QKey.Key_Escape]]
+        [exit_shortcut.activated.connect(self.on_exit) for exit_shortcut in exit_shortcuts]
+        self.labels = {
+            "scan_summary": make_label("Scanalyzer by Peter H. Jacobse"),
+            "statistics": make_label("Statistics"),
+            "load_file": make_label("Load file:"),
+            "in_folder": make_label("in folder:"),
+            "number_of_files": make_label("which contains 1 sxm file"),
+            "channel_selected": make_label("Channel selected:"),
+
+            "background_subtraction": make_label("Background subtraction"),
+            "width": make_label("Width (nm):"),
+            "show": make_label("Show", "Select a projection or toggle with (H)"),
+            "limits": make_label("Set limits", "Toggle the min and max limits with (-) and (=), respectively"),
+            "matrix_operations": make_label("Matrix operations"),
+
+            "in_output_folder": make_label("In output folder")
+        }
+        self.radio_buttons = {
+            "bg_none": make_radio_button("", "None (0)", self.icons.get("0")),
+            "bg_plane": make_radio_button("", "Plane (P)", self.icons.get("plane_subtract")),
+            "bg_linewise": make_radio_button("", "Linewise (W)", self.icons.get("lines")),
+            "bg_inferred": make_radio_button("", "None (0)", self.icons.get("0")),
+
+            "min_full": make_radio_button("", "set to minimum value of scan data range; (-) to toggle"),
+            "max_full": make_radio_button("", "set to maximum value of scan data range; (=) to toggle"),
+            "min_percentiles": make_radio_button("", "set to minimum percentile of data range; (-) to toggle"),
+            "max_percentiles": make_radio_button("", "set to maximum percentile of data range; (=) to toggle"),
+            "min_deviations": make_radio_button("", "set to minimum = mean - n * standard deviation; (-) to toggle"),
+            "max_deviations": make_radio_button("", "set to maximum = mean + n * standard deviation; (=) to toggle"),
+            "min_absolute": make_radio_button("", "set minimum to an absolute value; (-) to toggle"),
+            "max_absolute": make_radio_button("", "set maximum to an absolute value; (=) to toggle"),
+        }
+        self.radio_buttons["bg_none"].setChecked(True)
+        self.radio_buttons["min_full"].toggled.connect(self.load_process_display)
+
+        self.checkboxes = {
+            "sobel": make_checkbox("Sobel", "Compute the complex gradient d/dx + i d/dy; (B)", self.icons.get("derivative")),
+            "laplace": make_checkbox("Laplace", "Compute the Laplacian (d/dx)^2 + (d/dy)^2; (C)", self.icons.get("laplacian")),
+            "fft": make_checkbox("Fft", "Compute the 2D Fourier transform; (F)", self.icons.get("fourier")),
+            "normal": make_checkbox("Normal", "Compute the z component of the surface normal (N)", self.icons.get("surface_normal")),
+            "gauss": make_checkbox("Gauss", "Apply a Gaussian blur (G)", self.icons.get("gaussian")),
+        }
+        self.line_edits = {
+            "min_full": make_line_edit("", "minimum value of scan data range"),
+            "max_full": make_line_edit("", "maximum value of scan data range"),
+            "min_percentiles": make_line_edit("2", "minimum percentile of data range"),
+            "max_percentiles": make_line_edit("98", "maximum percentile of data range"),
+            "min_deviations": make_line_edit("2", "minimum = mean - n * standard deviation"),
+            "max_deviations": make_line_edit("2", "maximum = mean + n * standard deviation"),
+            "min_absolute": make_line_edit("0", "minimum absolute value"),
+            "max_absolute": make_line_edit("1", "maximum absolute value"),
+
+            "gaussian_width": make_line_edit("0", "Width in nm for Gaussian blur application"),
+            "file_name": make_line_edit("", "Base name of the file when saved to png or hdf5")
+        }
+        self.line_edits["gaussian_width"].editingFinished.connect(self.load_process_display)
+        self.comboboxes = {
+            "channels": make_combobox("Channels", "Available scan channels", self.on_chan_change),
+            "projection": make_combobox("Projection", "Select a projection or toggle with (H)", self.load_process_display, items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
+            "spectra": make_combobox("spectra", "Spectra associated with the current scan")
+        }
+        projection_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_H), self)
+        projection_toggle_shortcut.activated.connect(self.toggle_projections)
+
+        self.layouts = {
+            "toolbar": make_layout("v"),
+            "scan_summary": make_layout("v"),
+            "file_channel_direction": make_layout("v"),
+            "file_navigation": make_layout("h"),
+            "channel_navigation": make_layout("h"),
+            "image_processing": make_layout("v"),
+            "background_buttons": make_layout("h"),
+            "matrix_processing": make_layout("g"),
+            "limits": make_layout("g"),
+            "spectra": make_layout("h"),
+            "i/o": make_layout("g"),
+            "empty": make_layout("v")
+        }        
+        self.groupboxes = {
+            "scan_summary": make_groupbox("Scan summary", "Information about the currently selected scan"),
+            "file_chan_dir": make_groupbox("File / Channel / Direction", "Select and toggle through scan files and channels"),
+            "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits"),
+            "associated_spectra": make_groupbox("Associated spectra", "Spectra recorded after the acquisition of the selected scan"),
+            "i/o": make_groupbox("Output", "Save or find the processed image, or exit the app")
+        }
+        self.expanded_groups = {
+            "scan_summary": True,
+            "file_chan_dir": True,
+            "image_processing": True,
+            "associated_spectra": True,
+            "i/o": True
+        }
+        """
+
+        return
+
     def draw_buttons(self):
 
         def draw_connections_group():
