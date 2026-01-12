@@ -1,20 +1,8 @@
-import os
-import sys
-import re
-import html
-import yaml
+import os, sys, re, html, yaml, cv2, pint, socket
 import numpy as np
-import socket
-import cv2
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout, QWidget, QFileDialog,
-    QButtonGroup, QComboBox, QRadioButton, QGroupBox, QLineEdit, QCheckBox, QFrame, QTextEdit, QProgressBar
-)
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QWidget, QLineEdit
 from PyQt6 import QtWidgets, QtGui, QtCore
-from PyQt6.QtCore import QObject, Qt, QMetaObject, QProcess, QThread, pyqtSignal, pyqtSlot, QThreadPool, QSize, QTimer
 import pyqtgraph as pg
-from PyQt6.QtGui import QShortcut, QKeySequence
-import lib.functions_old as st
 from lib.image_functions import apply_gaussian, apply_fft, image_gradient, compute_normal, apply_laplace, complex_image_to_colors, background_subtract, get_image_statistics
 from lib.functions import Experiments, CameraWorker, NanonisFunctions, TaskWorker
 from lib.gui_functions import GUIFunctions
@@ -26,9 +14,9 @@ colors = {"red": "#ff4040", "darkred": "#800000", "green": "#00ff00", "darkgreen
 
 
 
-class StreamRedirector(QObject):
-    output_written = pyqtSignal(str)
-    def __init__(self, parent=None):
+class StreamRedirector(QtCore.QObject):
+    output_written = QtCore.pyqtSignal(str)
+    def __init__(self, parent = None):
         super().__init__(parent)
         self._buffer = ""
 
@@ -51,10 +39,10 @@ class StreamRedirector(QObject):
 
 
 
-class AppWindow(QMainWindow):
-    request_start = pyqtSignal(str, int, int)
-    start_tracking = pyqtSignal(float, int, int) # sampling time, chunk_size, timeout
-    request_stop = pyqtSignal()
+class AppWindow(QtWidgets.QMainWindow):
+    request_start = QtCore.pyqtSignal(str, int, int)
+    start_tracking = QtCore.pyqtSignal(float, int, int) # sampling time, chunk_size, timeout
+    request_stop = QtCore.pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -67,13 +55,13 @@ class AppWindow(QMainWindow):
         self.make_gui_items()
 
         # Create a central widget and main horizontal layout
-        central_widget = QWidget()
+        central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget) # Main layout is horizontal
+        main_layout = QtWidgets.QHBoxLayout(central_widget) # Main layout is horizontal
 
         # Left Section: Graphic and Console (grouped vertically)
-        left_v_container = QWidget()
-        left_v_layout = QVBoxLayout(left_v_container)
+        left_v_container = QtWidgets.QWidget()
+        left_v_layout = QtWidgets.QVBoxLayout(left_v_container)
         left_v_layout.setContentsMargins(0, 0, 0, 0)
 
         # Create the pyqtgraph PlotWidget (Top of left section)
@@ -82,21 +70,21 @@ class AppWindow(QMainWindow):
         left_v_layout.addWidget(self.image_view, stretch = 4) 
 
         # Initialize the console
-        self.console_output = QTextEdit()
+        self.console_output = QtWidgets.QTextEdit()
         self.console_output.setReadOnly(False)
         left_v_layout.addWidget(self.console_output, stretch = 1)
 
         # Redirect output to the console
-        self.stderr_redirector = StreamRedirector()
-        self.stderr_redirector.output_written.connect(self.append_to_console)
-        sys.stderr = self.stderr_redirector
+        self.stdout_redirector = StreamRedirector()
+        self.stdout_redirector.output_written.connect(self.append_to_console)
+        sys.stdout = self.stdout_redirector
         now = datetime.now()
         self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), color = "white")
 
         # Ensure the central widget can receive keyboard focus
-        central_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        central_widget.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         central_widget.setFocus()
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.setFocus()
         self.activateWindow()
         
@@ -112,9 +100,13 @@ class AppWindow(QMainWindow):
         if hasattr(self, "nanonis_functions"): self.nanonis_functions.disconnect()
 
         # Set up the Experiments class and thread and connect signals and slots
-        self.thread_pool = QThreadPool()
-        self.experiment_thread = QThread()
-        self.timer = QTimer()
+        self.thread_pool = QtCore.QThreadPool()
+        self.experiment_thread = QtCore.QThread()
+        self.timer = QtCore.QTimer()
+
+        self.logprint("Hello", "red")
+
+
 
     def parameters_init(self):
         self.paths = {
@@ -135,17 +127,33 @@ class AppWindow(QMainWindow):
             except:
                 pass
         self.setWindowIcon(self.icons.get("scanalyzer"))
-        
+
+        # Some attributes
+        self.channels = []
+        self.channel = ""
+        self.channel_index = 0
+        self.max_channel_index = 0
+        self.scale_toggle_index = 0
+        self.ureg = pint.UnitRegistry()
         self.nanonis_online = False
-        self.background_subtraction = "plane"
-        self.min_percentile = 2
-        self.max_percentile = 98
-        self.min_std_dev = 2
-        self.max_std_dev = 2
         self.view_index = 0
         self.experiment_status = "idle"
-        self.process = QProcess(self)
+        self.process = QtCore.QProcess(self)
         self.gui_functions = GUIFunctions()
+
+        # Image processing flags
+        self.processing_flags = {
+            "direction": "forward",
+            "background_subtraction": "none",
+            "sobel": False,
+            "gaussian": False,
+            "laplace": False,
+            "fft": False,
+            "normal": False,
+            "min_selection": 0,
+            "max_selection": 0,
+            "spec_locations": False
+        }
 
         # Read the config file
         try:
@@ -289,7 +297,10 @@ class AppWindow(QMainWindow):
         self.comboboxes = {
             "channels": make_combobox("Channels", "Available scan channels", self.update_icons),
             "projection": make_combobox("Projection", "Select a projection or toggle with (H)", self.update_icons, items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
+            "experiments": make_combobox("Experiments", "Select an experiment", self.update_icons, items = ["simple_scan", "grid_sampling"]),
+            "direction": make_combobox("Direction", "Select a scan direction / pattern", self.update_icons, items = ["nearest tip", "down", "up", "random"])
         }
+        
         projection_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_H), self)
         projection_toggle_shortcut.activated.connect(self.update_icons)
         self.layouts = {
@@ -305,6 +316,9 @@ class AppWindow(QMainWindow):
             "coarse_actions": make_layout("g"),
             "coarse_motion": make_layout("h"),
             "arrow_keys": make_layout("g"),
+
+            "experiments": make_layout("g"),
+            "start_stop": make_layout("h"),
 
             "image_processing": make_layout("v"),
             "background_buttons": make_layout("h"),
@@ -339,7 +353,7 @@ class AppWindow(QMainWindow):
             [self.tip_status_button, self.oscillation_on_button, self.camera_online_button, self.view_swap_button, session_folder_label, self.session_folder_button] = [
                 QPushButton("Tip status: withdrawn"), QPushButton("MLA oscillation: off"), QPushButton("Camera: offline"), QPushButton("Active view: scan"), QLabel("Session folder:    "), QPushButton()
                 ]
-            session_folder_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+            session_folder_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignBottom)
             self.buttons["nanonis"].setStyleSheet("background-color: darkred;")
             self.buttons["mla"].setStyleSheet("background-color: darkred;")
             
@@ -389,7 +403,7 @@ class AppWindow(QMainWindow):
             [self.withdraw_button, self.retract_button, self.z_steps_box, self.h_steps_box, self.advance_button, self.minus_z_steps_box, self.approach_button] = self.action_buttons = [
                 QPushButton("Withdraw,"), QPushButton("Retract"), QLineEdit("10"), QLineEdit("30"), QPushButton("adVance"), QLineEdit("2"), QPushButton("Auto approach")
                 ]
-            [self.withdraw_checkbox, self.retract_checkbox, self.move_checkbox, self.advance_checkbox, self.approach_checkbox] = self.action_checkboxes = [QCheckBox() for _ in range(5)]
+            [self.withdraw_checkbox, self.retract_checkbox, self.move_checkbox, self.advance_checkbox, self.approach_checkbox] = self.action_checkboxes = [QtWidgets.QCheckBox() for _ in range(5)]
             [checkbox.setChecked(True) for checkbox in self.action_checkboxes]
             self.advance_checkbox.setChecked(False)
             
@@ -410,7 +424,7 @@ class AppWindow(QMainWindow):
             move_label = QLabel("move")
             steps_in_direction_label = QLabel("steps in direction")
             steps_and_label = QLabel("steps, and")
-            [label.setAlignment(Qt.AlignmentFlag.AlignCenter) for label in [steps_label, move_label, steps_in_direction_label, steps_and_label]]
+            [label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter) for label in [steps_label, move_label, steps_in_direction_label, steps_and_label]]
             coarse_actions_layout.addWidget(steps_label, 1, 3)
             coarse_actions_layout.addWidget(move_label, 2, 1)            
             coarse_actions_layout.addWidget(steps_in_direction_label, 2, 3)
@@ -434,50 +448,43 @@ class AppWindow(QMainWindow):
             return self.groupboxes["coarse_motion"]
 
         def draw_experiments_group():
-            experiments_group = QGroupBox("Experiments")
-            experiments_layout = QGridLayout()
-            experiments_layout.setSpacing(1)
-
-            self.experiment_box = QComboBox()
-            self.experiment_box.addItems(["simple_scan", "grid_sampling"])
-            self.direction_box = QComboBox()
-            self.direction_box.addItems(["nearest tip", "down", "up", "random"])
+            experiments_layout = self.layouts["experiments"]
             
             points_label = QLabel("Points:")
-            points_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            points_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             self.points_box = QLineEdit("200")
             save_to_label = QLabel("Save data to:    ")
-            save_to_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+            save_to_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
             self.save_to_button = QPushButton()
 
-            start_stop_layout = QHBoxLayout()
-            self.progress_bar = QProgressBar()
+            start_stop_layout = self.layouts["start_stop"]
+            self.progress_bar = QtWidgets.QProgressBar()
             self.progress_bar.setMinimum(0)
             self.progress_bar.setMaximum(100)
             self.progress_bar.setValue(0)
 
-            self.start_stop_button = QToolButton()
-            self.start_stop_button.setIconSize(QSize(20, 20))
-            self.pause_button = QToolButton()
-            pause_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPause)
+            self.start_stop_button = QtWidgets.QToolButton()
+            self.start_stop_button.setIconSize(QtCore.QSize(20, 20))
+            self.pause_button = QtWidgets.QToolButton()
+            pause_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPause)
             self.pause_button.setIcon(pause_icon)
-            self.pause_button.setIconSize(QSize(20, 20))
+            self.pause_button.setIconSize(QtCore.QSize(20, 20))
             start_stop_layout.addWidget(self.progress_bar)
             start_stop_layout.addWidget(self.start_stop_button)
             start_stop_layout.addWidget(self.pause_button)
             self.update_icons()
 
-            experiments_layout.addWidget(self.experiment_box, 0, 0)
-            experiments_layout.addWidget(self.direction_box, 0, 1)
+            experiments_layout.addWidget(self.comboboxes["experiments"], 0, 0)
+            experiments_layout.addWidget(self.comboboxes["direction"], 0, 1)
             #experiments_layout.addWidget(self.experiment_status, 0, 2)
             experiments_layout.addWidget(points_label, 1, 0)
             experiments_layout.addWidget(self.points_box, 1, 1)
             experiments_layout.addWidget(save_to_label, 2, 0)
             experiments_layout.addWidget(self.save_to_button, 2, 1)
             experiments_layout.addLayout(start_stop_layout, 3, 0, 3, 1)
-            experiments_group.setLayout(experiments_layout)
+            self.groupboxes["experiments"].setLayout(experiments_layout)
 
-            return experiments_group
+            return self.groupboxes["experiments"]
        
         def draw_image_processing_group() -> QtWidgets.QGroupBox: # Image processing group
             self.layouts["image_processing"].addWidget(self.labels["background_subtraction"])
@@ -541,14 +548,16 @@ class AppWindow(QMainWindow):
 
     def connect_keys(self):
         # Open folder in file explorer
-        open_session_folder_shortcut = QShortcut(QKeySequence(Qt.Key.Key_1), self)
+        QKey = QtCore.Qt.Key
+
+        open_session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_1), self)
         open_session_folder_shortcut.activated.connect(self.open_session_folder)
 
         # Direction
-        direction_toggle_shortcut = QShortcut(QKeySequence(Qt.Key.Key_X), self)
+        direction_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_X), self)
         direction_toggle_shortcut.activated.connect(self.on_toggle_direction)
 
-        withdraw_shortcut = QShortcut(QKeySequence(Qt.Key.Key_W), self)
+        withdraw_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_W), self)
         withdraw_shortcut.activated.connect(self.toggle_withdraw)
 
         """
@@ -597,9 +606,9 @@ class AppWindow(QMainWindow):
         open_spectrum_shortcut.activated.connect(self.load_spectroscopy_window)
         """
         # I/O group
-        exit_shortcuts = [QShortcut(QKeySequence(keystroke), self) for keystroke in [Qt.Key.Key_Q, Qt.Key.Key_E, Qt.Key.Key_Escape]]
+        exit_shortcuts = [QtGui.QShortcut(QtGui.QKeySequence(keystroke), self) for keystroke in [QtCore.Qt.Key.Key_Q, QtCore.Qt.Key.Key_E, QtCore.Qt.Key.Key_Escape]]
         [exit_shortcut.activated.connect(self.on_exit) for exit_shortcut in exit_shortcuts]
-        session_folder_shortcut = QShortcut(QKeySequence(Qt.Key.Key_T), self)
+        session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_T), self)
         session_folder_shortcut.activated.connect(self.open_session_folder)
 
     def logprint(self, message, timestamp: bool = True, color: str = "white"):
@@ -758,18 +767,18 @@ class AppWindow(QMainWindow):
         try:
             match self.experiment_status:
                 case "running":
-                    start_stop_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
+                    start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
                     self.pause_button.setEnabled(True)
-                    [box.setEnabled(False) for box in [self.experiment_box, self.direction_box]]
+                    [box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
                 case "idle":
-                    start_stop_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay)
+                    start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay)
                     self.pause_button.setEnabled(False)
-                    [box.setEnabled(True) for box in [self.experiment_box, self.direction_box]]
+                    [box.setEnabled(True) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
                 case "paused":
-                    start_stop_icon = QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
+                    start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
                     self.pause_button.setEnabled(True)
                     self.pause_button.setChecked(True)
-                    [box.setEnabled(False) for box in [self.experiment_box, self.direction_box]]
+                    [box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
                 case _:
                     pass
             self.start_stop_button.setIcon(start_stop_icon)
@@ -1126,7 +1135,7 @@ class AppWindow(QMainWindow):
         
         self.nanonis_functions.scan_control(action = "start", direction = dirxn)
         if not hasattr(self, "timer"):
-            self.timer = QTimer(self)
+            self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.on_nanonis_scan_request)
         self.timer.start(3000)
 
@@ -1268,7 +1277,7 @@ class AppWindow(QMainWindow):
         self.image_view.ui.roiPlot.hide()
 
         # 1. Instantiate NEW Thread and Worker
-        self.thread = QThread()
+        self.thread = QtCore.QThread()
         self.worker = CameraWorker(camera_index = 0) 
         self.worker.moveToThread(self.thread)
 
