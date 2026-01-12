@@ -1,6 +1,11 @@
 .vscode/launch.json
 scantelligent_control.ipynb
-scantelligent/__pycache__/__init__.cpython-312.pyc
-scantelligent/__pycache__/control.cpython-312.pyc
-scantelligent/config.yml
-scantelligent/config.yml
+sys/config.yml
+lib/__pycache__/image_functions.cpython-314.pyc
+lib/__pycache__/hw.cpython-314.pyc
+lib/__pycache__/gui_functions.cpython-314.pyc
+lib/__pycache__/functions.cpython-314.pyc
+lib/__pycache__/functions_old.cpython-314.pyc
+lib/__pycache__/file_functions.cpython-314.pyc
+lib/__pycache__/__init__.cpython-314.pyc
+pyproject.toml
