@@ -14,18 +14,25 @@ class GUIFunctions:
         box.setCheckable(True)
         return box
 
-    def make_button(self, name: str, func: Callable, description: str = "", icon = None, rotate_degrees: float = 0, key_shortcut = None, parent = None) -> QtWidgets.QPushButton:
+    def make_button(self, name: str, func: Callable, description: str = "", icon = None, rotate_degrees: float = 0, key_shortcut = None, modifier = None, parent = None) -> QtWidgets.QPushButton:
         button = QtWidgets.QPushButton(name)
         button.setObjectName(name)
         button.clicked.connect(lambda checked, f = func: f())
         button.setToolTip(description)
 
         if isinstance(key_shortcut, QtCore.Qt.Key):
-            if parent is not None:
-                shortcut = QtGui.QShortcut(QtGui.QKeySequence(key_shortcut), parent)
-                shortcut.activated.connect(func)
+            if isinstance(modifier, QtCore.Qt.Modifier):
+                if parent is not None:
+                    shortcut = QtGui.QShortcut(QtGui.QKeySequence(modifier | key_shortcut), parent)
+                    shortcut.activated.connect(func)
+                else:
+                    button.setShortcut(modifier | key_shortcut)
             else:
-                button.setShortcut(key_shortcut)
+                if parent is not None:
+                    shortcut = QtGui.QShortcut(QtGui.QKeySequence(key_shortcut), parent)
+                    shortcut.activated.connect(func)
+                else:
+                    button.setShortcut(key_shortcut)
 
         if isinstance(icon, QtGui.QIcon):
             if type(rotate_degrees) == float or type(rotate_degrees) == int and rotate_degrees != 0:
