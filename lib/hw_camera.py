@@ -94,3 +94,41 @@ class TaskWorker(QRunnable):
             self.signals.result.emit(result)
         finally:
             self.signals.finished.emit()
+
+import traceback
+import sys
+
+
+
+class Worker(QRunnable):
+    """
+    Worker thread to run a function in a separate thread.
+    """
+    def __init__(self, target_function, *args, **kwargs):
+        super().__init__()
+        self.target_function = target_function
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+
+        self.setAutoDelete(True)
+
+    @pyqtSlot()
+    def run(self):
+        """
+        Initialize the runner function with passed args, kwargs, and emit signals.
+        """
+        try:
+            # Execute the function with arguments
+            result = self.target_function(*self.args, **self.kwargs)
+        except:
+            # Handle exceptions and emit error signal
+            traceback.print_exc()
+            exctype, value = sys.exc_info()[:2]
+            self.signals.error.emit((exctype, value, traceback.format_exc()))
+        else:
+            # Emit result signal on success
+            self.signals.result.emit(result)
+        finally:
+            # Emit finished signal
+            self.signals.finished.emit()
