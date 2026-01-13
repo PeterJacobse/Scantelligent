@@ -7,7 +7,8 @@ from datetime import datetime
 from time import sleep, time
 import cv2
 
-colors = {"red": "#ff4040", "green": "#00ff00", "white": "#ffffff", "blue": "#0080ff"}
+colors = {"red": "#ff6060", "dark_red": "#800000", "green": "#00e000", "dark_green": "#005000",
+          "white": "#ffffff", "blue": "#20a0ff", "dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
 
 
 
@@ -200,6 +201,9 @@ class NanonisFunctions(NanonisHardware):
 
     def get_grid(self, verbose: bool = True):
         error_flag = False
+        if hasattr(self, "NTCP"):
+            self.logprint("Error. Existing TCP connection found. Aborting.", color = "red")
+            return False
         
         if verbose: self.logprint("  [dict] grid = nanonis_functions.get_grid()", color = "blue")
 
@@ -277,10 +281,13 @@ class NanonisFunctions(NanonisHardware):
 
     def tip(self, withdraw: bool = False, feedback = None):
         error_flag = False
+        if hasattr(self, "NTCP"):
+            self.logprint("Error. Existing TCP connection found. Aborting.", color = "red")
+            return False
         
         # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
-        try:
-            self.connect_log()            
+        try:            
+            self.connect()
             z_pos = self.get_z()
             [z_max, z_min] = self.zcontroller.LimitsGet()
 
@@ -297,9 +304,8 @@ class NanonisFunctions(NanonisHardware):
             # Retrieve the feedback status
             sleep(.2)
             feedback_new = self.get_feedback()
-
-            self.zcontroller
             
+            # Set up a dictionary containing the actual tip status parameters
             tip_status = {
                 "height": z_pos,
                 "limits": [z_min, z_max],
@@ -308,8 +314,8 @@ class NanonisFunctions(NanonisHardware):
             }
 
         except Exception as e:
-            self.logprint(f"{e}", color = "red")
             error_flag = True
+            self.logprint(f"{e}", color = "red")
         finally:
             self.disconnect()
             sleep(.1)
@@ -321,10 +327,13 @@ class NanonisFunctions(NanonisHardware):
 
     def get_parameters(self):
         error_flag = False
+        if hasattr(self, "NTCP"):
+            self.logprint("Error. Existing TCP connection found. Aborting.", color = "red")
+            return False
         
         # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
         try:
-            self.connect_control()
+            self.connect()
             
             V = self.get_V()
             I_fb = self.get_setpoint()

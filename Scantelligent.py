@@ -10,8 +10,8 @@ from datetime import datetime
 
 
 
-colors = {"red": "#ff4040", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000",
-          "white": "#ffffff", "blue": "#1090ff", "dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000",
+          "white": "#ffffff", "blue": "#20a0ff", "dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
 style_sheets = {
     "neutral": f"background-color: {colors["black"]};",
     "connected": f"background-color: {colors["dark_green"]};",
@@ -29,7 +29,7 @@ class StreamRedirector(QtCore.QObject):
         super().__init__(parent)
         self._buffer = ""
 
-    def write(self, text):
+    def write(self, text: str) -> None:
         if not text:
             return
         # Accumulate text and only emit complete lines. This avoids
@@ -39,12 +39,16 @@ class StreamRedirector(QtCore.QObject):
         while "\n" in self._buffer:
             line, self._buffer = self._buffer.split("\n", 1)
             self.output_written.emit(line)
+        
+        return
 
-    def flush(self):
+    def flush(self) -> None:
         # Emit any remaining partial line (no trailing newline)
         if self._buffer:
             self.output_written.emit(self._buffer)
             self._buffer = ""
+        
+        return
 
 
 
@@ -358,7 +362,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Redirect output to the console
         self.stdout_redirector = StreamRedirector()
-        self.stdout_redirector.output_written.connect(self.append_to_console)
+        self.stdout_redirector.output_written.connect(lambda text: self.console_output.append(text))
         sys.stdout = self.stdout_redirector
         now = datetime.now()
         self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), color = "white")
@@ -398,8 +402,7 @@ class AppWindow(QtWidgets.QMainWindow):
                         "camera_argument": camera_argument
                     }
                     self.logprint("I found the config.yml file and was able to set up a dictionary called 'hardware'", color = "green")
-                    self.logprint(f"  hardware.keys() = {self.hardware.keys()}", color = "blue")
-                    self.logprint(f"  hardware.values() = {self.hardware.values()}", color = "blue")
+                    self.logprint(f"  [dict] hardware = {self.hardware}", color = "blue")
                     
                 except Exception as e:
                     self.logprint("Error: could not retrieve the Nanonis TCP settings.", color = "red")
@@ -410,7 +413,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
 
 
-    # Console
+    # Miscellaneous
     def logprint(self, message: str, timestamp: bool = True, color: str = "white") -> None:
         """Print a timestamped message to the redirected stdout.
 
@@ -442,10 +445,40 @@ class AppWindow(QtWidgets.QMainWindow):
         # Print HTML text (QTextEdit.append will render it as rich text).
         print(final, flush = True)
 
-    def append_to_console(self, text: str) -> None:
-        self.console_output.append(text)
+    def get_next_indexed_filename(self, folder_path, base_name, extension) -> str:
+        # Pattern to match files with the base name and exactly 3 digits for the index
+        # \d{3} matches exactly three digits
+        pattern = rf"^{re.escape(base_name)}_(\d{{3}}){re.escape(extension)}$"
+        
+        # List all files in the directory
+        try:
+            files = os.listdir(folder_path)
+        except FileNotFoundError:
+            # If the folder doesn't exist, the first file will be index 000
+            return f"{base_name}_000{extension}"
 
-    # GUI
+        matching_indices = []
+        for filename in files:
+            match = re.match(pattern, filename)
+            if match:
+                # Extract the index and convert to int (int() handles leading zeros automatically)
+                index = int(match.group(1))
+                matching_indices.append(index)
+
+        if matching_indices:
+            # If files were found, find the highest index
+            max_index = max(matching_indices)
+            next_index = max_index + 1
+        else:
+            # If no matching files were found, start with index 0
+            next_index = 0
+            
+        # Format the next index to be a 3-digit string with leading zeros if necessary
+        formatted_index = f"{next_index:03d}"
+        
+        return f"{base_name}_{formatted_index}{extension}"
+
+    # GUI setup
     def draw_toolbar(self) -> QtWidgets.QVBoxLayout:
 
         def draw_connections_group() -> QtWidgets.QGroupBox:
@@ -683,6 +716,7 @@ class AppWindow(QtWidgets.QMainWindow):
         session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_T), self)
         session_folder_shortcut.activated.connect(self.open_session_folder)
 
+    # Update GUI according to hardware status
     def update_buttons(self) -> None:
         # Activate/deactivate and color buttons according to hardware status
 
@@ -694,6 +728,14 @@ class AppWindow(QtWidgets.QMainWindow):
             [button.setEnabled(True) for button in self.action_buttons]
             [button.setEnabled(True) for button in self.arrow_buttons]
         
+        elif self.status["nanonis"] == "running":
+            self.buttons["tip_status"].setEnabled(False)
+            self.buttons["nanonis"].setToolTip("Nanonis: active TCP connection")
+            self.buttons["nanonis"].setStyleSheet(style_sheets["running"])
+            
+            [button.setEnabled(False) for button in self.action_buttons]
+            [button.setEnabled(False) for button in self.arrow_buttons]
+    
         else:
             self.buttons["tip_status"].setEnabled(False)
             self.buttons["tip_status"].setToolTip("Tip status: unknown")
@@ -705,7 +747,7 @@ class AppWindow(QtWidgets.QMainWindow):
             [button.setEnabled(False) for button in self.action_buttons]
             [button.setEnabled(False) for button in self.arrow_buttons]
             
-            # If Nanonis is not online, proceed with cleanup and make sure the nanonis and measurements attributes are deleted
+            # If Nanonis is offline, proceed with cleanup and make sure the nanonis and measurements attributes are deleted
             if hasattr(self, "nanonis_functions"): delattr(self, "nanonis_functions")
             if hasattr(self, "measurements"): delattr(self, "measurements")
             self.status["nanonis"] = "offline"
@@ -713,7 +755,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
 
 
-        if self.status["tip"] == "withdrawn":
+        if self.status["tip"].get("withdrawn", False):
             self.buttons["retract"].setEnabled(True)
             self.buttons["advance"].setEnabled(True)
             self.buttons["approach"].setEnabled(True)
@@ -731,8 +773,8 @@ class AppWindow(QtWidgets.QMainWindow):
             if self.status["tip"] == "feedback":
                 self.buttons["tip_status"].setToolTip("Tip status: in feedback")
                 self.buttons["tip_status"].setStyleSheet(style_sheets["connected"])
-                self.withdraw_button.setText("Withdraw,")
-                self.withdraw_checkbox.setEnabled(True)
+                self.buttons["withdraw"].setText("Withdraw,")
+                self.checkboxes["withdraw"].setEnabled(True)
             else:
                 self.buttons["tip_status"].setToolTip("Tip status: constant height")
                 self.buttons["tip_status"].setStyleSheet(style_sheets["hold"])
@@ -742,14 +784,20 @@ class AppWindow(QtWidgets.QMainWindow):
         if not hasattr(self, "parameters"):
             self.logprint("Error. Parameters could not be retrieved.", color = "red")
             return False
+        
+        nanonis_bias = self.parameters.get("bias", None)
+        mla_bias = self.parameters.get("mla_bias", None)
+        I_fb = self.parameters.get("I_fb", None)
 
-        self.line_edits["nanonis_bias"].setText(f"{np.round(self.parameters["bias"], 3)}")
-        self.line_edits["I_fb"].setText(f"{np.round(self.parameters["I_fb"] * 1E12, 3)}") # In pA
+        self.line_edits["nanonis_bias"].setText(f"{nanonis_bias:.3f}" if nanonis_bias is not None else "")
+        self.line_edits["mla_bias"].setText(f"{mla_bias:.3f}" if mla_bias is not None else "")
+        self.line_edits["I_fb"].setText(f"{I_fb:.3f}" if I_fb is not None else "")
         #self.p_gain_box.setText(f"{np.round(self.parameters["p_gain"] * 1E12, 3)}") # In pm
         #self.t_const_box.setText(f"{np.round(self.parameters["t_const"] * 1E6, 3)}") # In us
 
         return
 
+    # Button callbacks
     def on_next_chan(self):
         pass
 
@@ -766,39 +814,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.buttons["direction"].blockSignals(False)
 
         return
-
-    def get_next_indexed_filename(self, folder_path, base_name, extension):
-        # Pattern to match files with the base name and exactly 3 digits for the index
-        # \d{3} matches exactly three digits
-        pattern = rf"^{re.escape(base_name)}_(\d{{3}}){re.escape(extension)}$"
-        
-        # List all files in the directory
-        try:
-            files = os.listdir(folder_path)
-        except FileNotFoundError:
-            # If the folder doesn't exist, the first file will be index 000
-            return f"{base_name}_000{extension}"
-
-        matching_indices = []
-        for filename in files:
-            match = re.match(pattern, filename)
-            if match:
-                # Extract the index and convert to int (int() handles leading zeros automatically)
-                index = int(match.group(1))
-                matching_indices.append(index)
-
-        if matching_indices:
-            # If files were found, find the highest index
-            max_index = max(matching_indices)
-            next_index = max_index + 1
-        else:
-            # If no matching files were found, start with index 0
-            next_index = 0
-            
-        # Format the next index to be a 3-digit string with leading zeros if necessary
-        formatted_index = f"{next_index:03d}"
-        
-        return f"{base_name}_{formatted_index}{extension}"
 
     def update_icons(self):
         try:
@@ -1010,7 +1025,7 @@ class AppWindow(QtWidgets.QMainWindow):
     # Simple data requests over TCP-IP
     def on_parameters_request(self):
         try:
-            self.logprint("  tip_status = nanonis_functions.tip()", color = "blue")
+            self.logprint("  status[\"tip\"] = nanonis_functions.tip()", color = "blue")
             tip_status = self.nanonis_functions.tip()
             if not tip_status:
                 self.logprint("Error retrieving the tip status.", color = "red")
@@ -1018,7 +1033,6 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.logprint("  status[\"nanonis\"] = \"offline\"", color = "blue")
             else:
                 self.status["tip"] = tip_status
-                self.logprint(f"  status[\"tip\"] = {tip_status}", color = "blue")
             
             self.logprint("  parameters = nanonis_functions.get_parameters()", color = "blue")
             parameters = self.nanonis_functions.get_parameters()
@@ -1029,21 +1043,20 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.logprint("  status[\"nanonis\"] = \"offline\"", color = "blue")
             else:
                 self.parameters = parameters
-                self.paths["session_path"] = parameters["session_path"]
-                self.buttons["session_folder"].setText(self.paths["session_path"])
+                self.paths["session_path"] = parameters.get("session_path")
+                self.buttons["session_folder"].setToolTip(f"Open session folder {self.paths['session_path']} (1)")
 
-                experiment = self.experiment_box.currentText()
-                self.paths["experiment_file"] = self.get_next_indexed_filename(self.paths["session_path"], experiment, ".hdf5")
-                self.buttons["save"].setText(self.paths["experiment_file"])
+                # experiment = self.experiment_box.currentText()
+                self.paths["experiment_file"] = self.get_next_indexed_filename(self.paths["session_path"], "experiment", ".hdf5")
+                #self.buttons["save"].setText(self.paths["experiment_file"])
 
                 self.logprint("I was able to retrieve the tip status and scan parameters and saved them to dictionaries called 'tip_status' and 'parameters'", color = "green")
-                self.logprint(f"  tip_status.keys() = {tip_status.keys()};", color = "blue")
-                self.logprint(f"  tip_status.values() = {tip_status.values()}", color = "blue")
+                self.logprint(f"  [dict] status[\"tip\"] = {tip_status}", color = "blue")
                 self.logprint(f"  parameters.keys() = {parameters.keys()};", color = "blue")
-                self.logprint("The session_path that I obtained from Nanonis was added to the 'paths' dictionary", color = "white")
+                self.logprint(f"The session_path that I obtained from Nanonis ({self.paths['session_path']}) was added to the 'paths' dictionary", color = "white")
 
         except Exception as e:
-            self.logprint(f"{e}", color = "red")
+            self.logprint(f"Error: {e}", color = "red")
             return False
 
     def on_frame_request(self):
@@ -1201,8 +1214,8 @@ class AppWindow(QtWidgets.QMainWindow):
 
     # Experiments and thread management
     def on_experiment_change(self):
-        self.experiment = self.experiment_box.currentText()
-        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment, ".hdf5")
+        self.experiment = "test" #self.experiment_box.currentText()
+        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], "experiment", ".hdf5")
         self.save_to_button.setText(self.paths["experiment_filename"])
         return
 
@@ -1253,8 +1266,8 @@ class AppWindow(QtWidgets.QMainWindow):
                 return False
 
         # Read the experiment type and parameters
-        self.experiment = self.experiment_box.currentText()
-        self.direction = self.direction_box.currentText()
+        #self.experiment = self.experiment_box.currentText()
+        #self.direction = self.direction_box.currentText()
         self.paths["experiment_filename"] = self.experiment
         self.paths["experiment_file"] = os.path.join(self.paths["session_path"], self.paths["experiment_filename"])
 
