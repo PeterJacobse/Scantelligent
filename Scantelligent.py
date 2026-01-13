@@ -99,8 +99,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.experiment_thread = QtCore.QThread()
         self.timer = QtCore.QTimer()
 
-        self.logprint("Hello", "red")
-
 
 
     def parameters_init(self) -> None:
@@ -186,8 +184,11 @@ class AppWindow(QtWidgets.QMainWindow):
             "view": make_button("Active view", self.update_icons, "Toggle the active view (V)"),
             "session_folder": make_button("Session folder", self.update_icons, "Open the session folder (1)"),
 
-            "nanonis_bias": make_button("V_nn", self.update_icons, "Bias (Nanonis)"),
-            "mla_bias": make_button("V_mla", self.update_icons, "Bias (mla)"),
+            "nanonis_bias": make_button("V_nn", self.update_icons, "Nanonis bias (P to set)"),
+            "mla_bias": make_button("V_mla", self.update_icons, "MLA bias (P to set)"),
+            "swap_bias": make_button("<>", self.update_icons, "Swap the bias between Nanonis and the MLA (P)"),
+            "set": make_button("set", self.update_icons, "Set the new parameters (P)"),
+
             "withdraw": make_button("Withdraw", self.update_icons, "Withdraw the tip"),
             "retract": make_button("Retract", self.update_icons, "Retract the tip from the surface"),
             "advance": make_button("Advance", self.update_icons, "Advance the tip towards the surface"),
@@ -235,7 +236,10 @@ class AppWindow(QtWidgets.QMainWindow):
             "limits": make_label("Set limits", "Toggle the min and max limits with (-) and (=), respectively"),
             "matrix_operations": make_label("Matrix operations"),
 
-            "in_output_folder": make_label("In output folder")
+            "z_steps": make_label("steps"),
+            "move": make_label("move"),
+            "h_steps": make_label("steps in direction"),
+            "steps_and": make_label("steps, and")
         }
         self.radio_buttons = {
             "bg_none": make_radio_button("", "None (0)", self.icons.get("0")),
@@ -256,6 +260,12 @@ class AppWindow(QtWidgets.QMainWindow):
         # self.radio_buttons["min_full"].toggled.connect(self.load_process_display)
 
         self.checkboxes = {
+            "withdraw": make_checkbox("", "Include withdrawing of the tip during a tip move"),
+            "retract": make_checkbox("", "Include retracting the tip during a tip move"),
+            "move": make_checkbox("", "Allow horizontal tip motion"),
+            "advance": make_checkbox("", "Include advancing the tip during a move"),
+            "approach": make_checkbox("", "End the tip move with an auto approach"),
+
             "sobel": make_checkbox("Sobel", "Compute the complex gradient d/dx + i d/dy; (B)", self.icons.get("derivative")),
             "laplace": make_checkbox("Laplace", "Compute the Laplacian (d/dx)^2 + (d/dy)^2; (C)", self.icons.get("laplacian")),
             "fft": make_checkbox("Fft", "Compute the 2D Fourier transform; (F)", self.icons.get("fourier")),
@@ -263,6 +273,10 @@ class AppWindow(QtWidgets.QMainWindow):
             "gauss": make_checkbox("Gauss", "Apply a Gaussian blur (G)", self.icons.get("gaussian")),
         }
         self.line_edits = {
+            "nanonis_bias": make_line_edit("", "Nanonis bias (ctrl + P to get)"),
+            "mla_bias": make_line_edit("", "MLA bias (ctrl + P to get)"),
+            "I_fb": make_line_edit("", "Feedback current in pA (ctrl + P to get)"),
+
             "min_full": make_line_edit("", "minimum value of scan data range"),
             "max_full": make_line_edit("", "maximum value of scan data range"),
             "min_percentiles": make_line_edit("2", "minimum percentile of data range"),
@@ -298,7 +312,7 @@ class AppWindow(QtWidgets.QMainWindow):
             "bias_buttons": make_layout("h"),
 
             "coarse_actions": make_layout("g"),
-            "coarse_motion": make_layout("h"),
+            "coarse_control": make_layout("h"),
             "arrow_keys": make_layout("g"),
 
             "experiments": make_layout("g"),
@@ -311,12 +325,12 @@ class AppWindow(QtWidgets.QMainWindow):
             "spectra": make_layout("h"),
             "i/o": make_layout("g"),
             "empty": make_layout("v")
-        }        
+        }
         self.groupboxes = {
             "connections": make_groupbox("Connections", "Connections to hardware (push to check/refresh)"),
             "parameters": make_groupbox("Scan parameters", "Scan parameters"),
-            "coarse_motion": make_groupbox("Coarse motion", "Control the tip"),
-            "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits"),
+            "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
+            "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
             "experiments": make_groupbox("Experiment", "Perform experiments")
         }
         self.expanded_groups = {
@@ -395,14 +409,14 @@ class AppWindow(QtWidgets.QMainWindow):
             connections_layout = self.layouts["connections"]
             
             connections_layout.addWidget(self.buttons["scanalyzer"], 0, 0)
-            connections_layout.addWidget(self.buttons["exit"], 1, 0)
+            connections_layout.addWidget(self.buttons["exit"], 0, 4)
             connections_layout.addWidget(self.buttons["nanonis"], 0, 1)
             connections_layout.addWidget(self.buttons["tip_status"], 1, 1)
             connections_layout.addWidget(self.buttons["mla"], 0, 2)
             connections_layout.addWidget(self.buttons["oscillator"], 1, 2)
             connections_layout.addWidget(self.buttons["camera"], 0, 3)
             connections_layout.addWidget(self.buttons["view"], 1, 3)
-            connections_layout.addWidget(self.labels["session_folder"], 0, 4)
+            connections_layout.addWidget(self.labels["session_folder"], 1, 0)
             connections_layout.addWidget(self.buttons["session_folder"], 1, 4)
 
             self.groupboxes["connections"].setLayout(connections_layout)
@@ -412,40 +426,29 @@ class AppWindow(QtWidgets.QMainWindow):
         def draw_parameters_group() -> QtWidgets.QGroupBox:
             parameters_layout = self.layouts["parameters"]
 
-            [self.nanonis_bias_box, self.swap_bias_button, self.mla_bias_box, self.I_fb_box] = self.parameter_boxes = [
-                QLineEdit(), QPushButton("<swap>"), QLineEdit(), QLineEdit()
-                ]
-            [self.nanonis_bias_button, self.mla_bias_button, self.I_fb_button] = self.parameter_buttons = [
-                QPushButton("V_Nanonis"), QPushButton("V_MLA"), QPushButton("I_fb")
-                ]
-            self.parameters_button = QPushButton("scan\nparameters")
-            
-            
-            [self.layouts["bias_buttons"].addWidget(box, 1) for box in self.parameter_buttons[:2]]
-
+            self.parameter_boxes = [self.line_edits["nanonis_bias"], self.buttons["swap_bias"], self.line_edits["mla_bias"], self.line_edits["I_fb"], self.buttons["set"]]
+             
+            #[self.layouts["bias_buttons"].addWidget(box, 1) for box in self.parameter_buttons[:2]]
             [parameters_layout.addWidget(self.parameter_boxes[i], 0, i) for i in range(len(self.parameter_boxes))]
-            parameters_layout.addLayout(self.layouts["bias_buttons"], 1, 0, 1, 3)
-            parameters_layout.addWidget(self.I_fb_button, 1, 3)
-            parameters_layout.addWidget(self.parameters_button, 0, len(self.parameter_boxes), 2, 1)
+            #parameters_layout.addLayout(self.layouts["bias_buttons"], 1, 0, 1, 3)
+            #parameters_layout.addWidget(self.I_fb_button, 1, 3)
+            #parameters_layout.addWidget(self.parameters_button, 0, len(self.parameter_boxes), 2, 1)
 
             self.groupboxes["parameters"].setLayout(parameters_layout)
 
             return self.groupboxes["parameters"]
 
-        def draw_coarse_motion_group():
-            coarse_motion_layout = self.layouts["coarse_motion"]
+        def draw_coarse_control_group() -> QtWidgets.QGroupBox:
+            coarse_motion_layout = self.layouts["coarse_control"]
             
             # Coarse actions
             coarse_actions_layout = self.layouts["coarse_actions"]
             self.action_buttons = [self.buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
-            [self.withdraw_checkbox, self.retract_checkbox, self.move_checkbox, self.advance_checkbox, self.approach_checkbox] = self.action_checkboxes = [QtWidgets.QCheckBox() for _ in range(5)]
+            self.action_checkboxes = [self.checkboxes[name] for name in ["withdraw", "retract", "move", "advance", "approach"]]
             [checkbox.setChecked(True) for checkbox in self.action_checkboxes]
-            self.advance_checkbox.setChecked(False)
+            self.checkboxes["advance"].setChecked(False)
             
-            # Checkboxes
             [coarse_actions_layout.addWidget(self.action_checkboxes[i], i, 0) for i in range(len(self.action_checkboxes))]
-            
-            # Buttons and line edits
             coarse_actions_layout.addWidget(self.buttons["withdraw"], 0, 1)
             coarse_actions_layout.addWidget(self.buttons["retract"], 1, 1)
             #coarse_actions_layout.addWidget(self.z_steps_box, 1, 2)
@@ -455,16 +458,8 @@ class AppWindow(QtWidgets.QMainWindow):
             coarse_actions_layout.addWidget(self.buttons["approach"], 4, 1)
 
             # Labels
-            steps_label = QLabel("steps")
-            move_label = QLabel("move")
-            steps_in_direction_label = QLabel("steps in direction")
-            steps_and_label = QLabel("steps, and")
-            [label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter) for label in [steps_label, move_label, steps_in_direction_label, steps_and_label]]
-            coarse_actions_layout.addWidget(steps_label, 1, 3)
-            coarse_actions_layout.addWidget(move_label, 2, 1)            
-            coarse_actions_layout.addWidget(steps_in_direction_label, 2, 3)
-            coarse_actions_layout.addWidget(steps_and_label, 3, 3)
-
+            [coarse_actions_layout.addWidget(self.labels[name], index + 1, 3) for index, name in enumerate(["z_steps", "h_steps", "steps_and"])]
+            coarse_actions_layout.addWidget(self.labels["move"], 2, 1)
             coarse_motion_layout.addLayout(coarse_actions_layout)
             
             # Arrows
@@ -478,9 +473,9 @@ class AppWindow(QtWidgets.QMainWindow):
             arrow_keys.setLayout(arrow_keys_layout)
 
             coarse_motion_layout.addWidget(arrow_keys)
-            self.groupboxes["coarse_motion"].setLayout(coarse_motion_layout)
+            self.groupboxes["coarse_control"].setLayout(coarse_motion_layout)
 
-            return self.groupboxes["coarse_motion"]
+            return self.groupboxes["coarse_control"]
 
         def draw_experiments_group():
             experiments_layout = self.layouts["experiments"]
@@ -576,7 +571,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Make the toolbar. Overal layout is a QVBoxLayout
         self.layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
-        [self.layouts["toolbar"].addWidget(group) for group in [draw_connections_group(), draw_coarse_motion_group(), draw_parameters_group(), draw_experiments_group(), draw_image_processing_group()]]
+        [self.layouts["toolbar"].addWidget(group) for group in [draw_connections_group(), draw_coarse_control_group(), draw_parameters_group(), draw_experiments_group(), draw_image_processing_group()]]
         self.layouts["toolbar"].addStretch(1) # Add a stretch at the end to push buttons up
 
         return self.layouts["toolbar"]
@@ -692,7 +687,6 @@ class AppWindow(QtWidgets.QMainWindow):
             
             [button.setEnabled(True) for button in self.action_buttons]
             [button.setEnabled(True) for button in self.arrow_buttons]
-            [button.setEnabled(True) for button in self.parameter_buttons]
         
         else:
             self.buttons["nanonis"].setToolTip("Nanonis: offline")
@@ -700,7 +694,6 @@ class AppWindow(QtWidgets.QMainWindow):
             
             [button.setEnabled(False) for button in self.action_buttons]
             [button.setEnabled(False) for button in self.arrow_buttons]
-            [button.setEnabled(False) for button in self.parameter_buttons]
             
             if hasattr(self, "nanonis_functions"): delattr(self, "nanonis_functions")
             if hasattr(self, "measurements"): delattr(self, "measurements")

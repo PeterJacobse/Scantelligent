@@ -13,7 +13,7 @@ colors = {"red": "#ff4040", "green": "#00ff00", "white": "#ffffff", "blue": "#00
 
 class CameraWorker(QObject):
     """
-    Worker to handle the time-consuming cv2.VideoCapture loop.
+    Worker to handle the cv2.VideoCapture loop.
     It runs in a separate QThread and emits frames as NumPy arrays.
     """
     frameCaptured = pyqtSignal(np.ndarray) # Signal to send the processed RGB NumPy frame data back to the GUI
@@ -28,14 +28,14 @@ class CameraWorker(QObject):
 
     def start_capture(self):
         # Initializes video capture and starts the frame-reading loop.
-        if self._running:
+        if self._running: # The running flag is already true; do not start another capture
             return
 
         self._running = True
         self.cap = cv2.VideoCapture(self.camera_index)
         
         if not self.cap.isOpened():
-            self.message.emit(f"Error: Could not open camera {self.camera_index}. Check connections.", "red")
+            self.message.emit(f"Error. Could not open camera {self.camera_index}.", "red")
             self._running = False
             self.finished.emit()
             return
@@ -314,10 +314,10 @@ class NanonisFunctions(NanonisHardware):
             self.disconnect()
             sleep(.1)
             
-        if error_flag:
-            return False
-        else:
-            return tip_status
+            if error_flag:
+                return False
+            else:
+                return tip_status
 
     def get_parameters(self):
         error_flag = False
@@ -527,8 +527,7 @@ class NanonisFunctions(NanonisHardware):
         finally:
             self.disconnect()
             sleep(.1)
-        
-        return
+            return
 
 
 

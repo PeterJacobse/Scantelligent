@@ -1,4 +1,13 @@
 from nanonisTCP import nanonisTCP
+from nanonisTCP.Bias import Bias # V
+from nanonisTCP.FolMe import FolMe # x, y
+from nanonisTCP.ZController import ZController # z
+from nanonisTCP.Current import Current # I
+from nanonisTCP.Motor import Motor
+from nanonisTCP.AutoApproach import AutoApproach
+from nanonisTCP.Scan import Scan
+from nanonisTCP.Util import Util
+from nanonisTCP.Signals import Signals
 from time import sleep
 
 
@@ -15,26 +24,28 @@ class NanonisHardware:
 
 
 
-    def connect_log(self): # Functions to do simple measurements / logging
+    def connect(self): # Functions to do simple measurements / logging
         if not hasattr(self, "ip"):
             raise Exception("Failed to connect to Nanonis")
         if hasattr(self, "NTCP"): # If the TCP connection alread exists, kill it before reestablishing
-            self.disconnect()
-            sleep(.2)
-        
-        from nanonisTCP.Bias import Bias # V
-        from nanonisTCP.FolMe import FolMe # x, y
-        from nanonisTCP.ZController import ZController # z
-        from nanonisTCP.Current import Current # I
-        
+            try:
+                self.disconnect()
+                sleep(.2)
+            except:
+                pass
+
         self.NTCP = nanonisTCP(self.ip, self.port, self.version)
-        
         self.bias = Bias(self.NTCP)
         self.folme = FolMe(self.NTCP)
         self.zcontroller = ZController(self.NTCP)
         self.current = Current(self.NTCP)
+        self.motor = Motor(self.NTCP)
+        self.autoapproach = AutoApproach(self.NTCP)
+        self.scan = Scan(self.NTCP)
+        self.util = Util(self.NTCP)
+        self.signals = Signals(self.NTCP)
 
-    # Simple functions    
+    # Simple functions for logging and tip movement
     def get_xy(self):
         return list(self.folme.XYPosGet(Wait_for_newest_data = True))
 
@@ -74,29 +85,12 @@ class NanonisHardware:
     def get_gains(self):
         return list(self.zcontroller.GainGet())
 
-
-
-    def connect_control(self): # Functions to control Nanonis
-        
-        self.connect_log() # Import the libraries from the simpler connect_log
-        
-        from nanonisTCP.Motor import Motor
-        from nanonisTCP.AutoApproach import AutoApproach
-        from nanonisTCP.Scan import Scan
-        from nanonisTCP.Util import Util
-        from nanonisTCP.Signals import Signals
-        #from nanonisTCP.BiasSpectr import BiasSpectr
-        #from nanonisTCP.TipShaper import TipShaper
-
-        self.motor = Motor(self.NTCP)
-        self.autoapproach = AutoApproach(self.NTCP)
-        self.scan = Scan(self.NTCP)
-        self.util = Util(self.NTCP)
-        self.signals = Signals(self.NTCP)
-
     def get_path(self):
         return self.util.SessionPathGet()
-    
+
+
+
+    # Functions for more extensive control
     def start_scan(self, direction: str = "up"):
         return self.scan.Action("start", scan_direction = direction)
 
@@ -114,4 +108,4 @@ class NanonisHardware:
     def disconnect(self):
         if hasattr(self, "NTCP"):
             self.NTCP.close_connection()
-            del self.NTCP   
+            delattr(self, "NTCP")
