@@ -3,7 +3,7 @@ import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
 from lib.functions import Experiments, CameraWorker, TaskWorker
-from lib import GUIFunctions, NanonisFunctions, ImageFunctions
+from lib import GUIItems, GUI, Nanonis, ImageFunctions
 from time import sleep, time
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -98,7 +98,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Check / set up hardware connections
         self.connect_nanonis()
-        if hasattr(self, "nanonis_functions"): self.nanonis_functions.disconnect()
+        if hasattr(self, "nanonis"): self.nanonis.disconnect()
 
         # Set up the Experiments class and thread and connect signals and slots
         self.thread_pool = QtCore.QThreadPool()
@@ -138,7 +138,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.view_index = 0
         self.experiment_status = "idle"
         self.process = QtCore.QProcess(self)
-        self.gui_functions = GUIFunctions()
+        self.gui_functions = GUIItems()
 
         # Image processing flags
         self.processing_flags = {
@@ -170,7 +170,7 @@ class AppWindow(QtWidgets.QMainWindow):
         QKey = QtCore.Qt.Key
         QMod = QtCore.Qt.Modifier
 
-        make_button = lambda *args, **kwargs: self.gui_functions.make_button(*args, parent = self, **kwargs)
+        #make_button = lambda *args, **kwargs: self.gui_functions.make_button(*args, parent = self, **kwargs)
         make_label = self.gui_functions.make_label
         make_radio_button = self.gui_functions.make_radio_button
         make_checkbox = self.gui_functions.make_checkbox
@@ -178,57 +178,92 @@ class AppWindow(QtWidgets.QMainWindow):
         make_line_edit = self.gui_functions.make_line_edit
         make_layout = self.gui_functions.make_layout
         make_groupbox = self.gui_functions.make_groupbox
+        
+        self.gui = GUI(self.paths["icon_folder"])        
+        buttons = self.gui.buttons
+        shortcuts = self.gui.shortcuts
+        
+        # Connect the buttons to their respective functions
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_nanonis], ["mla", self.update_icons],
+                       ["camera", self.update_icons], ["exit", self.on_exit], ["tip_status", self.update_icons],
+                       ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.update_icons],
+                       
+                       ["nanonis_bias", self.update_icons], ["mla_bias", self.update_icons], ["swap_bias", self.update_icons],
+                       ["set", self.connect_nanonis], ["get", self.update_icons], ["withdraw", self.toggle_withdraw],
+                       ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons]
+                       ]
+        for connection in connections:
+            name = connection[0]
+            connected_function = connection[1]
+            buttons[name].clicked.connect(connected_function)
+            
+            if name in shortcuts.keys():
+                shortcut = QtGui.QShortcut(shortcuts[name], self)
+                shortcut.activated.connect(connected_function)           
 
-        self.buttons = {
-            "scanalyzer": make_button("", self.launch_scanalyzer, "Launch Scanalyzer", self.icons.get("scanalyzer")),
-            "nanonis": make_button("", self.connect_nanonis, "Connect to Nanonis", self.icons.get("nanonis")),
-            "mla": make_button("", self.update_icons, "Connect to the Multifrequency Lockin Amplifier", self.icons.get("imp")),
-            "camera": make_button("", self.update_icons, "Camera on/off", self.icons.get("scanalyzer")),
-            "exit": make_button("", self.on_exit, "Exit scantelligent (Esc/X/E)", self.icons.get("escape")),
-            "tip_status": make_button("Tip", self.update_icons, "Tip status (Space to toggle feedback on/off)"),
-            "oscillator": make_button("Osc", self.update_icons, "Oscillator on/off (Ctrl + O)"),
-            "view": make_button("Active view", self.update_icons, "Toggle the active view (V)"),
-            "session_folder": make_button("Session folder", self.update_icons, "Open the session folder (1)"),
+        # Add tooltips that include the button handle
+        for button_name in buttons.keys():
+            description = buttons[button_name].toolTip().split("\n")
+            buttons[button_name].setToolTip(f"{description[0]}\ngui.buttons[\"{button_name}\"]")
+            if len(description) > 1:
+                if description[1] != "":
+                    buttons[button_name].setToolTip(f"{description[0]}\n{description[1]}\ngui.buttons[\"{button_name}\"]")
+        
+        """
+        self.buttons.update({
+            #"scanalyzer": make_button("", self.launch_scanalyzer, "Launch Scanalyzer", self.icons.get("scanalyzer")),
+            #"nanonis": make_button("", self.connect_nanonis, "Nanonis: offline\n(click to reconnect)", self.icons.get("nanonis")),
+            #"mla": make_button("", self.update_icons, "Connect to the Multifrequency Lockin Amplifier\n()", self.icons.get("imp")),
+            #"camera": make_button("", self.update_icons, "Camera on/off\n()", self.icons.get("scanalyzer")),
+            #"exit": make_button("", self.on_exit, "Exit scantelligent\n(Esc / X / E)", self.icons.get("escape")),
+            #"tip_status": make_button("Tip", self.update_icons, "Tip status\n(Space to toggle feedback on/off)"),
+            #"oscillator": make_button("Osc", self.update_icons, "Oscillator on/off\n(Ctrl + O)"),
+            #"view": make_button("Active view", self.update_icons, "Toggle the active view\n(V)"),
+            #"session_folder": make_button("Session folder", self.update_icons, "Open the session folder\n(1)"),
 
-            "nanonis_bias": make_button("V_nn", self.update_icons, "Nanonis bias (P to set)"),
-            "mla_bias": make_button("V_mla", self.update_icons, "MLA bias (P to set)"),
-            "swap_bias": make_button("<>", self.update_icons, "Swap the bias between Nanonis and the MLA (P)"),
-            "set": make_button("set", self.update_icons, "Set the new parameters (P)"),
+            "nanonis_bias": make_button("V_nn", self.update_icons, "Nanonis bias\n()"),
+            "mla_bias": make_button("V_mla", self.update_icons, "MLA bias\n()"),
+            "swap_bias": make_button("<>", self.update_icons, "Swap the bias between Nanonis and the MLA\n()"),
+            "set": make_button("Set", self.update_icons, "Set the new parameters\n(Ctrl + P)"),
+            "get": make_button("Get", self.update_icons, "Get parameters\n(P)"),
 
-            "withdraw": make_button("Withdraw", self.toggle_withdraw, "Withdraw the tip (Ctrl + W)",
+            "withdraw": make_button("Withdraw", self.toggle_withdraw, "Withdraw the tip\n(Ctrl + W)",
                                    key_shortcut = QKey.Key_W, modifier = QMod.CTRL),
-            "retract": make_button("Retract", self.update_icons, "Retract the tip from the surface (Ctrl + PgUp)",
+            "retract": make_button("Retract", self.update_icons, "Retract the tip from the surface\n(Ctrl + PgUp)",
                                    key_shortcut = QKey.Key_PageUp, modifier = QMod.CTRL),
-            "advance": make_button("Advance", self.update_icons, "Advance the tip towards the surface (Ctrl + PgDown)",
+            "advance": make_button("Advance", self.update_icons, "Advance the tip towards the surface\n(Ctrl + PgDown)",
                                    key_shortcut = QKey.Key_PageUp, modifier = QMod.CTRL),
-            "approach": make_button("Approach", self.update_icons, "Initiate auto approach (Ctrl + A)",
+            "approach": make_button("Approach", self.update_icons, "Initiate auto approach\n(Ctrl + A)",
                                     key_shortcut = QKey.Key_A, modifier = QMod.CTRL),
 
-            "n": make_button("", lambda: self.on_coarse_move("n"), "Move the tip north (Ctrl + ↑ / Ctrl + 8)", icon = self.icons.get("single_arrow"),
+            "n": make_button("", lambda: self.on_coarse_move("n"), "Move the tip north\n(Ctrl + ↑ / Ctrl + 8)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_Up, modifier = QMod.CTRL, rotate_degrees = 270),
-            "ne": make_button("", lambda: self.on_coarse_move("ne"), "Move the tip northeast (Ctrl + 9)", icon = self.icons.get("single_arrow"),
+            "ne": make_button("", lambda: self.on_coarse_move("ne"), "Move the tip northeast\n(Ctrl + 9)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_9, modifier = QMod.CTRL, rotate_degrees = 315),
-            "e": make_button("", lambda: self.on_coarse_move("e"), "Move the tip east (Ctrl + → / Ctrl + 6)", icon = self.icons.get("single_arrow"),
+            "e": make_button("", lambda: self.on_coarse_move("e"), "Move the tip east\n(Ctrl + → / Ctrl + 6)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_Right, modifier = QMod.CTRL, rotate_degrees = 0),
-            "se": make_button("", lambda: self.on_coarse_move("se"), "Move the tip southeast (Ctrl + 3)", icon = self.icons.get("single_arrow"),
+            "se": make_button("", lambda: self.on_coarse_move("se"), "Move the tip southeast\n(Ctrl + 3)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_3, modifier = QMod.CTRL, rotate_degrees = 45),
-            "s": make_button("", lambda: self.on_coarse_move("s"), "Move the tip south (Ctrl + ↓ / Ctrl + 2)", icon = self.icons.get("single_arrow"),
+            "s": make_button("", lambda: self.on_coarse_move("s"), "Move the tip south\n(Ctrl + ↓ / Ctrl + 2)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_Down, modifier = QMod.CTRL, rotate_degrees = 90),
-            "sw": make_button("", lambda: self.on_coarse_move("sw"), "Move the tip southwest (Ctrl + 1)", icon = self.icons.get("single_arrow"),
+            "sw": make_button("", lambda: self.on_coarse_move("sw"), "Move the tip southwest\n(Ctrl + 1)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_1, modifier = QMod.CTRL, rotate_degrees = 135),
-            "w": make_button("", lambda: self.on_coarse_move("w"), "Move the tip west (Ctrl + ← / Ctrl + 4)", icon = self.icons.get("single_arrow"),
+            "w": make_button("", lambda: self.on_coarse_move("w"), "Move the tip west\n(Ctrl + ← / Ctrl + 4)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_Left, modifier = QMod.CTRL, rotate_degrees = 180),
-            "nw": make_button("", lambda: self.on_coarse_move("nw"), "Move the tip northwest (Ctrl + 7)", icon = self.icons.get("single_arrow"),
+            "nw": make_button("", lambda: self.on_coarse_move("nw"), "Move the tip northwest\n(Ctrl + 7)", icon = self.icons.get("single_arrow"),
                              key_shortcut = QKey.Key_7, modifier = QMod.CTRL, rotate_degrees = 225),
 
             "direction": make_button("", self.on_exit, "Change scan direction (X)", icon = self.icons.get("triple_arrow"), key_shortcut = QKey.Key_X),
 
-            "full_data_range": make_button("", self.update_icons, "Set the image value range to the full data range (U)", self.icons.get("100"), key_shortcut = QKey.Key_U),
-            "percentiles": make_button("", self.update_icons, "Set the image value range by percentiles (R)", self.icons.get("percentiles"), key_shortcut = QKey.Key_R),
-            "standard_deviation": make_button("", self.update_icons, "Set the image value range by standard deviations (D)", self.icons.get("deviation"), key_shortcut = QKey.Key_D),
-            "absolute_values": make_button("", self.update_icons, "Set the image value range by absolute values (A)", self.icons.get("numbers"), key_shortcut = QKey.Key_A),
-        }
+            "full_data_range": make_button("", self.update_icons, "Set the image value range to the full data range\n(U)", self.icons.get("100"), key_shortcut = QKey.Key_U),
+            "percentiles": make_button("", self.update_icons, "Set the image value range by percentiles\n(R)", self.icons.get("percentiles"), key_shortcut = QKey.Key_R),
+            "standard_deviation": make_button("", self.update_icons, "Set the image value range by standard deviations\n(D)", self.icons.get("deviation"), key_shortcut = QKey.Key_D),
+            "absolute_values": make_button("", self.update_icons, "Set the image value range by absolute values\n(A)", self.icons.get("numbers"), key_shortcut = QKey.Key_A),
+        })
+        """
 
+        self.buttons = buttons
+        
         self.labels = {
             "session_folder": make_label("Session folder"),
             "statistics": make_label("Statistics"),
@@ -357,7 +392,7 @@ class AppWindow(QtWidgets.QMainWindow):
     def console_init(self) -> None:
         # Initialize the console
         self.console_output = QtWidgets.QTextEdit()
-        self.console_output.setReadOnly(False)
+        self.console_output.setReadOnly(True)
         self.layouts["left_side"].addWidget(self.console_output, stretch = 1)
 
         # Redirect output to the console
@@ -438,7 +473,7 @@ class AppWindow(QtWidgets.QMainWindow):
                 color = colors[color]
         
         if timestamp:
-            final = f"<span style=\"color:{color}\">{escaped}</span></pre>"
+            final = f"<span style=\"color:{color}\">{escaped}</span>"
         else:
             final = f"<pre><span style=\"color:{color}\">        {escaped}</span></pre>"
 
@@ -482,74 +517,77 @@ class AppWindow(QtWidgets.QMainWindow):
     def draw_toolbar(self) -> QtWidgets.QVBoxLayout:
 
         def draw_connections_group() -> QtWidgets.QGroupBox:
-            connections_layout = self.layouts["connections"]
+            buttons = self.gui.buttons
+            layout = self.layouts["connections"]
             
-            connections_layout.addWidget(self.buttons["scanalyzer"], 0, 0)
-            connections_layout.addWidget(self.buttons["exit"], 0, 4)
-            connections_layout.addWidget(self.buttons["nanonis"], 0, 1)
-            connections_layout.addWidget(self.buttons["tip_status"], 1, 1)
-            connections_layout.addWidget(self.buttons["mla"], 0, 2)
-            connections_layout.addWidget(self.buttons["oscillator"], 1, 2)
-            connections_layout.addWidget(self.buttons["camera"], 0, 3)
-            connections_layout.addWidget(self.buttons["view"], 1, 3)
-            connections_layout.addWidget(self.labels["session_folder"], 1, 0)
-            connections_layout.addWidget(self.buttons["session_folder"], 1, 4)
+            layout.addWidget(buttons["scanalyzer"], 0, 0)
+            layout.addWidget(buttons["exit"], 0, 4)
+            layout.addWidget(buttons["nanonis"], 0, 1)
+            layout.addWidget(buttons["tip_status"], 1, 1)
+            layout.addWidget(buttons["mla"], 0, 2)
+            layout.addWidget(buttons["oscillator"], 1, 2)
+            layout.addWidget(buttons["camera"], 0, 3)
+            layout.addWidget(buttons["view"], 1, 3)
+            layout.addWidget(self.labels["session_folder"], 1, 0)
+            layout.addWidget(buttons["session_folder"], 1, 4)
 
-            self.groupboxes["connections"].setLayout(connections_layout)
+            self.groupboxes["connections"].setLayout(layout)
 
             return self.groupboxes["connections"]
 
         def draw_parameters_group() -> QtWidgets.QGroupBox:
-            parameters_layout = self.layouts["parameters"]
+            buttons = self.gui.buttons
+            line_edits = self.line_edits
+            layout = self.layouts["parameters"]
 
-            self.parameter_boxes = [self.line_edits["nanonis_bias"], self.buttons["swap_bias"], self.line_edits["mla_bias"], self.line_edits["I_fb"], self.buttons["set"]]
+            self.parameter_boxes = [line_edits["nanonis_bias"], buttons["swap_bias"], line_edits["mla_bias"], line_edits["I_fb"], buttons["set"], buttons["get"]]
              
             #[self.layouts["bias_buttons"].addWidget(box, 1) for box in self.parameter_buttons[:2]]
-            [parameters_layout.addWidget(self.parameter_boxes[i], 0, i) for i in range(len(self.parameter_boxes))]
+            [layout.addWidget(self.parameter_boxes[i], 0, i) for i in range(len(self.parameter_boxes))]
             #parameters_layout.addLayout(self.layouts["bias_buttons"], 1, 0, 1, 3)
             #parameters_layout.addWidget(self.I_fb_button, 1, 3)
             #parameters_layout.addWidget(self.parameters_button, 0, len(self.parameter_boxes), 2, 1)
 
-            self.groupboxes["parameters"].setLayout(parameters_layout)
+            self.groupboxes["parameters"].setLayout(layout)
 
             return self.groupboxes["parameters"]
 
         def draw_coarse_control_group() -> QtWidgets.QGroupBox:
-            coarse_motion_layout = self.layouts["coarse_control"]
+            buttons = self.gui.buttons
+            layout = self.layouts["coarse_control"]
             
             # Coarse actions
             coarse_actions_layout = self.layouts["coarse_actions"]
-            self.action_buttons = [self.buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
+            self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
             self.action_checkboxes = [self.checkboxes[name] for name in ["withdraw", "retract", "move", "advance", "approach"]]
             [checkbox.setChecked(True) for checkbox in self.action_checkboxes]
             self.checkboxes["advance"].setChecked(False)
             
             [coarse_actions_layout.addWidget(self.action_checkboxes[i], i, 0) for i in range(len(self.action_checkboxes))]
-            coarse_actions_layout.addWidget(self.buttons["withdraw"], 0, 1)
-            coarse_actions_layout.addWidget(self.buttons["retract"], 1, 1)
+            coarse_actions_layout.addWidget(buttons["withdraw"], 0, 1)
+            coarse_actions_layout.addWidget(buttons["retract"], 1, 1)
             coarse_actions_layout.addWidget(self.line_edits["z_steps"], 1, 2)
             coarse_actions_layout.addWidget(self.line_edits["h_steps"], 2, 2)
-            coarse_actions_layout.addWidget(self.buttons["advance"], 3, 1)
+            coarse_actions_layout.addWidget(buttons["advance"], 3, 1)
             coarse_actions_layout.addWidget(self.line_edits["minus_z_steps"], 3, 2)
-            coarse_actions_layout.addWidget(self.buttons["approach"], 4, 1)
+            coarse_actions_layout.addWidget(buttons["approach"], 4, 1)
 
             # Labels
             [coarse_actions_layout.addWidget(self.labels[name], index + 1, 3) for index, name in enumerate(["z_steps", "h_steps", "steps_and"])]
             coarse_actions_layout.addWidget(self.labels["move"], 2, 1)
-            coarse_motion_layout.addLayout(coarse_actions_layout)
+            layout.addLayout(coarse_actions_layout)
             
             # Arrows
             arrow_keys = QtWidgets.QWidget()
             arrow_keys_layout = self.layouts["arrow_keys"]
-            self.arrow_buttons = [self.buttons["nw"], self.buttons["n"], self.buttons["ne"], self.buttons["w"], self.buttons["n"],
-                                  self.buttons["e"], self.buttons["sw"], self.buttons["s"], self.buttons["se"]]
+            self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
             [arrow_keys_layout.addWidget(self.arrow_buttons[i], 0, i) for i in range(3)]
             [arrow_keys_layout.addWidget(self.arrow_buttons[i + 3], 1, i) for i in range(3)]
             [arrow_keys_layout.addWidget(self.arrow_buttons[i + 6], 2, i) for i in range(3)]
             arrow_keys.setLayout(arrow_keys_layout)
 
-            coarse_motion_layout.addWidget(arrow_keys)
-            self.groupboxes["coarse_control"].setLayout(coarse_motion_layout)
+            layout.addWidget(arrow_keys)
+            self.groupboxes["coarse_control"].setLayout(layout)
 
             return self.groupboxes["coarse_control"]
 
@@ -590,7 +628,9 @@ class AppWindow(QtWidgets.QMainWindow):
             return self.groupboxes["experiments"]
        
         def draw_image_processing_group() -> QtWidgets.QGroupBox: # Image processing group
-            self.layouts["image_processing"].addWidget(self.labels["background_subtraction"])
+            buttons = self.gui.buttons
+            layout = self.layouts["image_processing"]
+            layout.addWidget(self.labels["background_subtraction"])
             
             # Background subtraction group
             self.bg_button_group = QtWidgets.QButtonGroup(self)
@@ -598,11 +638,11 @@ class AppWindow(QtWidgets.QMainWindow):
             [self.bg_button_group.addButton(button) for button in background_buttons] # Add buttons to the QButtonGroup for exclusive selection
             [self.layouts["background_buttons"].addWidget(button) for button in background_buttons]
             self.radio_buttons["bg_none"].setChecked(True)
-            self.layouts["image_processing"].addLayout(self.layouts["background_buttons"])
-            self.layouts["image_processing"].addWidget(self.gui_functions.line_widget("h", 1))
+            layout.addLayout(self.layouts["background_buttons"])
+            layout.addWidget(self.gui_functions.line_widget("h", 1))
 
             # Matrix operations
-            self.layouts["image_processing"].addWidget(self.labels["matrix_operations"])
+            layout.addWidget(self.labels["matrix_operations"])
             matrix_layout = self.layouts["matrix_processing"]
             [matrix_layout.addWidget(self.checkboxes[checkbox_name], 0, index) for index, checkbox_name in enumerate(["sobel", "normal", "laplace"])]
             matrix_layout.addWidget(self.checkboxes["gauss"], 1, 0)
@@ -611,18 +651,18 @@ class AppWindow(QtWidgets.QMainWindow):
             matrix_layout.addWidget(self.checkboxes["fft"], 2, 0)
             matrix_layout.addWidget(self.labels["show"], 2, 1)
             matrix_layout.addWidget(self.comboboxes["projection"], 2, 2)
-            self.layouts["image_processing"].addLayout(matrix_layout)
-            self.layouts["image_processing"].addWidget(self.gui_functions.line_widget("h", 1))
+            layout.addLayout(matrix_layout)
+            layout.addWidget(self.gui_functions.line_widget("h", 1))
 
             # Limits control group
             self.layouts["image_processing"].addWidget(self.labels["limits"])
             limits_layout = self.layouts["limits"]
-            min_line_edits = [self.line_edits[line_edit_name] for line_edit_name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
-            min_radio_buttons = [self.radio_buttons[button_name] for button_name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
-            scale_buttons = [self.buttons[button_name] for button_name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]            
-            max_radio_buttons = [self.radio_buttons[button_name] for button_name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
-            max_line_edits = [self.line_edits[line_edit_name] for line_edit_name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
-            [self.line_edits[line_edit_name].setEnabled(False) for line_edit_name in ["min_full", "max_full"]]
+            min_line_edits = [self.line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
+            min_radio_buttons = [self.radio_buttons[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
+            scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]            
+            max_radio_buttons = [self.radio_buttons[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
+            max_line_edits = [self.line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
+            [self.line_edits[name].setEnabled(False) for name in ["min_full", "max_full"]]
             [self.min_button_group, self.max_button_group] = [QtWidgets.QButtonGroup(self), QtWidgets.QButtonGroup(self)]
             [self.min_button_group.addButton(button) for button in min_radio_buttons] # Min and max buttons are exclusive
             [self.max_button_group.addButton(button) for button in max_radio_buttons]
@@ -631,7 +671,7 @@ class AppWindow(QtWidgets.QMainWindow):
             [limits_layout.addWidget(line_edit, index, 2) for index, line_edit in enumerate(scale_buttons)]
             [limits_layout.addWidget(line_edit, index, 3) for index, line_edit in enumerate(max_radio_buttons)]
             [limits_layout.addWidget(line_edit, index, 4) for index, line_edit in enumerate(max_line_edits)]
-            self.layouts["image_processing"].addLayout(limits_layout)
+            layout.addLayout(limits_layout)
 
             # The startup default is 100%; set the buttons accordingly (without triggering the redrawing of the scan image)
             for button in [self.radio_buttons["min_full"], self.radio_buttons["max_full"]]:
@@ -639,15 +679,17 @@ class AppWindow(QtWidgets.QMainWindow):
                 button.setChecked(True)
                 button.blockSignals(False)
 
-            self.groupboxes["image_processing"].setLayout(self.layouts["image_processing"])
+            self.groupboxes["image_processing"].setLayout(layout)
+            
             return self.groupboxes["image_processing"]
 
+        layout = self.layouts["toolbar"]
         # Make the toolbar. Overal layout is a QVBoxLayout
-        self.layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
-        [self.layouts["toolbar"].addWidget(group) for group in [draw_connections_group(), draw_coarse_control_group(), draw_parameters_group(), draw_experiments_group(), draw_image_processing_group()]]
-        self.layouts["toolbar"].addStretch(1) # Add a stretch at the end to push buttons up
+        layout.setContentsMargins(4, 4, 4, 4)
+        [layout.addWidget(group) for group in [draw_connections_group(), draw_coarse_control_group(), draw_parameters_group(), draw_experiments_group(), draw_image_processing_group()]]
+        layout.addStretch(1) # Add a stretch at the end to push buttons up
 
-        return self.layouts["toolbar"]
+        return layout
 
     def connect_keys(self) -> None:
         QKey = QtCore.Qt.Key
@@ -718,67 +760,68 @@ class AppWindow(QtWidgets.QMainWindow):
 
     # Update GUI according to hardware status
     def update_buttons(self) -> None:
+        buttons = self.gui.buttons
         # Activate/deactivate and color buttons according to hardware status
 
         if self.status["nanonis"] == "online":
-            self.buttons["tip_status"].setEnabled(True)
-            self.buttons["nanonis"].setToolTip("Nanonis: online")
-            self.buttons["nanonis"].setStyleSheet(style_sheets["connected"])
+            buttons["tip_status"].setEnabled(True)
+            buttons["nanonis"].changeToolTip("Nanonis: online")
+            buttons["nanonis"].setStyleSheet(style_sheets["connected"])
             
             [button.setEnabled(True) for button in self.action_buttons]
             [button.setEnabled(True) for button in self.arrow_buttons]
         
         elif self.status["nanonis"] == "running":
-            self.buttons["tip_status"].setEnabled(False)
-            self.buttons["nanonis"].setToolTip("Nanonis: active TCP connection")
-            self.buttons["nanonis"].setStyleSheet(style_sheets["running"])
+            buttons["tip_status"].setEnabled(False)
+            buttons["nanonis"].changeToolTip("Nanonis: active TCP connection")
+            buttons["nanonis"].setStyleSheet(style_sheets["running"])
             
             [button.setEnabled(False) for button in self.action_buttons]
             [button.setEnabled(False) for button in self.arrow_buttons]
     
         else:
-            self.buttons["tip_status"].setEnabled(False)
-            self.buttons["tip_status"].setToolTip("Tip status: unknown")
-            self.buttons["tip_status"].setStyleSheet(style_sheets["disconnected"])
+            buttons["tip_status"].setEnabled(False)
+            buttons["tip_status"].changeToolTip("Tip status: unknown")
+            buttons["tip_status"].setStyleSheet(style_sheets["disconnected"])
 
-            self.buttons["nanonis"].setToolTip("Nanonis: offline")
-            self.buttons["nanonis"].setStyleSheet(style_sheets["disconnected"])
+            buttons["nanonis"].changeToolTip("Nanonis: offline")
+            buttons["nanonis"].setStyleSheet(style_sheets["disconnected"])
             
             [button.setEnabled(False) for button in self.action_buttons]
             [button.setEnabled(False) for button in self.arrow_buttons]
             
             # If Nanonis is offline, proceed with cleanup and make sure the nanonis and measurements attributes are deleted
-            if hasattr(self, "nanonis_functions"): delattr(self, "nanonis_functions")
+            if hasattr(self, "nanonis"): delattr(self, "nanonis")
             if hasattr(self, "measurements"): delattr(self, "measurements")
             self.status["nanonis"] = "offline"
             self.logprint("  status[\"nanonis\"] = \"offline\"", color = "blue")
 
 
 
-        if self.status["tip"].get("withdrawn", False):
-            self.buttons["retract"].setEnabled(True)
-            self.buttons["advance"].setEnabled(True)
-            self.buttons["approach"].setEnabled(True)
+        if not self.status["tip"] == "online": #.get("withdrawn", False)
+            buttons["retract"].setEnabled(True)
+            buttons["advance"].setEnabled(True)
+            buttons["approach"].setEnabled(True)
 
-            self.buttons["tip_status"].setToolTip("Tip status: withdrawn")
-            self.buttons["tip_status"].setStyleSheet(style_sheets["idle"])
-            self.buttons["withdraw"].setToolTip("land (Ctrl + W)")
+            buttons["tip_status"].changeToolTip("Tip status: withdrawn")
+            buttons["tip_status"].setStyleSheet(style_sheets["idle"])
+            buttons["withdraw"].changeToolTip("land")
             self.checkboxes["withdraw"].setEnabled(False)
 
         else:
-            self.buttons["retract"].setEnabled(False)
-            self.buttons["advance"].setEnabled(False)
-            self.buttons["approach"].setEnabled(False)
+            buttons["retract"].setEnabled(False)
+            buttons["advance"].setEnabled(False)
+            buttons["approach"].setEnabled(False)
         
             if self.status["tip"] == "feedback":
-                self.buttons["tip_status"].setToolTip("Tip status: in feedback")
-                self.buttons["tip_status"].setStyleSheet(style_sheets["connected"])
-                self.buttons["withdraw"].setText("Withdraw,")
+                buttons["tip_status"].changeToolTip("Tip status: in feedback")
+                buttons["tip_status"].setStyleSheet(style_sheets["connected"])
+                buttons["withdraw"].setText("Withdraw,")
                 self.checkboxes["withdraw"].setEnabled(True)
             else:
-                self.buttons["tip_status"].setToolTip("Tip status: constant height")
-                self.buttons["tip_status"].setStyleSheet(style_sheets["hold"])
-                self.buttons["withdraw"].setText("Withdraw,")
+                buttons["tip_status"].changeToolTip("Tip status: constant height")
+                buttons["tip_status"].setStyleSheet(style_sheets["hold"])
+                buttons["withdraw"].setText("Withdraw,")
                 self.checkboxes["withdraw"].setEnabled(True)
 
         if not hasattr(self, "parameters"):
@@ -805,13 +848,15 @@ class AppWindow(QtWidgets.QMainWindow):
         pass
 
     def on_toggle_direction(self) -> None:
+        buttons = self.gui.buttons
+
         if hasattr(self, "scan_direction") and self.scan_direction == "forward": self.scan_direction = "backward"
         else: self.scan_direction = "forward"
 
-        self.buttons["direction"].blockSignals(True)
-        self.buttons["direction"].setChecked(self.scan_direction == "backward")
-        self.buttons["direction"].setText(f"direXion: {self.scan_direction}")
-        self.buttons["direction"].blockSignals(False)
+        buttons["direction"].blockSignals(True)
+        buttons["direction"].setChecked(self.scan_direction == "backward")
+        buttons["direction"].setText(f"direXion: {self.scan_direction}")
+        buttons["direction"].blockSignals(False)
 
         return
 
@@ -857,7 +902,7 @@ class AppWindow(QtWidgets.QMainWindow):
             try:
                 scanalyzer_path = self.paths["scanalyzer_path"]
                 self.logprint("Attempting to launch scanalyzer by executing CLI command:", color = "white")
-                self.logprint(f"{sys.executable} {scanalyzer_path}", color = "blue")
+                self.logprint(f"  {sys.executable} {scanalyzer_path}", color = "blue")
                 self.process.start(sys.executable, [self.paths["scanalyzer_path"]])
             except Exception as e:
                 self.logprint(f"Failed to launch Scanalyzer: {e}", color = "red")
@@ -896,9 +941,11 @@ class AppWindow(QtWidgets.QMainWindow):
 
     # Hardware connections
     def connect_camera(self, argument) -> None:
+        buttons = self.gui.buttons
+        
         self.status["camera"] = "offline"
-        self.buttons["camera"].setText("Camera: offline")
-        self.buttons["camera"].setStyleSheet(style_sheets["disconnected"])
+        buttons["camera"].setText("Camera: offline")
+        buttons["camera"].setStyleSheet(style_sheets["disconnected"])
 
         try:
             cap = cv2.VideoCapture(argument)
@@ -909,8 +956,8 @@ class AppWindow(QtWidgets.QMainWindow):
                 cap.release()
                 self.status["camera"] = "online"
 
-                self.buttons["camera"].setToolTip("Camera: online")
-                self.buttons["camera"].setStyleSheet(style_sheets["connected"])
+                buttons["camera"].changeToolTip("Camera: online")
+                buttons["camera"].setStyleSheet(style_sheets["connected"])
 
         except Exception as e:
             self.logprint("Could not connect the camera.")
@@ -922,9 +969,9 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def connect_nanonis(self) -> None:
         # Verify that Nanonis is online (responds to TCP-IP)
-        # If it is, objects representing the classes Measurements and NanonisFunctions will be instantiated
+        # If it is, objects representing the classes Measurements and Nanonis will be instantiated
         
-        if hasattr(self, "nanonis_functions"): delattr(self, "nanonis_functions")
+        if hasattr(self, "nanonis"): delattr(self, "nanonis")
         if hasattr(self, "measurements"): delattr(self, "measurements")
         self.status["nanonis"] = "offline"
 
@@ -939,9 +986,9 @@ class AppWindow(QtWidgets.QMainWindow):
             sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
             
             self.status["nanonis"] = "online"
-            self.nanonis_functions = NanonisFunctions(hardware = self.hardware) # Make the NanonisFunctions available
+            self.nanonis = Nanonis(hardware = self.hardware) # Make the Nanonis class available
             self.logprint("  status[\"nanonis\"] = \"online\"", color = "blue")
-            self.logprint("Success! I also created an instance of NanonisFunctions() called 'nanonis_functions'", color = "green")
+            self.logprint("Success! I also instantiated NanonisFunctions() as nanonis", color = "green")
 
             self.on_parameters_request()
     
@@ -1025,8 +1072,8 @@ class AppWindow(QtWidgets.QMainWindow):
     # Simple data requests over TCP-IP
     def on_parameters_request(self):
         try:
-            self.logprint("  status[\"tip\"] = nanonis_functions.tip()", color = "blue")
-            tip_status = self.nanonis_functions.tip()
+            self.logprint("  status[\"tip\"] = nanonis.tip()", color = "blue")
+            tip_status = self.nanonis.tip(error_callback = self.logprint)
             if not tip_status:
                 self.logprint("Error retrieving the tip status.", color = "red")
                 self.status["nanonis"] = "offline"
@@ -1034,8 +1081,8 @@ class AppWindow(QtWidgets.QMainWindow):
             else:
                 self.status["tip"] = tip_status
             
-            self.logprint("  parameters = nanonis_functions.get_parameters()", color = "blue")
-            parameters = self.nanonis_functions.get_parameters()
+            self.logprint("  parameters = nanonis.get_parameters()", color = "blue")
+            parameters = self.nanonis.get_parameters()
 
             if not parameters:
                 self.logprint("Error retrieving the scan parameters.", color = "red")
@@ -1061,9 +1108,9 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def on_frame_request(self):
         try:
-            if hasattr(self, "nanonis_functions"):
-                self.logprint(f"  frame = nanonis_functions.get_frame()", color = "blue")
-                frame = self.nanonis_functions.get_frame()
+            if hasattr(self, "nanonis"):
+                self.logprint(f"  frame = nanonis.get_frame()", color = "blue")
+                frame = self.nanonis.get_frame()
 
             if type(frame) == dict:
                 self.frame = frame
@@ -1072,8 +1119,8 @@ class AppWindow(QtWidgets.QMainWindow):
                     self.channel_select_box.clear()
                     self.channel_select_box.addItems(channels)
                 
-                self.logprint("I was able to read the scan frame data from Nanonis and saved it in a dictionary called 'frame'", color = "green")
-                self.logprint(f"  frame.keys() = {self.frame.keys()}", color = "blue")
+                self.logprint("I was able to read the scan frame data from Nanonis and save it in a dictionary called frame", color = "green")
+                self.logprint(f"  frame = {self.frame}", color = "blue")
         except Exception as e:
             self.logprint({e}, color = "red")
 
@@ -1084,7 +1131,7 @@ class AppWindow(QtWidgets.QMainWindow):
                 channel_indices = self.frame["channel_indices"]
                 channel_index = channel_indices[self.channel_select_box.currentIndex()]
                 
-                selected_scan = self.nanonis_functions.get_scan(channel_index, direction)
+                selected_scan = self.nanonis.get_scan(channel_index, direction)
                 if type(selected_scan) == np.ndarray:
                     self.selected_scan = selected_scan
 
@@ -1111,15 +1158,15 @@ class AppWindow(QtWidgets.QMainWindow):
     def toggle_withdraw(self) -> bool:
         try:
             if self.status["tip"] == "withdrawn":
-                tip_status = self.nanonis_functions.tip(feedback = True)
+                tip_status = self.nanonis.tip(feedback = True)
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("  [dict] status[\"tip\"] = nanonis_functions.tip(feedback = True)", color = "blue")
+                    self.logprint("  [dict] status[\"tip\"] = nanonis.tip(feedback = True)", color = "blue")
             else:
-                tip_status = self.nanonis_functions.tip(withdraw = True)
+                tip_status = self.nanonis.tip(withdraw = True)
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("  [dict] status[\"tip\"] = nanonis_functions.tip(withdraw = True)", color = "blue")
+                    self.logprint("  [dict] status[\"tip\"] = nanonis.tip(withdraw = True)", color = "blue")
 
         except Exception as e:
             pass
@@ -1131,15 +1178,15 @@ class AppWindow(QtWidgets.QMainWindow):
     def change_tip_status(self) -> bool:
         try:
             if self.status["tip"] == "withdrawn":
-                tip_status = self.nanonis_functions.tip(feedback = True)
+                tip_status = self.nanonis.tip(feedback = True)
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("  [dict] status[\"tip\"] = nanonis_functions.tip(feedback = True)", color = "blue")
+                    self.logprint("  [dict] status[\"tip\"] = nanonis.tip(feedback = True)", color = "blue")
             else: # Toggle the feedback
-                tip_status = self.nanonis_functions.tip(feedback = not self.tip_status["feedback"])
+                tip_status = self.nanonis.tip(feedback = not self.tip_status["feedback"])
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("  [dict] status[\"tip\"] = nanonis_functions.tip(feedback = not tip_status[\"feedback\"])", color = "blue")
+                    self.logprint("  [dict] status[\"tip\"] = nanonis.tip(feedback = not tip_status[\"feedback\"])", color = "blue")
 
         except Exception as e:
             pass
@@ -1152,11 +1199,11 @@ class AppWindow(QtWidgets.QMainWindow):
         # Extract the target bias from the QLineEdit textbox
         V_new = float(self.line_edits["nanonis_bias"].text())
 
-        self.logprint(f"  [float] V_old = nanonis_functions.change_bias({V_new})", color = "blue")
+        self.logprint(f"  [float] V_old = nanonis.change_bias({V_new})", color = "blue")
 
-        #V_old = self.nanonis_functions.change_bias(V_new)
+        #V_old = self.nanonis.change_bias(V_new)
         # ^ This is the old-fashioned, non-threaded way
-        self.task_worker = TaskWorker(self.nanonis_functions.change_bias, V_new)
+        self.task_worker = TaskWorker(self.nanonis.change_bias, V_new)
         self.thread_pool.start(self.task_worker)
         self.parameters["bias"] = V_new
 
@@ -1166,8 +1213,8 @@ class AppWindow(QtWidgets.QMainWindow):
         I_fb = float(self.I_fb_box.text())
         I_fb *= 1E-12
 
-        self.logprint(f"  [float] I_old = nanonis_functions.change_setpoint({I_fb})", color = "blue")
-        I_old = self.nanonis_functions.change_feedback(I_fb)
+        self.logprint(f"  [float] I_old = nanonis.change_setpoint({I_fb})", color = "blue")
+        I_old = self.nanonis.change_feedback(I_fb)
 
         self.parameters["I_fb"] = I_fb
 
@@ -1197,11 +1244,11 @@ class AppWindow(QtWidgets.QMainWindow):
             if not self.status["nanonis"] == "online":
                 self.connect_nanonis()
             
-            if not hasattr(self, "nanonis_functions"):
+            if not hasattr(self, "nanonis"):
                 raise
             
             self.logprint(f"  move_flags.keys() = {move_flags.keys()}", color = "blue")
-            self.logprint("  nanonis_functions.move_over(move_flags)", color = "blue")
+            self.logprint("  nanonis.move_over(move_flags)", color = "blue")
 
             return True
         
@@ -1224,7 +1271,7 @@ class AppWindow(QtWidgets.QMainWindow):
         match request:
             case "pause":
                 if self.experiment_status == "running":
-                    self.nanonis_functions.scan_control(action = "pause")
+                    self.nanonis.scan_control(action = "pause")
                     self.experiment_status = "paused"
                     self.update_icons()
                     return
@@ -1236,18 +1283,18 @@ class AppWindow(QtWidgets.QMainWindow):
                     self.timer.stop()
                 if self.experiment_status in ["idle", "paused", "running"]:
                     self.experiment_status = "idle"
-                    self.nanonis_functions.scan_control(action = "stop")
+                    self.nanonis.scan_control(action = "stop")
                     self.update_icons()
                 return
             case "resume":
                 if self.experiment_status == "paused":
-                    self.nanonis_functions.scan_control(action = "resume")
+                    self.nanonis.scan_control(action = "resume")
                     self.experiment_status = "running"
                     self.update_icons()
                 return
             case _: # This is start
                 if self.experiment_status == "running":
-                    self.nanonis_functions.scan_control(action = "stop")
+                    self.nanonis.scan_control(action = "stop")
                     self.experiment_status = "idle"
                     if hasattr(self, "timer"):
                         self.timer.stop()
@@ -1286,7 +1333,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
 
         # Initialize the experiment
-        self.frame = self.nanonis_functions.get_frame()
+        self.frame = self.nanonis.get_frame()
         self.x_grid = self.frame["x_grid"]
         self.y_grid = self.frame["y_grid"]
 
@@ -1299,9 +1346,9 @@ class AppWindow(QtWidgets.QMainWindow):
                 dirxn = "up"
             case "nearest tip":
                 # Retrieve the tip position
-                self.nanonis_functions.connect_log()
-                tip_position = self.nanonis_functions.get_xy()
-                self.nanonis_functions.disconnect()
+                self.nanonis.connect_log()
+                tip_position = self.nanonis.get_xy()
+                self.nanonis.disconnect()
                 sleep(.1)
 
                 bottom_left_corner = self.frame["bottom_left_corner"]
@@ -1332,7 +1379,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.data_array = np.empty((100000, len(self.channels)), dtype = float)
         self.current_index = 0
         
-        self.nanonis_functions.scan_control(action = "start", direction = dirxn)
+        self.nanonis.scan_control(action = "start", direction = dirxn)
         if not hasattr(self, "timer"):
             self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.on_nanonis_scan_request)
@@ -1426,13 +1473,13 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def experiment_finished(self):
         self.logprint("Experiment finished", color = "green")
-        self.nanonis_functions.scan_control(action = "stop")
+        self.nanonis.scan_control(action = "stop")
         if hasattr(self, "experiment_thread"): self.experiment_thread.quit
         self.experiment_status = "idle"
         self.update_icons()
         self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment, ".hdf5")
         self.save_to_button.setText(self.paths["experiment_filename"])
-        self.nanonis_functions.scan_control(action = "stop")
+        self.nanonis.scan_control(action = "stop")
 
         return True
 

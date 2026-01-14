@@ -1,10 +1,11 @@
+import os
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 from typing import Callable
 
 
 
-class GUIFunctions:
+class GUIItems:
     def __init__(self):
         pass
 
@@ -15,7 +16,7 @@ class GUIFunctions:
         return box
 
     def make_button(self, name: str, func: Callable, description: str = "", icon = None, rotate_degrees: float = 0, key_shortcut = None, modifier = None, parent = None) -> QtWidgets.QPushButton:
-        button = QtWidgets.QPushButton(name)
+        button = SmartPushButton(name)
         button.setObjectName(name)
         button.clicked.connect(lambda checked, f = func: f())
         button.setToolTip(description)
@@ -41,35 +42,20 @@ class GUIFunctions:
             try: button.setIcon(icon)
             except: pass
         return button
- 
-    def make_smart_button(self, name: str, func: Callable, description: str = "", icon = None, rotate_degrees: float = 0, key_shortcut = None, modifier = None, parent = None) -> QtWidgets.QPushButton:
+
+    def make_smart_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0, key_shortcut = None, modifier = None, parent = None) -> QtWidgets.QPushButton:
         button = SmartPushButton(name)
         button.setObjectName(name)
-        button.clicked.connect(lambda checked, f = func: f())
-        button.changeToolTip(description)
-
-        if isinstance(key_shortcut, QtCore.Qt.Key):
-            if isinstance(modifier, QtCore.Qt.Modifier):
-                if parent is not None:
-                    shortcut = QtGui.QShortcut(QtGui.QKeySequence(modifier | key_shortcut), parent)
-                    shortcut.activated.connect(func)
-                else:
-                    button.setShortcut(modifier | key_shortcut)
-            else:
-                if parent is not None:
-                    shortcut = QtGui.QShortcut(QtGui.QKeySequence(key_shortcut), parent)
-                    shortcut.activated.connect(func)
-                else:
-                    button.setShortcut(key_shortcut)
+        button.setToolTip(tooltip)
 
         if isinstance(icon, QtGui.QIcon):
-            if type(rotate_degrees) == float or type(rotate_degrees) == int and rotate_degrees != 0:
-                try: icon = self.rotate_icon(icon, rotate_degrees)
+            if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
+                try: icon = self.rotate_icon(icon, rotate_icon)
                 except: pass
             try: button.setIcon(icon)
             except: pass
         return button
-     
+
     def make_label(self, name: str, description: str = "", icon_path = None) -> QtWidgets.QLabel:
         label = QtWidgets.QLabel(name)
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -83,7 +69,7 @@ class GUIFunctions:
             except:
                 pass
         return label
-    
+
     def make_radio_button(self, name: str, description: str = "", icon = None, rotate_degrees: float = 0) -> QtWidgets.QRadioButton:
         button = QtWidgets.QRadioButton(name)
         button.setObjectName(name)
@@ -111,7 +97,7 @@ class GUIFunctions:
         return box
     
     def make_combobox(self, name: str = "", description: str = "", func = None, items: list = []) -> QtWidgets.QComboBox:
-        box = QtWidgets.QComboBox()
+        box = SmartComboBox()
         box.setObjectName(name)
         box.setToolTip(description)
 
@@ -119,7 +105,15 @@ class GUIFunctions:
 
         if callable(func): box.currentIndexChanged.connect(lambda index, f = func: f(index))
         return box
-    
+
+    def make_smart_combobox(self, name: str = "", tooltip: str = "", items: list = []) -> QtWidgets.QComboBox:
+        box = SmartComboBox()
+        box.setObjectName(name)
+        box.setToolTip(tooltip)
+
+        if len(items) > 0: box.addItems(items)
+        return box
+
     def make_line_edit(self, name: str, description: str = "", icon = None, key_shortcut = None, rotate_degrees: float = 0) -> QtWidgets.QLineEdit:
         button = QtWidgets.QLineEdit()
         button.setObjectName(name)
@@ -205,4 +199,18 @@ class SmartPushButton(QtWidgets.QPushButton):
         old_tooltip_list = old_tooltip.split("\n")
 
         self.setToolTip(f"{text}\n{old_tooltip}")
-        
+
+
+
+class SmartComboBox(QtWidgets.QComboBox):
+    """
+    A QComboBox with extra method changeToolTip, which leaves the last 2 lines of the tooltip unchanged while changing the other lines
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def changeToolTip(self, text: str) -> None:
+        old_tooltip = self.toolTip()
+        old_tooltip_list = old_tooltip.split("\n")
+
+        self.setToolTip(f"{text}\n{old_tooltip}")
