@@ -103,9 +103,9 @@ class Nanonis(NanonisHardware):
     def tip(self, withdraw: bool = False, feedback = None, callback = logprint):
         error_flag = False
         if hasattr(self, "NTCP"):
-            callback("Error. Existing TCP connection found. Aborting.", color = "red")
+            callback("Error. Existing TCP connection found. Aborting.", message_type = "error")
             return False
-        callback("Test", color = "blue")
+        callback("Test", message_type = "code")
         # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
         try:            
             self.connect()
