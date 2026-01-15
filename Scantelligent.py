@@ -1,9 +1,8 @@
 import os, sys, re, html, yaml, cv2, pint, socket
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
-import pyqtgraph as pg
 from lib.functions import Experiments, CameraWorker, TaskWorker
-from lib import GUIItems, ScantelligentGUI, Nanonis, ImageFunctions
+from lib import ScantelligentGUI, StreamRedirector, Nanonis, ImageFunctions
 from time import sleep, time
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -24,74 +23,17 @@ text_colors = {"message": colors["white"], "error": colors["red"], "code": color
 
 
 
-class StreamRedirector(QtCore.QObject):
-    output_written = QtCore.pyqtSignal(str)
-    def __init__(self, parent = None):
-        super().__init__(parent)
-        self._buffer = ""
-
-    def write(self, text: str) -> None:
-        if not text:
-            return
-        # Accumulate text and only emit complete lines. This avoids
-        # emitting lone "\n" chunks which caused extra blank lines
-        # in the QTextEdit when using `append` for each write call.
-        self._buffer += text
-        while "\n" in self._buffer:
-            line, self._buffer = self._buffer.split("\n", 1)
-            self.output_written.emit(line)
-        
-        return
-
-    def flush(self) -> None:
-        # Emit any remaining partial line (no trailing newline)
-        if self._buffer:
-            self.output_written.emit(self._buffer)
-            self._buffer = ""
-        
-        return
-
-
-
-class AppWindow(QtWidgets.QMainWindow):
-    request_start = QtCore.pyqtSignal(str, int, int)
-    start_tracking = QtCore.pyqtSignal(float, int, int) # sampling time, chunk_size, timeout
-    request_stop = QtCore.pyqtSignal()
+class App:
+    #request_start = QtCore.pyqtSignal(str, int, int)
+    #start_tracking = QtCore.pyqtSignal(float, int, int) # sampling time, chunk_size, timeout
+    #request_stop = QtCore.pyqtSignal()
 
     def __init__(self):
-        super().__init__()
-        # Make the app window
-        self.setWindowTitle("Scantelligent by Peter H. Jacobse")
-        self.setGeometry(100, 100, 1400, 800) # x, y, width, height
-        
-        # Initialize parameters
-        self.initialization = True
         self.parameters_init()
-        self.gui_init()
-
-        # Create a central widget and main horizontal layout, then a left_side_widget as a container for the ImageView and console
-        self.setCentralWidget(self.gui.widgets["central"])
-
-        self.gui.layouts["left_side"].setContentsMargins(0, 0, 0, 0)
-        self.gui.layouts["left_side"].addWidget(self.gui.image_view, stretch = 4) 
+        self.gui = ScantelligentGUI(self.paths["icon_folder"])
         
-        # Left Section: Graphic and Console (grouped vertically)
-        self.gui.widgets["left_side"].setLayout(self.gui.layouts["left_side"])
-        self.gui.layouts["main"].addWidget(self.gui.widgets["left_side"], stretch = 4)
-        self.gui.layouts["main"].addLayout(self.gui.layouts["toolbar"], 1)
-        self.gui.widgets["central"].setLayout(self.gui.layouts["main"])
-
-        # Initialize the console, then activate keys and buttons
-        self.console_init()
+        self.setup_connections()
         self.config_init()
-        self.connect_keys()
-
-        # Ensure the central widget can receive keyboard focus
-        self.gui.widgets["central"].setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
-        self.gui.widgets["central"].setFocus()
-        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
-        self.setFocus()
-        self.activateWindow()
 
         # Check / set up hardware connections
         self.connect_camera()
@@ -99,15 +41,21 @@ class AppWindow(QtWidgets.QMainWindow):
         self.connect_nanonis()
         if hasattr(self, "nanonis"): self.nanonis.disconnect()
         self.initialization = False
+        
+        print("Now I will show the GUI")
+        
+        self.gui.show()
 
         # Set up the Experiments class and thread and connect signals and slots
-        self.thread_pool = QtCore.QThreadPool()
-        self.experiment_thread = QtCore.QThread()
-        self.timer = QtCore.QTimer()
+        #self.thread_pool = QtCore.QThreadPool()
+        #self.experiment_thread = QtCore.QThread()
+        #self.timer = QtCore.QTimer()
 
 
 
     def parameters_init(self) -> None:
+        self.initialization = True
+        
         self.paths = {
             "script": os.path.abspath(__file__), # The full path of Scanalyzer.py
             "parent_folder": os.path.dirname(os.path.abspath(__file__)),            
@@ -115,6 +63,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.paths["lib"] = os.path.join(self.paths["parent_folder"], "lib")
         self.paths["sys"] = os.path.join(self.paths["parent_folder"], "sys")
         self.paths["config_file"] = os.path.join(self.paths["sys"], "config.yml")
+        self.paths["parameters_file"] = os.path.join(self.paths["sys"], "parameters.yml")
         self.paths["icon_folder"] = os.path.join(self.paths["parent_folder"], "icons")
 
         icon_files = os.listdir(self.paths["icon_folder"])
@@ -125,7 +74,6 @@ class AppWindow(QtWidgets.QMainWindow):
                 if extension == ".png": self.icons.update({icon_name: QtGui.QIcon(os.path.join(self.paths["icon_folder"], icon_file))})
             except:
                 pass
-        self.setWindowIcon(self.icons.get("scanalyzer"))
 
         # Some attributes
         self.channels = []
@@ -136,7 +84,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.ureg = pint.UnitRegistry()
         self.nanonis_online = False
         self.experiment_status = "idle"
-        self.process = QtCore.QProcess(self)
+        #self.process = QtCore.QProcess(self)
 
         # Image processing flags
         self.processing_flags = {
@@ -161,91 +109,80 @@ class AppWindow(QtWidgets.QMainWindow):
             "experiment": "idle",
             "view": "none"
         }
-
+        
         return
 
-    def gui_init(self) -> None:
-        self.gui = ScantelligentGUI(self.paths["icon_folder"])
-        buttons = self.gui.buttons
-        shortcuts = self.gui.shortcuts
+    def setup_connections(self) -> None:
         
-        # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_nanonis], ["mla", self.update_icons], ["camera", self.update_icons], ["exit", self.on_exit],
-                       ["oscillator", self.toggle_withdraw], ["view", self.update_icons], ["session_folder", self.update_icons],
-                       
-                       ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
-                       
-                       ["tip", self.change_tip_status], ["swap_bias", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
-                       ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons]
-                       ]
-        [connections.append([direction, lambda: self.on_coarse_move(direction)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
+        def connect_console() -> None:
+            # Redirect output to the console
+            self.stdout_redirector = StreamRedirector()
+            self.stdout_redirector.output_written.connect(lambda text: self.gui.console.append(text))
+            sys.stdout = self.stdout_redirector
+            now = datetime.now()
+            self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
+
+            return
         
-        for connection in connections:
-            name = connection[0]
-            connected_function = connection[1]
-            buttons[name].clicked.connect(connected_function)
+        def connect_buttons() -> None:
             
-            if name in shortcuts.keys():
-                shortcut = QtGui.QShortcut(shortcuts[name], self)
-                shortcut.activated.connect(connected_function)
+            buttons = self.gui.buttons
+            shortcuts = self.gui.shortcuts        
+            
+            # Connect the buttons to their respective functions
+            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_nanonis], ["mla", self.update_icons], ["camera", self.update_icons], ["exit", self.on_exit],
+                        ["oscillator", self.toggle_withdraw], ["view", self.update_icons], ["session_folder", self.open_session_folder],
+                        
+                        ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
+                        
+                        ["tip", self.change_tip_status], ["swap_bias", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
+                        ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons]
+                        ]
+            [connections.append([direction, lambda: self.on_coarse_move(direction)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
+            
+            for connection in connections:
+                name = connection[0]
+                connected_function = connection[1]
+                buttons[name].clicked.connect(connected_function)
+                
+                if name in shortcuts.keys():
+                    shortcut = QtGui.QShortcut(shortcuts[name], self.gui)
+                    shortcut.activated.connect(connected_function)
+            
+            return
         
-        # Add buttons to QButtonGroups for exclusive selection and check the defaults
-        QGroup = QtWidgets.QButtonGroup
-        self.gui.background_button_group = QGroup(self)
-        [self.gui.background_button_group.addButton(button) for button in self.gui.background_buttons]
+        def connect_keys() -> None:
+            """
+            QKey = QtCore.Qt.Key
+
+            projection_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_H), self)
+            projection_toggle_shortcut.activated.connect(self.update_icons)
+
+            open_session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_1), self)
+            open_session_folder_shortcut.activated.connect(self.open_session_folder)
+
+            # Direction
+            direction_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_X), self)
+            direction_toggle_shortcut.activated.connect(self.on_toggle_direction)
+            
+            # I/O group
+            exit_shortcuts = [QtGui.QShortcut(QtGui.QKeySequence(keystroke), self) for keystroke in [QKey.Key_Q, QKey.Key_E]]
+            [exit_shortcut.activated.connect(self.on_exit) for exit_shortcut in exit_shortcuts]
+            session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_T), self)
+            session_folder_shortcut.activated.connect(self.open_session_folder)
+            """
+
+            return
         
-        [self.gui.min_button_group, self.gui.max_button_group] = [QGroup(self), QGroup(self)]
-        [self.gui.min_button_group.addButton(button) for button in self.gui.min_radio_buttons]
-        [self.gui.max_button_group.addButton(button) for button in self.gui.max_radio_buttons]
+        connect_console()
+        connect_buttons()
+        connect_keys()
         
-        checked_buttons = [self.gui.radio_buttons[name] for name in ["min_full", "max_full", "bg_none"]]
-        [button.setChecked(True) for button in checked_buttons]
-
-
-
-        # Draw experiments group: to be absorbed in gui_scantelligent.py
-        experiments_layout = self.gui.layouts["experiments"]
-
-        start_stop_layout = self.gui.layouts["start_stop"]
-        self.progress_bar = QtWidgets.QProgressBar()
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(0)
-
-        self.start_stop_button = QtWidgets.QToolButton()
-        self.start_stop_button.setIconSize(QtCore.QSize(20, 20))
-        pause_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPause)
-        start_stop_layout.addWidget(self.progress_bar)
-        start_stop_layout.addWidget(self.start_stop_button)
-        self.update_icons()
-
-        experiments_layout.addWidget(self.gui.comboboxes["experiments"], 0, 0)
-        experiments_layout.addWidget(self.gui.comboboxes["direction"], 0, 1)
-        experiments_layout.addWidget(self.gui.buttons["save"], 2, 1)
-        self.gui.groupboxes["experiments"].setLayout(experiments_layout)
-        
-        [self.gui.layouts["toolbar"].addWidget(self.gui.groupboxes[name]) for name in ["connections", "coarse_control", "parameters", "experiments", "image_processing"]]
-
         return
-
-    def console_init(self) -> None:
-        # Initialize the console
-        self.console_output = QtWidgets.QTextEdit()
-        self.console_output.setReadOnly(True)
-        self.gui.layouts["left_side"].addWidget(self.console_output, stretch = 1)
-
-        # Redirect output to the console
-        self.stdout_redirector = StreamRedirector()
-        self.stdout_redirector.output_written.connect(lambda text: self.console_output.append(text))
-        sys.stdout = self.stdout_redirector
-        now = datetime.now()
-        self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
-
-        return
-
+  
     def config_init(self) -> None:
-        # Read the config file and instantiate hardware configurations
-
+        
+        # Read the config file to get the hardware configuration parameters
         try:
             with open(self.paths.get("config_file"), "r") as file:
                 config = yaml.safe_load(file)
@@ -261,7 +198,7 @@ class AppWindow(QtWidgets.QMainWindow):
                     self.logprint("Warning: scanalyzer path could not be read. {e}", message_type = "error")
                 
                 try:
-                    nanonis_settings = config["nanonis"]
+                    nanonis_settings = config.get("nanonis")
                     tcp_ip = nanonis_settings.get("tcp_ip", "127.0.0.1")
                     tcp_port = nanonis_settings.get("tcp_port", 6501)
                     version_number = nanonis_settings.get("version_number", 13520)
@@ -282,6 +219,20 @@ class AppWindow(QtWidgets.QMainWindow):
                     self.logprint("Error: could not retrieve the Nanonis TCP settings.", message_type = "error")
         except Exception as e:
             self.logprint(f"Error: problem loading config.yml: {e}", message_type = "error")
+        
+        # Read the scan parameters from the parameters file
+        try:
+            with open(self.paths.get("parameters_file"), "r") as file:
+                parameters = yaml.safe_load(file)
+        except Exception as e:
+            self.logprint(f"Error reading the parameters from the parameters.yml file. {e}")
+            
+        scan_parameters = parameters.get("scan_parameters")
+        coarse_parameters = parameters.get("coarse_parameters")
+        
+        self.logprint(scan_parameters)
+        self.logprint(coarse_parameters)
+
         
         return
 
@@ -351,25 +302,6 @@ class AppWindow(QtWidgets.QMainWindow):
         formatted_index = f"{next_index:03d}"
         
         return f"{base_name}_{formatted_index}{extension}"
-
-    def connect_keys(self) -> None:
-        QKey = QtCore.Qt.Key
-
-        projection_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_H), self)
-        projection_toggle_shortcut.activated.connect(self.update_icons)
-
-        open_session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_1), self)
-        open_session_folder_shortcut.activated.connect(self.open_session_folder)
-
-        # Direction
-        direction_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_X), self)
-        direction_toggle_shortcut.activated.connect(self.on_toggle_direction)
-        
-        # I/O group
-        exit_shortcuts = [QtGui.QShortcut(QtGui.QKeySequence(keystroke), self) for keystroke in [QKey.Key_Q, QKey.Key_E]]
-        [exit_shortcut.activated.connect(self.on_exit) for exit_shortcut in exit_shortcuts]
-        session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_T), self)
-        session_folder_shortcut.activated.connect(self.open_session_folder)
 
     # Update GUI according to hardware status
     def update_buttons(self) -> None:
@@ -458,7 +390,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         return
 
-    # Button callbacks
+    # Button slots
     def on_next_chan(self):
         pass
 
@@ -478,29 +410,10 @@ class AppWindow(QtWidgets.QMainWindow):
 
         return
 
-    def update_icons(self):
-        self.logprint("Not implemented yet", message_type = "messsage")
-        try:
-            match self.experiment_status:
-                case "running":
-                    start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
-                    #self.pause_button.setEnabled(True)
-                    #[box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
-                case "idle":
-                    start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay)
-                    #self.pause_button.setEnabled(False)
-                    #[box.setEnabled(True) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
-                case "paused":
-                    start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
-                    #self.pause_button.setEnabled(True)
-                    #self.pause_button.setChecked(True)
-                    #[box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
-                case _:
-                    pass
-            self.start_stop_button.setIcon(start_stop_icon)
-        except Exception as e:
-            self.logprint(e, message_type = "error")
-            pass
+    def update_icons(self) -> None:
+        self.logprint("Not implemented yet", message_type = "message")
+        self.logprint(f"{self.sender()}")
+        return
 
     def view_toggle(self):
         # Toggle view between camera and scan
@@ -516,7 +429,7 @@ class AppWindow(QtWidgets.QMainWindow):
             self.stop_camera()
         print(f"View index is {self.view_index}")
 
-    def launch_scanalyzer(self):
+    def launch_scanalyzer(self) -> None:
         if hasattr(self, "paths") and "scanalyzer_path" in list(self.paths.keys()):
             try:
                 scanalyzer_path = self.paths["scanalyzer_path"]
@@ -527,8 +440,9 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.logprint(f"Failed to launch Scanalyzer: {e}", message_type = "error")
         else:
             self.logprint("Error. Scanalyzer path unknown.", message_type = "error")
+        return
 
-    def open_session_folder(self):
+    def open_session_folder(self) -> None:        
         if hasattr(self, "paths") and "session_path" in list(self.paths.keys()):
             try:
                 session_path = self.paths["session_path"]
@@ -1167,6 +1081,5 @@ class AppWindow(QtWidgets.QMainWindow):
 # Main program
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
-    window = AppWindow()
-    window.show()
+    logic_app = App()
     sys.exit(app.exec())

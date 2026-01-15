@@ -1,0 +1,33 @@
+scan_parameters:
+ 0:
+  name: latest_session
+  I_fb: 400 pA
+  p_gain: 30 pm
+  t_const: 167 us
+ 1:
+  name: standard_scan
+  I_fb: 20 pA
+  p_gain: 8 pm
+  t_const: 167 us
+  v_fwd: 80 nm/s
+  v_bwd: 80 nm/s
+ 2:
+  name: auto_approach
+  I_fb: 20 pA
+  p_gain: 8 pm
+  t_const: 167 us
+  v_fwd: 80 nm/s
+  v_bwd: 80 nm/s
+ 3:
+  name: mapping
+  v_fwd: 10 nm/s
+  v_bwd: 30 nm/s
+coarse_parameters:
+ 0:
+  name: latest_session
+  xy_voltage: 200 V
+  z_voltage: 240 V
+ 1:
+  name: coarse_1
+  xy_voltage: 240 V
+  z_voltage: 240 V

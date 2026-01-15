@@ -5,8 +5,9 @@ from . import GUIItems
 
 
 
-class ScantelligentGUI:
+class ScantelligentGUI(QtWidgets.QMainWindow):
     def __init__(self, icons_path):
+        super().__init__()
         
         # 1: Read icons from file.
         self.icons_path = icons_path
@@ -21,19 +22,21 @@ class ScantelligentGUI:
         self.line_edits = self.make_line_edits()
         self.radio_buttons = self.make_radio_buttons()
         self.lines = self.make_lines()
-        
-        # 3: Set up layouts and populate them with GUI items. Requires GUI items.
+        self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
-        
-        # 4: Make widgets and set their layouts. Requires layouts.
+        self.image_view = self.make_image_view()
         self.widgets = self.make_widgets()
+        self.console = self.make_console()
+        self.shortcuts = self.make_shortcuts()
+                
+        # 3: Populate layouts with GUI items. Requires GUI items.
+        self.populate_layouts()
+        
+        # 4: Make groupboxes and set their layouts. Requires populated layouts.
         self.groupboxes = self.make_groupboxes()
         
-        # 5: Define key shortcuts
-        self.shortcuts = self.make_shortcuts()
-
-        # 6: Create the pyqtgraph imageview
-        self.image_view = self.make_image_view()
+        # 5: Set up the main window layout
+        self.setup_main_window()
 
 
 
@@ -121,7 +124,8 @@ class ScantelligentGUI:
             "nw": make_button("", mtt + "northwest\n(Ctrl + 7)", icon = arrow, rotate_icon = 225),
             
             "save": make_button("", "Save the experiment results to file", icon = icons.get("floppy")),
-            "start": make_button("", "Start experiment"),
+            "start_pause": make_button("", "Start experiment", icon = icons.get("start")),
+            "stop": make_button("", "Stop experiment", icon = icons.get("stop")),
 
             "direction": make_button("", "Change scan direction (X)", icon = icons.get("triple_arrow")),
             "full_data_range": make_button("", sivr + "to the full data range\n(U)", icons.get("100")),
@@ -248,17 +252,26 @@ class ScantelligentGUI:
         }
         
         # Named groups
-        # self.background_button_group = QGroup(self)
         self.background_buttons = [radio_buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise", "bg_inferred"]]
-        #[self.background_button_group.addButton(button) for button in self.background_buttons]
         self.min_radio_buttons = [radio_buttons[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_radio_buttons = [radio_buttons[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
         # Add the button handles to the tooltips
         [radio_buttons[name].changeToolTip(f"gui.radio_buttons[\"{name}\"]", line = 10) for name in radio_buttons.keys()]
         
+        # Add buttons to QButtonGroups for exclusive selection and check the defaults
+        QGroup = QtWidgets.QButtonGroup
+        self.background_button_group = QGroup()
+        [self.background_button_group.addButton(button) for button in self.background_buttons]
+        
+        self.min_button_group = QGroup()
+        self.max_button_group = QGroup()
+        [self.min_button_group.addButton(button) for button in self.min_radio_buttons]
+        [self.max_button_group.addButton(button) for button in self.max_radio_buttons]
+        
         # Initialize
-        radio_buttons["bg_none"].setChecked(True)
+        checked_buttons = [radio_buttons[name] for name in ["min_full", "max_full", "bg_none"]]
+        [button.setChecked(True) for button in checked_buttons]
         
         return radio_buttons
 
@@ -272,9 +285,19 @@ class ScantelligentGUI:
         
         return lines
 
+    def make_progress_bars(self) -> dict:
+        make_progress_bar = self.gui_items.make_progress_bar
+        
+        progress_bars = {
+            "experiment": make_progress_bar("", "Experiment progress")
+        }
+        
+        # Named groups
+        self.experiment_controls = [progress_bars["experiment"]]
+        [self.experiment_controls.append(self.buttons[name]) for name in ["start_pause", "stop", "save"]]
+        
+        return progress_bars
 
-
-    # 3: Set up layouts and populate them with GUI items. Requires GUI items.
     def make_layouts(self) -> dict:
         make_layout = self.gui_items.make_layout
         
@@ -294,7 +317,7 @@ class ScantelligentGUI:
             "arrows": make_layout("g"),
 
             "experiments": make_layout("g"),
-            "start_stop": make_layout("h"),
+            "experiment_controls": make_layout("h"),
 
             "image_processing": make_layout("v"),
             "background_buttons": make_layout("h"),
@@ -303,56 +326,13 @@ class ScantelligentGUI:
             "empty": make_layout("v")
         }
         
-        # Add items to the layouts        
-        [layouts["connections"].addWidget(button, int(i / 4), i % 4) for i, button in enumerate(self.connection_buttons)]
-        
-        ca_layout = layouts["coarse_actions"]
-        [ca_layout.addWidget(checkbox, i, 0) for i, checkbox in enumerate(self.action_checkboxes)]
-        [ca_layout.addWidget(button, i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
-        [ca_layout.addWidget(line_edit, i + 1, 2) for i, line_edit in enumerate(self.action_line_edits)]
-        [ca_layout.addWidget(label, i + 1, 3) for i, label in enumerate(self.steps_labels)]
-        
-        [layouts["arrows"].addWidget(button, int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
-        [layouts["parameters"].addWidget(box, 0, i) for i, box in enumerate(self.parameter_line_0)]
-        [layouts["parameters"].addWidget(box, 1, i) for i, box in enumerate(self.parameter_line_1)]
-        [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
-        
-        p_layout = layouts["matrix_processing"]
-        [p_layout.addWidget(self.checkboxes[name], 0, i) for i, name in enumerate(["sobel", "normal", "laplace"])]
-        [p_layout.addWidget(self.checkboxes[name], i + 1, 0) for i, name in enumerate(["gauss", "fft"])]
-        [p_layout.addWidget(self.labels[name], i + 1, 1) for i, name in enumerate(["width", "show"])]
-        p_layout.addWidget(self.line_edits["gaussian_width"], 1, 2)
-        p_layout.addWidget(self.comboboxes["projection"], 2, 2)        
-        
-        l_layout = layouts["limits"]
-        [l_layout.addWidget(item, i, 0) for i, item in enumerate(self.min_line_edits)]
-        [l_layout.addWidget(item, i, 1) for i, item in enumerate(self.min_radio_buttons)]
-        [l_layout.addWidget(item, i, 2) for i, item in enumerate(self.scale_buttons)]
-        [l_layout.addWidget(item, i, 3) for i, item in enumerate(self.max_radio_buttons)]
-        [l_layout.addWidget(item, i, 4) for i, item in enumerate(self.max_line_edits)]
-        
-        ip_layout = layouts["image_processing"]
-        ip_layout.addWidget(self.labels["background_subtraction"])
-        ip_layout.addLayout(layouts["background_buttons"])
-        ip_layout.addWidget(self.lines["background"])
-        ip_layout.addWidget(self.labels["matrix_operations"])
-        ip_layout.addLayout(layouts["matrix_processing"])
-        ip_layout.addWidget(self.lines["matrix_operations"])
-        ip_layout.addWidget(self.labels["limits"])            
-        ip_layout.addLayout(layouts["limits"])
-        
-        layouts["coarse_control"].addLayout(ca_layout)
-        layouts["coarse_control"].addLayout(layouts["arrows"])
-        
-        # Aesthetics
-        layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
-        layouts["toolbar"].addStretch(1)
-        
         return layouts
 
+    def make_image_view(self) -> pg.ImageView:
+        pg.setConfigOption("imageAxisOrder", "row-major")
+        
+        return pg.ImageView(view = pg.PlotItem())
 
-
-    # 4: Make widgets and set their layouts. Requires layouts.
     def make_widgets(self) -> dict:
         layouts = self.layouts
         QWgt = QtWidgets.QWidget
@@ -364,36 +344,16 @@ class ScantelligentGUI:
             "arrows": QWgt()
         }
         
-        # Set layouts to widgets
-        #widgets["coarse_actions"].setLayout(layouts["coarse_actions"])
-        #widgets["arrows"].setLayout(layouts["arrows"])
-        
-        # Set layouts that are assembled from widgets
-        self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]
-        #[layouts["coarse_control"].addWidget(widget) for widget in [self.coarse_control_widgets]]        
+        self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]     
         
         return widgets
 
-    def make_groupboxes(self) -> dict:
-        make_groupbox = self.gui_items.make_groupbox
-        layouts = self.layouts
+    def make_console(self) -> QtWidgets.QTextEdit:
+        console = QtWidgets.QTextEdit()
+        console.setReadOnly(True)
         
-        groupboxes = {
-            "connections": make_groupbox("Connections", "Connections to hardware (push to check/refresh)"),
-            "parameters": make_groupbox("Scan parameters", "Scan parameters"),
-            "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
-            "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
-            "experiments": make_groupbox("Experiments", "Perform experiments")
-        }
-        
-        # Set layouts for the groupboxes
-        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "parameters", "image_processing"]]
-        
-        return groupboxes
+        return console
 
-
-
-    # 5: Define key shortcuts
     def make_shortcuts(self) -> dict:
         QKey = QtCore.Qt.Key
         QMod = QtCore.Qt.Modifier
@@ -432,8 +392,117 @@ class ScantelligentGUI:
 
 
 
-    # 6: Create the pyqtgraph imageview
-    def make_image_view(self) -> pg.ImageView:
-        pg.setConfigOption("imageAxisOrder", "row-major")
+    # 3: Populate layouts with GUI items. Requires GUI items.
+    def populate_layouts(self) -> None:
+        layouts = self.layouts
         
-        return pg.ImageView(view = pg.PlotItem())
+        # Add items to the layouts        
+        [layouts["connections"].addWidget(button, int(i / 4), i % 4) for i, button in enumerate(self.connection_buttons)]
+        
+        ca_layout = layouts["coarse_actions"]
+        [ca_layout.addWidget(checkbox, i, 0) for i, checkbox in enumerate(self.action_checkboxes)]
+        [ca_layout.addWidget(button, i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
+        [ca_layout.addWidget(line_edit, i + 1, 2) for i, line_edit in enumerate(self.action_line_edits)]
+        [ca_layout.addWidget(label, i + 1, 3) for i, label in enumerate(self.steps_labels)]
+        
+        [layouts["arrows"].addWidget(button, int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
+        [layouts["parameters"].addWidget(box, 0, i) for i, box in enumerate(self.parameter_line_0)]
+        [layouts["parameters"].addWidget(box, 1, i) for i, box in enumerate(self.parameter_line_1)]
+        [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
+        
+        [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
+        e_layout = layouts["experiments"]
+        [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiments", "direction"])]
+        e_layout.addLayout(layouts["experiment_controls"], 1, 0, 2, 1)
+        
+        p_layout = layouts["matrix_processing"]
+        [p_layout.addWidget(self.checkboxes[name], 0, i) for i, name in enumerate(["sobel", "normal", "laplace"])]
+        [p_layout.addWidget(self.checkboxes[name], i + 1, 0) for i, name in enumerate(["gauss", "fft"])]
+        [p_layout.addWidget(self.labels[name], i + 1, 1) for i, name in enumerate(["width", "show"])]
+        p_layout.addWidget(self.line_edits["gaussian_width"], 1, 2)
+        p_layout.addWidget(self.comboboxes["projection"], 2, 2)        
+        
+        l_layout = layouts["limits"]
+        [l_layout.addWidget(item, i, 0) for i, item in enumerate(self.min_line_edits)]
+        [l_layout.addWidget(item, i, 1) for i, item in enumerate(self.min_radio_buttons)]
+        [l_layout.addWidget(item, i, 2) for i, item in enumerate(self.scale_buttons)]
+        [l_layout.addWidget(item, i, 3) for i, item in enumerate(self.max_radio_buttons)]
+        [l_layout.addWidget(item, i, 4) for i, item in enumerate(self.max_line_edits)]
+        
+        ip_layout = layouts["image_processing"]
+        ip_layout.addWidget(self.labels["background_subtraction"])
+        ip_layout.addLayout(layouts["background_buttons"])
+        ip_layout.addWidget(self.lines["background"])
+        ip_layout.addWidget(self.labels["matrix_operations"])
+        ip_layout.addLayout(layouts["matrix_processing"])
+        ip_layout.addWidget(self.lines["matrix_operations"])
+        ip_layout.addWidget(self.labels["limits"])            
+        ip_layout.addLayout(layouts["limits"])
+        
+        layouts["coarse_control"].addLayout(ca_layout)
+        layouts["coarse_control"].addLayout(layouts["arrows"])
+        
+        return
+
+
+
+    # 4: Make widgets and groupboxes and set their layouts. Requires layouts.
+    def make_groupboxes(self) -> dict:
+        make_groupbox = self.gui_items.make_groupbox
+        layouts = self.layouts
+        
+        groupboxes = {
+            "connections": make_groupbox("Connections", "Connections to hardware (push to check/refresh)"),
+            "parameters": make_groupbox("Scan parameters", "Scan parameters"),
+            "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
+            "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
+            "experiments": make_groupbox("Experiments", "Perform experiments"),
+            
+            "dummy": make_groupbox("Dummy", "Invisible groupbox to swap out layouts to make other groupboxes collapse")
+        }
+
+        # Set layouts for the groupboxes
+        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "parameters", "experiments", "image_processing"]]
+        
+        # Draw experiments group: to be absorbed in gui_scantelligent.py        
+        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "coarse_control", "parameters", "experiments", "image_processing"]]
+        
+        return groupboxes
+
+
+
+    # 5: Set up the main window layout
+    def setup_main_window(self) -> None:
+        layouts = self.layouts
+        widgets = self.widgets
+
+        # Aesthetics
+        layouts["left_side"].setContentsMargins(0, 0, 0, 0)
+        layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
+        layouts["toolbar"].addStretch(1)
+        
+        # Compose the image_view plus console layout
+        layouts["left_side"].addWidget(self.image_view, stretch = 4)
+        layouts["left_side"].addWidget(self.console, stretch = 1)
+        self.widgets["left_side"].setLayout(layouts["left_side"])
+        
+        # Attach the toolbar        
+        layouts["main"].addWidget(self.widgets["left_side"], stretch = 4)
+        layouts["main"].addLayout(layouts["toolbar"], 1)
+        
+        # Set the central widget of the QMainWindow
+        widgets["central"].setLayout(layouts["main"])
+        widgets["central"].setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        widgets["central"].setFocus()
+        
+        # Finish the setup
+        self.setCentralWidget(widgets["central"])
+        self.setWindowTitle("Scantelligent by Peter H. Jacobse")
+        self.setGeometry(100, 100, 1400, 800) # x, y, width, height
+        self.setWindowIcon(self.icons.get("scanalyzer"))
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
+        self.activateWindow()
+        
+        return
+

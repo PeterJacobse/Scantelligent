@@ -15,7 +15,7 @@ class GUIItems:
         box.setCheckable(True)
         return box
 
-    def make_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> QtWidgets.QPushButton:
+    def make_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> SmartPushButton:
         button = SmartPushButton(name)
         button.setObjectName(name)
         button.setToolTip(tooltip)
@@ -42,7 +42,7 @@ class GUIItems:
                 pass
         return label
 
-    def make_radio_button(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> QtWidgets.QRadioButton:
+    def make_radio_button(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> SmartRadioButton:
         button = SmartRadioButton(name)
         button.setObjectName(name)
         button.setToolTip(description)
@@ -55,7 +55,7 @@ class GUIItems:
             except: pass
         return button
     
-    def make_checkbox(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> QtWidgets.QCheckBox:
+    def make_checkbox(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> SmartCheckBox:
         box = SmartCheckBox(name)
         box.setObjectName(name)
         box.setToolTip(description)
@@ -68,7 +68,7 @@ class GUIItems:
             except: pass
         return box
     
-    def make_combobox(self, name: str = "", description: str = "", items: list = []) -> QtWidgets.QComboBox:
+    def make_combobox(self, name: str = "", description: str = "", items: list = []) -> SmartComboBox:
         box = SmartComboBox()
         box.setObjectName(name)
         box.setToolTip(description)
@@ -77,7 +77,7 @@ class GUIItems:
         
         return box
 
-    def make_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> QtWidgets.QLineEdit:
+    def make_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> SmartLineEdit:
         button = SmartLineEdit()
         button.setObjectName(name)
         button.setToolTip(description)
@@ -89,8 +89,20 @@ class GUIItems:
                 except: pass
             try: button.setIcon(icon)
             except: pass
+        
         return button 
-    
+
+    def make_progress_bar(self, name, description: str = "") -> QtWidgets.QProgressBar:
+        bar = QtWidgets.QProgressBar()
+        
+        bar.setObjectName(name)
+        bar.setMinimum(0)
+        bar.setMaximum(100)
+        bar.setValue(0)
+        bar.setToolTip(description)
+        
+        return bar
+
     def make_layout(self, orientation: str = "h") -> QtWidgets.QLayout:
         match orientation:
             case "h":
@@ -148,6 +160,15 @@ class HoverTargetItem(pg.TargetItem):
         elif event.isExit():
             self.text_item.hide()
 
+
+
+class SmartGroupBox(QtWidgets.QGroupBox):
+    """
+    A Collapsible QGroupbox
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
 
 
 class SmartPushButton(QtWidgets.QPushButton):
@@ -278,7 +299,6 @@ class SmartRadioButton(QtWidgets.QRadioButton):
 
 
 
-
 class SmartLineEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit with extra method changeToolTip
@@ -310,4 +330,32 @@ class SmartLineEdit(QtWidgets.QLineEdit):
             pass
 
 
+
+class StreamRedirector(QtCore.QObject):
+    output_written = QtCore.pyqtSignal(str)
+
+    def __init__(self, parent = None):
+        super().__init__(parent)
+        self._buffer = ""
+
+    def write(self, text: str) -> None:
+        if not text:
+            return
+        # Accumulate text and only emit complete lines. This avoids
+        # emitting lone "\n" chunks which caused extra blank lines
+        # in the QTextEdit when using `append` for each write call.
+        self._buffer += text
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            self.output_written.emit(line)
+        
+        return
+
+    def flush(self) -> None:
+        # Emit any remaining partial line (no trailing newline)
+        if self._buffer:
+            self.output_written.emit(self._buffer)
+            self._buffer = ""
+        
+        return
 

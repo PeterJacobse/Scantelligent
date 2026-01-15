@@ -5,11 +5,3 @@ nanonis:
 camera:
  argument: 0
 scanalyzer_path: C:\Scripts\Scanalyzer\Scanalyzer.py
-approach:
- I_fb: 400
- p_gain: 30
- t_const: 167
-motor:
- x_voltage: 240
- y_voltage: 240
- z_voltage: 240
