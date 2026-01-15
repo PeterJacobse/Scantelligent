@@ -20,92 +20,9 @@ class Nanonis(NanonisHardware):
         # Placeholder for callback function
         pass
 
-    def get_grid(self, verbose: bool = True, callback = logprint):
+    def tip(self, withdraw: bool = False, feedback = None) -> dict:
         error_flag = False
-        if hasattr(self, "NTCP"):
-            callback("Error. Existing TCP connection found. Aborting.", color = "red")
-            return False
         
-        if verbose: callback("  [dict] grid = nanonis_functions.get_grid()", color = "blue")
-
-        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
-        try:
-            self.connect()
-            grid_data = self.scan.FrameGet()
-            buffer_data = self.scan.BufferGet()
-        except Exception as e:
-            self.logprint(f"{e}", color = "red")
-            error_flag = True
-        finally:
-            self.disconnect()
-            sleep(.1)
-        
-        if error_flag:
-            return False
-
-        # Save the data to a dictionary
-        grid = {
-            "x": grid_data[0],
-            "y": grid_data[1],
-            "center": [grid_data[0], grid_data[1]],
-            "width": grid_data[2],
-            "height": grid_data[3],
-            "size": [grid_data[2], grid_data[3]],
-            "angle": grid_data[4],
-            "pixels": [buffer_data[2], buffer_data[3]],
-            "aspect_ratio": grid_data[3] / grid_data[2],
-            "pixel_width": grid_data[2] / buffer_data[2],
-            "pixel_height": grid_data[3] / buffer_data[3],
-            "pixel_ratio": buffer_data[3] / buffer_data[2],
-            "num_channels": buffer_data[0],
-            "channel_indices": buffer_data[1]
-        }
-
-        if np.abs(grid["aspect_ratio"] - grid["pixel_ratio"]) > 0.001 and verbose:
-            self.logprint("Warning! The aspect ratio of the scan frame does not correspond to that of the pixels. This will result in rectangular pixels!", color = "red")
-
-        # Construct a local grid with the same size as the Nanonis grid, whose center is at (0, 0)
-        x_coords_local = np.linspace(- grid["width"] / 2, grid["width"] / 2, grid["pixels"][0])
-        y_coords_local = np.linspace(- grid["height"] / 2, grid["height"] / 2, grid["pixels"][1])
-        x_grid_local, y_grid_local = np.meshgrid(x_coords_local, y_coords_local)
-
-        # Apply a rotation
-        cos = np.cos(np.deg2rad(grid["angle"]))
-        sin = np.sin(np.deg2rad(grid["angle"]))
-        x_grid = np.zeros_like(x_grid_local)
-        y_grid = np.zeros_like(y_grid_local)
-
-        for i in range(grid["pixels"][0]):
-            for j in range(grid["pixels"][1]):
-                x_grid[i, j] = x_grid_local[i, j] * cos + y_grid_local[i, j] * sin
-                y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
-
-        # Apply a translation
-        x_grid += grid["x"]
-        y_grid += grid["y"]
-
-        # Add the meshgrids to the grid dictionary
-        grid["x_grid"] = x_grid
-        grid["y_grid"] = y_grid
-
-        # Add vertex information
-        frame_vertices = np.asarray([[x_grid[0, 0], y_grid[0, 0]], [x_grid[-1, 0], y_grid[-1, 0]], [x_grid[-1, -1], y_grid[-1, -1]], [x_grid[0, -1], y_grid[0, -1]]])
-        bottom_left_corner = frame_vertices[0]
-        top_left_corner = frame_vertices[1]
-        grid["vertices"] = frame_vertices
-        grid["bottom_left_corner"] = bottom_left_corner
-        grid["top_left_corner"] = top_left_corner
-        
-        if verbose: self.logprint(f"  grid.keys() = {grid.keys()}", color = "blue")
-
-        return grid
-
-    def tip(self, withdraw: bool = False, feedback = None, callback = logprint):
-        error_flag = False
-        if hasattr(self, "NTCP"):
-            callback("Error. Existing TCP connection found. Aborting.", message_type = "error")
-            return False
-        callback("Test", message_type = "code")
         # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
         try:            
             self.connect()
@@ -136,23 +53,16 @@ class Nanonis(NanonisHardware):
 
         except Exception as e:
             error_flag = True
-            #print(f"{e}", color = "red")
         finally:
-            self.disconnect()
             sleep(.1)
             
-        if error_flag:
-            return False
-        else:
-            return tip_status
+        if error_flag: return False
+        else: return tip_status
 
-    def get_parameters(self):
+    def get_parameters(self) -> dict:
+        """ Function to get scan parameters """
         error_flag = False
-        if hasattr(self, "NTCP"):
-            #print("Error. Existing TCP connection found. Aborting.", color = "red")
-            return False
-        
-        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+
         try:
             self.connect()
             
@@ -170,28 +80,160 @@ class Nanonis(NanonisHardware):
                 "p_gain": p_gain,
                 "t_const": t_const,
                 "i_gain": i_gain,
-                #"v_fwd": v_fwd,
-                #"v_bwd": v_bwd,
-                #"t_fwd": t_fwd,
-                #"t_bwd": t_bwd,
-                #"v_ratio": v_ratio,
+                "v_fwd": v_fwd,
+                "v_bwd": v_bwd,
+                "t_fwd": t_fwd,
+                "t_bwd": t_bwd,
+                "v_ratio": v_ratio,
                 "v_move": v_move,
                 "session_path": session_path
             }
 
-        except Exception as e:
-            #print(f"{e}", color = "red")
+        except:
             error_flag = True
         finally:
-            self.disconnect()
+            sleep(.1)
+        
+        if error_flag: return False
+        else: return parameters
+
+    def get_frame(self) -> dict:
+        """ Function to read the frame data and save it to dict """       
+        error_flag = False
+
+        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+        try:
+            self.connect()
+            frame_data = self.scan.FrameGet()
+
+            # Save the data to a dictionary
+            frame = {
+                "x": frame_data[0],
+                "y": frame_data[1],
+                "center": [frame_data[0], frame_data[1]],
+                "offset": [frame_data[0], frame_data[1]],
+                "width": frame_data[2],
+                "height": frame_data[3],
+                "size": [frame_data[2], frame_data[3]],
+                "scan_range": [frame_data[2], frame_data[3]],
+                "angle": frame_data[4],
+                "aspect_ratio": frame_data[3] / frame_data[2]
+            }
+        
+        except Exception as e:
+            error_flag = True
+        finally:
             sleep(.1)
 
-        if error_flag:
-            return False
-        else:
-            return parameters
+        if error_flag: return False
+        else: return frame
 
-    def change_bias(self, V = None, dt: float = .01, dV: float = .02, dz: float = 1E-9, V_limits = 10):
+    def get_grid(self) -> dict:
+        """ Function to get grid data. It first uses get_frame to ge tthe frame data, and then appends the dictionary data with grid elements """
+        error_flag = False
+        
+        frame = self.get_frame()
+        try:
+            if not frame: raise
+            self.connect()
+            buffer_data = self.scan.BufferGet()
+
+            # Save the data to a dictionary
+            width = frame.get("width")
+            height = frame.get("height")
+            
+            grid = frame | {
+                "pixels": [buffer_data[2], buffer_data[3]],
+                "pixel_width": width / buffer_data[2],
+                "pixel_height": height / buffer_data[3],
+                "pixel_ratio": buffer_data[3] / buffer_data[2],
+                "num_channels": buffer_data[0],
+                "channel_indices": buffer_data[1]                
+            }
+        
+        except Exception as e:
+            error_flag = True
+        finally:
+            sleep(.1)
+        
+        if error_flag: return False
+            
+        try:
+            # Construct a local grid with the same size as the Nanonis grid, with center is at (0, 0)
+            x_coords_local = np.linspace(- grid["width"] / 2, grid["width"] / 2, grid["pixels"][0])
+            y_coords_local = np.linspace(- grid["height"] / 2, grid["height"] / 2, grid["pixels"][1])
+            x_grid_local, y_grid_local = np.meshgrid(x_coords_local, y_coords_local)
+
+            # Apply a rotation
+            cos = np.cos(np.deg2rad(grid["angle"]))
+            sin = np.sin(np.deg2rad(grid["angle"]))
+            x_grid = np.zeros_like(x_grid_local)
+            y_grid = np.zeros_like(y_grid_local)
+
+            for i in range(grid["pixels"][0]):
+                for j in range(grid["pixels"][1]):
+                    x_grid[i, j] = x_grid_local[i, j] * cos + y_grid_local[i, j] * sin
+                    y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
+
+            # Apply a translation
+            x_grid += grid["x"]
+            y_grid += grid["y"]
+
+            # Add the meshgrids to the grid dictionary
+            grid["x_grid"] = x_grid
+            grid["y_grid"] = y_grid
+
+            # Add vertex information
+            frame_vertices = np.asarray([[x_grid[0, 0], y_grid[0, 0]], [x_grid[-1, 0], y_grid[-1, 0]], [x_grid[-1, -1], y_grid[-1, -1]], [x_grid[0, -1], y_grid[0, -1]]])
+            bottom_left_corner = frame_vertices[0]
+            top_left_corner = frame_vertices[1]
+            grid["vertices"] = frame_vertices
+            grid["bottom_left_corner"] = bottom_left_corner
+            grid["top_left_corner"] = top_left_corner
+        except:
+            error_flag = True
+        
+        if error_flag: return False
+        else: return grid
+
+    def get_scan_metadata(self) -> dict:
+        """
+        get_scan_metadata is an appended version of get_grid.
+        get_grid already gets data regarding the properties of the current scan frame
+        To get the names of the recorded channels and the save properties, the grid dictionary is extended with elements read by calling the InSlotsGet and PropsGet methods
+        """
+        error_flag = False
+        
+        grid = self.get_grid()
+        try:
+            self.connect()
+            [signal_names, signal_indices] = self.signals.InSlotsGet()
+            scan_props = self.scan.PropsGet()
+            auto_save = bool(scan_props[1])
+            
+            channel_indices = grid.get("channel_indices") # The indices of the Nanonis signals being recorded in the scan
+            channel_names = []
+            for channel_index in channel_indices:
+                channel_name = signal_names[channel_index]
+                channel_names.append(channel_name)
+            
+            grid.update({
+                "signal_names": signal_names,
+                "signal_indices": signal_indices,
+                "channel_names": channel_names,
+                "channel_indices": channel_indices,
+                "auto_save": auto_save
+                })
+
+        except Exception as e:
+            error_flag = True
+        finally:
+            sleep(.1)
+
+        if error_flag: return False
+        else: return grid
+
+    def change_bias(self, V = None, dt: float = .005, dV: float = .01, dz: float = 1E-9, V_limits = 10) -> float:
         error_flag = False
 
         if type(V) != float and type(V) != int:
@@ -206,9 +248,11 @@ class Nanonis(NanonisHardware):
             self.connect()
                             
             V_old = self.get_V() # Read data from Nanonis
+            if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
+            
             feedback = self.get_feedback()
             tip_height = self.get_z()
-            polarity_difference = np.sign(V) * np.sign(V_old) < 0 # Calculate the polarity and voltage slew values
+            polarity_difference = np.sign(V) * np.sign(V_old) < 0 # True if the sign changes
             
             if V > V_old: delta_V = dV
             else: delta_V = -dV
@@ -228,18 +272,14 @@ class Nanonis(NanonisHardware):
                 self.set_feedback(True) # Turn the feedback back on
 
         except Exception as e:
-            #print(f"{e}", color = "red")
             error_flag = True
         finally:
-            self.disconnect()
             sleep(.1)
 
-        if error_flag:
-            return False
-        else:
-            return V_old
+        if error_flag: return False
+        else: return V_old
 
-    def change_feedback(self, I = None, p_gain = None, t_const = None):
+    def change_feedback(self, I_fb = None, p_gain = None, t_const = None):
         error_flag = False
 
         if type(I) == int or type(I) == float:
@@ -253,55 +293,10 @@ class Nanonis(NanonisHardware):
             self.logprint(f"{e}", color = "red")
             error_flag = True
         finally:
-            self.disconnect()
             sleep(.1)
 
-        if error_flag:
-            return False
-        else:
-            return I_old
-
-    def get_frame(self):
-        """
-        get_scan_data is an appended version of get_grid.
-        get_grid already gets data regarding the properties of the current scan frame
-        To get the names of the recorded channels and the save properties, the grid dictionary is appended
-        """
-        error_flag = False
-        
-        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
-        try:
-            grid = self.get_grid(verbose = False)
-            channel_indices = grid.get("channel_indices") # The indices of the Nanonis signals being recorded in the scan
-            self.connect()
-            [signal_names, signal_indices] = self.signals.InSlotsGet()
-            scan_props = self.scan.PropsGet()
-            auto_save = bool(scan_props[1])
-            
-            channel_names = []
-            for channel_index in channel_indices:
-                channel_name = signal_names[channel_index]
-                channel_names.append(channel_name)
-            
-            frame = grid | {
-                "signal_names": signal_names,
-                "signal_indices": signal_indices,
-                "channel_names": channel_names,
-                "channel_indices": channel_indices,
-                "auto_save": auto_save
-                }
-
-        except Exception as e:
-            #print(f"{e}", color = "red")
-            error_flag = True
-        finally:
-            self.disconnect()
-            sleep(.1)
-
-        if error_flag:
-            return False
-        else:
-            return frame
+        if error_flag: return False
+        else: return I_old
 
     def get_scan(self, channel_index, direction):
         """

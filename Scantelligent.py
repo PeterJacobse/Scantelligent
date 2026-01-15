@@ -65,6 +65,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.setGeometry(100, 100, 1400, 800) # x, y, width, height
         
         # Initialize parameters
+        self.initialization = True
         self.parameters_init()
         self.gui_init()
 
@@ -93,8 +94,11 @@ class AppWindow(QtWidgets.QMainWindow):
         self.activateWindow()
 
         # Check / set up hardware connections
+        self.connect_camera()
+        self.connect_mla()
         self.connect_nanonis()
         if hasattr(self, "nanonis"): self.nanonis.disconnect()
+        self.initialization = False
 
         # Set up the Experiments class and thread and connect signals and slots
         self.thread_pool = QtCore.QThreadPool()
@@ -131,10 +135,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.scale_toggle_index = 0
         self.ureg = pint.UnitRegistry()
         self.nanonis_online = False
-        self.view_index = 0
         self.experiment_status = "idle"
         self.process = QtCore.QProcess(self)
-        self.gui_functions = GUIItems()
 
         # Image processing flags
         self.processing_flags = {
@@ -155,8 +157,9 @@ class AppWindow(QtWidgets.QMainWindow):
             "nanonis": "offline",
             "mla": "offline",
             "camera": "offline",
-            "tip": "offline",
-            "experiment": "idle"
+            "tip": {"withdrawn": True, "feedback": False},
+            "experiment": "idle",
+            "view": "none"
         }
 
         return
@@ -167,16 +170,14 @@ class AppWindow(QtWidgets.QMainWindow):
         shortcuts = self.gui.shortcuts
         
         # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_nanonis], ["mla", self.update_icons],
-                       ["camera", self.update_icons], ["exit", self.on_exit], ["tip", self.update_icons],
-                       ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.update_icons],
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_nanonis], ["mla", self.update_icons], ["camera", self.update_icons], ["exit", self.on_exit],
+                       ["oscillator", self.toggle_withdraw], ["view", self.update_icons], ["session_folder", self.update_icons],
                        
-                       ["nanonis_bias", self.update_icons], ["mla_bias", self.update_icons], ["swap_bias", self.update_icons],
-                       ["set", self.connect_nanonis], ["get", self.update_icons], ["withdraw", self.toggle_withdraw],
-                       ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
+                       ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
                        
-                       ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons],
-                       ["approach", self.update_icons]]
+                       ["tip", self.change_tip_status], ["swap_bias", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
+                       ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons]
+                       ]
         [connections.append([direction, lambda: self.on_coarse_move(direction)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
         
         for connection in connections:
@@ -363,9 +364,6 @@ class AppWindow(QtWidgets.QMainWindow):
         # Direction
         direction_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_X), self)
         direction_toggle_shortcut.activated.connect(self.on_toggle_direction)
-
-        withdraw_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_W), self)
-        withdraw_shortcut.activated.connect(self.toggle_withdraw)
         
         # I/O group
         exit_shortcuts = [QtGui.QShortcut(QtGui.QKeySequence(keystroke), self) for keystroke in [QKey.Key_Q, QKey.Key_E]]
@@ -387,7 +385,7 @@ class AppWindow(QtWidgets.QMainWindow):
             [button.setEnabled(True) for button in self.gui.arrow_buttons]
         
         elif self.status["nanonis"] == "running":
-            buttons["tip"].setEnabled(False)
+            #buttons["tip"].setEnabled(False)
             buttons["nanonis"].changeToolTip("Nanonis: active TCP connection")
             buttons["nanonis"].setStyleSheet(style_sheets["running"])
             
@@ -395,7 +393,7 @@ class AppWindow(QtWidgets.QMainWindow):
             [button.setEnabled(False) for button in self.gui.arrow_buttons]
     
         else:
-            buttons["tip"].setEnabled(False)
+            #buttons["tip"].setEnabled(False)
             buttons["tip"].changeToolTip("Tip status: unknown")
             buttons["tip"].setStyleSheet(style_sheets["disconnected"])
 
@@ -410,48 +408,53 @@ class AppWindow(QtWidgets.QMainWindow):
             if hasattr(self, "measurements"): delattr(self, "measurements")
             self.status["nanonis"] = "offline"
             self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "code")
-
-
-
-        if not self.status["tip"] == "online": #.get("withdrawn", False)
-            buttons["retract"].setEnabled(True)
-            buttons["advance"].setEnabled(True)
-            buttons["approach"].setEnabled(True)
-
-            buttons["tip"].changeToolTip("Tip status: withdrawn")
+            
+            buttons["tip"].blockSignals(False)
+            buttons["nanonis"].blockSignals(False)
+            
+            return
+        
+        # Tip status
+        if self.status["tip"].get("withdrawn"):
+            buttons["tip"].changeToolTip("Tip withdrawn; click to land")
+            buttons["tip"].setIcon(self.icons.get("withdrawn"))
             buttons["tip"].setStyleSheet(style_sheets["idle"])
-            buttons["withdraw"].changeToolTip("land")
+            buttons["withdraw"].setIcon(self.icons.get("approach"))
+            buttons["withdraw"].changeToolTip("Land")
             self.gui.checkboxes["withdraw"].setEnabled(False)
 
         else:
-            buttons["retract"].setEnabled(False)
-            buttons["advance"].setEnabled(False)
-            buttons["approach"].setEnabled(False)
+            [button.setEnabled(False) for button in self.gui.action_buttons[1:]]
+            buttons["tip"].setIcon(self.icons.get("contact"))
+            buttons["withdraw"].setEnabled(True)
+            buttons["withdraw"].setIcon(self.icons.get("withdraw"))
+            buttons["withdraw"].changeToolTip("Withdraw")
+            self.gui.checkboxes["withdraw"].setEnabled(True)
         
-            if self.status["tip"] == "feedback":
-                buttons["tip"].changeToolTip("Tip status: in feedback")
-                buttons["tip"].setStyleSheet(style_sheets["connected"])
-                buttons["withdraw"].setText("Withdraw,")
-                self.gui.checkboxes["withdraw"].setEnabled(True)
+            if self.status["tip"].get("feedback"):
+                buttons["tip"].changeToolTip("Tip in feedback; click to toggle feedback off")
+                buttons["tip"].setStyleSheet(style_sheets["connected"])                
             else:
-                buttons["tip"].changeToolTip("Tip status: constant height")
+                buttons["tip"].changeToolTip("Tip in constant height: click to toggle feedback on")
                 buttons["tip"].setStyleSheet(style_sheets["hold"])
-                buttons["withdraw"].setText("Withdraw,")
-                self.gui.checkboxes["withdraw"].setEnabled(True)
-
-        if not hasattr(self, "parameters"):
-            self.logprint("Error. Parameters could not be retrieved.", message_type = "error")
-            return False
+        
+        if not hasattr(self, "parameters"): return
         
         nanonis_bias = self.parameters.get("bias", None)
         mla_bias = self.parameters.get("mla_bias", None)
         I_fb = self.parameters.get("I_fb", None)
+        p_gain = self.parameters.get("p_gain", None)
+        t_const = self.parameters.get("t_const", None)
+        
+        I_fb_pA = I_fb * 1E12 if I_fb is not None else None
+        p_gain_pm = p_gain * 1E12 if p_gain is not None else None
+        t_const_us = t_const * 1E6 if t_const is not None else None
 
-        self.gui.line_edits["nanonis_bias"].setText(f"{nanonis_bias:.3f}" if nanonis_bias is not None else "")
-        self.gui.line_edits["mla_bias"].setText(f"{mla_bias:.3f}" if mla_bias is not None else "")
-        self.gui.line_edits["I_fb"].setText(f"{I_fb:.3f}" if I_fb is not None else "")
-        #self.p_gain_box.setText(f"{np.round(self.parameters["p_gain"] * 1E12, 3)}") # In pm
-        #self.t_const_box.setText(f"{np.round(self.parameters["t_const"] * 1E6, 3)}") # In us
+        self.gui.line_edits["nanonis_bias"].setText(f"{nanonis_bias:.2f} V" if nanonis_bias is not None else "")
+        self.gui.line_edits["mla_bias"].setText(f"{mla_bias:.2f} V" if mla_bias is not None else "")
+        self.gui.line_edits["I_fb"].setText(f"{I_fb_pA:.0f} pA" if I_fb_pA is not None else "")
+        self.gui.line_edits["p_gain"].setText(f"{p_gain_pm:.0f} pm" if p_gain_pm is not None else "") # In pm
+        self.gui.line_edits["t_const"].setText(f"{t_const_us:.0f} us" if t_const_us is not None else "") # In us
 
         return
 
@@ -476,21 +479,22 @@ class AppWindow(QtWidgets.QMainWindow):
         return
 
     def update_icons(self):
+        self.logprint("Not implemented yet", message_type = "messsage")
         try:
             match self.experiment_status:
                 case "running":
                     start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
-                    self.pause_button.setEnabled(True)
-                    [box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
+                    #self.pause_button.setEnabled(True)
+                    #[box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
                 case "idle":
                     start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay)
-                    self.pause_button.setEnabled(False)
-                    [box.setEnabled(True) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
+                    #self.pause_button.setEnabled(False)
+                    #[box.setEnabled(True) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
                 case "paused":
                     start_stop_icon = QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaStop)
-                    self.pause_button.setEnabled(True)
-                    self.pause_button.setChecked(True)
-                    [box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
+                    #self.pause_button.setEnabled(True)
+                    #self.pause_button.setChecked(True)
+                    #[box.setEnabled(False) for box in [self.comboboxes["experiments"], self.comboboxes["direction"]]]
                 case _:
                     pass
             self.start_stop_button.setIcon(start_stop_icon)
@@ -537,15 +541,11 @@ class AppWindow(QtWidgets.QMainWindow):
         return
 
     def on_exit(self):
-        """Ensures the thread is stopped when the window is closed."""
-        #if self.is_camera_running:
-        #    self.stop_camera()
-        #event.accept()
-        """
-        self.experiments.stop() # Set stop flag
-        self.experiment_thread.quit() # Quit the thread's event loop
-        self.experiment_thread.wait() # Wait for the thread to actually finish
-        """
+        try: self.nanonis.disconnect()
+        except: pass
+        if hasattr(self, "nanonis"): delattr(self, "nanonis")
+        if hasattr(self, "measurements"): delattr(self, "measurements")
+            
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
         QtWidgets.QApplication.instance().quit()
 
@@ -555,40 +555,59 @@ class AppWindow(QtWidgets.QMainWindow):
 
 
     # Hardware connections
-    def connect_camera(self, argument) -> None:
-        buttons = self.gui.buttons
-        
+    def connect_camera(self) -> None:
         self.status["camera"] = "offline"
-        buttons["camera"].setText("Camera: offline")
-        buttons["camera"].setStyleSheet(style_sheets["disconnected"])
-
-        try:
-            cap = cv2.VideoCapture(argument)
-            
-            if not cap.isOpened(): # Check if the camera opened successfully
-                raise
-            else:
-                cap.release()
-                self.status["camera"] = "online"
-
-                buttons["camera"].changeToolTip("Camera: online")
-                buttons["camera"].setStyleSheet(style_sheets["connected"])
-
-        except Exception as e:
-            self.logprint("Could not connect the camera.")
         
-        return    
+        self.gui.buttons["camera"].changeToolTip("Camera: offline")
+        self.gui.buttons["camera"].setStyleSheet(style_sheets["disconnected"])
+        
+        argument = self.hardware.get("argument")
+        
+        if 2 == 2:
+            return
+        else:
+    
+            buttons = self.gui.buttons
+            
+            self.status["camera"] = "offline"
+            buttons["camera"].setText("Camera: offline")
+            buttons["camera"].setStyleSheet(style_sheets["disconnected"])
+
+            try:
+                cap = cv2.VideoCapture(argument)
+                
+                if not cap.isOpened(): # Check if the camera opened successfully
+                    raise
+                else:
+                    cap.release()
+                    self.status["camera"] = "online"
+
+                    buttons["camera"].changeToolTip("Camera: online")
+                    buttons["camera"].setStyleSheet(style_sheets["connected"])
+
+            except Exception as e:
+                self.logprint("Could not connect the camera.")
+            
+            return    
 
     def connect_mla(self) -> None:
-        pass
+        self.status["mla"] = "offline"
+        
+        self.gui.buttons["mla"].changeToolTip("Multifrequency Lockin Amplifier: offline")
+        self.gui.buttons["mla"].setStyleSheet(style_sheets["disconnected"])
+        
+        return
 
     def connect_nanonis(self) -> None:
         # Verify that Nanonis is online (responds to TCP-IP)
         # If it is, objects representing the classes Measurements and Nanonis will be instantiated
+        # If Nanonis was already online or running, the connection will be reset
         
+        # Start with deleting spurious objects
+        try: self.nanonis.disconnect()
+        except: pass
         if hasattr(self, "nanonis"): delattr(self, "nanonis")
         if hasattr(self, "measurements"): delattr(self, "measurements")
-        self.status["nanonis"] = "offline"
 
         self.logprint("Attempting to connect to Nanonis", message_type = "message")
         try:
@@ -605,6 +624,7 @@ class AppWindow(QtWidgets.QMainWindow):
             self.logprint("[str] status[\"nanonis\"] = \"online\"", message_type = "code")
             self.logprint("Success! I also instantiated Nanonis() as nanonis", message_type = "success")
 
+            # If Nanonis is online, proceed to request all parameters
             self.on_parameters_request()
     
         except socket.timeout:
@@ -686,9 +706,12 @@ class AppWindow(QtWidgets.QMainWindow):
     # Nanonis functions 
     # Simple data requests over TCP-IP
     def on_parameters_request(self):
+        self.status["nanonis"] = "running"
+        self.gui.buttons["nanonis"].setStyleSheet(style_sheets["running"])
+        
         try:
-            self.logprint("status[\"tip\"] = nanonis.tip()", message_type = "code")
-            tip_status = self.nanonis.tip(callback = self.logprint)
+            if self.initialization: self.logprint("status[\"tip\"] = nanonis.tip()", message_type = "code")
+            tip_status = self.nanonis.tip()
             if not tip_status:
                 self.logprint("Error retrieving the tip status.", message_type = "error")
                 self.status["nanonis"] = "offline"
@@ -696,7 +719,7 @@ class AppWindow(QtWidgets.QMainWindow):
             else:
                 self.status["tip"] = tip_status
             
-            self.logprint("parameters = nanonis.get_parameters()", message_type = "code")
+            if self.initialization: self.logprint("parameters = nanonis.get_parameters()", message_type = "code")
             parameters = self.nanonis.get_parameters()
 
             if not parameters:
@@ -712,14 +735,28 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.paths["experiment_file"] = self.get_next_indexed_filename(self.paths["session_path"], "experiment", ".hdf5")
                 #self.buttons["save"].setText(self.paths["experiment_file"])
 
-                self.logprint("I was able to retrieve the tip status and scan parameters and saved them to dictionaries called 'tip_status' and 'parameters'", message_type = "success")
-                self.logprint(f"[dict] status[\"tip\"] = {tip_status}", message_type = "code")
-                self.logprint(f"parameters.keys() = {parameters.keys()};", message_type = "code")
-                self.logprint(f"The session_path that I obtained from Nanonis ({self.paths['session_path']}) was added to the 'paths' dictionary", message_type = "message")
+                if self.initialization:
+                    self.logprint("I was able to retrieve the tip status and scan parameters and saved them to dictionaries called 'status' and 'parameters'", message_type = "success")
+                    self.logprint(f"[dict] status[\"tip\"] = {tip_status}", message_type = "code")
+                    self.logprint(f"parameters.keys() = {parameters.keys()};", message_type = "code")
+                    self.logprint(f"The session_path that I obtained from Nanonis ({self.paths['session_path']}) was added to the 'paths' dictionary", message_type = "success")
+                
+                self.grid = self.nanonis.get_grid()
+                if self.initialization: 
+                    self.logprint(f"I obtained frame/grid and scan metadata from nanonis, which is available in the 'grid' dictionary", message_type = "message")
+                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "code")
 
         except Exception as e:
             self.logprint(f"Error: {e}", message_type = "error")
-            return False
+        
+        finally:
+            self.nanonis.disconnect()
+            sleep(.1)
+            self.status["nanonis"] = "online"
+            self.gui.buttons["nanonis"].setStyleSheet(style_sheets["connected"])
+            self.update_buttons()
+
+        return
 
     def on_frame_request(self):
         try:
@@ -771,9 +808,31 @@ class AppWindow(QtWidgets.QMainWindow):
             self.logprint(f"{e}", message_type = "error")
 
     # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
-    def toggle_withdraw(self) -> bool:
+    def on_parameters_set(self) -> bool:
         try:
-            if self.status["tip"] == "withdrawn":
+            # Extract the numbers
+            number_matches = re.findall(r"-?\d+\.?\d*", self.gui.line_edits["nanonis_bias"].text())
+            self.logprint(f"{number_matches}", message_type = "error")
+            numbers = [float(x) for x in number_matches]
+            self.logprint(f"{numbers}", message_type = "error")
+            new_V = numbers[0]
+            self.logprint(f"I will try to set the bias to {new_V}")
+            self.nanonis.change_bias(new_V)
+        except:
+            pass
+        finally:
+            self.on_parameters_request()     
+        
+        return
+
+    def toggle_withdraw(self) -> bool:
+        if not hasattr(self, "nanonis"): return False
+        
+        self.status["nanonis"] = "running"
+        self.update_buttons()
+        
+        try:
+            if self.status["tip"].get("withdrawn"):
                 tip_status = self.nanonis.tip(feedback = True)
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
@@ -785,27 +844,30 @@ class AppWindow(QtWidgets.QMainWindow):
                     self.logprint("[dict] status[\"tip\"] = nanonis.tip(withdraw = True)", message_type = "code")
 
         except Exception as e:
-            pass
-
+            self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
+            return False
+        
+        self.status["nanonis"] = "online"
         self.update_buttons()
 
         return True
 
     def change_tip_status(self) -> bool:
         try:
-            if self.status["tip"] == "withdrawn":
+            if self.status["tip"].get("withdrawn"):
                 tip_status = self.nanonis.tip(feedback = True)
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
                     self.logprint("[dict] status[\"tip\"] = nanonis.tip(feedback = True)", message_type = "code")
             else: # Toggle the feedback
-                tip_status = self.nanonis.tip(feedback = not self.tip_status["feedback"])
+                tip_status = self.nanonis.tip(feedback = not self.status["tip"].get("feedback"))
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("[dict] status[\"tip\"] = nanonis.tip(feedback = not tip_status[\"feedback\"])", message_type = "code")
+                    self.logprint("[dict] status[\"tip\"] = nanonis.tip(feedback = not status[\"tip\"].get(\"feedback\"])", message_type = "code")
 
         except Exception as e:
-            pass
+            self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
+            return False
 
         self.update_buttons()
 
