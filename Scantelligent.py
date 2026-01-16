@@ -144,6 +144,8 @@ class App:
                     shortcut = QtGui.QShortcut(shortcuts[name], self.gui)
                     shortcut.activated.connect(connected_function)
             
+            self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
+            
             return
         
         def connect_keys() -> None:
@@ -563,6 +565,26 @@ class App:
             [self.gui.line_edits[tag].setText(f"{params[tag]}") for tag in parameter_names if tag in params.keys()]
         except Exception as e:
             self.logprint(f"Error. {e}", message_type = "error")
+        
+        return
+
+
+
+    # Command executions
+    def execute_command(self) -> None:
+        input_le = self.gui.line_edits["input"]
+        input_le.blockSignals(True)
+        text = input_le.text()
+        input_le.clear()
+        input_le.blockSignals(False)
+        command = f"self.{text}"
+        
+        try:
+            self.logprint(f"{text}", message_type = "code")
+            result = exec(command)
+            self.logprint(f"{result}", message_type = "code")
+        except Exception as e:
+            self.logprint(f"Error: {e}", message_type = "error")
         
         return
 

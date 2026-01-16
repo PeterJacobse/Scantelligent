@@ -233,6 +233,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
+        # Aesthetics
+        [line_edits[name].setStyleSheet("QLineEdit{ background-color: #101010; }") for name in line_edits.keys()]
+        
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
         
@@ -529,7 +532,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Compose the image_view plus consoles layout
         layouts["left_side"].addWidget(self.image_view, stretch = 4)
         layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
-        layouts["left_side"].addLayout(self.layouts["input"], stretch = 1)
+        layouts["left_side"].addWidget(self.line_edits["input"])
         self.widgets["left_side"].setLayout(layouts["left_side"])
         
         # Attach the toolbar        
