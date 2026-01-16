@@ -1,4 +1,4 @@
-import os
+import os, re
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 from typing import Callable
@@ -79,6 +79,21 @@ class GUIItems:
 
     def make_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> SmartLineEdit:
         button = SmartLineEdit()
+        button.setObjectName(name)
+        button.setToolTip(description)
+        button.setText(name)
+
+        if isinstance(icon, QtGui.QIcon):
+            if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
+                try: icon = self.rotate_icon(icon, rotate_icon)
+                except: pass
+            try: button.setIcon(icon)
+            except: pass
+        
+        return button
+
+    def make_unit_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0, unit = None) -> UnitLineEdit:
+        button = UnitLineEdit(unit = str)
         button.setObjectName(name)
         button.setToolTip(description)
         button.setText(name)
@@ -303,8 +318,8 @@ class SmartLineEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit with extra method changeToolTip
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
+        super().__init__()
     
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
@@ -328,6 +343,55 @@ class SmartLineEdit(QtWidgets.QLineEdit):
             self.setToolTip(new_tooltip)
         except:
             pass
+
+
+
+class UnitLineEdit(QtWidgets.QLineEdit):
+    """
+    A QLineEdit with extra method changeToolTip, and which adds a unit after editing is finished
+    """
+    def __init__(self, unit = None, parent = None):
+        super().__init__(parent)
+        self.unit = unit
+        self.editingFinished.connect(self.addUnit)
+    
+    def changeToolTip(self, text: str, line: int = 0) -> None:
+        """
+        Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+        """
+        try:
+            old_tooltip = self.toolTip()
+            tooltip_list = old_tooltip.split("\n")
+            
+            if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                tooltip_list.append(text)
+                new_tooltip = "\n".join(tooltip_list)
+            elif line < 0: # Add a line to the front if the line number is negative
+                new_tooltip_list = [text]
+                [new_tooltip_list.append(item) for item in tooltip_list]
+                new_tooltip = "\n".join(new_tooltip_list)
+            else: # Replace a line
+                tooltip_list[line] = text
+                new_tooltip = "\n".join(tooltip_list)
+
+            self.setToolTip(new_tooltip)
+        except:
+            pass
+    
+    def addUnit(self):
+        self.blockSignals(True)
+        entered_text = self.text()
+        
+        # Extract the numeric part of what was entered
+        number_matches = re.findall(r"-?\d+\.?\d*", entered_text)
+        numbers = [float(x) for x in number_matches]
+        number = numbers[0]
+        
+        # Add the unit to the number        
+        self.setText(f"{number} {self.unit}")
+        self.blockSignals(False)
+        
+        return
 
 
 

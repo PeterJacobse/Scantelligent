@@ -33,17 +33,7 @@ class App:
         self.gui = ScantelligentGUI(self.paths["icon_folder"])
         
         self.setup_connections()
-        self.config_init()
-
-        # Check / set up hardware connections
-        self.connect_camera()
-        self.connect_mla()
-        self.connect_nanonis()
-        if hasattr(self, "nanonis"): self.nanonis.disconnect()
-        self.initialization = False
-        
-        print("Now I will show the GUI")
-        
+        self.config_init()        
         self.gui.show()
 
         # Set up the Experiments class and thread and connect signals and slots
@@ -130,15 +120,15 @@ class App:
             shortcuts = self.gui.shortcuts        
             
             # Connect the buttons to their respective functions
-            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_nanonis], ["mla", self.update_icons], ["camera", self.update_icons], ["exit", self.on_exit],
+            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.update_icons], ["camera", self.update_icons], ["exit", self.on_exit],
                         ["oscillator", self.toggle_withdraw], ["view", self.update_icons], ["session_folder", self.open_session_folder],
                         
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
                         
-                        ["tip", self.change_tip_status], ["swap_bias", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
-                        ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons]
+                        ["tip", self.change_tip_status], ["V_swap", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request]
                         ]
             [connections.append([direction, lambda: self.on_coarse_move(direction)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
+            for i in range(4): connections.append([f"scan_parameters_{i}", lambda index = i: self.load_parameters(index)])
             
             for connection in connections:
                 name = connection[0]
@@ -230,16 +220,109 @@ class App:
         scan_parameters = parameters.get("scan_parameters")
         coarse_parameters = parameters.get("coarse_parameters")
         
-        self.logprint(scan_parameters)
-        self.logprint(coarse_parameters)
+        self.scan_parameters = [scan_parameters.get(i) for i in range(4)]
+        [self.gui.buttons[f"scan_parameters_{i}"].changeToolTip(f"Load scan parameter set {i} ({self.scan_parameters[i].get("name")})") for i in range(4)]
+        
+        # Initialize the scan parameters in the gui as parameter set 0, until a connection to Nanonis is made
+        self.load_parameters(0)
+        
+        return
 
+    def connect_hardware(self) -> None:
+
+        def connect_camera() -> None:
+            self.status["camera"] = "offline"
+            
+            self.gui.buttons["camera"].changeToolTip("Camera: offline")
+            self.gui.buttons["camera"].setStyleSheet(style_sheets["disconnected"])
+            
+            argument = self.hardware.get("argument")
+            
+            if 2 == 2:
+                return
+            else:
+        
+                buttons = self.gui.buttons
+                
+                self.status["camera"] = "offline"
+                buttons["camera"].setText("Camera: offline")
+                buttons["camera"].setStyleSheet(style_sheets["disconnected"])
+
+                try:
+                    cap = cv2.VideoCapture(argument)
+                    
+                    if not cap.isOpened(): # Check if the camera opened successfully
+                        raise
+                    else:
+                        cap.release()
+                        self.status["camera"] = "online"
+
+                        buttons["camera"].changeToolTip("Camera: online")
+                        buttons["camera"].setStyleSheet(style_sheets["connected"])
+
+                except Exception as e:
+                    self.logprint("Could not connect the camera.")
+                
+                return    
+
+        def connect_mla() -> None:
+            self.status["mla"] = "offline"
+            
+            self.gui.buttons["mla"].changeToolTip("Multifrequency Lockin Amplifier: offline")
+            self.gui.buttons["mla"].setStyleSheet(style_sheets["disconnected"])
+            
+            return
+
+        def connect_nanonis() -> None:
+            """
+            Verify that Nanonis is online (responds to TCP-IP)
+            If it is, objects representing the classes Measurements and Nanonis will be instantiated
+            If Nanonis was already online or running, the connection will be reset
+            """
+            
+            # Start with deleting spurious objects
+            try: self.nanonis.disconnect()
+            except: pass
+            if hasattr(self, "nanonis"): delattr(self, "nanonis")
+            if hasattr(self, "measurements"): delattr(self, "measurements")
+
+            self.logprint("Attempting to connect to Nanonis", message_type = "message")
+            try:
+                # This is a low-level TCP-IP connection attempt
+                self.logprint(f"sock.connect({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]})", message_type = "code")
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
+                sock.close()
+                sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
+                
+                self.status["nanonis"] = "online"
+                self.nanonis = Nanonis(hardware = self.hardware) # Make the Nanonis class available
+                self.logprint("[str] status[\"nanonis\"] = \"online\"", message_type = "code")
+                self.logprint("Success! I also instantiated Nanonis() as nanonis", message_type = "success")
+
+                # If Nanonis is online, proceed to request all parameters
+                self.on_parameters_request()
+        
+            except socket.timeout:
+                self.logprint("Failed to connect!", message_type = "error")
+            except Exception:
+                self.logprint("Failed to connect!", message_type = "error")
+            
+            self.update_buttons()
+
+            return
+
+        connect_camera()
+        connect_mla()
+        connect_nanonis()
         
         return
 
 
 
     # Miscellaneous
-    def logprint(self, message: str = "", timestamp: bool = True, message_type: str = "message") -> None:
+    def logprint(self, message: str = "", message_type: str = "message", timestamp: bool = True) -> None:
         """Print a (timestamped) message to the redirected stdout.
 
         Parameters:
@@ -302,6 +385,19 @@ class App:
         formatted_index = f"{next_index:03d}"
         
         return f"{base_name}_{formatted_index}{extension}"
+
+    def load_parameters(self, index) -> None:
+        try:
+            params = self.scan_parameters[index]
+            ks = params.keys()
+            
+            [self.gui.line_edits[tag].setText(f"{params[tag]}") for tag in ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"] if tag in ks]
+        except Exception as e:
+            self.logprint(f"Error. {e}", message_type = "error")
+        
+        return
+
+
 
     # Update GUI according to hardware status
     def update_buttons(self) -> None:
@@ -390,6 +486,8 @@ class App:
 
         return
 
+
+
     # Button slots
     def on_next_chan(self):
         pass
@@ -465,90 +563,6 @@ class App:
 
     def closeEvent(self, event):
         self.on_exit()
-
-
-
-    # Hardware connections
-    def connect_camera(self) -> None:
-        self.status["camera"] = "offline"
-        
-        self.gui.buttons["camera"].changeToolTip("Camera: offline")
-        self.gui.buttons["camera"].setStyleSheet(style_sheets["disconnected"])
-        
-        argument = self.hardware.get("argument")
-        
-        if 2 == 2:
-            return
-        else:
-    
-            buttons = self.gui.buttons
-            
-            self.status["camera"] = "offline"
-            buttons["camera"].setText("Camera: offline")
-            buttons["camera"].setStyleSheet(style_sheets["disconnected"])
-
-            try:
-                cap = cv2.VideoCapture(argument)
-                
-                if not cap.isOpened(): # Check if the camera opened successfully
-                    raise
-                else:
-                    cap.release()
-                    self.status["camera"] = "online"
-
-                    buttons["camera"].changeToolTip("Camera: online")
-                    buttons["camera"].setStyleSheet(style_sheets["connected"])
-
-            except Exception as e:
-                self.logprint("Could not connect the camera.")
-            
-            return    
-
-    def connect_mla(self) -> None:
-        self.status["mla"] = "offline"
-        
-        self.gui.buttons["mla"].changeToolTip("Multifrequency Lockin Amplifier: offline")
-        self.gui.buttons["mla"].setStyleSheet(style_sheets["disconnected"])
-        
-        return
-
-    def connect_nanonis(self) -> None:
-        # Verify that Nanonis is online (responds to TCP-IP)
-        # If it is, objects representing the classes Measurements and Nanonis will be instantiated
-        # If Nanonis was already online or running, the connection will be reset
-        
-        # Start with deleting spurious objects
-        try: self.nanonis.disconnect()
-        except: pass
-        if hasattr(self, "nanonis"): delattr(self, "nanonis")
-        if hasattr(self, "measurements"): delattr(self, "measurements")
-
-        self.logprint("Attempting to connect to Nanonis", message_type = "message")
-        try:
-            # This is a low-level TCP-IP connection attempt
-            self.logprint(f"sock.connect({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]})", message_type = "code")
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
-            sock.close()
-            sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
-            
-            self.status["nanonis"] = "online"
-            self.nanonis = Nanonis(hardware = self.hardware) # Make the Nanonis class available
-            self.logprint("[str] status[\"nanonis\"] = \"online\"", message_type = "code")
-            self.logprint("Success! I also instantiated Nanonis() as nanonis", message_type = "success")
-
-            # If Nanonis is online, proceed to request all parameters
-            self.on_parameters_request()
-    
-        except socket.timeout:
-            self.logprint("Failed to connect!", message_type = "error")
-        except Exception:
-            self.logprint("Failed to connect!", message_type = "error")
-        
-        self.update_buttons()
-
-        return
 
 
 

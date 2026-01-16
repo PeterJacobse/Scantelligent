@@ -6,6 +6,7 @@ scan_parameters:
   t_const: 167 us
  1:
   name: standard_scan
+  V: -1.8 V
   I_fb: 20 pA
   p_gain: 8 pm
   t_const: 167 us
@@ -13,8 +14,9 @@ scan_parameters:
   v_bwd: 80 nm/s
  2:
   name: auto_approach
-  I_fb: 20 pA
-  p_gain: 8 pm
+  V_nanonis: 2 V
+  I_fb: 400 pA
+  p_gain: 36 pm
   t_const: 167 us
   v_fwd: 80 nm/s
   v_bwd: 80 nm/s

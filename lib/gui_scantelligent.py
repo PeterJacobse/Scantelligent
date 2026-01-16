@@ -1,4 +1,4 @@
-import os
+import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 from . import GUIItems
@@ -102,12 +102,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "session_folder": make_button("", "Open the session folder\n(1)", icon = icons.get("folder")),
             
             "tip": make_button("", "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
-            "swap_bias": make_button("<>", "Swap the bias between Nanonis and the MLA"),
+            "V_swap": make_button("", "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
             "set": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
             "get": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "default_parameters_0": make_button("", "Load default parameter set 0", icon = icons.get("0")),
-            "default_parameters_1": make_button("", "Load default parameter set 1", icon = icons.get("1")),
-            "default_parameters_2": make_button("", "Load default parameter set 2", icon = icons.get("2")),
+            "scan_parameters_0": make_button("", "Load scan parameter set 0\n(Ctrl + 0)", icon = icons.get("0")),
+            "scan_parameters_1": make_button("", "Load scan parameter set 1\n(Ctrl + 1)", icon = icons.get("1")),
+            "scan_parameters_2": make_button("", "Load scan parameter set 2\n(Ctrl + 2)", icon = icons.get("2")),
+            "scan_parameters_3": make_button("", "Load scan parameter set 3\n(Ctrl + 3)", icon = icons.get("3")),
             
             "withdraw": make_button("", "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
             "retract": make_button("", "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
@@ -138,6 +139,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "exit", "scanalyzer", "view", "oscillator", "session_folder"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
         self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
+        self.scan_parameter_sets = [buttons[f"scan_parameters_{i}"] for i in range(4)]
         self.scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
 
         # Add the button handles to the tooltips
@@ -189,6 +191,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_line_edits(self) -> dict:
         make_line_edit = self.gui_items.make_line_edit
+        make_unit_line_edit = self.gui_items.make_unit_line_edit
         buttons = self.buttons
         
         line_edits = {
@@ -196,11 +199,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "h_steps": make_line_edit("100", "Steps in the horizontal direction"),
             "minus_z_steps": make_line_edit("0", "Steps in the -Z (advance) direction"),
 
-            "nanonis_bias": make_line_edit("", "Nanonis bias\n(Ctrl + P) to set"),
-            "mla_bias": make_line_edit("", "MLA bias\n(Ctrl + P) to set"),
+            "V_nanonis": make_line_edit("", "Nanonis bias\n(Ctrl + P) to set"),
+            "V_mla": make_line_edit("", "MLA bias\n(Ctrl + P) to set"),
             "I_fb": make_line_edit("", "Feedback current in pA\n(Ctrl + P) to set"),
             "p_gain": make_line_edit("", "Proportional gain in pm\n(Ctrl + P) to set"),
             "t_const": make_line_edit("", "Time constant in pm\n(Ctrl + P) to set"),
+            "v_fwd": make_line_edit("", "Tip forward speed in nm/s\n(Ctrl + P) to set"),
+            "v_bwd": make_line_edit("", "Tip backward speed in nm/s\n(Ctrl + P) to set"),
 
             "min_full": make_line_edit("", "minimum value of scan data range"),
             "max_full": make_line_edit("", "maximum value of scan data range"),
@@ -216,8 +221,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Named groups
-        self.parameter_line_0 = [buttons["tip"], line_edits["nanonis_bias"], buttons["swap_bias"], line_edits["mla_bias"], line_edits["I_fb"], buttons["set"], buttons["get"]]
-        self.parameter_line_1 = [buttons["default_parameters_0"], buttons["default_parameters_1"], buttons["default_parameters_2"], line_edits["p_gain"], line_edits["t_const"]]
+        self.parameter_line_0 = [buttons["tip"], line_edits["V_nanonis"], buttons["V_swap"], line_edits["V_mla"], line_edits["I_fb"], buttons["set"], buttons["get"]]
+        self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd", "v_bwd"]]
         
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
@@ -308,6 +313,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "toolbar": make_layout("v"),
             "connections": make_layout("g"),
             "parameters": make_layout("g"),
+            "scan_parameter_sets": make_layout("h"),
             "channel_navigation": make_layout("h"),
 
             "bias_buttons": make_layout("h"),
@@ -376,6 +382,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "tip": QSeq(QMod.CTRL | QKey.Key_Space),
             "set": QSeq(QMod.CTRL | QKey.Key_P),
             "get": QSeq(QKey.Key_P),
+            "scan_parameters_0": QSeq(QMod.CTRL | QKey.Key_0),
+            "scan_parameters_1": QSeq(QMod.CTRL | QKey.Key_1),
+            "scan_parameters_2": QSeq(QMod.CTRL | QKey.Key_2),
+            "scan_parameters_3": QSeq(QMod.CTRL | QKey.Key_3),            
             
             "direction": QSeq(QKey.Key_X),            
             "full_data_range": QSeq(QMod.SHIFT | QKey.Key_U),
@@ -385,7 +395,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Add keys for moving in directions
-        direction_keys = {"n": QKey.Key_Up, "ne": QKey.Key_9, "e": QKey.Key_Right, "se": QKey.Key_3, "s": QKey.Key_Down, "sw": QKey.Key_1, "w": QKey.Key_Left, "nw": QKey.Key_7}
+        direction_keys = {"n": QKey.Key_Up, "e": QKey.Key_Right, "s": QKey.Key_Down, "w": QKey.Key_Left}
         [shortcuts.update({direction: QSeq(QMod.CTRL | keystroke)}) for direction, keystroke in direction_keys.items()]
         
         return shortcuts
@@ -406,8 +416,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [ca_layout.addWidget(label, i + 1, 3) for i, label in enumerate(self.steps_labels)]
         
         [layouts["arrows"].addWidget(button, int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
+        [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
         [layouts["parameters"].addWidget(box, 0, i) for i, box in enumerate(self.parameter_line_0)]
-        [layouts["parameters"].addWidget(box, 1, i) for i, box in enumerate(self.parameter_line_1)]
+        layouts["parameters"].addLayout(layouts["scan_parameter_sets"], 1, 0, 1, 3)        
+        [layouts["parameters"].addWidget(box, 1, i + 3) for i, box in enumerate(self.parameter_line_1)]
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
