@@ -1,4 +1,4 @@
-import os, sys, re, html, yaml, cv2, pint, socket
+import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 from lib.functions import Experiments, CameraWorker, TaskWorker
@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000",
-          "white": "#ffffff", "blue": "#20a0ff", "dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+          "white": "#ffffff", "blue": "#20a0ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
 style_sheets = {
     "neutral": f"background-color: {colors["black"]};",
     "connected": f"background-color: {colors["dark_green"]};",
@@ -19,7 +19,7 @@ style_sheets = {
     "hold": f"background-color: {colors["dark_orange"]};",
     "idle": f"background-color: {colors["purple"]};"
     }
-text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "success": colors["green"]}
+text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "success": colors["green"], "warning": colors["orange"]}
 
 
 
@@ -45,6 +45,7 @@ class App:
 
     def parameters_init(self) -> None:
         self.initialization = True
+        atexit.register(self.cleanup)
         
         self.paths = {
             "script": os.path.abspath(__file__), # The full path of Scanalyzer.py
@@ -107,8 +108,9 @@ class App:
         def connect_console() -> None:
             # Redirect output to the console
             self.stdout_redirector = StreamRedirector()
-            self.stdout_redirector.output_written.connect(lambda text: self.gui.console.append(text))
+            self.stdout_redirector.output_written.connect(lambda text: self.gui.consoles["output"].append(text))
             sys.stdout = self.stdout_redirector
+            #sys.stderr = self.stdout_redirector
             now = datetime.now()
             self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
 
@@ -120,15 +122,18 @@ class App:
             shortcuts = self.gui.shortcuts        
             
             # Connect the buttons to their respective functions
-            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.update_icons], ["camera", self.update_icons], ["exit", self.on_exit],
-                        ["oscillator", self.toggle_withdraw], ["view", self.update_icons], ["session_folder", self.open_session_folder],
+            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.on_exit],
+                        ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.open_session_folder],
                         
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
                         
                         ["tip", self.change_tip_status], ["V_swap", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request]
                         ]
             [connections.append([direction, lambda: self.on_coarse_move(direction)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
-            for i in range(4): connections.append([f"scan_parameters_{i}", lambda index = i: self.load_parameters(index)])
+            connections.append([f"scan_parameters_0", lambda: self.load_parameters(0)])
+            connections.append([f"scan_parameters_0", lambda: self.load_parameters(1)])
+            connections.append([f"scan_parameters_0", lambda: self.load_parameters(2)])
+            connections.append([f"scan_parameters_0", lambda: self.load_parameters(3)])
             
             for connection in connections:
                 name = connection[0]
@@ -167,6 +172,7 @@ class App:
         connect_console()
         connect_buttons()
         connect_keys()
+        self.update_buttons()
         
         return
   
@@ -238,6 +244,8 @@ class App:
             
             argument = self.hardware.get("argument")
             
+            self.logprint("Warning. No camera found.", message_type = "warning")
+            
             if 2 == 2:
                 return
             else:
@@ -271,6 +279,8 @@ class App:
             self.gui.buttons["mla"].changeToolTip("Multifrequency Lockin Amplifier: offline")
             self.gui.buttons["mla"].setStyleSheet(style_sheets["disconnected"])
             
+            self.logprint("Warning. MLA not found.", message_type = "warning")
+            
             return
 
         def connect_nanonis() -> None:
@@ -279,14 +289,12 @@ class App:
             If it is, objects representing the classes Measurements and Nanonis will be instantiated
             If Nanonis was already online or running, the connection will be reset
             """
-            
             # Start with deleting spurious objects
-            try: self.nanonis.disconnect()
+            try: self.nanonis.disconnect() # If nanonis is not instantiated yet or removed, it will simply pass
             except: pass
             if hasattr(self, "nanonis"): delattr(self, "nanonis")
             if hasattr(self, "measurements"): delattr(self, "measurements")
 
-            self.logprint("Attempting to connect to Nanonis", message_type = "message")
             try:
                 # This is a low-level TCP-IP connection attempt
                 self.logprint(f"sock.connect({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]})", message_type = "code")
@@ -298,31 +306,38 @@ class App:
                 
                 self.status["nanonis"] = "online"
                 self.nanonis = Nanonis(hardware = self.hardware) # Make the Nanonis class available
-                self.logprint("[str] status[\"nanonis\"] = \"online\"", message_type = "code")
-                self.logprint("Success! I also instantiated Nanonis() as nanonis", message_type = "success")
+                self.logprint("Successfully connected to Nanonis! I also instantiated Nanonis() as nanonis", message_type = "success")
 
                 # If Nanonis is online, proceed to request all parameters
                 self.on_parameters_request()
         
             except socket.timeout:
-                self.logprint("Failed to connect!", message_type = "error")
+                self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
             except Exception:
-                self.logprint("Failed to connect!", message_type = "error")
-            
-            self.update_buttons()
+                self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
 
             return
 
+        self.logprint("Attempting to connect to hardware", message_type = "message")
         connect_camera()
         connect_mla()
         connect_nanonis()
+        self.update_buttons()
+        self.update_tip_status()
+        self.update_parameter_fields()
         
         return
+
+    def cleanup(self) -> None:
+        try: self.nanonis.disconnect()
+        except: pass
+        if hasattr(self, "nanonis"): delattr(self, "nanonis")
+        if hasattr(self, "measurements"): delattr(self, "measurements")
 
 
 
     # Miscellaneous
-    def logprint(self, message: str = "", message_type: str = "message", timestamp: bool = True) -> None:
+    def logprint(self, message: str = "", message_type: str = "error", timestamp: bool = True) -> None:
         """Print a (timestamped) message to the redirected stdout.
 
         Parameters:
@@ -331,16 +346,10 @@ class App:
         - type: type of message. The style of the message will be selected according to its type
         """
         current_time = datetime.now().strftime("%H:%M:%S")
-        match message_type:
-            case "error":
-                color = text_colors["error"]
-            case "code":
-                timestamp = False
-                color = text_colors["code"]
-            case "success":
-                color = text_colors["success"]
-            case _:
-                color = text_colors["message"]
+        
+        color = text_colors["error"]
+        if message_type in ["message", "code", "success", "warning"]: color = text_colors[message_type]
+        if message_type == "code": timestamp = False
         
         if timestamp: timestamped_message = current_time + f">>  {message}"
         else: timestamped_message = f"{message}"
@@ -352,6 +361,15 @@ class App:
 
         # Print HTML text (QTextEdit.append will render it as rich text).
         print(final, flush = True)
+
+    def extract_number_from_string(self, text: str) -> float | None:
+        number_matches = re.findall(r"-?\d+\.?\d*", text)
+        numbers = [float(x) for x in number_matches]
+        
+        if len(numbers) > 0: number = numbers[0]
+        else: number = None
+        
+        return number
 
     def get_next_indexed_filename(self, folder_path, base_name, extension) -> str:
         # Pattern to match files with the base name and exactly 3 digits for the index
@@ -386,104 +404,166 @@ class App:
         
         return f"{base_name}_{formatted_index}{extension}"
 
-    def load_parameters(self, index) -> None:
-        try:
-            params = self.scan_parameters[index]
-            ks = params.keys()
+
+
+    # Dynamic GUI updates
+    def update_buttons(self) -> None:
+        buttons = self.gui.buttons
+        
+        cam_button = buttons["camera"]
+        mla_button = buttons["mla"]
+        nn_button = buttons["nanonis"]
+        # Activate/deactivate and color buttons according to hardware status
+
+        match self.status["camera"]:
+            case "online":
+                cam_button.changeToolTip("Camera: online")
+                cam_button.setStyleSheet(style_sheets["connected"])
             
-            [self.gui.line_edits[tag].setText(f"{params[tag]}") for tag in ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"] if tag in ks]
-        except Exception as e:
-            self.logprint(f"Error. {e}", message_type = "error")
+            case "running":
+                cam_button.changeToolTip("Camera: active USB connection")
+                cam_button.setStyleSheet(style_sheets["running"])
+            
+            case _:
+                cam_button.changeToolTip("Camera: offline")
+                cam_button.setStyleSheet(style_sheets["disconnected"])
+
+
+
+        match self.status["mla"]:
+            case "online":
+                mla_button.changeToolTip("Multifrequency Lockin Amplifier: online")
+                mla_button.setStyleSheet(style_sheets["connected"])
+                
+                buttons["oscillator"].setEnabled(True)
+            
+            case "running":
+                mla_button.changeToolTip("Multifrequency Lockin Amplifier: active TCP connection")
+                mla_button.setStyleSheet(style_sheets["running"])
+                
+                buttons["oscilator"].setEnabled(False)
+            
+            case _:
+                mla_button.changeToolTip("Nanonis: offline")
+                mla_button.setStyleSheet(style_sheets["disconnected"])
+                
+                buttons["oscillator"].setEnabled(False)
+
+
+
+        match self.status["nanonis"]:
+            case "online":
+                nn_button.changeToolTip("Nanonis: online")
+                nn_button.setStyleSheet(style_sheets["connected"])
+                nn_button.update()
+                
+                [button.setEnabled(True) for button in self.gui.action_buttons]
+                [button.setEnabled(True) for button in self.gui.arrow_buttons]
+                buttons["tip"].setEnabled(True)
+            
+            case "running":
+                nn_button.changeToolTip("Nanonis: active TCP connection")
+                nn_button.setStyleSheet(style_sheets["running"])
+                
+                [button.setEnabled(False) for button in self.gui.action_buttons]
+                [button.setEnabled(False) for button in self.gui.arrow_buttons]
+                buttons["tip"].setEnabled(False)
+    
+            case _:
+                nn_button.changeToolTip("Nanonis: offline")
+                nn_button.setStyleSheet(style_sheets["disconnected"])
+                
+                [button.setEnabled(False) for button in self.gui.action_buttons]
+                [button.setEnabled(False) for button in self.gui.arrow_buttons]
+                buttons["tip"].setEnabled(False)                
+                buttons["tip"].changeToolTip("Tip status: unknown")
+                buttons["tip"].setStyleSheet(style_sheets["disconnected"])
+                
+                # If Nanonis is offline, proceed with cleanup and make sure the nanonis and measurements attributes are deleted
+                self.cleanup()
+
+        style = nn_button.styleSheet()
+        nn_button.setStyleSheet(style)
+        [button.update for button in [cam_button, mla_button, nn_button]]
+        
+        self.logprint(f"[dict] status = {self.status}", message_type = "code")
         
         return
 
-
-
-    # Update GUI according to hardware status
-    def update_buttons(self) -> None:
+    def update_tip_status(self) -> None:
         buttons = self.gui.buttons
-        # Activate/deactivate and color buttons according to hardware status
-
-        if self.status["nanonis"] == "online":
-            buttons["tip"].setEnabled(True)
-            buttons["nanonis"].changeToolTip("Nanonis: online")
-            buttons["nanonis"].setStyleSheet(style_sheets["connected"])
-            
-            [button.setEnabled(True) for button in self.gui.action_buttons]
-            [button.setEnabled(True) for button in self.gui.arrow_buttons]
+        tip_button = buttons["tip"]
         
-        elif self.status["nanonis"] == "running":
-            #buttons["tip"].setEnabled(False)
-            buttons["nanonis"].changeToolTip("Nanonis: active TCP connection")
-            buttons["nanonis"].setStyleSheet(style_sheets["running"])
-            
-            [button.setEnabled(False) for button in self.gui.action_buttons]
-            [button.setEnabled(False) for button in self.gui.arrow_buttons]
-    
-        else:
-            #buttons["tip"].setEnabled(False)
-            buttons["tip"].changeToolTip("Tip status: unknown")
-            buttons["tip"].setStyleSheet(style_sheets["disconnected"])
+        if self.status["nanonis"] in ["online", "running"]:
+            if self.status["tip"].get("withdrawn"):
+                tip_button.changeToolTip("Tip withdrawn; click to land")
+                tip_button.setIcon(self.icons.get("withdrawn"))
+                tip_button.setStyleSheet(style_sheets["idle"])
+                buttons["withdraw"].setIcon(self.icons.get("approach"))
+                buttons["withdraw"].changeToolTip("Land")
+                self.gui.checkboxes["withdraw"].setEnabled(False)
 
-            buttons["nanonis"].changeToolTip("Nanonis: offline")
-            buttons["nanonis"].setStyleSheet(style_sheets["disconnected"])
-            
-            [button.setEnabled(False) for button in self.gui.action_buttons]
-            [button.setEnabled(False) for button in self.gui.arrow_buttons]
-            
-            # If Nanonis is offline, proceed with cleanup and make sure the nanonis and measurements attributes are deleted
-            if hasattr(self, "nanonis"): delattr(self, "nanonis")
-            if hasattr(self, "measurements"): delattr(self, "measurements")
-            self.status["nanonis"] = "offline"
-            self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "code")
-            
-            buttons["tip"].blockSignals(False)
-            buttons["nanonis"].blockSignals(False)
-            
-            return
-        
-        # Tip status
-        if self.status["tip"].get("withdrawn"):
-            buttons["tip"].changeToolTip("Tip withdrawn; click to land")
-            buttons["tip"].setIcon(self.icons.get("withdrawn"))
-            buttons["tip"].setStyleSheet(style_sheets["idle"])
-            buttons["withdraw"].setIcon(self.icons.get("approach"))
-            buttons["withdraw"].changeToolTip("Land")
-            self.gui.checkboxes["withdraw"].setEnabled(False)
-
-        else:
-            [button.setEnabled(False) for button in self.gui.action_buttons[1:]]
-            buttons["tip"].setIcon(self.icons.get("contact"))
-            buttons["withdraw"].setEnabled(True)
-            buttons["withdraw"].setIcon(self.icons.get("withdraw"))
-            buttons["withdraw"].changeToolTip("Withdraw")
-            self.gui.checkboxes["withdraw"].setEnabled(True)
-        
-            if self.status["tip"].get("feedback"):
-                buttons["tip"].changeToolTip("Tip in feedback; click to toggle feedback off")
-                buttons["tip"].setStyleSheet(style_sheets["connected"])                
             else:
-                buttons["tip"].changeToolTip("Tip in constant height: click to toggle feedback on")
-                buttons["tip"].setStyleSheet(style_sheets["hold"])
+                [button.setEnabled(False) for button in self.gui.action_buttons[1:]]
+                tip_button.setIcon(self.icons.get("contact"))
+                buttons["withdraw"].setEnabled(True)
+                buttons["withdraw"].setIcon(self.icons.get("withdraw"))
+                buttons["withdraw"].changeToolTip("Withdraw")
+                self.gui.checkboxes["withdraw"].setEnabled(True)
+            
+                if self.status["tip"].get("feedback"):
+                    tip_button.changeToolTip("Tip in feedback; click to toggle feedback off")
+                    tip_button.setStyleSheet(style_sheets["connected"])                
+                else:
+                    tip_button.changeToolTip("Tip in constant height: click to toggle feedback on")
+                    tip_button.setStyleSheet(style_sheets["hold"])
         
-        if not hasattr(self, "parameters"): return
+        return
+
+    def update_parameter_fields(self) -> None:
+        # Enter the scan parameters into the fields
         
-        nanonis_bias = self.parameters.get("bias", None)
-        mla_bias = self.parameters.get("mla_bias", None)
-        I_fb = self.parameters.get("I_fb", None)
-        p_gain = self.parameters.get("p_gain", None)
-        t_const = self.parameters.get("t_const", None)
+        line_edits = self.gui.line_edits
+        comboboxes = self.gui.comboboxes
+
+        channel_names = self.scan_metadata.get("channel_names")
+        comboboxes["channels"].clear()
+        comboboxes["channels"].addItems(channel_names)
         
+        # Add the unit to the number
+        #self.setText(f"{number} {self.unit}")
+        
+        """
+        self.parameters_numbers = self.parameters[0]
+        
+        [parameter_floats.update({name, self.extract_number_from_string(self.scan_parameters[0].get(name, ""))}) for name in parameter_names]        
+        
+        v
         I_fb_pA = I_fb * 1E12 if I_fb is not None else None
         p_gain_pm = p_gain * 1E12 if p_gain is not None else None
         t_const_us = t_const * 1E6 if t_const is not None else None
 
-        self.gui.line_edits["nanonis_bias"].setText(f"{nanonis_bias:.2f} V" if nanonis_bias is not None else "")
-        self.gui.line_edits["mla_bias"].setText(f"{mla_bias:.2f} V" if mla_bias is not None else "")
+        self.gui.line_edits["V_nanonis"].setText(f"{V_nanonis:.2f} V" if V_nanonis is not None else "")
+        self.gui.line_edits["V_mla"].setText(f"{V_mla:.2f} V" if V_mla is not None else "")
         self.gui.line_edits["I_fb"].setText(f"{I_fb_pA:.0f} pA" if I_fb_pA is not None else "")
         self.gui.line_edits["p_gain"].setText(f"{p_gain_pm:.0f} pm" if p_gain_pm is not None else "") # In pm
         self.gui.line_edits["t_const"].setText(f"{t_const_us:.0f} us" if t_const_us is not None else "") # In us
+        """
 
+        return
+
+    def load_parameters(self, index) -> None:
+        try:
+            params = self.scan_parameters[index]
+            
+            parameter_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
+            #for tag in parameter_names:
+            #    if tag in params.keys():
+            
+            [self.gui.line_edits[tag].setText(f"{params[tag]}") for tag in parameter_names if tag in params.keys()]
+        except Exception as e:
+            self.logprint(f"Error. {e}", message_type = "error")
+        
         return
 
 
@@ -510,7 +590,6 @@ class App:
 
     def update_icons(self) -> None:
         self.logprint("Not implemented yet", message_type = "message")
-        self.logprint(f"{self.sender()}")
         return
 
     def view_toggle(self):
@@ -553,11 +632,7 @@ class App:
         return
 
     def on_exit(self):
-        try: self.nanonis.disconnect()
-        except: pass
-        if hasattr(self, "nanonis"): delattr(self, "nanonis")
-        if hasattr(self, "measurements"): delattr(self, "measurements")
-            
+        self.cleanup()            
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
         QtWidgets.QApplication.instance().quit()
 
@@ -635,54 +710,86 @@ class App:
     # Simple data requests over TCP-IP
     def on_parameters_request(self):
         self.status["nanonis"] = "running"
-        self.gui.buttons["nanonis"].setStyleSheet(style_sheets["running"])
-        
+        self.update_buttons()
+        sleep(1)
+
         try:
-            if self.initialization: self.logprint("status[\"tip\"] = nanonis.tip()", message_type = "code")
-            tip_status = self.nanonis.tip()
-            if not tip_status:
-                self.logprint("Error retrieving the tip status.", message_type = "error")
-                self.status["nanonis"] = "offline"
-                self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "code")
+            if self.initialization: self.logprint("Attempting to retrieve information from Nanonis", message_type = "message")
+            
+            # Get tip status
+            if self.initialization: self.logprint("(tip_status, error) = nanonis.tip()", message_type = "code")
+            (tip_status, error) = self.nanonis.tip()
+            
+            if error:
+                self.logprint(f"Error retrieving the tip status: {error}", message_type = "error")
+                raise
             else:
                 self.status["tip"] = tip_status
             
-            if self.initialization: self.logprint("parameters = nanonis.get_parameters()", message_type = "code")
-            parameters = self.nanonis.get_parameters()
-
-            if not parameters:
-                self.logprint("Error retrieving the scan parameters.", message_type = "error")
-                self.status["nanonis"] = "offline"
-                self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "code")
+            # Get scan parameters
+            if self.initialization: self.logprint("(parameters, error) = nanonis.get_parameters()", message_type = "code")
+            (parameters, error) = self.nanonis.get_parameters()
+            
+            if error:
+                self.logprint(f"Error retrieving the scan parameters: {error}", message_type = "error")
+                raise
             else:
-                self.parameters = parameters
+                self.scan_parameters[0].update(parameters)
                 self.paths["session_path"] = parameters.get("session_path")
+                name = self.scan_parameters[0].get("name")
+                
                 self.gui.buttons["session_folder"].setToolTip(f"Open session folder {self.paths['session_path']} (1)")
-
-                # experiment = self.experiment_box.currentText()
                 self.paths["experiment_file"] = self.get_next_indexed_filename(self.paths["session_path"], "experiment", ".hdf5")
-                #self.buttons["save"].setText(self.paths["experiment_file"])
 
                 if self.initialization:
-                    self.logprint("I was able to retrieve the tip status and scan parameters and saved them to dictionaries called 'status' and 'parameters'", message_type = "success")
-                    self.logprint(f"[dict] status[\"tip\"] = {tip_status}", message_type = "code")
-                    self.logprint(f"parameters.keys() = {parameters.keys()};", message_type = "code")
-                    self.logprint(f"The session_path that I obtained from Nanonis ({self.paths['session_path']}) was added to the 'paths' dictionary", message_type = "success")
-                
-                self.grid = self.nanonis.get_grid()
-                if self.initialization: 
-                    self.logprint(f"I obtained frame/grid and scan metadata from nanonis, which is available in the 'grid' dictionary", message_type = "message")
-                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "code")
+                    self.logprint(f"I was able to retrieve the tip status and scan parameters and save them to dictionaries called 'status' and 'scan_parameters[0]' (\"{name}\")", message_type = "success")
+                    self.logprint(f"[dict] status[\"tip\"] = tip_status = {tip_status}", message_type = "code")
+                    self.logprint(f"[dict] scan_parameters[0] = parameters", message_type = "code")
+                    self.logprint(f"scan_parameters[0].keys() = {self.scan_parameters[0].keys()}", message_type = "code")
 
-        except Exception as e:
-            self.logprint(f"Error: {e}", message_type = "error")
+
+
+            # Get grid parameters
+            if self.initialization: self.logprint("(grid, error) = nanonis.get_grid()", message_type = "code")
+            (grid, error) = self.nanonis.get_grid()
+            
+            if error:
+                self.logprint(f"Error retrieving the scan grid: {error}", message_type = "error")
+                raise
+            else:
+                self.grid = grid
+                channels = grid.get("channel_names")
+            
+            # Get scan metadata
+            (scan_metadata, error) = self.nanonis.get_scan_metadata()
+            if error:
+                self.logprint("Error retrieving the scan metadata.", message_type = "error")
+                raise
+            else:
+                self.scan_metadata = scan_metadata
+                
+                if self.initialization:
+                    self.logprint(f"I obtained frame/grid and scan metadata from nanonis, now available in the dictionaries 'grid' and 'scan_metadata'", message_type = "success")
+                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "code")
+                    self.logprint(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "code")
+
+
+            
+            # All operations successful: release the Nanonis connection
+            self.status["nanonis"] = "online"
+            self.nanonis.disconnect()
+            if not self.initialization: self.logprint("Successfully updated the following dictionaries: 'status[\"tip\"]', 'scan_parameters[0]', 'grid', 'scan_metadata'", message_type = "success")
+            sleep(.1)
+
+        except:
+            self.status["nanonis"] = "offline"
+            self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "code")
         
         finally:
-            self.nanonis.disconnect()
-            sleep(.1)
-            self.status["nanonis"] = "online"
-            self.gui.buttons["nanonis"].setStyleSheet(style_sheets["connected"])
+            if self.initialization: self.initialization = False # Switch off the initialization flag after the first parameter retrieval
             self.update_buttons()
+            self.update_tip_status()
+            self.update_parameter_fields()
 
         return
 
@@ -754,75 +861,65 @@ class App:
         return
 
     def toggle_withdraw(self) -> bool:
+        # Return if Nanonis is not online
         if not hasattr(self, "nanonis"): return False
-        
+
         self.status["nanonis"] = "running"
-        self.update_buttons()
+        self.gui.buttons["nanonis"].setStyleSheet(style_sheets["running"])
         
         try:
             if self.status["tip"].get("withdrawn"):
-                tip_status = self.nanonis.tip(feedback = True)
-                if type(tip_status) == dict:
+                (tip_status, error) = self.nanonis.tip({"feedback": True})
+                if error: raise
+                elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("[dict] status[\"tip\"] = nanonis.tip(feedback = True)", message_type = "code")
+                    self.logprint("(status[\"tip\"], error = False) = nanonis.tip({feedback: True})", message_type = "code")
             else:
-                tip_status = self.nanonis.tip(withdraw = True)
-                if type(tip_status) == dict:
+                (tip_status, error) = self.nanonis.tip({"withdraw": True})
+                if error: raise
+                elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("[dict] status[\"tip\"] = nanonis.tip(withdraw = True)", message_type = "code")
+                    self.logprint("(status[\"tip\"], error = False) = nanonis.tip({withdraw: True})", message_type = "code")
+            
+            self.status["nanonis"] = "running"
 
         except Exception as e:
-            self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
-            return False
-        
-        self.status["nanonis"] = "online"
+            if error: self.logprint(f"Error toggling the tip status: {error}", message_type = "error")
+            else: self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
+            self.status["nanonis"] = "offline"
+
         self.update_buttons()
 
         return True
 
     def change_tip_status(self) -> bool:
+        if not hasattr(self, "nanonis"): return False
+        
+        self.status["nanonis"] = "running"
+        self.buttons["nanonis"].setStyleSheet(style_sheets["running"])
+        
         try:
             if self.status["tip"].get("withdrawn"):
-                tip_status = self.nanonis.tip(feedback = True)
-                if type(tip_status) == dict:
+                (tip_status, error) = self.nanonis.tip(feedback = True)
+                if error:
+                    self.logprint(f"Error. {e}")
+                elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("[dict] status[\"tip\"] = nanonis.tip(feedback = True)", message_type = "code")
+                    self.logprint("[tuple] ([dict] status[\"tip\"] | [bool] False) = nanonis.tip(feedback = True)", message_type = "code")
             else: # Toggle the feedback
-                tip_status = self.nanonis.tip(feedback = not self.status["tip"].get("feedback"))
+                (tip_status, error) = self.nanonis.tip(feedback = not self.status["tip"].get("feedback"))
+                if error:
+                    self.logprint(f"Error. {e}")
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("[dict] status[\"tip\"] = nanonis.tip(feedback = not status[\"tip\"].get(\"feedback\"])", message_type = "code")
+                    self.logprint("[tuple] ([dict] status[\"tip\"], [bool] False) = nanonis.tip(feedback = not status[\"tip\"].get(\"feedback\"])", message_type = "code")
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
             return False
 
+        self.buttons["nanonis"].setStyleSheet(style_sheets["online"])
         self.update_buttons()
-
-        return True
-
-    def on_bias_change(self, target: str = "Nanonis"):
-        # Extract the target bias from the QLineEdit textbox
-        V_new = float(self.line_edits["nanonis_bias"].text())
-
-        self.logprint(f"[float] V_old = nanonis.change_bias({V_new})", message_type = "code")
-
-        #V_old = self.nanonis.change_bias(V_new)
-        # ^ This is the old-fashioned, non-threaded way
-        self.task_worker = TaskWorker(self.nanonis.change_bias, V_new)
-        self.thread_pool.start(self.task_worker)
-        self.parameters["bias"] = V_new
-
-        return True
-
-    def on_setpoint_change(self):
-        I_fb = float(self.I_fb_box.text())
-        I_fb *= 1E-12
-
-        self.logprint(f"[float] I_old = nanonis.change_setpoint({I_fb})", message_type = "code")
-        I_old = self.nanonis.change_feedback(I_fb)
-
-        self.parameters["I_fb"] = I_fb
 
         return True
 

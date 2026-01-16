@@ -1,7 +1,6 @@
-import os, re
+import re
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from typing import Callable
 
 
 
@@ -107,8 +106,8 @@ class GUIItems:
         
         return button 
 
-    def make_progress_bar(self, name, description: str = "") -> QtWidgets.QProgressBar:
-        bar = QtWidgets.QProgressBar()
+    def make_progress_bar(self, name, description: str = "") -> SmartProgressBar:
+        bar = SmartProgressBar()
         
         bar.setObjectName(name)
         bar.setMinimum(0)
@@ -129,6 +128,13 @@ class GUIItems:
         
         layout.setSpacing(1)
         return layout
+    
+    def make_console(self, name, description) -> SmartConsole:
+        console = SmartConsole()
+        console.setObjectName(name)
+        console.setToolTip(description)
+        
+        return console
     
     def line_widget(self, orientation: str = "v", thickness: int = 1) -> QtWidgets.QFrame:
         line = QtWidgets.QFrame()
@@ -392,6 +398,70 @@ class UnitLineEdit(QtWidgets.QLineEdit):
         self.blockSignals(False)
         
         return
+
+
+
+class SmartProgressBar(QtWidgets.QProgressBar):
+    """
+    A QProgressBar with extra method changeToolTip
+    """
+    def __init__(self):
+        super().__init__()
+    
+    def changeToolTip(self, text: str, line: int = 0) -> None:
+        """
+        Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+        """
+        try:
+            old_tooltip = self.toolTip()
+            tooltip_list = old_tooltip.split("\n")
+            
+            if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                tooltip_list.append(text)
+                new_tooltip = "\n".join(tooltip_list)
+            elif line < 0: # Add a line to the front if the line number is negative
+                new_tooltip_list = [text]
+                [new_tooltip_list.append(item) for item in tooltip_list]
+                new_tooltip = "\n".join(new_tooltip_list)
+            else: # Replace a line
+                tooltip_list[line] = text
+                new_tooltip = "\n".join(tooltip_list)
+
+            self.setToolTip(new_tooltip)
+        except:
+            pass
+
+
+
+class SmartConsole(QtWidgets.QTextEdit):
+    """
+    A QTextEdit with extra method changeToolTip
+    """
+    def __init__(self):
+        super().__init__()
+    
+    def changeToolTip(self, text: str, line: int = 0) -> None:
+        """
+        Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+        """
+        try:
+            old_tooltip = self.toolTip()
+            tooltip_list = old_tooltip.split("\n")
+            
+            if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                tooltip_list.append(text)
+                new_tooltip = "\n".join(tooltip_list)
+            elif line < 0: # Add a line to the front if the line number is negative
+                new_tooltip_list = [text]
+                [new_tooltip_list.append(item) for item in tooltip_list]
+                new_tooltip = "\n".join(new_tooltip_list)
+            else: # Replace a line
+                tooltip_list[line] = text
+                new_tooltip = "\n".join(tooltip_list)
+
+            self.setToolTip(new_tooltip)
+        except:
+            pass
 
 
 

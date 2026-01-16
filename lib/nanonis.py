@@ -20,11 +20,20 @@ class Nanonis(NanonisHardware):
         # Placeholder for callback function
         pass
 
-    def tip(self, withdraw: bool = False, feedback = None) -> dict:
-        error_flag = False
+    def tip(self, parameters: dict = {}) -> tuple[dict, bool | str]:
+        """
+        Function to both control the tip status and receive it
+        """
+        # Initalize outputs
+        tip_status = None
+        error = False
         
-        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
-        try:            
+        # Extract parameters from the dictionary
+        withdraw = parameters.get("withdraw", False)
+        feedback = parameters.get("feedback", None)
+
+        # Set up the TCP connection and set/get
+        try:
             self.connect()
             z_pos = self.get_z()
             [z_max, z_min] = self.zcontroller.LimitsGet()
@@ -52,17 +61,21 @@ class Nanonis(NanonisHardware):
             }
 
         except Exception as e:
-            error_flag = True
+            error = e
         finally:
             sleep(.1)
-            
-        if error_flag: return False
-        else: return tip_status
 
-    def get_parameters(self) -> dict:
-        """ Function to get scan parameters """
-        error_flag = False
+        return (tip_status, error)
 
+    def get_parameters(self) -> tuple[dict, bool | str]:
+        """
+        Function to get parameters from Nanonis
+        """
+        # Initalize outputs
+        parameters = None
+        error = False
+
+        # Set up the TCP connection and get
         try:
             self.connect()
             
@@ -89,19 +102,22 @@ class Nanonis(NanonisHardware):
                 "session_path": session_path
             }
 
-        except:
-            error_flag = True
+        except Exception as e:
+            error = e
         finally:
             sleep(.1)
-        
-        if error_flag: return False
-        else: return parameters
 
-    def get_frame(self) -> dict:
-        """ Function to read the frame data and save it to dict """       
-        error_flag = False
+        return (parameters, error)
 
-        # Set up the TCP connection to Nanonis and read the frame and buffer, then disconnect
+    def get_frame(self) -> tuple[dict, bool | str]:
+        """
+        Function to get frame data from Nanonis
+        """
+        # Initalize outputs
+        frame = None
+        error = False
+
+        # Set up the TCP connection and get
         try:
             self.connect()
             frame_data = self.scan.FrameGet()
@@ -121,20 +137,28 @@ class Nanonis(NanonisHardware):
             }
         
         except Exception as e:
-            error_flag = True
+            error = e
         finally:
             sleep(.1)
 
-        if error_flag: return False
-        else: return frame
+        return (frame, error)
 
-    def get_grid(self) -> dict:
-        """ Function to get grid data. It first uses get_frame to ge tthe frame data, and then appends the dictionary data with grid elements """
-        error_flag = False
-        
-        frame = self.get_frame()
+    def get_grid(self) -> tuple[dict, bool | str]:
+        """
+        Function to get grid data from Nanonis
+        The grid dictionary contains the frame dictionary
+        get_frame is actually called internally before the dictionary is appended
+        """
+        # Initalize outputs
+        grid = None
+        error = False
+
+        # Call get_frame to get the frame data
         try:
-            if not frame: raise
+            (frame, error) = self.get_frame()
+            if error: raise
+
+            # Set up the TCP connection and get grid data
             self.connect()
             buffer_data = self.scan.BufferGet()
 
@@ -150,14 +174,15 @@ class Nanonis(NanonisHardware):
                 "num_channels": buffer_data[0],
                 "channel_indices": buffer_data[1]                
             }
-        
+            
         except Exception as e:
-            error_flag = True
+            error = e
         finally:
             sleep(.1)
+
+        if error: return (grid, error)
         
-        if error_flag: return False
-            
+        # Append the grid data with calculated information
         try:
             # Construct a local grid with the same size as the Nanonis grid, with center is at (0, 0)
             x_coords_local = np.linspace(- grid["width"] / 2, grid["width"] / 2, grid["pixels"][0])
@@ -190,48 +215,52 @@ class Nanonis(NanonisHardware):
             grid["vertices"] = frame_vertices
             grid["bottom_left_corner"] = bottom_left_corner
             grid["top_left_corner"] = top_left_corner
-        except:
-            error_flag = True
         
-        if error_flag: return False
-        else: return grid
+        except Exception as e:
+            error = e
+        finally:
+            sleep(.1)
 
-    def get_scan_metadata(self) -> dict:
+        return (frame, error)
+
+    def get_scan_metadata(self) -> tuple[dict | str]:
         """
-        get_scan_metadata is an appended version of get_grid.
-        get_grid already gets data regarding the properties of the current scan frame
-        To get the names of the recorded channels and the save properties, the grid dictionary is extended with elements read by calling the InSlotsGet and PropsGet methods
+        get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
-        error_flag = False
-        
-        grid = self.get_grid()
+        # Initalize outputs
+        scan_metadata = None
+        error = False
+
+        # Set up the TCP connection and get grid dat
         try:
             self.connect()
             [signal_names, signal_indices] = self.signals.InSlotsGet()
-            scan_props = self.scan.PropsGet()
+            scan_props = self.scan.PropsGet()            
+            buffer_data = self.scan.BufferGet()
+                        
             auto_save = bool(scan_props[1])
+            channel_indices = buffer_data[1] # The indices of the Nanonis signals being recorded in the scan
             
-            channel_indices = grid.get("channel_indices") # The indices of the Nanonis signals being recorded in the scan
+            # Find out the names of the channels being recorded and their corresponding indices
             channel_names = []
             for channel_index in channel_indices:
                 channel_name = signal_names[channel_index]
                 channel_names.append(channel_name)
             
-            grid.update({
+            scan_metadata = {
                 "signal_names": signal_names,
                 "signal_indices": signal_indices,
                 "channel_names": channel_names,
                 "channel_indices": channel_indices,
                 "auto_save": auto_save
-                })
+                }
 
         except Exception as e:
-            error_flag = True
+            error = e
         finally:
             sleep(.1)
 
-        if error_flag: return False
-        else: return grid
+        return (scan_metadata, error)
 
     def change_bias(self, V = None, dt: float = .005, dV: float = .01, dz: float = 1E-9, V_limits = 10) -> float:
         error_flag = False

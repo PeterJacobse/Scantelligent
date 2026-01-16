@@ -1,6 +1,6 @@
 scan_parameters:
  0:
-  name: latest_session
+  name: current
   I_fb: 400 pA
   p_gain: 30 pm
   t_const: 167 us

@@ -1,4 +1,4 @@
-import os, sys
+import os
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 from . import GUIItems
@@ -26,7 +26,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.layouts = self.make_layouts()
         self.image_view = self.make_image_view()
         self.widgets = self.make_widgets()
-        self.console = self.make_console()
+        self.consoles = self.make_consoles()
         self.shortcuts = self.make_shortcuts()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
@@ -67,6 +67,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "number_of_files": make_label("which contains 1 sxm file"),
             "channel_selected": make_label("Channel selected:"),
 
+            "scan_control": make_label("Scan channel / direction"),
             "background_subtraction": make_label("Background subtraction"),
             "width": make_label("Width (nm):"),
             "show": make_label("Show", "Select a projection or toggle with (H)"),
@@ -93,9 +94,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         buttons = {
             "scanalyzer": make_button("", "Launch Scanalyzer", icon = icons.get("scanalyzer")),
-            "nanonis": make_button("", "Nanonis: offline\n(click to reconnect)", icon = icons.get("nanonis")),
-            "mla": make_button("", "Connect to the Multifrequency Lockin Amplifier\n(M)", icon = icons.get("imp")),
-            "camera": make_button("", "Camera on/off\n(C)", icon = icons.get("camera")),
+            "nanonis": make_button("", "Nanonis: offline\n(Ctrl + C)", icon = icons.get("nanonis")),
+            "mla": make_button("", "Multifrequency Lockin Amplifier: offline\n(Ctrl + C)", icon = icons.get("imp")),
+            "camera": make_button("", "Camera: offline\n(Ctrl + C)", icon = icons.get("camera")),
             "exit": make_button("", "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape")),
             "oscillator": make_button("", "Oscillator on/off\n(O)", icon = icons.get("osc")),
             "view": make_button("", "Toggle the active view\n(V)", icon = icons.get("eye")),
@@ -128,11 +129,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "start_pause": make_button("", "Start experiment", icon = icons.get("start")),
             "stop": make_button("", "Stop experiment", icon = icons.get("stop")),
 
-            "direction": make_button("", "Change scan direction (X)", icon = icons.get("triple_arrow")),
+            "direction": make_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow")),
             "full_data_range": make_button("", sivr + "to the full data range\n(U)", icons.get("100")),
             "percentiles": make_button("", sivr + "by percentiles\n(R)", icons.get("percentiles")),
             "standard_deviation": make_button("", sivr + "by standard deviations\n(D)", icons.get("deviation")),
             "absolute_values": make_button("", sivr + "by absolute values\n(A)", icons.get("numbers")),
+            
+            "input": make_button(">>", "Enter command\n(Ctrl + Enter)")
         }
         
         # Named groups
@@ -217,7 +220,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "max_absolute": make_line_edit("1", "maximum absolute value"),
 
             "gaussian_width": make_line_edit("0", "Width in nm for Gaussian blur application"),
-            "file_name": make_line_edit("", "Base name of the file when saved to png or hdf5")
+            "file_name": make_line_edit("", "Base name of the file when saved to png or hdf5"),
+            
+            "input": make_line_edit("", "Enter a command\n(Enter to evaluate)")
         }
         
         # Named groups
@@ -284,8 +289,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         make_line = self.gui_items.line_widget
         
         lines = {
+            "scan_control": make_line("h"),
             "background": make_line("h"),
-            "matrix_operations": make_line("h")            
+            "matrix_operations": make_line("h")
         }
         
         return lines
@@ -300,6 +306,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Named groups
         self.experiment_controls = [progress_bars["experiment"]]
         [self.experiment_controls.append(self.buttons[name]) for name in ["start_pause", "stop", "save"]]
+        
+        # Add the progress_bar handles to the tooltips
+        [progress_bars[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in progress_bars.keys()]
         
         return progress_bars
 
@@ -326,18 +335,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "experiment_controls": make_layout("h"),
 
             "image_processing": make_layout("v"),
+            "scan_control": make_layout("h"),
             "background_buttons": make_layout("h"),
             "matrix_processing": make_layout("g"),
             "limits": make_layout("g"),
-            "empty": make_layout("v")
+            "empty": make_layout("v"),
+            
+            "input": make_layout("h")
         }
         
         return layouts
 
     def make_image_view(self) -> pg.ImageView:
         pg.setConfigOption("imageAxisOrder", "row-major")
+        im_view = pg.ImageView(view = pg.PlotItem())
         
-        return pg.ImageView(view = pg.PlotItem())
+        im_view.setToolTip("gui.image_view")
+        
+        return im_view
 
     def make_widgets(self) -> dict:
         layouts = self.layouts
@@ -354,11 +369,23 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return widgets
 
-    def make_console(self) -> QtWidgets.QTextEdit:
-        console = QtWidgets.QTextEdit()
-        console.setReadOnly(True)
+    def make_consoles(self) -> dict:
+        make_console = self.gui_items.make_console
         
-        return console
+        consoles = {
+            "output": make_console("", "Output console"),
+            "input": make_console("", "Input console")
+        }
+        
+        consoles["output"].setReadOnly(True)
+        consoles["input"].setReadOnly(False)
+        consoles["input"].setMaximumHeight(30)
+        [consoles[name].setStyleSheet("QTextEdit{ background-color: #101010; }") for name in ["output", "input"]]
+        
+        # Add the handles to the tooltips
+        [consoles[name].changeToolTip(f"gui.consoles[\"{name}\"]", line = 10) for name in consoles.keys()]
+        
+        return consoles
 
     def make_shortcuts(self) -> dict:
         QKey = QtCore.Qt.Key
@@ -367,9 +394,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         shortcuts = {
             "scanalyzer": QSeq(QKey.Key_S),
-            "nanonis": QSeq(QKey.Key_N),
-            "mla": QSeq(QKey.Key_M),
-            "camera": QSeq(QKey.Key_C),
+            "nanonis": QSeq(QMod.CTRL | QKey.Key_C),
             "oscillator": QSeq(QKey.Key_O),
             "view": QSeq(QKey.Key_V),
             "exit": QSeq(QKey.Key_Escape),
@@ -420,13 +445,15 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["parameters"].addWidget(box, 0, i) for i, box in enumerate(self.parameter_line_0)]
         layouts["parameters"].addLayout(layouts["scan_parameter_sets"], 1, 0, 1, 3)        
         [layouts["parameters"].addWidget(box, 1, i + 3) for i, box in enumerate(self.parameter_line_1)]
-        [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
         e_layout = layouts["experiments"]
         [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiments", "direction"])]
         e_layout.addLayout(layouts["experiment_controls"], 1, 0, 2, 1)
         
+        layouts["scan_control"].addWidget(self.comboboxes["channels"], 5)
+        layouts["scan_control"].addWidget(self.buttons["direction"], 1)
+        [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         p_layout = layouts["matrix_processing"]
         [p_layout.addWidget(self.checkboxes[name], 0, i) for i, name in enumerate(["sobel", "normal", "laplace"])]
         [p_layout.addWidget(self.checkboxes[name], i + 1, 0) for i, name in enumerate(["gauss", "fft"])]
@@ -442,6 +469,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [l_layout.addWidget(item, i, 4) for i, item in enumerate(self.max_line_edits)]
         
         ip_layout = layouts["image_processing"]
+        ip_layout.addWidget(self.labels["scan_control"])
+        ip_layout.addLayout(layouts["scan_control"])
+        ip_layout.addWidget(self.lines["scan_control"])
         ip_layout.addWidget(self.labels["background_subtraction"])
         ip_layout.addLayout(layouts["background_buttons"])
         ip_layout.addWidget(self.lines["background"])
@@ -453,6 +483,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         layouts["coarse_control"].addLayout(ca_layout)
         layouts["coarse_control"].addLayout(layouts["arrows"])
+        
+        #layouts["input"].addWidget(self.buttons["input"], 1)
+        layouts["input"].addWidget(self.consoles["input"])
         
         return
 
@@ -493,9 +526,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
         layouts["toolbar"].addStretch(1)
         
-        # Compose the image_view plus console layout
+        # Compose the image_view plus consoles layout
         layouts["left_side"].addWidget(self.image_view, stretch = 4)
-        layouts["left_side"].addWidget(self.console, stretch = 1)
+        layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
+        layouts["left_side"].addLayout(self.layouts["input"], stretch = 1)
         self.widgets["left_side"].setLayout(layouts["left_side"])
         
         # Attach the toolbar        
