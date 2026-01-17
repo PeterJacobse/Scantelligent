@@ -9,8 +9,8 @@ from datetime import datetime
 
 
 
-colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000",
-          "white": "#ffffff", "blue": "#20a0ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "lightblue": "#30d0ff",
+          "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
 style_sheets = {
     "neutral": f"background-color: {colors["black"]};",
     "connected": f"background-color: {colors["dark_green"]};",
@@ -19,7 +19,7 @@ style_sheets = {
     "hold": f"background-color: {colors["dark_orange"]};",
     "idle": f"background-color: {colors["purple"]};"
     }
-text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "success": colors["green"], "warning": colors["orange"]}
+text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "result": colors["lightblue"], "success": colors["green"], "warning": colors["orange"]}
 
 
 
@@ -122,7 +122,7 @@ class App:
             shortcuts = self.gui.shortcuts        
             
             # Connect the buttons to their respective functions
-            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.on_exit],
+            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
                         ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.open_session_folder],
                         
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
@@ -145,6 +145,13 @@ class App:
                     shortcut.activated.connect(connected_function)
             
             self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
+            all_attributes = dir(self)
+            gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
+            all_attributes.extend(gui_attributes)
+            completer = QtWidgets.QCompleter(all_attributes, self.gui)
+            self.gui.line_edits["input"].setCompleter(completer)
+            
+            self.logprint(f"{gui_attributes}")
             
             return
         
@@ -191,7 +198,7 @@ class App:
                         self.paths["scanalyzer_path"] = scanalyzer_path
                         self.logprint("Scanalyzer found and linked", message_type = "success")
                     else:
-                        self.logprint("Warning: config file has a scanalyzer_path entry, but it doesn't point to an existing file.", "red")
+                        self.logprint("Warning: config file has a scanalyzer_path entry, but it doesn't point to an existing file.", message_type = "error")
                 except Exception as e:
                     self.logprint("Warning: scanalyzer path could not be read. {e}", message_type = "error")
                 
@@ -211,7 +218,7 @@ class App:
                         "camera_argument": camera_argument
                     }
                     self.logprint("I found the config.yml file and was able to set up a dictionary called 'hardware'", message_type = "success")
-                    self.logprint(f"[dict] hardware = {self.hardware}", message_type = "code")
+                    self.logprint(f"[dict] hardware = {self.hardware}", message_type = "result")
                     
                 except Exception as e:
                     self.logprint("Error: could not retrieve the Nanonis TCP settings.", message_type = "error")
@@ -350,15 +357,15 @@ class App:
         current_time = datetime.now().strftime("%H:%M:%S")
         
         color = text_colors["error"]
-        if message_type in ["message", "code", "success", "warning"]: color = text_colors[message_type]
-        if message_type == "code": timestamp = False
+        if message_type in ["message", "code", "result", "success", "warning"]: color = text_colors[message_type]
+        if message_type == "code" or message_type == "result": timestamp = False
         
         if timestamp: timestamped_message = current_time + f">>  {message}"
         else: timestamped_message = f"{message}"
 
         # Escape HTML to avoid accidental tag injection, then optionally wrap in a colored span so QTextEdit renders it in color.
         escaped = html.escape(timestamped_message)        
-        if message_type == "code": final = f"<pre><span style=\"color:{color}\">          {escaped}</span></pre>"
+        if message_type == "code" or message_type == "result": final = f"<pre><span style=\"color:{color}\">          {escaped}</span></pre>"
         else: final = f"<span style=\"color:{color}\">{escaped}</span>"
 
         # Print HTML text (QTextEdit.append will render it as rich text).
@@ -488,7 +495,7 @@ class App:
         nn_button.setStyleSheet(style)
         [button.update for button in [cam_button, mla_button, nn_button]]
         
-        self.logprint(f"[dict] status = {self.status}", message_type = "code")
+        self.logprint(f"[dict] status = {self.status}", message_type = "result")
         
         return
 
@@ -581,8 +588,8 @@ class App:
         
         try:
             self.logprint(f"{text}", message_type = "code")
-            result = exec(command)
-            self.logprint(f"{result}", message_type = "code")
+            result = eval(command)
+            self.logprint(f"{result}", message_type = "result")
         except Exception as e:
             self.logprint(f"Error: {e}", message_type = "error")
         
@@ -653,13 +660,13 @@ class App:
             self.logprint("Error. Session folder unknown.", message_type = "error")
         return
 
-    def on_exit(self):
+    def exit(self):
         self.cleanup()            
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
         QtWidgets.QApplication.instance().quit()
 
     def closeEvent(self, event):
-        self.on_exit()
+        self.exit()
 
 
 
@@ -765,9 +772,9 @@ class App:
 
                 if self.initialization:
                     self.logprint(f"I was able to retrieve the tip status and scan parameters and save them to dictionaries called 'status' and 'scan_parameters[0]' (\"{name}\")", message_type = "success")
-                    self.logprint(f"[dict] status[\"tip\"] = tip_status = {tip_status}", message_type = "code")
-                    self.logprint(f"[dict] scan_parameters[0] = parameters", message_type = "code")
-                    self.logprint(f"scan_parameters[0].keys() = {self.scan_parameters[0].keys()}", message_type = "code")
+                    self.logprint(f"[dict] status[\"tip\"] = tip_status = {tip_status}", message_type = "result")
+                    self.logprint(f"[dict] scan_parameters[0] = parameters", message_type = "result")
+                    self.logprint(f"scan_parameters[0].keys() = {self.scan_parameters[0].keys()}", message_type = "result")
 
 
 
@@ -792,8 +799,8 @@ class App:
                 
                 if self.initialization:
                     self.logprint(f"I obtained frame/grid and scan metadata from nanonis, now available in the dictionaries 'grid' and 'scan_metadata'", message_type = "success")
-                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "code")
-                    self.logprint(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "code")
+                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "result")
+                    self.logprint(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "result")
 
 
             
@@ -805,7 +812,7 @@ class App:
 
         except:
             self.status["nanonis"] = "offline"
-            self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "code")
+            self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
         
         finally:
             if self.initialization: self.initialization = False # Switch off the initialization flag after the first parameter retrieval
@@ -830,7 +837,7 @@ class App:
                     self.channel_select_box.addItems(channels)
                 
                 self.logprint("I was able to read the scan frame data from Nanonis", message_type = "success")
-                self.logprint(f"[dict] frame = {self.frame}", message_type = "code")
+                self.logprint(f"[dict] frame = {self.frame}", message_type = "result")
         except Exception as e:
             self.logprint({e}, message_type = "error")
 
@@ -965,16 +972,12 @@ class App:
                 "h_steps": h_steps,
                 "minus_z_steps": minus_z_steps
             }
-
-            if not self.status["nanonis"] == "online":
-                self.connect_nanonis()
             
-            if not hasattr(self, "nanonis"):
-                raise
+            #if not hasattr(self, "nanonis"): raise
             
-            self.logprint("Executing a tip move by passing the dictionary 'move_flags' to nanonis.move_over")
+            self.logprint("Executing a tip move by passing the dictionary 'move_flags' to nanonis.move")
             self.logprint(f"[dict] move_flags = {move_flags}", message_type = "code")
-            self.logprint("nanonis.move_over(move_flags)", message_type = "code")
+            self.logprint("nanonis.move(move_flags)", message_type = "code")
 
             return True
         

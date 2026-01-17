@@ -91,8 +91,8 @@ class GUIItems:
         
         return button
 
-    def make_unit_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0, unit = None) -> UnitLineEdit:
-        button = UnitLineEdit(unit = str)
+    def make_unit_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0, unit = None, limits = None) -> UnitLineEdit:
+        button = UnitLineEdit(unit = unit, limits = limits)
         button.setObjectName(name)
         button.setToolTip(description)
         button.setText(name)
@@ -356,9 +356,10 @@ class UnitLineEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit with extra method changeToolTip, and which adds a unit after editing is finished
     """
-    def __init__(self, unit = None, parent = None):
+    def __init__(self, parent = None, **kwargs):
         super().__init__(parent)
-        self.unit = unit
+        self.unit = kwargs.get("unit", None)
+        self.limits = kwargs.get("limits", None)
         self.editingFinished.connect(self.addUnit)
     
     def changeToolTip(self, text: str, line: int = 0) -> None:
@@ -391,10 +392,19 @@ class UnitLineEdit(QtWidgets.QLineEdit):
         # Extract the numeric part of what was entered
         number_matches = re.findall(r"-?\d+\.?\d*", entered_text)
         numbers = [float(x) for x in number_matches]
-        number = numbers[0]
         
-        # Add the unit to the number        
-        self.setText(f"{number} {self.unit}")
+        if len(numbers) > 0:
+            number = numbers[0]
+            
+            # Apply limits in case the number is too big or small
+            if type(self.limits) == list:
+                if number < self.limits[0]: number = self.limits[0]
+                if number > self.limits[1]: number = self.limits[1]
+                # Add the unit to the number
+                self.setText(f"{number} {self.unit}")
+        else:
+            self.setText("")
+        
         self.blockSignals(False)
         
         return
