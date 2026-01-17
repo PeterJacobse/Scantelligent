@@ -183,7 +183,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = {
             "channels": make_combobox("Channels", "Available scan channels"),
             "projection": make_combobox("Projection", "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiments": make_combobox("Experiments", "Select an experiment", items = ["simple_scan", "grid_sampling"]),
+            "experiment": make_combobox("Experiment", "Select an experiment", items = ["simple_scan", "grid_sampling"]),
             "direction": make_combobox("Direction", "Select a scan direction / pattern (X)", items = ["nearest tip", "down", "up", "random"])
         }
         
@@ -334,7 +334,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "coarse_control": make_layout("h"),
             "arrows": make_layout("g"),
 
-            "experiments": make_layout("g"),
+            "experiment": make_layout("g"),
             "experiment_controls": make_layout("h"),
 
             "image_processing": make_layout("v"),
@@ -450,8 +450,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["parameters"].addWidget(box, 1, i + 3) for i, box in enumerate(self.parameter_line_1)]
         
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
-        e_layout = layouts["experiments"]
-        [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiments", "direction"])]
+        e_layout = layouts["experiment"]
+        [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiment", "direction"])]
         e_layout.addLayout(layouts["experiment_controls"], 1, 0, 2, 1)
         
         layouts["scan_control"].addWidget(self.comboboxes["channels"], 5)
@@ -504,16 +504,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "parameters": make_groupbox("Scan parameters", "Scan parameters"),
             "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
             "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
-            "experiments": make_groupbox("Experiments", "Perform experiments"),
+            "experiment": make_groupbox("Experiment", "Perform experiment"),
             
             "dummy": make_groupbox("Dummy", "Invisible groupbox to swap out layouts to make other groupboxes collapse")
         }
 
         # Set layouts for the groupboxes
-        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "parameters", "experiments", "image_processing"]]
+        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "parameters", "experiment", "image_processing"]]
         
         # Draw experiments group: to be absorbed in gui_scantelligent.py        
-        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "coarse_control", "parameters", "experiments", "image_processing"]]
+        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "coarse_control", "parameters", "experiment", "image_processing"]]
         
         return groupboxes
 

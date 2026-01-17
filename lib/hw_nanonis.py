@@ -27,12 +27,9 @@ class NanonisHardware:
     def connect(self): # Functions to do simple measurements / logging
         if not hasattr(self, "ip"):
             raise Exception("Failed to connect to Nanonis")
-        if hasattr(self, "NTCP"): # If the TCP connection alread exists, kill it before reestablishing
-            try:
-                self.disconnect()
-                sleep(.2)
-            except:
-                pass
+        if hasattr(self, "NTCP"): # If the TCP connection alread exists, kill it and reconnect
+            try: self.disconnect()
+            except: pass
 
         self.NTCP = nanonisTCP(self.ip, self.port, self.version)
         self.bias = Bias(self.NTCP)
@@ -109,3 +106,4 @@ class NanonisHardware:
         if hasattr(self, "NTCP"):
             self.NTCP.close_connection()
             delattr(self, "NTCP")
+        sleep(.2) # Minimal delay to ensure the next connection attempt doesn't fail

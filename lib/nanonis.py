@@ -1,20 +1,22 @@
-import html
 import numpy as np
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 from .hw_nanonis import NanonisHardware
 from time import sleep
 from datetime import datetime
 from time import sleep, time
-import cv2
+import pint
 
-colors = {"red": "#ff6060", "dark_red": "#800000", "green": "#00e000", "dark_green": "#005000",
-          "white": "#ffffff", "blue": "#20a0ff", "dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+
+
+colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "lightblue": "#30d0ff",
+          "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
 
 
 
 class Nanonis(NanonisHardware):
     def __init__(self, hardware: dict):
         super().__init__(hardware = hardware)
+        self.ureg = pint.UnitRegistry()
 
     def logprint(self, message: str, color: None):
         # Placeholder for callback function
@@ -52,24 +54,31 @@ class Nanonis(NanonisHardware):
             sleep(.2)
             feedback_new = self.get_feedback()
             
+            # Convert all length units to nm for consistency
+            z_pos_unitized = self.ureg.Quantity(z_pos, "m")
+            z_min_unitized = self.ureg.Quantity(z_min, "m")
+            z_max_unitized = self.ureg.Quantity(z_max, "m")
+            z_nm = z_pos_unitized.to("nm").magnitude
+            z_min_nm = z_min_unitized.to("nm").magnitude
+            z_max_nm = z_max_unitized.to("nm").magnitude
+
             # Set up a dictionary containing the actual tip status parameters
             tip_status = {
                 "height": z_pos,
+                "height_nm": z_nm,
                 "limits": [z_min, z_max],
+                "limits_nm": [z_min_nm, z_max_nm],
                 "feedback": feedback_new,
                 "withdrawn": withdrawn
             }
 
-        except Exception as e:
-            error = e
-        finally:
-            sleep(.1)
+        except Exception as e: error = e
 
         return (tip_status, error)
 
-    def get_parameters(self) -> tuple[dict, bool | str]:
+    def parameters(self, parameters: dict = {}) -> tuple[dict, bool | str]:
         """
-        Function to get parameters from Nanonis
+        Function to get and set parameters from Nanonis
         """
         # Initalize outputs
         parameters = None
@@ -86,7 +95,27 @@ class Nanonis(NanonisHardware):
             v_move = self.get_speed()
             session_path = self.get_path()
 
+            # Convert units
+            V_unitized = self.ureg.Quantity(V, "V")
+            V_V = V_unitized.to("V").magnitude
+            I_fb_unitized = self.ureg.Quantity(I_fb, "A")
+            I_fb_pA = I_fb_unitized.to("pA").magnitude
+            p_gain_unitized = self.ureg.Quantity(p_gain, "m")
+            p_gain_pm = p_gain_unitized.to("pm").magnitude
+            t_const_unitized = self.ureg.Quantity(t_const, "s")
+            t_const_us = t_const_unitized.to("us").magnitude
+            i_gain_unitized = self.ureg.Quantity(i_gain, "m/s")
+            i_gain_nm_per_s = i_gain_unitized.to("nm/s").magnitude
+            v_fwd_unitized = self.ureg.Quantity(v_fwd, "m/s")
+            v_fwd_nm_per_s = v_fwd_unitized.to("nm/s").magnitude
+            v_bwd_unitized = self.ureg.Quantity(v_bwd, "m/s")
+            v_bwd_nm_per_s = v_bwd_unitized.to("nm/s").magnitude
+            v_move_unitized = self.ureg.Quantity(v_move[0], "m/s")
+            v_move_nm_per_s = v_move_unitized.to("nm/s").magnitude
+
             parameters = {
+                "V_nanonis": V,
+                "V_V": V_V,
                 "bias": V,
                 "gains": gains,
                 "I_fb": I_fb,
@@ -99,19 +128,21 @@ class Nanonis(NanonisHardware):
                 "t_bwd": t_bwd,
                 "v_ratio": v_ratio,
                 "v_move": v_move,
+                "v_move_nm_per_s": v_move_nm_per_s,
+                "I_fb_pA": I_fb_pA,
+                "p_gain_pm": p_gain_pm,
+                "t_const_us": t_const_us,
+                "i_gain_nm_per_s": i_gain_nm_per_s,
                 "session_path": session_path
             }
 
-        except Exception as e:
-            error = e
-        finally:
-            sleep(.1)
+        except Exception as e: error = e
 
         return (parameters, error)
 
-    def get_frame(self) -> tuple[dict, bool | str]:
+    def frame(self, parameters: dict ={}) -> tuple[dict, bool | str]:
         """
-        Function to get frame data from Nanonis
+        Function to get and set frame
         """
         # Initalize outputs
         frame = None
@@ -136,18 +167,14 @@ class Nanonis(NanonisHardware):
                 "aspect_ratio": frame_data[3] / frame_data[2]
             }
         
-        except Exception as e:
-            error = e
-        finally:
-            sleep(.1)
+        except Exception as e: error = e
 
         return (frame, error)
 
-    def get_grid(self) -> tuple[dict, bool | str]:
+    def grid(self, parameters: dict = {}) -> tuple[dict, bool | str]:
         """
-        Function to get grid data from Nanonis
-        The grid dictionary contains the frame dictionary
-        get_frame is actually called internally before the dictionary is appended
+        Function to get and set grid properties
+        frame() is called internally in order to get the frame properties necessary fo calculating the size and aspect ratio of the grid
         """
         # Initalize outputs
         grid = None
@@ -155,7 +182,7 @@ class Nanonis(NanonisHardware):
 
         # Call get_frame to get the frame data
         try:
-            (frame, error) = self.get_frame()
+            (frame, error) = self.frame()
             if error: raise
 
             # Set up the TCP connection and get grid data
@@ -175,10 +202,7 @@ class Nanonis(NanonisHardware):
                 "channel_indices": buffer_data[1]                
             }
             
-        except Exception as e:
-            error = e
-        finally:
-            sleep(.1)
+        except Exception as e: error = e
 
         if error: return (grid, error)
         
@@ -216,14 +240,11 @@ class Nanonis(NanonisHardware):
             grid["bottom_left_corner"] = bottom_left_corner
             grid["top_left_corner"] = top_left_corner
         
-        except Exception as e:
-            error = e
-        finally:
-            sleep(.1)
-
+        except Exception as e: error = e
+        
         return (frame, error)
 
-    def get_scan_metadata(self) -> tuple[dict | str]:
+    def scan_metadata(self, parameters: dict = {}) -> tuple[dict | str]:
         """
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
@@ -234,36 +255,43 @@ class Nanonis(NanonisHardware):
         # Set up the TCP connection and get grid dat
         try:
             self.connect()
-            [signal_names, signal_indices] = self.signals.InSlotsGet()
-            scan_props = self.scan.PropsGet()            
+            #[signal_names, signal_indices] = self.signals.InSlotsGet() # signals.InSlotsGet() is not working on Hermes for some reason
+            scan_props = self.scan.PropsGet()
             buffer_data = self.scan.BufferGet()
-                        
             auto_save = bool(scan_props[1])
             channel_indices = buffer_data[1] # The indices of the Nanonis signals being recorded in the scan
             
             # Find out the names of the channels being recorded and their corresponding indices
             channel_names = []
-            for channel_index in channel_indices:
-                channel_name = signal_names[channel_index]
-                channel_names.append(channel_name)
+            #for channel_index in channel_indices:
+            #    channel_name = signal_names[channel_index]
+            #    channel_names.append(channel_name)
             
             scan_metadata = {
-                "signal_names": signal_names,
-                "signal_indices": signal_indices,
+                #"signal_names": signal_names,
+                #"signal_indices": signal_indices,
                 "channel_names": channel_names,
                 "channel_indices": channel_indices,
                 "auto_save": auto_save
                 }
 
-        except Exception as e:
-            error = e
-        finally:
-            sleep(.1)
+        except Exception as e: error = e
 
         return (scan_metadata, error)
 
-    def change_bias(self, V = None, dt: float = .005, dV: float = .01, dz: float = 1E-9, V_limits = 10) -> float:
+    def bias(self, parameters: dict = {}) -> float:
         error_flag = False
+
+        # Set default parameters
+        standard_parameters = {"V": None, "dt": .005, "dV": .01, "dz": 1E-9, "V_limits": 10}
+        standard_parameters.update(parameters)
+        
+        # Extract parameters from the dictionary
+        V = parameters["V"]
+        dt = parameters["dt"]
+        dV = parameters["dV"]
+        dz = parameters["dz"]
+        V_limits = parameters["V_limits"]
 
         if type(V) != float and type(V) != int:
             #print("Wrong bias supplied", color = colors["red"])

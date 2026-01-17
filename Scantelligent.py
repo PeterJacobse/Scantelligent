@@ -116,8 +116,7 @@ class App:
 
             return
         
-        def connect_buttons() -> None:
-            
+        def connect_buttons() -> None:            
             buttons = self.gui.buttons
             shortcuts = self.gui.shortcuts        
             
@@ -127,7 +126,9 @@ class App:
                         
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
                         
-                        ["tip", self.change_tip_status], ["V_swap", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request]
+                        ["tip", self.change_tip_status], ["V_swap", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
+
+                        ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
             [connections.append([direction, lambda: self.on_coarse_move(direction)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
             connections.append([f"scan_parameters_0", lambda: self.load_parameters(0)])
@@ -144,14 +145,20 @@ class App:
                     shortcut = QtGui.QShortcut(shortcuts[name], self.gui)
                     shortcut.activated.connect(connected_function)
             
+            # Line edits
             self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
-            all_attributes = dir(self)
-            gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
-            all_attributes.extend(gui_attributes)
-            completer = QtWidgets.QCompleter(all_attributes, self.gui)
-            self.gui.line_edits["input"].setCompleter(completer)
             
-            self.logprint(f"{gui_attributes}")
+            # Comboboxes
+            self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.on_experiment_change)
+            
+            # Populate the command input completer with all attributes and methods of self and self.gui
+            self.all_attributes = dir(self)
+            gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
+            self.all_attributes.extend(gui_attributes)
+            completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
+            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+            completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+            self.gui.line_edits["input"].setCompleter(completer)
             
             return
         
@@ -325,15 +332,20 @@ class App:
             except Exception:
                 self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
 
+            # Add nanonis attributes and methods to the command input completer
+            nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
+            self.all_attributes.extend(nanonis_attributes)
+            completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
+            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+            completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+            self.gui.line_edits["input"].setCompleter(completer)
+
             return
 
         self.logprint("Attempting to connect to hardware", message_type = "message")
         connect_camera()
         connect_mla()
         connect_nanonis()
-        self.update_buttons()
-        self.update_tip_status()
-        self.update_parameter_fields()
         
         return
 
@@ -575,6 +587,12 @@ class App:
         
         return
 
+    def on_experiment_change(self) -> None:
+        self.experiment_name = self.gui.comboboxes["experiment"].currentText()
+        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment_name, ".hdf5")
+        self.logprint(self.paths["experiment_filename"])
+        return
+
 
 
     # Command executions
@@ -740,7 +758,6 @@ class App:
     def on_parameters_request(self):
         self.status["nanonis"] = "running"
         self.update_buttons()
-        sleep(1)
 
         try:
             if self.initialization: self.logprint("Attempting to retrieve information from Nanonis", message_type = "message")
@@ -756,8 +773,8 @@ class App:
                 self.status["tip"] = tip_status
             
             # Get scan parameters
-            if self.initialization: self.logprint("(parameters, error) = nanonis.get_parameters()", message_type = "code")
-            (parameters, error) = self.nanonis.get_parameters()
+            if self.initialization: self.logprint("(parameters, error) = nanonis.parameters()", message_type = "code")
+            (parameters, error) = self.nanonis.parameters()
             
             if error:
                 self.logprint(f"Error retrieving the scan parameters: {error}", message_type = "error")
@@ -779,8 +796,8 @@ class App:
 
 
             # Get grid parameters
-            if self.initialization: self.logprint("(grid, error) = nanonis.get_grid()", message_type = "code")
-            (grid, error) = self.nanonis.get_grid()
+            if self.initialization: self.logprint("(grid, error) = nanonis.grid()", message_type = "code")
+            (grid, error) = self.nanonis.grid()
             
             if error:
                 self.logprint(f"Error retrieving the scan grid: {error}", message_type = "error")
@@ -790,7 +807,8 @@ class App:
                 channels = grid.get("channel_names")
             
             # Get scan metadata
-            (scan_metadata, error) = self.nanonis.get_scan_metadata()
+            if self.initialization: self.logprint("(scan_metadata, error) = nanonis.scan_metadata()", message_type = "code")
+            (scan_metadata, error) = self.nanonis.scan_metadata()
             if error:
                 self.logprint("Error retrieving the scan metadata.", message_type = "error")
                 raise
@@ -881,7 +899,7 @@ class App:
             self.logprint(f"{numbers}", message_type = "error")
             new_V = numbers[0]
             self.logprint(f"I will try to set the bias to {new_V}")
-            self.nanonis.change_bias(new_V)
+            self.nanonis.bias(new_V)
         except:
             pass
         finally:
@@ -989,11 +1007,20 @@ class App:
 
 
     # Experiments and thread management
-    def on_experiment_change(self):
-        self.experiment = "test" #self.experiment_box.currentText()
-        self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], "experiment", ".hdf5")
-        self.save_to_button.setText(self.paths["experiment_filename"])
-        return
+    def on_experiment_control(self, action: str = "start_pause"):
+        if action == "start_pause":
+            if self.status["experiment"] == "running":
+                action = "pause"
+            elif self.status["experiment"] == "paused":
+                action = "resume"
+            else:
+                action = "start"
+        
+        try:
+            self.nanonis.connect()
+            self.nanonis.scan_control(action = action)
+        except Exception as e:
+            self.logprint(f"Error. Could not send experiment control command to Nanonis: {e}", message_type = "error")
 
     def change_experiment_status(self, request: str = "stop"):
         self.logprint(f"Request = {request}", message_type = "message")
@@ -1149,30 +1176,6 @@ class App:
         self.logprint(f"Starting experiment {self.experiment}")
         self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
         return False
-        """
-        self.logprint(f"Starting experiment {self.experiment}", message_type = "message")
-        self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}", message_type = "message")
-
-        points = int(self.points_box.text())
-        self.grid = self.helper_functions.get_grid()
-        [self.x_grid, self.y_grid] = [self.grid.x_grid, self.grid.y_grid]
-
-        # Connect the correct experiment
-        try:
-            self.request_start.disconnect()
-        except:
-            pass
-        self.request_start.connect(self.experiments.sample_grid)
-
-        # Start the experiment
-        self.experiment_status = "running"
-        self.update_icons()
-        
-        self.data_array = np.empty((points, 71), dtype = float) # Initialize an empty numpy array for storing data
-        self.current_index = 0
-        chunk_size = 30
-        self.request_start.emit(self.experiment_file, points, chunk_size)
-        """
 
     def receive_data(self, data_chunk):
         chunk_size = data_chunk.shape[0]
