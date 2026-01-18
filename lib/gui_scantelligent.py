@@ -100,7 +100,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "exit": make_button("", "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape")),
             "oscillator": make_button("", "Oscillator on/off\n(O)", icon = icons.get("osc")),
             "view": make_button("", "Toggle the active view\n(V)", icon = icons.get("eye")),
-            "session_folder": make_button("", "Open the session folder\n(1)", icon = icons.get("folder")),
+            "session_folder": make_button("", "Open the session folder\n(1)", icon = icons.get("folder_yellow")),
             
             "tip": make_button("", "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
             "V_swap": make_button("", "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),

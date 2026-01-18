@@ -126,7 +126,7 @@ class App:
                         
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
                         
-                        ["tip", self.change_tip_status], ["V_swap", self.update_icons], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
+                        ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
 
                         ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
@@ -756,12 +756,12 @@ class App:
     # Nanonis functions 
     # Simple data requests over TCP-IP
     def on_parameters_request(self):
-        self.status["nanonis"] = "running"
-        self.update_buttons()
+        #self.status["nanonis"] = "running"
+        #self.update_buttons()
+        
+        if self.initialization: self.logprint("Attempting to retrieve information from Nanonis", message_type = "message")
 
         try:
-            if self.initialization: self.logprint("Attempting to retrieve information from Nanonis", message_type = "message")
-            
             # Get tip status
             if self.initialization: self.logprint("(tip_status, error) = nanonis.tip()", message_type = "code")
             (tip_status, error) = self.nanonis.tip()
@@ -780,6 +780,7 @@ class App:
                 self.logprint(f"Error retrieving the scan parameters: {error}", message_type = "error")
                 raise
             else:
+                parameters = {}
                 self.scan_parameters[0].update(parameters)
                 self.paths["session_path"] = parameters.get("session_path")
                 name = self.scan_parameters[0].get("name")
@@ -796,16 +797,39 @@ class App:
 
 
             # Get grid parameters
+            if self.initialization: self.logprint("(frame, error) = nanonis.frame()", message_type = "code")
             if self.initialization: self.logprint("(grid, error) = nanonis.grid()", message_type = "code")
+            (frame, error) = self.nanonis.frame()
             (grid, error) = self.nanonis.grid()
             
             if error:
-                self.logprint(f"Error retrieving the scan grid: {error}", message_type = "error")
+                self.logprint(f"Error retrieving the scan frame / grid: {error}", message_type = "error")
                 raise
             else:
+                self.frame = frame
                 self.grid = grid
-                channels = grid.get("channel_names")
-            
+                
+                if self.initialization:
+                    self.logprint(f"I obtained frame/grid and scan metadata from nanonis, now available in the dictionaries 'grid' and 'scan_metadata'", message_type = "success")
+                    self.logprint(f"frame.keys() = {self.frame.keys()}", message_type = "result")
+                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "result")
+                    self.logprint(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "result")
+        
+        except:
+            self.status["nanonis"] = "offline"
+            self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
+        
+        # Continue with requesting the scan metadadata and finally the scan data
+        self.on_scan_data_request()
+        self.logprint("So far successfull")
+        self.update_buttons()
+        self.update_tip_status()
+        self.update_parameter_fields()
+        
+        return
+
+    def on_scan_data_request(self):
+        try:            
             # Get scan metadata
             if self.initialization: self.logprint("(scan_metadata, error) = nanonis.scan_metadata()", message_type = "code")
             (scan_metadata, error) = self.nanonis.scan_metadata()
@@ -815,18 +839,35 @@ class App:
             else:
                 self.scan_metadata = scan_metadata
                 
-                if self.initialization:
-                    self.logprint(f"I obtained frame/grid and scan metadata from nanonis, now available in the dictionaries 'grid' and 'scan_metadata'", message_type = "success")
-                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "result")
-                    self.logprint(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "result")
+                # Refresh the recorded channels
+                if hasattr(self, "recorded_channels"): 
+                    recorded_channels_old = self.recorded_channels
+                else:
+                    recorded_channels_old = {}
 
-
+                self.recorded_channels = self.scan_metadata.get("recorded_channels")
+                
+                # Update the channels combobox with the channels that are being recorded if there is a change
+                if self.recorded_channels == recorded_channels_old:
+                    pass
+                else:
+                    self.gui.comboboxes["channels"].clear()
+                    self.gui.comboboxes["channels"].addItems(self.recorded_channels.values())
+            
+            # Find the channel index from the channels combobox, then get the scan data from nanonis
+            selected_channel_name = self.gui.comboboxes["channels"].currentText()
+            for key, value in self.recorded_channels.items():
+                if value == selected_channel_name:
+                    selected_channel_index = int(key)
+                    break
+            
+            if self.initialization: self.logprint("(scan_data, error) = nanonis.get_scan()", message_type = "code")
+            (scan_image, error) = self.nanonis.get_scan(selected_channel_index, backward = False)
             
             # All operations successful: release the Nanonis connection
             self.status["nanonis"] = "online"
-            self.nanonis.disconnect()
+            
             if not self.initialization: self.logprint("Successfully updated the following dictionaries: 'status[\"tip\"]', 'scan_parameters[0]', 'grid', 'scan_metadata'", message_type = "success")
-            sleep(.1)
 
         except:
             self.status["nanonis"] = "offline"
@@ -834,60 +875,15 @@ class App:
         
         finally:
             if self.initialization: self.initialization = False # Switch off the initialization flag after the first parameter retrieval
-            self.update_buttons()
-            self.update_tip_status()
-            self.update_parameter_fields()
+        
+        try:
+            if type(scan_image) == np.ndarray:
+                self.gui.image_view.setImage(scan_image)
+                self.gui.image_view.autoRange()
+        except Exception as e:
+            self.logprint(f"Error: {e}")
 
         return
-
-    def on_frame_request(self):
-        try:
-            if hasattr(self, "nanonis"):
-                self.logprint(f"Attempting to get the scan frame data", message_type = "message")
-                self.logprint(f"frame = nanonis.get_frame()", message_type = "code")
-                frame = self.nanonis.get_frame()
-
-            if type(frame) == dict:
-                self.frame = frame
-                channels = frame["channel_names"]
-                if type(channels) == list:
-                    self.channel_select_box.clear()
-                    self.channel_select_box.addItems(channels)
-                
-                self.logprint("I was able to read the scan frame data from Nanonis", message_type = "success")
-                self.logprint(f"[dict] frame = {self.frame}", message_type = "result")
-        except Exception as e:
-            self.logprint({e}, message_type = "error")
-
-    def on_nanonis_scan_request(self):
-        direction = 0
-        try:
-            if hasattr(self, "frame"):
-                channel_indices = self.frame["channel_indices"]
-                channel_index = channel_indices[self.channel_select_box.currentIndex()]
-                
-                selected_scan = self.nanonis.get_scan(channel_index, direction)
-                if type(selected_scan) == np.ndarray:
-                    self.selected_scan = selected_scan
-
-                    # Check if scan is complete
-                    nan_mask = np.isnan(selected_scan)
-                    num_nans = np.count_nonzero(nan_mask)
-                    num_values = np.count_nonzero(~nan_mask)
-
-                    if self.experiment_status == "running":
-                        if num_nans == 0: # Scan is finished because there were no NaN values found
-                            self.logprint("Experiment completed!", message_type = "success")
-                            self.change_experiment_status(request = "stop")
-                        self.progress_bar.setValue(int(100 * num_values / (num_nans + num_values)))
-                    
-
-                    self.gui.image_view.setImage(self.selected_scan)
-                    self.gui.image_view.autoRange()
-            else:
-                self.logprint("No dictionary 'frame' found", message_type = "error")
-        except Exception as e:
-            self.logprint(f"{e}", message_type = "error")
 
     # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
     def on_parameters_set(self) -> bool:
