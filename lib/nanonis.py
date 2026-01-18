@@ -11,9 +11,9 @@ colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_gre
 
 
 
-class Nanonis(NanonisHardware):
+class Nanonis(QObject):
     def __init__(self, hardware: dict):
-        super().__init__(hardware = hardware)
+        super().__init__()
         self.ureg = pint.UnitRegistry()
         self.nanonis_hardware = NanonisHardwareNew(hardware = hardware)
 
@@ -75,6 +75,7 @@ class Nanonis(NanonisHardware):
         """
         # Initalize outputs
         parameters = None
+        coarse_parameters = False
         error = False
         nhw = self.nanonis_hardware
 
@@ -87,7 +88,9 @@ class Nanonis(NanonisHardware):
             speed_dict = nhw.get_v_scan_nm_per_s()
             v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
             session_path = nhw.get_path()
-
+            try: coarse_parameters = nhw.get_motor_f_A()
+            except: pass
+            
             parameters = gains_dict | speed_dict | {
                 "V_nanonis": V,
                 "bias_V": V,
@@ -95,6 +98,7 @@ class Nanonis(NanonisHardware):
                 "v_xy_nm_per_s": v_xy_nm_per_s,
                 "session_path": session_path
             }
+            if coarse_parameters: parameters.update({"motor_frequency": coarse_parameters.get("frequency"), "motor_amplitude": coarse_parameters.get("amplitude")})
 
         except Exception as e: error = e
         finally: nhw.disconnect()
@@ -251,11 +255,11 @@ class Nanonis(NanonisHardware):
 
         try:
             nhw.connect()                            
-            V_old = self.get_V() # Read data from Nanonis
+            V_old = nhw.get_V() # Read data from Nanonis
             if np.abs(V - V_old) < dV: return (standard_parameters, error) # If the bias is unchanged, don't slew it
             
             feedback = nhw.get_fb()
-            tip_height = self.get_z_nm()
+            tip_height = nhw.get_z_nm()
             polarity_difference = np.sign(V) * np.sign(V_old) < 0 # True if the sign changes
             
             if V > V_old: delta_V = dV # Change the sign of deltaV to get the arange right
@@ -268,12 +272,12 @@ class Nanonis(NanonisHardware):
                 nhw.set_z_nm(tip_height + dz_nm)
 
             for V_t in slew: # Perform the slew to the new bias voltage
-                self.set_V(V_t)
+                nhw.set_V(V_t)
                 sleep(dt)
-            self.set_V(V) # Final bias value
+            nhw.set_V(V) # Final bias value
         
             if bool(feedback) and bool(polarity_difference):
-                self.set_feedback(True) # Turn the feedback back on
+                nhw.set_fb(True) # Turn the feedback back on
 
         except Exception as e: error = e
         finally: nhw.disconnect()
@@ -319,34 +323,30 @@ class Nanonis(NanonisHardware):
 
         return (scan_image, error)
 
-    def scan_control(self, action: str = "stop", direction: str = "down", verbose: bool = True, monitor: bool = False):
-        error_flag = False
-
+    def scan_control(self, parameters: dict = {}) -> bool | str:
+        # Initalize outputs
+        error = False
+        nhw = self.nanonis_hardware
+        
+        action = parameters.get("action", "pause")
+        direction = parameters.get("direction", "down")
+        
+        # Set up the TCP connection and get grid dat
         try:
-            self.connect()
+            nhw.connect()
             
             dirxn = "up"
             if direction == "down": dirxn = "down"
             match action:
-                case "start":
-                    #print(f"  nanonis_functions.start_scan({dirxn})", color = "blue")
-                    self.start_scan(dirxn)
-                case "pause":
-                    #print(f"  nanonis_functions.pause_scan()", color = "blue")
-                    self.pause_scan()
-                case "resume":
-                    #print(f"  nanonis_functions.resume_scan()", color = "blue")
-                    self.resume_scan()
-                case "stop":
-                    #print(f"  nanonis_functions.stop_scan()", color = "blue")
-                    self.stop_scan()
-                case _:
-                    pass
-        except Exception as e:
-            #self.logprint(f"{e}", color = "red")
-            pass
-        finally:
-            self.disconnect()
-            sleep(.1)
+                case "start": nhw.start_scan(dirxn)
+                case "pause": nhw.pause_scan()
+                case "resume": nhw.resume_scan()
+                case "stop": nhw.stop_scan()
+                case _: pass
         
-        return
+        except Exception as e: error = e
+        finally: nhw.disconnect()
+
+        return error
+
+

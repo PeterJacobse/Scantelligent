@@ -33,7 +33,8 @@ class App:
         self.gui = ScantelligentGUI(self.paths["icon_folder"])
         
         self.setup_connections()
-        self.config_init()        
+        self.config_init()
+        self.connect_hardware()
         self.gui.show()
 
         # Set up the Experiments class and thread and connect signals and slots
@@ -44,7 +45,6 @@ class App:
 
 
     def parameters_init(self) -> None:
-        self.initialization = True
         atexit.register(self.cleanup)
         
         self.paths = {
@@ -93,6 +93,7 @@ class App:
 
         # Dict to keep track of the hardware and experiment status
         self.status = {
+            "initialization": True,
             "nanonis": "offline",
             "mla": "offline",
             "camera": "offline",
@@ -149,6 +150,7 @@ class App:
             self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
             
             # Comboboxes
+            self.gui.comboboxes["channels"].currentIndexChanged.connect(self.on_scan_data_request)
             self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.on_experiment_change)
             
             # Populate the command input completer with all attributes and methods of self and self.gui
@@ -323,15 +325,17 @@ class App:
                 self.status["nanonis"] = "online"
                 self.nanonis = Nanonis(hardware = self.hardware) # Make the Nanonis class available
                 self.logprint("Successfully connected to Nanonis! I also instantiated Nanonis() as nanonis", message_type = "success")
-
-                # If Nanonis is online, proceed to request all parameters
-                self.on_parameters_request()
         
             except socket.timeout:
                 self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
+                raise
             except Exception:
                 self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
+                raise
 
+            # If Nanonis is online, proceed with getting parameters and scan data
+            if self.status["nanonis"] == "online": self.on_parameters_request()
+            
             # Add nanonis attributes and methods to the command input completer
             nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
             self.all_attributes.extend(nanonis_attributes)
@@ -439,17 +443,13 @@ class App:
         match self.status["camera"]:
             case "online":
                 cam_button.changeToolTip("Camera: online")
-                cam_button.setStyleSheet(style_sheets["connected"])
-            
+                cam_button.setStyleSheet(style_sheets["connected"])            
             case "running":
                 cam_button.changeToolTip("Camera: active USB connection")
-                cam_button.setStyleSheet(style_sheets["running"])
-            
+                cam_button.setStyleSheet(style_sheets["running"])            
             case _:
                 cam_button.changeToolTip("Camera: offline")
                 cam_button.setStyleSheet(style_sheets["disconnected"])
-
-
 
         match self.status["mla"]:
             case "online":
@@ -469,8 +469,6 @@ class App:
                 mla_button.setStyleSheet(style_sheets["disconnected"])
                 
                 buttons["oscillator"].setEnabled(False)
-
-
 
         match self.status["nanonis"]:
             case "online":
@@ -543,33 +541,26 @@ class App:
 
     def update_parameter_fields(self) -> None:
         # Enter the scan parameters into the fields
-        
         line_edits = self.gui.line_edits
         comboboxes = self.gui.comboboxes
-
-        channel_names = self.scan_metadata.get("channel_names")
-        comboboxes["channels"].clear()
-        comboboxes["channels"].addItems(channel_names)
         
-        # Add the unit to the number
-        #self.setText(f"{number} {self.unit}")
+        parameters = self.scan_parameters[0]
         
-        """
-        self.parameters_numbers = self.parameters[0]
-        
-        [parameter_floats.update({name, self.extract_number_from_string(self.scan_parameters[0].get(name, ""))}) for name in parameter_names]        
-        
-        v
-        I_fb_pA = I_fb * 1E12 if I_fb is not None else None
-        p_gain_pm = p_gain * 1E12 if p_gain is not None else None
-        t_const_us = t_const * 1E6 if t_const is not None else None
-
-        self.gui.line_edits["V_nanonis"].setText(f"{V_nanonis:.2f} V" if V_nanonis is not None else "")
-        self.gui.line_edits["V_mla"].setText(f"{V_mla:.2f} V" if V_mla is not None else "")
-        self.gui.line_edits["I_fb"].setText(f"{I_fb_pA:.0f} pA" if I_fb_pA is not None else "")
-        self.gui.line_edits["p_gain"].setText(f"{p_gain_pm:.0f} pm" if p_gain_pm is not None else "") # In pm
-        self.gui.line_edits["t_const"].setText(f"{t_const_us:.0f} us" if t_const_us is not None else "") # In us
-        """
+        for key, value in parameters.items():
+            if key in ["V", "bias", "V_nanonis"]:
+                self.gui.line_edits["V_nanonis"].setText(f"{value:.2f} V")
+            if key == "V_mla":
+                self.gui.line_edits["V_mla"].setText(f"{value:.2f} V")
+            if key == "I_fb_pA":
+                self.gui.line_edits["I_fb"].setText(f"{value:.0f} pA")
+            if key == "p_gain_pm":
+                self.gui.line_edits["p_gain"].setText(f"{value:.0f} pm")
+            if key == "t_const_us":
+                self.gui.line_edits["t_const"].setText(f"{value:.0f} us")
+            if key == "v_fwd_nm_per_s":
+                self.gui.line_edits["v_fwd"].setText(f"{value:.1f} nm/s")
+            if key == "v_bwd_nm_per_s":
+                self.gui.line_edits["v_bwd"].setText(f"{value:.1f} nm/s")
 
         return
 
@@ -756,31 +747,29 @@ class App:
     # Nanonis functions 
     # Simple data requests over TCP-IP
     def on_parameters_request(self):
-        #self.status["nanonis"] = "running"
-        #self.update_buttons()
+        logp = self.logprint
         
-        if self.initialization: self.logprint("Attempting to retrieve information from Nanonis", message_type = "message")
+        if self.status["initialization"]: logp("Attempting to retrieve information from Nanonis", message_type = "message")
 
         try:
             # Get tip status
-            if self.initialization: self.logprint("(tip_status, error) = nanonis.tip()", message_type = "code")
+            if self.status["initialization"]: logp("(tip_status, error) = nanonis.tip()", message_type = "code")
             (tip_status, error) = self.nanonis.tip()
             
             if error:
-                self.logprint(f"Error retrieving the tip status: {error}", message_type = "error")
+                logp(f"Error retrieving the tip status: {error}", message_type = "error")
                 raise
             else:
                 self.status["tip"] = tip_status
             
             # Get scan parameters
-            if self.initialization: self.logprint("(parameters, error) = nanonis.parameters()", message_type = "code")
+            if self.status["initialization"]: logp("(parameters, error) = nanonis.parameters()", message_type = "code")
             (parameters, error) = self.nanonis.parameters()
             
             if error:
-                self.logprint(f"Error retrieving the scan parameters: {error}", message_type = "error")
+                logp(f"Error retrieving the scan parameters: {error}", message_type = "error")
                 raise
             else:
-                parameters = {}
                 self.scan_parameters[0].update(parameters)
                 self.paths["session_path"] = parameters.get("session_path")
                 name = self.scan_parameters[0].get("name")
@@ -788,40 +777,41 @@ class App:
                 self.gui.buttons["session_folder"].setToolTip(f"Open session folder {self.paths['session_path']} (1)")
                 self.paths["experiment_file"] = self.get_next_indexed_filename(self.paths["session_path"], "experiment", ".hdf5")
 
-                if self.initialization:
-                    self.logprint(f"I was able to retrieve the tip status and scan parameters and save them to dictionaries called 'status' and 'scan_parameters[0]' (\"{name}\")", message_type = "success")
-                    self.logprint(f"[dict] status[\"tip\"] = tip_status = {tip_status}", message_type = "result")
-                    self.logprint(f"[dict] scan_parameters[0] = parameters", message_type = "result")
-                    self.logprint(f"scan_parameters[0].keys() = {self.scan_parameters[0].keys()}", message_type = "result")
+                if self.status["initialization"]:
+                    logp(f"I was able to retrieve the tip status and scan parameters and save them to dictionaries called 'status' and 'scan_parameters[0]' (\"{name}\")", message_type = "success")
+                    logp(f"[dict] status[\"tip\"] = tip_status = {tip_status}", message_type = "result")
+                    logp(f"[dict] scan_parameters[0] = parameters", message_type = "result")
+                    logp(f"scan_parameters[0].keys() = {self.scan_parameters[0].keys()}", message_type = "result")
 
 
 
             # Get grid parameters
-            if self.initialization: self.logprint("(frame, error) = nanonis.frame()", message_type = "code")
-            if self.initialization: self.logprint("(grid, error) = nanonis.grid()", message_type = "code")
+            if self.status["initialization"]:
+                logp("(frame, error) = nanonis.frame()", message_type = "code")
+                logp("(grid, error) = nanonis.grid()", message_type = "code")
             (frame, error) = self.nanonis.frame()
             (grid, error) = self.nanonis.grid()
             
             if error:
-                self.logprint(f"Error retrieving the scan frame / grid: {error}", message_type = "error")
+                logp(f"Error retrieving the scan frame / grid: {error}", message_type = "error")
                 raise
             else:
                 self.frame = frame
                 self.grid = grid
                 
-                if self.initialization:
-                    self.logprint(f"I obtained frame/grid and scan metadata from nanonis, now available in the dictionaries 'grid' and 'scan_metadata'", message_type = "success")
-                    self.logprint(f"frame.keys() = {self.frame.keys()}", message_type = "result")
-                    self.logprint(f"grid.keys() = {self.grid.keys()}", message_type = "result")
-                    self.logprint(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "result")
+                if self.status["initialization"]:
+                    logp(f"I obtained frame/grid and scan metadata from nanonis, now available in the dictionaries 'grid' and 'scan_metadata'", message_type = "success")
+                    logp(f"frame.keys() = {self.frame.keys()}", message_type = "result")
+                    logp(f"grid.keys() = {self.grid.keys()}", message_type = "result")
+                    logp(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "result")
         
         except:
             self.status["nanonis"] = "offline"
-            self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
+            logp("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
         
         # Continue with requesting the scan metadadata and finally the scan data
         self.on_scan_data_request()
-        self.logprint("So far successfull")
+        
         self.update_buttons()
         self.update_tip_status()
         self.update_parameter_fields()
@@ -829,59 +819,73 @@ class App:
         return
 
     def on_scan_data_request(self):
+        logp = self.logprint
+        
         try:            
             # Get scan metadata
-            if self.initialization: self.logprint("(scan_metadata, error) = nanonis.scan_metadata()", message_type = "code")
+            if self.status["initialization"]: logp("(scan_metadata, error) = nanonis.scan_metadata()", message_type = "code")
             (scan_metadata, error) = self.nanonis.scan_metadata()
             if error:
-                self.logprint("Error retrieving the scan metadata.", message_type = "error")
+                logp("Error retrieving the scan metadata.", message_type = "error")
                 raise
             else:
                 self.scan_metadata = scan_metadata
                 
                 # Refresh the recorded channels
-                if hasattr(self, "recorded_channels"): 
-                    recorded_channels_old = self.recorded_channels
+                if hasattr(self, "channels"): 
+                    recorded_channels_old = self.channels
                 else:
                     recorded_channels_old = {}
 
-                self.recorded_channels = self.scan_metadata.get("recorded_channels")
+                self.channels = self.scan_metadata.get("recorded_channels")
                 
                 # Update the channels combobox with the channels that are being recorded if there is a change
-                if self.recorded_channels == recorded_channels_old:
+                if self.channels == recorded_channels_old:
                     pass
                 else:
+                    self.gui.comboboxes["channels"].blockSignals(True)
                     self.gui.comboboxes["channels"].clear()
-                    self.gui.comboboxes["channels"].addItems(self.recorded_channels.values())
+                    self.gui.comboboxes["channels"].addItems(list(self.channels.values()))
+                    if "Z (m)" in list(self.channels.values()):
+                        self.gui.comboboxes["channels"].setCurrentText("Z (m)")
+                    self.gui.comboboxes["channels"].blockSignals(False)
             
             # Find the channel index from the channels combobox, then get the scan data from nanonis
             selected_channel_name = self.gui.comboboxes["channels"].currentText()
-            for key, value in self.recorded_channels.items():
+            for key, value in self.channels.items():
                 if value == selected_channel_name:
                     selected_channel_index = int(key)
                     break
             
-            if self.initialization: self.logprint("(scan_data, error) = nanonis.get_scan()", message_type = "code")
+            if self.status["initialization"]: logp("(scan_data, error) = nanonis.get_scan()", message_type = "code")
             (scan_image, error) = self.nanonis.get_scan(selected_channel_index, backward = False)
             
             # All operations successful: release the Nanonis connection
             self.status["nanonis"] = "online"
             
-            if not self.initialization: self.logprint("Successfully updated the following dictionaries: 'status[\"tip\"]', 'scan_parameters[0]', 'grid', 'scan_metadata'", message_type = "success")
+            if self.status["initialization"]: logp("Successfully updated the following dictionaries: 'status[\"tip\"]', 'scan_parameters[0]', 'grid', 'scan_metadata'", message_type = "success")
 
         except:
             self.status["nanonis"] = "offline"
-            self.logprint("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
-        
-        finally:
-            if self.initialization: self.initialization = False # Switch off the initialization flag after the first parameter retrieval
-        
+            logp("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
+            
         try:
             if type(scan_image) == np.ndarray:
                 self.gui.image_view.setImage(scan_image)
+                image_item = self.gui.image_view.getImageItem()
+                
+                (frame, error) = self.nanonis.frame()                
+                width = self.frame.get("width_nm")
+                height = self.frame.get("height_nm")
+                
+                image_item.setRect(QtCore.QRectF(self.frame.get("x_nm") - 0.5 * width, self.frame.get("y_nm") - 0.5 * height, width, height))
+                image_item.setRotation(self.frame.get("angle_deg"))
                 self.gui.image_view.autoRange()
         except Exception as e:
             self.logprint(f"Error: {e}")
+        
+        finally: # Switch off the initialization flag after the first successful parameter retrieval
+            if hasattr(self, "frame") and hasattr(self, "grid") and hasattr(self, "scan_metadata"): self.status["initialization"] = False
 
         return
 
@@ -1003,83 +1007,54 @@ class App:
 
 
     # Experiments and thread management
-    def on_experiment_control(self, action: str = "start_pause"):
-        if action == "start_pause":
-            if self.status["experiment"] == "running":
-                action = "pause"
-            elif self.status["experiment"] == "paused":
-                action = "resume"
-            else:
-                action = "start"
+    def on_experiment_control(self, action: str = "start_pause") -> None:
+        sp_button = self.gui.buttons["start_pause"]
         
+        if not hasattr(self, "nanonis"): return
         try:
-            self.nanonis.connect()
-            self.nanonis.scan_control(action = action)
+            if action == "start_pause":
+                
+                match self.status["experiment"]:
+                    case "running":
+                        action = "pause"
+                        self.status["experiment"] = f"{action}d"
+                        sp_button.setIcon(self.icons.get("start"))
+                        self.nanonis.scan_control({"action": action})
+                    case "paused":
+                        action = "resume"
+                        self.status["experiment"] = "running"
+                        sp_button.setIcon(self.icons.get("pause"))
+                        self.nanonis.scan_control({"action": action})
+                    case _:
+                        action = "start"
+                        self.status["experiment"] = "running"
+                        sp_button.setIcon(self.icons.get("pause"))
+                        
+                        # Start a timer to connect scan updates to the GUI
+                        self.timer = QtCore.QTimer()
+                        self.timer.timeout.connect(self.on_scan_data_request)
+                        self.timer.start(2000)
+                        
+                        self.nanonis.scan_control({"action": "start"})
+            
+            elif action == "stop":
+                self.status["experiment"] = "idle"
+                sp_button.setIcon(self.icons.get("start"))
+                self.nanonis.scan_control({"action": "stop"})
+                
+                # Kill the timer
+                self.timer.stop()
+                self.timer.disconnect()
+                self.timer.deleteLater()
+            
         except Exception as e:
             self.logprint(f"Error. Could not send experiment control command to Nanonis: {e}", message_type = "error")
+        
+        return
 
-    def change_experiment_status(self, request: str = "stop"):
-        self.logprint(f"Request = {request}", message_type = "message")
-        match request:
-            case "pause":
-                if self.experiment_status == "running":
-                    self.nanonis.scan_control(action = "pause")
-                    self.experiment_status = "paused"
-                    self.update_icons()
-                    return
-                else:
-                    return
-            case "stop":
-                self.logprint(f"{self.timer}", message_type = "message")
-                if hasattr(self, "timer"):
-                    self.timer.stop()
-                if self.experiment_status in ["idle", "paused", "running"]:
-                    self.experiment_status = "idle"
-                    self.nanonis.scan_control(action = "stop")
-                    self.update_icons()
-                return
-            case "resume":
-                if self.experiment_status == "paused":
-                    self.nanonis.scan_control(action = "resume")
-                    self.experiment_status = "running"
-                    self.update_icons()
-                return
-            case _: # This is start
-                if self.experiment_status == "running":
-                    self.nanonis.scan_control(action = "stop")
-                    self.experiment_status = "idle"
-                    if hasattr(self, "timer"):
-                        self.timer.stop()
-                    self.update_icons()
-                    return
-                else: # Only when no experiment is running and a start is requested will the code below be evaluated
-                    pass
 
-        # First, check if the TCP connection is okay
-        if not self.status["nanonis"] == "online":
-            self.connect_nanonis()
 
-            if not self.status["nanonis"] == "online":
-                self.logprint("Error! Could not establish a connection to Nanonis. Aborting.", message_type = "error")
-                self.update_buttons()
-                return False
-
-        # Read the experiment type and parameters
-        #self.experiment = self.experiment_box.currentText()
-        #self.direction = self.direction_box.currentText()
-        self.paths["experiment_filename"] = self.experiment
-        self.paths["experiment_file"] = os.path.join(self.paths["session_path"], self.paths["experiment_filename"])
-
-        # Choose the experiment
-        match self.experiment:
-            case "simple_scan":
-                self.start_simple_scan()
-            case "grid_sampling":
-                self.start_grid_sampling()
-            case _:
-                self.logprint("Sorry, I don't know this experiment yet.", message_type = "error")
-                return False
-
+    # Deprecate:
     def start_simple_scan(self):
         self.logprint(f"Starting experiment {self.experiment}")
         self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")

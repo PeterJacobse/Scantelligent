@@ -175,7 +175,7 @@ class NanonisHardwareNew:
             # Scan
             "get_v_scan": make_header('Scan.SpeedSet', body_size = 0),
             "set_v_scan": make_header('Scan.SpeedGet', body_size = 0),
-            "scan": make_header('Scan.Action', body_size = 6),
+            "scan_action": make_header('Scan.Action', body_size = 6),
             "get_scan_status": make_header('Scan.StatusGet', body_size = 0),
             "get_scan_frame": make_header('Scan.FrameGet', body_size=0),
             "set_scan_frame": make_header('Scan.FrameSet', body_size = 20),
@@ -186,13 +186,14 @@ class NanonisHardwareNew:
             "scan_wait_line": make_header('Scan.WaitEndOfLine', body_size = 4),
             "scan_wait_scan": make_header('Scan.WaitEndOfScan', body_size = 4),
             "get_scan_data": make_header('Scan.FrameDataGrab', body_size = 8),
-            
+
             # Signals
             "get_signals_in_slots": make_header('Signals.InSlotsGet', body_size = 0),
             
             # Motor
             "get_motor_f_A": make_header('Motor.FreqAmpGet', body_size = 0),
             "set_motor_f_A": make_header('Motor.FreqAmpSet', body_size = 10),
+            "coarse_move": make_header('Motor.StartMove', body_size = 14),
             
             # Tipshaper
             "shape_tip": make_header('TipShaper.Start', body_size = 8),
@@ -478,12 +479,12 @@ class NanonisHardwareNew:
         response = self.receive_response()
         
         p_gain = self.conv.hex_to_float32(response[0 : 4])
-        t_constant = self.conv.hex_to_float32(response[4 : 8])
+        t_const = self.conv.hex_to_float32(response[4 : 8])
         i_gain = self.conv.hex_to_float32(response[8 : 12])
         
         parameters = {
             "p_gain_pm": p_gain * 1E12,
-            "t_const_us": t_constant * 1E6,
+            "t_const_us": t_const * 1E6,
             "i_gain_nm_per_s": i_gain * 1E9            
         }
         
@@ -682,6 +683,57 @@ class NanonisHardwareNew:
         
         return parameters
 
+    def scan_action(self, parameters: dict) -> None:
+        direction = parameters.get("direction", "down")
+        
+        if "start" in parameters.items(): self.start_scan(direction)
+        elif "stop" in parameters.items(): self.stop_scan()
+        elif "resume" in parameters.items(): self.resume_scan()
+        else: self.pause_scan()
+        
+        return
+
+    def start_scan(self, direction: str = "up") -> None:
+        action_dict = {"start": 0, "stop": 1, "pause" : 2, "resume": 3, "down": 0, "up": 1}
+
+        if direction == "up": dir_command = self.conv.to_hex(1, 4)
+        else: dir_command = self.conv.to_hex(0, 4)
+        command = self.headers["scan_action"] + self.conv.to_hex(0, 2) + dir_command
+        
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+
+    def pause_scan(self) -> None:
+        action_dict = {"start": 0, "stop": 1, "pause" : 2, "resume": 3, "down": 0, "up": 1}
+
+        dir_command = self.conv.to_hex(0, 4)
+        command = self.headers["scan_action"] + self.conv.to_hex(2, 2) + dir_command
+        
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+
+    def stop_scan(self) -> None:
+        dir_command = self.conv.to_hex(0, 4)
+        command = self.headers["scan_action"] + self.conv.to_hex(1, 2) + dir_command
+        
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+
+    def resume_scan(self) -> None:
+        dir_command = self.conv.to_hex(0, 4)
+        command = self.headers["scan_action"] + self.conv.to_hex(3, 2) + dir_command
+        
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+
     # Signals
     def get_signals_in_slots(self) -> dict:
         command = self.headers["get_signals_in_slots"]
@@ -724,10 +776,40 @@ class NanonisHardwareNew:
         
         return result
         
-    def set_motor_f_A(self, parameters, axis = 0) -> None:
-        command = self.headers["set_motor_f_A"] + self.conv.float32_to_hex(parameters["frequency"]) + self.conv.float32_to_hex(parameters["amplitude"]) + self.conv.to_hex(axis, 2)
+    def set_motor_f_A(self, parameters: dict) -> None:
+        standard_parameters = {"frequency": 1000, "amplitude": 150, "axis": 0}
+        standard_parameters.update(parameters)
+        parameters = standard_parameters
+        
+        command = self.headers["set_motor_f_A"] + self.conv.float32_to_hex(parameters.get("frequency")) + self.conv.float32_to_hex(parameters.get("amplitude")) + self.conv.to_hex(parameters.get("axis", 0), 2)
         self.send_command(command)
         
+        self.receive_response(0)
+        
+        return
+
+    def coarse_move(self, parameters: dict = {}) -> None:
+        standard_parameters = {"direction": "up", "steps": 3, "wait": True, "group": 1}
+        standard_parameters.update(parameters)
+        parameters = standard_parameters        
+        
+        direction_dict = {
+            "x+": 0, "e": 0, "east": 0,
+            "x-": 1, "w": 1, "west": 1,
+            "y+": 2, "n": 2, "north": 2,
+            "y-": 3, "s": 3, "south": 3,
+            "z+": 4, "up": 4, "retract": 4, "away": 4, "higher": 4,
+            "z-": 5, "down": 5, "approach": 5, "advance": 5, "toward": 5, "towards": 5, "lower": 5
+            }
+        direction_str = parameters.get("direction").lower()
+        direction_int = direction_dict[direction_str]
+        steps_int = parameters.get("steps", 0)
+        
+        group = 0 # Change this in the future?        
+
+        command = self.headers["coarse_move"] + self.conv.to_hex(direction_int, 4) +  self.conv.to_hex(steps_int, 2) + self.conv.to_hex(group, 4) + self.headers[str(parameters.get("wait"))]
+        
+        self.send_command(command)
         self.receive_response(0)
         
         return
@@ -740,6 +822,9 @@ class NanonisHardwareNew:
         self.receive_response(0)
         
         return
+
+
+
 
 
 
