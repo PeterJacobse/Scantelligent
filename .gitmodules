@@ -1,3 +1,6 @@
 [submodule "ScopeFoundryHW/andor_camera"]
 	path = ScopeFoundryHW/andor_camera
 	url = https://github.com/ScopeFoundry/HW_andor_camera
+[submodule "lib/nanonisTCP"]
+	path = lib/nanonisTCP
+	url = https://github.com/New-Horizons-SPM/nanonisTCP.git
