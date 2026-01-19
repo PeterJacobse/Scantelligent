@@ -8,14 +8,14 @@ class GUIItems:
     def __init__(self):
         pass
 
-    def make_groupbox(self, name: str, description: str = "") -> QtWidgets.QGroupBox:
+    def make_groupbox(self, name: str, tooltip: str = "") -> QtWidgets.QGroupBox:
         box = QtWidgets.QGroupBox(name)
-        box.setToolTip(description)
+        box.setToolTip(tooltip)
         box.setCheckable(True)
         return box
 
-    def make_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> SmartPushButton:
-        button = SmartPushButton(name)
+    def make_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJPushButton:
+        button = PJPushButton(name)
         button.setObjectName(name)
         button.setToolTip(tooltip)
 
@@ -27,24 +27,18 @@ class GUIItems:
             except: pass
         return button
 
-    def make_label(self, name: str, description: str = "", icon_path = None) -> QtWidgets.QLabel:
+    def make_label(self, name: str, tooltip: str = "") -> QtWidgets.QLabel:
         label = QtWidgets.QLabel(name)
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         label.setObjectName(name)
-        label.setToolTip(description)
+        label.setToolTip(tooltip)
 
-        if isinstance(icon_path, str):
-            try:
-                icon = QtGui.QIcon(icon_path)
-                label.setIcon(icon)
-            except:
-                pass
         return label
 
-    def make_radio_button(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> SmartRadioButton:
-        button = SmartRadioButton(name)
+    def make_radio_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJRadioButton:
+        button = PJRadioButton(name)
         button.setObjectName(name)
-        button.setToolTip(description)
+        button.setToolTip(tooltip)
 
         if isinstance(icon, QtGui.QIcon):
             if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
@@ -54,10 +48,10 @@ class GUIItems:
             except: pass
         return button
     
-    def make_checkbox(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> SmartCheckBox:
-        box = SmartCheckBox(name)
+    def make_checkbox(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJCheckBox:
+        box = PJCheckBox(name)
         box.setObjectName(name)
-        box.setToolTip(description)
+        box.setToolTip(tooltip)
         
         if isinstance(icon, QtGui.QIcon):
             if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
@@ -67,53 +61,39 @@ class GUIItems:
             except: pass
         return box
     
-    def make_combobox(self, name: str = "", description: str = "", items: list = []) -> SmartComboBox:
-        box = SmartComboBox()
+    def make_combobox(self, name: str = "", tooltip: str = "", items: list = []) -> PJComboBox:
+        box = PJComboBox()
         box.setObjectName(name)
-        box.setToolTip(description)
+        box.setToolTip(tooltip)
 
         if len(items) > 0: box.addItems(items)
         
         return box
 
-    def make_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0) -> SmartLineEdit:
-        button = SmartLineEdit()
-        button.setObjectName(name)
-        button.setToolTip(description)
-        button.setText(name)
-
-        if isinstance(icon, QtGui.QIcon):
-            if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
-                try: icon = self.rotate_icon(icon, rotate_icon)
-                except: pass
-            try: button.setIcon(icon)
-            except: pass
+    def make_line_edit(self, name: str, tooltip: str = "") -> PJLineEdit:
+        line_edit = PJLineEdit()
+        line_edit.setObjectName(name)
+        line_edit.setToolTip(tooltip)
+        line_edit.setText(name)
         
-        return button
+        return line_edit
 
-    def make_unit_line_edit(self, name: str, description: str = "", icon = None, rotate_icon: float = 0, unit = None, limits = None) -> UnitLineEdit:
-        button = UnitLineEdit(unit = unit, limits = limits)
-        button.setObjectName(name)
-        button.setToolTip(description)
-        button.setText(name)
-
-        if isinstance(icon, QtGui.QIcon):
-            if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
-                try: icon = self.rotate_icon(icon, rotate_icon)
-                except: pass
-            try: button.setIcon(icon)
-            except: pass
+    def make_unit_line_edit(self, name: str, tooltip: str = "", unit = None, limits = None) -> PJLineEdit:
+        line_edit = PJLineEdit(unit = unit, limits = limits)
+        line_edit.setObjectName(name)
+        line_edit.setToolTip(tooltip)
+        line_edit.setText(name)
         
-        return button 
+        return line_edit
 
-    def make_progress_bar(self, name, description: str = "") -> SmartProgressBar:
-        bar = SmartProgressBar()
+    def make_progress_bar(self, name, tooltip: str = "") -> PJProgressBar:
+        bar = PJProgressBar()
         
         bar.setObjectName(name)
         bar.setMinimum(0)
         bar.setMaximum(100)
         bar.setValue(0)
-        bar.setToolTip(description)
+        bar.setToolTip(tooltip)
         
         return bar
 
@@ -129,10 +109,10 @@ class GUIItems:
         layout.setSpacing(1)
         return layout
     
-    def make_console(self, name, description) -> SmartConsole:
-        console = SmartConsole()
+    def make_console(self, name, tooltip) -> PJConsole:
+        console = PJConsole()
         console.setObjectName(name)
-        console.setToolTip(description)
+        console.setToolTip(tooltip)
         
         return console
     
@@ -183,7 +163,7 @@ class HoverTargetItem(pg.TargetItem):
 
 
 
-class SmartGroupBox(QtWidgets.QGroupBox):
+class PJGroupBox(QtWidgets.QGroupBox):
     """
     A Collapsible QGroupbox
     """
@@ -192,7 +172,7 @@ class SmartGroupBox(QtWidgets.QGroupBox):
     
 
 
-class SmartPushButton(QtWidgets.QPushButton):
+class PJPushButton(QtWidgets.QPushButton):
     """
     A QPushButton with extra method changeToolTip
     """
@@ -224,7 +204,7 @@ class SmartPushButton(QtWidgets.QPushButton):
 
 
 
-class SmartComboBox(QtWidgets.QComboBox):
+class PJComboBox(QtWidgets.QComboBox):
     """
     A QComboBox with extra method changeToolTip
     """
@@ -253,10 +233,51 @@ class SmartComboBox(QtWidgets.QComboBox):
             self.setToolTip(new_tooltip)
         except:
             pass
+        return
+
+    def renewItems(self, items) -> None:
+        if not isinstance(items, list): return
+        
+        self.blockSignals(True)
+        
+        self.clear()
+        self.addItems(items)
+        
+        self.blockSignals(False)
+        return
+
+    def toggleIndex(self, delta_index) -> None:
+        if not isinstance(delta_index, int) or isinstance(delta_index, float): return
+        delta_i = int(delta_index)
+        
+        self.blockSignals(True)
+        
+        n = self.count()
+        index = self.currentIndex()
+        new_index = index + delta_index
+        
+        if new_index > n - 1: new_index = 0
+        if new_index < 0: new_index = n - 1
+        self.setCurrentIndex(new_index)
+        
+        self.blockSignals(False)
+        return
+
+    def selectItem(self, desired_item) -> None:
+        if not isinstance(desired_item, str): return
+
+        self.blockSignals(True)
+
+        all_items = [self.itemText(i) for i in range(self.count())]
+        if desired_item in all_items:
+            self.setCurrentText(desired_item)
+        
+        self.blockSignals(False)
+        return
 
 
 
-class SmartCheckBox(QtWidgets.QCheckBox):
+class PJCheckBox(QtWidgets.QCheckBox):
     """
     A QCheckBox with extra method changeToolTip
     """
@@ -288,7 +309,7 @@ class SmartCheckBox(QtWidgets.QCheckBox):
 
 
 
-class SmartRadioButton(QtWidgets.QRadioButton):
+class PJRadioButton(QtWidgets.QRadioButton):
     """
     A QRadioButton with extra method changeToolTip
     """
@@ -320,16 +341,16 @@ class SmartRadioButton(QtWidgets.QRadioButton):
 
 
 
-class SmartLineEdit(QtWidgets.QLineEdit):
+class PJLineEdit_old(QtWidgets.QLineEdit):
     """
-    A QLineEdit with extra method changeToolTip
+    #A QLineEdit with extra method changeToolTip
     """
     def __init__(self):
         super().__init__()
     
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
-        Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+        #Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
         """
         try:
             old_tooltip = self.toolTip()
@@ -352,7 +373,7 @@ class SmartLineEdit(QtWidgets.QLineEdit):
 
 
 
-class UnitLineEdit(QtWidgets.QLineEdit):
+class PJLineEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit with extra method changeToolTip, and which adds a unit after editing is finished
     """
@@ -360,7 +381,7 @@ class UnitLineEdit(QtWidgets.QLineEdit):
         super().__init__(parent)
         self.unit = kwargs.get("unit", None)
         self.limits = kwargs.get("limits", None)
-        self.editingFinished.connect(self.addUnit)
+        if self.unit: self.editingFinished.connect(self.addUnit)
     
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
@@ -411,7 +432,7 @@ class UnitLineEdit(QtWidgets.QLineEdit):
 
 
 
-class SmartProgressBar(QtWidgets.QProgressBar):
+class PJProgressBar(QtWidgets.QProgressBar):
     """
     A QProgressBar with extra method changeToolTip
     """
@@ -443,7 +464,7 @@ class SmartProgressBar(QtWidgets.QProgressBar):
 
 
 
-class SmartConsole(QtWidgets.QTextEdit):
+class PJConsole(QtWidgets.QTextEdit):
     """
     A QTextEdit with extra method changeToolTip
     """

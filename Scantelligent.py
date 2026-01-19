@@ -73,9 +73,6 @@ class App:
         self.max_channel_index = 0
         self.scale_toggle_index = 0
         self.ureg = pint.UnitRegistry()
-        self.nanonis_online = False
-        self.experiment_status = "idle"
-        #self.process = QtCore.QProcess(self)
 
         # Image processing flags
         self.processing_flags = {
@@ -302,29 +299,18 @@ class App:
             return
 
         def connect_nanonis() -> None:
-            """
-            Verify that Nanonis is online (responds to TCP-IP)
-            If it is, objects representing the classes Measurements and Nanonis will be instantiated
-            If Nanonis was already online or running, the connection will be reset
-            """
-            # Start with deleting spurious objects
-            try: self.nanonis.disconnect() # If nanonis is not instantiated yet or removed, it will simply pass
-            except: pass
-            if hasattr(self, "nanonis"): delattr(self, "nanonis")
-            if hasattr(self, "measurements"): delattr(self, "measurements")
+            self.nanonis = Nanonis(hardware = self.hardware)
 
             try:
                 # This is a low-level TCP-IP connection attempt
                 self.logprint(f"sock.connect({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]})", message_type = "code")
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)
-                sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
-                sock.close()
+                # sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                # sock.settimeout(2)
+                # sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
+                # sock.close()
                 sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
                 
                 self.status["nanonis"] = "online"
-                self.nanonis = Nanonis(hardware = self.hardware) # Make the Nanonis class available
-                self.logprint("Successfully connected to Nanonis! I also instantiated Nanonis() as nanonis", message_type = "success")
         
             except socket.timeout:
                 self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
@@ -334,7 +320,7 @@ class App:
                 raise
 
             # If Nanonis is online, proceed with getting parameters and scan data
-            if self.status["nanonis"] == "online": self.on_parameters_request()
+            # if self.status["nanonis"] == "online": self.on_parameters_request()
             
             # Add nanonis attributes and methods to the command input completer
             nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
@@ -843,12 +829,8 @@ class App:
                 if self.channels == recorded_channels_old:
                     pass
                 else:
-                    self.gui.comboboxes["channels"].blockSignals(True)
-                    self.gui.comboboxes["channels"].clear()
-                    self.gui.comboboxes["channels"].addItems(list(self.channels.values()))
-                    if "Z (m)" in list(self.channels.values()):
-                        self.gui.comboboxes["channels"].setCurrentText("Z (m)")
-                    self.gui.comboboxes["channels"].blockSignals(False)
+                    self.gui.comboboxes["channels"].renewItems(list(self.channels.values()))
+                    self.gui.comboboxes["channels"].selectItem("Z (m)")
             
             # Find the channel index from the channels combobox, then get the scan data from nanonis
             selected_channel_name = self.gui.comboboxes["channels"].currentText()
