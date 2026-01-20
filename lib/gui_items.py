@@ -84,8 +84,8 @@ class GUIItems:
         
         return box
 
-    def make_line_edit(self, name: str, tooltip: str = "", unit = None, limits = None) -> PJLineEdit:
-        line_edit = PJLineEdit(unit = unit, limits = limits)
+    def make_line_edit(self, name: str, tooltip: str = "", unit = None, limits = None, number_type: str = "float") -> PJLineEdit:
+        line_edit = PJLineEdit(unit = unit, limits = limits, number_type = number_type)
         line_edit.setObjectName(name)
         line_edit.setToolTip(tooltip)
         line_edit.setText(name)
@@ -432,6 +432,7 @@ class PJLineEdit(QtWidgets.QLineEdit):
         super().__init__(parent)
         self.unit = kwargs.get("unit", None)
         self.limits = kwargs.get("limits", None)
+        self.number_type = kwargs.get("number_type", "float")
         if self.unit: self.editingFinished.connect(self.addUnit)
     
     def changeToolTip(self, text: str, line: int = 0) -> None:
@@ -463,7 +464,8 @@ class PJLineEdit(QtWidgets.QLineEdit):
         
         # Extract the numeric part of what was entered
         number_matches = re.findall(r"-?\d+\.?\d*", entered_text)
-        numbers = [float(x) for x in number_matches]
+        if self.number_type == "int": numbers = [int(x) for x in number_matches]
+        else: numbers = [float(x) for x in number_matches]
         
         if len(numbers) > 0:
             number = numbers[0]

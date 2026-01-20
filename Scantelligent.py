@@ -29,14 +29,14 @@ class App:
 
     def __init__(self):
         icon_folder = self.parameters_init()
-        self.gui = ScantelligentGUI(icon_folder)        
-        self.setup_connections()
+        self.gui = ScantelligentGUI(icon_folder)
+        self.setup_connections() # Initialize the console, the button-slot, and keystroke-slot connections        
         
-        self.hardware = self.config_init()
-        self.data = DataProcessing()
-        self.nanonis = Nanonis(hardware = self.hardware)
-        self.process = QtCore.QProcess(self.gui)
-        self.connect_hardware()
+        self.hardware = self.config_init() # Read the hardware configuration and parameters from the configuration files in the sys folder
+        self.data = DataProcessing() # Class for data processing and analysis
+        self.nanonis = Nanonis(hardware = self.hardware) # Class for simple Nanonis functions
+        
+        self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
         self.gui.show()
 
         # Set up the Experiments class and thread and connect signals and slots
@@ -84,7 +84,10 @@ class App:
         return self.paths["icon_folder"]
 
     def setup_connections(self) -> None:
-        
+        """
+        Initialize the console, the button-slot, and keystroke-slot connections
+        """
+
         def connect_console() -> None:
             # Redirect output to the console
             self.stdout_redirector = StreamRedirector()
@@ -110,11 +113,14 @@ class App:
 
                         ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
-            [connections.append([direction, lambda: self.on_coarse_move(direction)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
+            [connections.append([direction, lambda drxn = direction: self.on_coarse_move(drxn)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
             connections.append([f"scan_parameters_0", lambda: self.load_parameters(0)])
             connections.append([f"scan_parameters_0", lambda: self.load_parameters(1)])
             connections.append([f"scan_parameters_0", lambda: self.load_parameters(2)])
             connections.append([f"scan_parameters_0", lambda: self.load_parameters(3)])
+            
+            #for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
+            #    buttons[direction].clicked.connect(lambda drxn = direction: self.on_coarse_move(drxn))
             
             for connection in connections:
                 name = connection[0]
@@ -132,15 +138,9 @@ class App:
             self.gui.comboboxes["channels"].currentIndexChanged.connect(self.on_scan_data_request)
             self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.on_experiment_change)
             
-            # Populate the command input completer with all attributes and methods of self and self.gui
-            self.all_attributes = dir(self)
-            gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
-            self.all_attributes.extend(gui_attributes)
-            completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
-            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-            completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
-            self.gui.line_edits["input"].setCompleter(completer)
-            
+            # Instantiate process for CLI-style commands (opening folders and other programs)
+            self.process = QtCore.QProcess(self.gui)
+
             return
         
         def connect_keys() -> None:
@@ -168,9 +168,7 @@ class App:
         
         connect_console()
         connect_buttons()
-        connect_keys()
-        self.update_buttons()
-        
+        connect_keys()        
         return
   
     def config_init(self) -> None:
@@ -206,7 +204,7 @@ class App:
                         "camera_argument": camera_argument
                     }
                     self.logprint("I found the config.yml file and was able to set up a dictionary called 'hardware'", message_type = "success")
-                    self.logprint(f"[dict] hardware = {self.hardware}", message_type = "result")
+                    self.logprint(f"[dict] hardware = {hardware}", message_type = "result")
                     
                 except Exception as e:
                     self.logprint("Error: could not retrieve the Nanonis TCP settings.", message_type = "error")
@@ -232,51 +230,34 @@ class App:
         return hardware
 
     def connect_hardware(self) -> None:
+        """
+        Test and set up all connections, and request parameters from the hardware components
+        """
 
-        def connect_camera() -> None:
-            self.status["camera"] = "offline"
+        def connect_camera() -> None:            
+            argument = self.hardware.get("camera_argument")
             
-            self.gui.buttons["camera"].changeToolTip("Camera: offline")
-            self.gui.buttons["camera"].setStyleSheet(style_sheets["disconnected"])
-            
-            argument = self.hardware.get("argument")
-            
-            self.logprint("Warning. No camera found.", message_type = "warning")
-            
-            if 2 == 2:
-                return
-            else:
-        
-                buttons = self.gui.buttons
+            try:
+                self.logprint(f"cap = cv2.VideoCapture({argument})", message_type = "code")
+                cap = cv2.VideoCapture(argument)
                 
-                self.status["camera"] = "offline"
-                buttons["camera"].setText("Camera: offline")
-                buttons["camera"].setStyleSheet(style_sheets["disconnected"])
-
-                try:
-                    cap = cv2.VideoCapture(argument)
+                if not cap.isOpened(): # Check if the camera opened successfully
+                    raise
+                else:
+                    cap.release()
+                    self.status["camera"] = "online"
                     
-                    if not cap.isOpened(): # Check if the camera opened successfully
-                        raise
-                    else:
-                        cap.release()
-                        self.status["camera"] = "online"
+                    self.logprint("Success! Camera stream received.", message_type = "success")
 
-                        buttons["camera"].changeToolTip("Camera: online")
-                        buttons["camera"].setStyleSheet(style_sheets["connected"])
-
-                except Exception as e:
-                    self.logprint("Could not connect the camera.")
-                
-                return    
+            except Exception as e:
+                self.logprint("Warning. Failed to connect to the camera.", message_type = "warning")
+            
+            return    
 
         def connect_mla() -> None:
             self.status["mla"] = "offline"
             
-            self.gui.buttons["mla"].changeToolTip("Multifrequency Lockin Amplifier: offline")
-            self.gui.buttons["mla"].setStyleSheet(style_sheets["disconnected"])
-            
-            self.logprint("Warning. MLA not found.", message_type = "warning")
+            self.logprint("Warning. Failed to connect to the MLA.", message_type = "warning")
             
             return
 
@@ -284,6 +265,9 @@ class App:
             self.nanonis.connection.connect(self.on_receive_nanonis_status)
             self.nanonis.progress.connect(self.on_receive_progress)
             #self.nanonis.message.connect(self.on_receive_message)
+
+            if self.nanonis.status == "running": self.nanonis.disconnect()
+            self.status.update({"nanonis": "offline"})
 
             try:
                 # This is a low-level TCP-IP connection attempt
@@ -294,23 +278,14 @@ class App:
                 sock.close()
                 sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
                 
-                self.status["nanonis"] = "online"
+                self.status.update({"nanonis": "online"})
+                self.logprint("Success! Response received. I will immediately request parameters over TCP.", message_type = "success")
+                self.on_parameters_request()
         
             except socket.timeout:
                 self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
             except:
                 self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
-
-            # If Nanonis is online, proceed with getting parameters and scan data
-            if self.status["nanonis"] == "online": self.on_parameters_request()
-            
-            # Add nanonis attributes and methods to the command input completer
-            nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
-            self.all_attributes.extend(nanonis_attributes)
-            completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
-            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-            completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
-            self.gui.line_edits["input"].setCompleter(completer)
 
             return
 
@@ -319,6 +294,21 @@ class App:
         connect_mla()
         connect_nanonis()
         
+        # Populate the command input completer with all attributes and methods of self and self.gui
+        self.all_attributes = dir(self)
+        gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
+        nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
+        nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith('__')]
+        data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith('__')]
+        
+        [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes]]
+        completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
+        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+        self.gui.line_edits["input"].setCompleter(completer)
+        
+        # Update the buttons in the gui
+        self.update_buttons()
         return
 
     def cleanup(self) -> None:
@@ -482,8 +472,6 @@ class App:
                 buttons["tip"].setEnabled(False)                
                 buttons["tip"].changeToolTip("Tip status: unknown")
                 buttons["tip"].setStyleSheet(style_sheets["disconnected"])
-                
-                # If Nanonis is offline, proceed with cleanup and make sure the nanonis and measurements attributes are deleted
 
         style = nn_button.styleSheet()
         nn_button.setStyleSheet(style)
@@ -954,31 +942,47 @@ class App:
         return True
 
     def on_coarse_move(self, direction: str = "n") -> bool:
+        self.logprint(direction)
+        checkboxes = self.gui.checkboxes
+        line_edits = self.gui.line_edits
+
         if direction not in ["n", "ne", "e", "se", "s", "sw", "w", "nw", "0"]:
             self.logprint("Error. Unknown tip direction requested.", message_type = "error")
             return False
         
         try:
-            z_steps = float(self.line_edits["z_steps"].text())
-            h_steps = float(self.line_edits["h_steps"].text())
-            minus_z_steps = float(self.line_edits["minus_z_steps"].text())
+            z_steps = int(self.extract_number_from_string(line_edits["z_steps"].text()))
+            h_steps = int(self.extract_number_from_string(line_edits["h_steps"].text()))
+            minus_z_steps = int(self.extract_number_from_string(line_edits["minus_z_steps"].text()))
+            
+            h_step_entries = {}
+            if direction in ["nw", "ne", "sw", "se"]:
+                h_steps = int(np.sqrt(h_steps) / 2)
+                match direction:
+                    case "nw": h_step_entries = {"n_steps": h_steps, "w_steps": h_steps}
+                    case "ne": h_step_entries = {"n_steps": h_steps, "e_steps": h_steps}
+                    case "sw": h_step_entries = {"s_steps": h_steps, "w_steps": h_steps}
+                    case "se": h_step_entries = {"s_steps": h_steps, "e_steps": h_steps}
+            else:
+                h_step_entries = {direction, h_steps}
+            
             move_flags = {
-                "withdraw": self.checkboxes["withdraw"].isChecked(),
-                "retract": self.checkboxes["retract"].isChecked(),
-                "move": self.checkboxes["move"].isChecked(),
-                "advance": self.checkboxes["advance"].isChecked(),
-                "approach": self.checkboxes["approach"].isChecked(),
+                "withdraw": checkboxes["withdraw"].isChecked(),
+                "retract": checkboxes["retract"].isChecked(),
+                "move": checkboxes["move"].isChecked(),
+                "advance": checkboxes["advance"].isChecked(),
+                "approach": checkboxes["approach"].isChecked(),
                 "direction": direction,
                 "z_steps": z_steps,
-                "h_steps": h_steps,
                 "minus_z_steps": minus_z_steps
             }
-            
-            #if not hasattr(self, "nanonis"): raise
+            move_flags.update(h_step_entries)
             
             self.logprint("Executing a tip move by passing the dictionary 'move_flags' to nanonis.move")
-            self.logprint(f"[dict] move_flags = {move_flags}", message_type = "code")
+            self.logprint(f"[dict] move_flags = {move_flags}", message_type = "result")
             self.logprint("nanonis.move(move_flags)", message_type = "code")
+            
+            raise
 
             return True
         

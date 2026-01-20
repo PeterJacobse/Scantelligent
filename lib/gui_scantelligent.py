@@ -197,9 +197,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         buttons = self.buttons
         
         line_edits = {
-            "z_steps": make_line_edit("20", "Steps in the +Z (retract) direction"),
-            "h_steps": make_line_edit("100", "Steps in the horizontal direction"),
-            "minus_z_steps": make_line_edit("0", "Steps in the -Z (advance) direction"),
+            "z_steps": make_line_edit("20 steps up", "Steps in the +Z (retract) direction", unit = "steps up", number_type = "int"),
+            "h_steps": make_line_edit("100 steps in dir:", "Steps in the horizontal direction", unit = "steps in dir:", number_type = "int"),
+            "minus_z_steps": make_line_edit("0 steps down", "Steps in the -Z (advance) direction", unit = "steps down", number_type = "int"),
+            
+            "V_hor": make_line_edit("150 V (xy)", "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", number_type = "int"),
+            "V_ver": make_line_edit("150 V (z)", "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", number_type = "int"),
+            "f_motor": make_line_edit("1000 Hz", "Frequency supplied to the coarse piezos during movement", unit = "Hz", number_type = "int"),
 
             "V_nanonis": make_line_edit("", "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
             "V_mla": make_line_edit("", "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
@@ -330,7 +334,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "bias_buttons": make_layout("h"),
 
             "coarse_actions": make_layout("g"),
-            "coarse_control": make_layout("h"),
+            "coarse_control": make_layout("g"),
             "arrows": make_layout("g"),
 
             "experiment": make_layout("g"),
@@ -441,7 +445,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [ca_layout.addWidget(checkbox, i, 0) for i, checkbox in enumerate(self.action_checkboxes)]
         [ca_layout.addWidget(button, i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
         [ca_layout.addWidget(line_edit, i + 1, 2) for i, line_edit in enumerate(self.action_line_edits)]
-        [ca_layout.addWidget(label, i + 1, 3) for i, label in enumerate(self.steps_labels)]
         
         [layouts["arrows"].addWidget(button, int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
         [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
@@ -485,8 +488,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         ip_layout.addWidget(self.labels["limits"])            
         ip_layout.addLayout(layouts["limits"])
         
-        layouts["coarse_control"].addLayout(ca_layout)
-        layouts["coarse_control"].addLayout(layouts["arrows"])
+        cc_layout = layouts["coarse_control"]
+        cc_layout.addLayout(ca_layout, 0, 0, 5, 1)
+        cc_layout.addWidget(self.line_edits["V_hor"], 0, 1, 1, 1)
+        cc_layout.addWidget(self.line_edits["V_ver"], 0, 2, 1, 1)
+        cc_layout.addLayout(layouts["arrows"], 1, 1, 3, 2)
         
         #layouts["input"].addWidget(self.buttons["input"], 1)
         layouts["input"].addWidget(self.consoles["input"])
