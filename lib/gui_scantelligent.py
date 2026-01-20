@@ -139,7 +139,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Named groups
-        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "exit", "scanalyzer", "view", "oscillator", "session_folder"]]
+        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "oscillator", "session_folder", "exit"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
         self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
         self.scan_parameter_sets = [buttons[f"scan_parameters_{i}"] for i in range(4)]
@@ -219,7 +219,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "max_absolute": make_line_edit("1", "maximum absolute value"),
 
             "gaussian_width": make_line_edit("0", "Width in nm for Gaussian blur application"),
-            "file_name": make_line_edit("", "Base name of the file when saved to png or hdf5"),
+            "experiment_filename": make_line_edit("", "Base name of the file when saved to png or hdf5"),
             
             "input": make_line_edit("", "Enter a command\n(Enter to evaluate)")
         }
@@ -434,7 +434,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts = self.layouts
         
         # Add items to the layouts        
-        [layouts["connections"].addWidget(button, int(i / 4), i % 4) for i, button in enumerate(self.connection_buttons)]
+        #[layouts["connections"].addWidget(button, int(i / 4), i % 4) for i, button in enumerate(self.connection_buttons)]
+        [layouts["connections"].addWidget(button, 0, i) for i, button in enumerate(self.connection_buttons)]
         
         ca_layout = layouts["coarse_actions"]
         [ca_layout.addWidget(checkbox, i, 0) for i, checkbox in enumerate(self.action_checkboxes)]
@@ -451,7 +452,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
         e_layout = layouts["experiment"]
         [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiment", "direction"])]
-        e_layout.addLayout(layouts["experiment_controls"], 1, 0, 2, 1)
+        e_layout.addLayout(layouts["experiment_controls"], 1, 0, 3, 1)
+        e_layout.addWidget(self.line_edits["experiment_filename"], 1, 1)
         
         layouts["scan_control"].addWidget(self.comboboxes["channels"], 5)
         layouts["scan_control"].addWidget(self.buttons["direction"], 1)
