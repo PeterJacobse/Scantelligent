@@ -70,15 +70,7 @@ class GUIItems:
         
         return box
 
-    def make_line_edit(self, name: str, tooltip: str = "") -> PJLineEdit:
-        line_edit = PJLineEdit()
-        line_edit.setObjectName(name)
-        line_edit.setToolTip(tooltip)
-        line_edit.setText(name)
-        
-        return line_edit
-
-    def make_unit_line_edit(self, name: str, tooltip: str = "", unit = None, limits = None) -> PJLineEdit:
+    def make_line_edit(self, name: str, tooltip: str = "", unit = None, limits = None) -> PJLineEdit:
         line_edit = PJLineEdit(unit = unit, limits = limits)
         line_edit.setObjectName(name)
         line_edit.setToolTip(tooltip)
@@ -341,38 +333,6 @@ class PJRadioButton(QtWidgets.QRadioButton):
 
 
 
-class PJLineEdit_old(QtWidgets.QLineEdit):
-    """
-    #A QLineEdit with extra method changeToolTip
-    """
-    def __init__(self):
-        super().__init__()
-    
-    def changeToolTip(self, text: str, line: int = 0) -> None:
-        """
-        #Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
-        """
-        try:
-            old_tooltip = self.toolTip()
-            tooltip_list = old_tooltip.split("\n")
-            
-            if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
-                tooltip_list.append(text)
-                new_tooltip = "\n".join(tooltip_list)
-            elif line < 0: # Add a line to the front if the line number is negative
-                new_tooltip_list = [text]
-                [new_tooltip_list.append(item) for item in tooltip_list]
-                new_tooltip = "\n".join(new_tooltip_list)
-            else: # Replace a line
-                tooltip_list[line] = text
-                new_tooltip = "\n".join(tooltip_list)
-
-            self.setToolTip(new_tooltip)
-        except:
-            pass
-
-
-
 class PJLineEdit(QtWidgets.QLineEdit):
     """
     A QLineEdit with extra method changeToolTip, and which adds a unit after editing is finished
@@ -421,8 +381,9 @@ class PJLineEdit(QtWidgets.QLineEdit):
             if type(self.limits) == list:
                 if number < self.limits[0]: number = self.limits[0]
                 if number > self.limits[1]: number = self.limits[1]
-                # Add the unit to the number
-                self.setText(f"{number} {self.unit}")
+
+            # Add the unit to the number
+            self.setText(f"{number} {self.unit}")
         else:
             self.setText("")
         
