@@ -194,7 +194,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_line_edits(self) -> dict:
         make_line_edit = self.gui_items.make_line_edit
-        make_unit_line_edit = self.gui_items.make_unit_line_edit
         buttons = self.buttons
         
         line_edits = {
@@ -202,13 +201,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "h_steps": make_line_edit("100", "Steps in the horizontal direction"),
             "minus_z_steps": make_line_edit("0", "Steps in the -Z (advance) direction"),
 
-            "V_nanonis": make_unit_line_edit("", "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
-            "V_mla": make_unit_line_edit("", "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
-            "I_fb": make_unit_line_edit("", "Feedback current in pA\n(Ctrl + P) to set", unit = "pA"),
-            "p_gain": make_unit_line_edit("", "Proportional gain in pm\n(Ctrl + P) to set", unit = "pm"),
-            "t_const": make_unit_line_edit("", "Time constant in pm\n(Ctrl + P) to set", unit = "us"),
-            "v_fwd": make_unit_line_edit("", "Tip forward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
-            "v_bwd": make_unit_line_edit("", "Tip backward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
+            "V_nanonis": make_line_edit("", "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
+            "V_mla": make_line_edit("", "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
+            "I_fb": make_line_edit("", "Feedback current in pA\n(Ctrl + P) to set", unit = "pA"),
+            "p_gain": make_line_edit("", "Proportional gain in pm\n(Ctrl + P) to set", unit = "pm"),
+            "t_const": make_line_edit("", "Time constant in pm\n(Ctrl + P) to set", unit = "us"),
+            "v_fwd": make_line_edit("", "Tip forward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
+            "v_bwd": make_line_edit("", "Tip backward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
 
             "min_full": make_line_edit("", "minimum value of scan data range"),
             "max_full": make_line_edit("", "maximum value of scan data range"),

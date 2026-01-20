@@ -1,6 +1,7 @@
 import re
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
+import numpy as np
 
 
 
@@ -24,6 +25,19 @@ class GUIItems:
                 try: icon = self.rotate_icon(icon, rotate_icon)
                 except: pass
             try: button.setIcon(icon)
+            except: pass
+        return button
+
+    def make_toggle_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0, flip_icon: bool = False) -> PJPushButton:
+        button = PJTogglePushButton(name, flip_icon = flip_icon)
+        button.setObjectName(name)
+        button.setToolTip(tooltip)
+
+        if isinstance(icon, QtGui.QIcon):
+            if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
+                try: icon = self.rotate_icon(icon, rotate_icon)
+                except: pass
+            try: button.newIcon(icon)
             except: pass
         return button
 
@@ -196,6 +210,72 @@ class PJPushButton(QtWidgets.QPushButton):
 
 
 
+class PJTogglePushButton(QtWidgets.QPushButton):
+    """
+    A checkable QPushButton with extra method changeToolTip, and which can flip its icon when toggled
+    """
+    def __init__(self, parent = None, **kwargs):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.flip_icon = kwargs.get("flip_icon", False)
+        self.toggled.connect(self.smartToggle)
+    
+    def newIcon(self, icon):
+        self.new_icon = icon
+        self.flipped_icon = icon
+        
+        try:
+            self.setIcon(icon)
+            
+            if self.flip_icon:            
+                pixmap = self.new_icon.pixmap(QtCore.QSize(92, 92))
+                transform = QtGui.QTransform()
+                transform.scale(-1, 1)
+            
+                flipped_pixmap = pixmap.transformed(transform)
+                self.flipped_icon = QtGui.QIcon(flipped_pixmap)
+        except:
+            pass
+        return
+    
+    def changeToolTip(self, text: str, line: int = 0) -> None:
+        """
+        Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+        """
+        try:
+            old_tooltip = self.toolTip()
+            tooltip_list = old_tooltip.split("\n")
+            
+            if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                tooltip_list.append(text)
+                new_tooltip = "\n".join(tooltip_list)
+            elif line < 0: # Add a line to the front if the line number is negative
+                new_tooltip_list = [text]
+                [new_tooltip_list.append(item) for item in tooltip_list]
+                new_tooltip = "\n".join(new_tooltip_list)
+            else: # Replace a line
+                tooltip_list[line] = text
+                new_tooltip = "\n".join(tooltip_list)
+
+            self.setToolTip(new_tooltip)
+        except:
+            pass
+    
+    def smartToggle(self) -> None:
+        self.blockSignals(True)
+        self.toggle()
+        if self.isChecked():
+            self.setIcon(self.new_icon)
+            self.setChecked(False)
+        else:
+            self.setIcon(self.flipped_icon)
+            self.setChecked(True)
+        self.blockSignals(False)
+        
+        return
+
+
+
 class PJComboBox(QtWidgets.QComboBox):
     """
     A QComboBox with extra method changeToolTip
@@ -228,14 +308,13 @@ class PJComboBox(QtWidgets.QComboBox):
         return
 
     def renewItems(self, items) -> None:
-        if not isinstance(items, list): return
-        
-        self.blockSignals(True)
-        
-        self.clear()
-        self.addItems(items)
-        
-        self.blockSignals(False)
+        if isinstance(items, list) or isinstance(items, np.ndarray):
+            self.blockSignals(True)
+            
+            self.clear()
+            self.addItems(items)
+            
+            self.blockSignals(False)
         return
 
     def toggleIndex(self, delta_index) -> None:
@@ -299,6 +378,12 @@ class PJCheckBox(QtWidgets.QCheckBox):
         except:
             pass
 
+    def setSilentCheck(self, check_state: bool = True):
+        self.blockSignals(True)
+        self.setChecked(check_state)
+        self.blockSignals(False)
+        return
+
 
 
 class PJRadioButton(QtWidgets.QRadioButton):
@@ -330,6 +415,12 @@ class PJRadioButton(QtWidgets.QRadioButton):
             self.setToolTip(new_tooltip)
         except:
             pass
+
+    def setSilentCheck(self, check_state: bool = True):
+        self.blockSignals(True)
+        self.setChecked(check_state)
+        self.blockSignals(False)
+        return
 
 
 
@@ -455,7 +546,7 @@ class PJConsole(QtWidgets.QTextEdit):
         except:
             pass
 
-
+   
 
 class StreamRedirector(QtCore.QObject):
     output_written = QtCore.pyqtSignal(str)

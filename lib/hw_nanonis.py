@@ -1,16 +1,5 @@
-from nanonisTCP import nanonisTCP
-from nanonisTCP.Bias import Bias # V
-from nanonisTCP.FolMe import FolMe # x, y
-from nanonisTCP.ZController import ZController # z
-from nanonisTCP.Current import Current # I
-from nanonisTCP.Motor import Motor
-from nanonisTCP.AutoApproach import AutoApproach
-from nanonisTCP.Scan import Scan
-from nanonisTCP.Util import Util
-from nanonisTCP.Signals import Signals
 from time import sleep
-import struct
-import socket
+import struct, socket
 import numpy as np
 
 
@@ -83,7 +72,7 @@ class Conversions:
 
 
 
-class NanonisHardwareNew:
+class NanonisHardware:
     def __init__(self, hardware: dict):
         self.hardware = hardware
         self.get_TCP_parameters() # Extract the TCP parameters from the provided hardware dict
@@ -469,7 +458,7 @@ class NanonisHardwareNew:
     def set_I_fb_pA(self, setpoint_pA: float) -> None:
         setpoint_hex = self.conv.float_32_to_hex(setpoint_pA * 1E12)
         self.set_I_fb(setpoint_hex)
-        
+
         return
 
     def get_gains(self) -> dict:
@@ -507,7 +496,7 @@ class NanonisHardwareNew:
         return [z_min_nm, z_max_nm]
 
     def withdraw(self, wait: bool = True, timeout: int = 60000) -> None:
-        command = self.headers["withdraw"] + self.conv.to_hex(self.headers[str(wait)]) + self.conv.to_hex(timeout, 4)
+        command = self.headers["withdraw"] + self.conv.to_hex(self.headers[str(wait)], 4) + self.conv.to_hex(timeout, 4)
         
         self.send_command(command)
         self.receive_response(0)
@@ -824,133 +813,3 @@ class NanonisHardwareNew:
         return
 
 
-
-
-
-
-class NanonisHardware:
-    def __init__(self, hardware: dict):
-        self.hardware = hardware
-        self.get_TCP_parameters() # Extract the TCP parameters from the provided hardware dict
-
-    def get_TCP_parameters(self):
-        """
-        Extract the IP, port and version from the provided hardware dict
-        """
-        
-        self.ip = False
-        self.port = False
-        self.version = False
-        self.max_buf_size = 200
-
-        ip_tags = ["tcp_ip", "ip", "ip_address", "nanonis_ip"]
-        port_tags = ["tcp_port", "port", "nanonis_port"]
-        version_tags = ["version", "nanonis_version", "version_number"]
-        for key, value in self.hardware.items():
-            if key.lower() in ip_tags: self.ip = value
-            if key.lower() in port_tags: self.port = value
-            if key.lower() in version_tags: self.version = value
-        
-        if not (self.ip and self.port and self.version):
-            raise Exception("Could not extract the required TCP-IP parameters from the provided hardware dictionary")
-
-    def connect(self): # Functions to do simple measurements / logging
-        if not hasattr(self, "ip"):
-            raise Exception("Failed to connect to Nanonis")
-        if hasattr(self, "NTCP"): # If the TCP connection alread exists, kill it and reconnect
-            try: self.disconnect()
-            except: pass
-
-        self.NTCP = nanonisTCP(self.ip, self.port, self.version)
-        self.bias = Bias(self.NTCP)
-        self.folme = FolMe(self.NTCP)
-        self.zcontroller = ZController(self.NTCP)
-        self.current = Current(self.NTCP)
-        self.motor = Motor(self.NTCP)
-        self.autoapproach = AutoApproach(self.NTCP)
-        self.scan = Scan(self.NTCP)
-        self.util = Util(self.NTCP)
-        self.signals = Signals(self.NTCP)
-
-
-
-    # Simple functions for logging and tip movement
-    def get_xy(self) -> list:
-        return list(self.folme.XYPosGet(Wait_for_newest_data = True))
-
-    def get_xy_nm(self) -> list:
-        xy = list(self.folme.XYPosGet(Wait_for_newest_data = True))
-        xy_nm = [dim * 1E9 for dim in xy]
-        return xy_nm
-
-    def set_xy(self, xy) -> None:
-        [x_m, y_m] = xy
-        return self.folme.XYPosSet(x_m, y_m, Wait_end_of_move = True)
-
-    def set_xy_nm(self, xy_nm) -> None:
-        [x_m, y_m] = [dim * 1E-9 for dim in xy_nm]
-        return self.folme.XYPosSet(x_m, y_m, Wait_end_of_move = True)
-
-    def get_z(self) -> float:
-        return self.zcontroller.ZPosGet()
-
-    def get_z_nm(self) -> float:
-        z_m = self.zcontroller.ZPosGet()
-        z_nm = z_m * 1E9
-        return z_nm
-
-    def set_z(self, z) -> None:
-        return self.zcontroller.ZPosSet(z)        
-    
-    def get_setpoint(self):
-        return self.zcontroller.SetpntGet()
-
-    def set_setpoint(self, I_fb):
-        return self.zcontroller.SetpntSet(I_fb)
-    
-    def get_I(self):
-        return self.current.Get()
-
-    def get_V(self):
-        return self.bias.Get()
-    
-    def set_V(self, V):
-        return self.bias.Set(V)
-
-    def get_speed(self):
-        return list(self.folme.SpeedGet())
-
-    def get_feedback(self):
-        return bool(self.zcontroller.OnOffGet())
-
-    def set_feedback(self, boolean: bool = True):
-        return self.zcontroller.OnOffSet(boolean)
-
-    def get_gains(self):
-        return list(self.zcontroller.GainGet())
-
-    def get_path(self):
-        return self.util.SessionPathGet()
-
-
-
-    # Functions for more extensive control
-    def start_scan(self, direction: str = "up"):
-        return self.scan.Action("start", scan_direction = direction)
-
-    def stop_scan(self):
-        return self.scan.Action("stop")
-
-    def pause_scan(self):
-        return self.scan.Action("pause")
-    
-    def resume_scan(self):
-        return self.scan.Action("resume")
-
-
-
-    def disconnect(self):
-        if hasattr(self, "NTCP"):
-            self.NTCP.close_connection()
-            delattr(self, "NTCP")
-        sleep(.2) # Minimal delay to ensure the next connection attempt doesn't fail

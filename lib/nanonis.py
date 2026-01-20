@@ -1,6 +1,6 @@
 import numpy as np
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
-from .hw_nanonis import NanonisHardware, NanonisHardwareNew
+from PyQt6 import QtCore, QtGui, QtWidgets
+from .hw_nanonis import NanonisHardware
 from time import sleep, time
 import pint
 
@@ -11,11 +11,25 @@ colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_gre
 
 
 
-class Nanonis(QObject):
+class Nanonis(QtCore.QObject):
+    connection_flag = QtCore.pyqtSignal(str)
+    
     def __init__(self, hardware: dict):
         super().__init__()
         self.ureg = pint.UnitRegistry()
-        self.nanonis_hardware = NanonisHardwareNew(hardware = hardware)
+        self.nanonis_hardware = NanonisHardware(hardware = hardware)
+
+    def connect(self):
+        nhw = self.nanonis_hardware
+        self.status = "running"
+        self.connection_flag.emit(self.status)
+        nhw.connect()
+    
+    def disconnect(self):
+        nhw = self.nanonis_hardware
+        nhw.disconnect()
+        self.status = "idle"
+        self.connection_flag.emit(self.status)
 
     def logprint(self, message: str, color: None):
         # Placeholder for callback function
@@ -36,7 +50,7 @@ class Nanonis(QObject):
 
         # Set up the TCP connection and set/get
         try:
-            nhw.connect()
+            self.connect()
             z_nm = nhw.get_z_nm()
             [z_min, z_max] = nhw.get_z_limits_nm()
 
@@ -65,7 +79,7 @@ class Nanonis(QObject):
             }
 
         except Exception as e: error = e
-        finally: nhw.disconnect()
+        finally: self.disconnect()
 
         return (tip_status, error)
 
@@ -81,7 +95,7 @@ class Nanonis(QObject):
 
         # Set up the TCP connection and get
         try:
-            nhw.connect()
+            self.connect()
             V = nhw.get_V()
             I_fb_pA = nhw.get_I_fb_pA()
             gains_dict = nhw.get_gains()
@@ -101,7 +115,7 @@ class Nanonis(QObject):
             if coarse_parameters: parameters.update({"motor_frequency": coarse_parameters.get("frequency"), "motor_amplitude": coarse_parameters.get("amplitude")})
 
         except Exception as e: error = e
-        finally: nhw.disconnect()
+        finally: self.disconnect()
 
         return (parameters, error)
 
@@ -116,7 +130,7 @@ class Nanonis(QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            nhw.connect()
+            self.connect()
             frame = nhw.get_scan_frame_nm()
         
         except Exception as e: error = e
@@ -135,7 +149,7 @@ class Nanonis(QObject):
 
         try:
             # Get the frame and buffer
-            nhw.connect()
+            self.connect()
             frame = nhw.get_scan_frame_nm()
             buffer = nhw.get_scan_buffer()
 
@@ -151,7 +165,7 @@ class Nanonis(QObject):
             }
 
         except Exception as e: error = e
-        finally: nhw.disconnect()
+        finally: self.disconnect()
 
         if error: return (grid, error)
         
@@ -204,7 +218,7 @@ class Nanonis(QObject):
 
         # Set up the TCP connection and get grid dat
         try:
-            nhw.connect()
+            self.connect()
             sig_in_slots = nhw.get_signals_in_slots()
             props = nhw.get_scan_props()
             buffer = nhw.get_scan_buffer()
@@ -227,7 +241,7 @@ class Nanonis(QObject):
                 }
 
         except Exception as e: error = e
-        finally: nhw.disconnect()
+        finally: self.disconnect()
 
         return (scan_metadata, error)
 
@@ -254,7 +268,7 @@ class Nanonis(QObject):
                 return False
 
         try:
-            nhw.connect()                            
+            self.connect()                            
             V_old = nhw.get_V() # Read data from Nanonis
             if np.abs(V - V_old) < dV: return (standard_parameters, error) # If the bias is unchanged, don't slew it
             
@@ -280,7 +294,7 @@ class Nanonis(QObject):
                 nhw.set_fb(True) # Turn the feedback back on
 
         except Exception as e: error = e
-        finally: nhw.disconnect()
+        finally: self.disconnect()
 
         return (standard_parameters, error)
 
@@ -333,7 +347,7 @@ class Nanonis(QObject):
         
         # Set up the TCP connection and get grid dat
         try:
-            nhw.connect()
+            self.connect()
             
             dirxn = "up"
             if direction == "down": dirxn = "down"
@@ -345,7 +359,7 @@ class Nanonis(QObject):
                 case _: pass
         
         except Exception as e: error = e
-        finally: nhw.disconnect()
+        finally: self.disconnect()
 
         return error
 

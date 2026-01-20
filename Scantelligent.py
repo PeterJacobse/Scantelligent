@@ -1,8 +1,7 @@
 import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
-from lib.functions import Experiments, CameraWorker, TaskWorker
-from lib import ScantelligentGUI, StreamRedirector, Nanonis, ImageFunctions
+from lib import ScantelligentGUI, StreamRedirector, Nanonis
 from time import sleep, time
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -114,7 +113,7 @@ class App:
 
             return
         
-        def connect_buttons() -> None:            
+        def connect_buttons() -> None:
             buttons = self.gui.buttons
             shortcuts = self.gui.shortcuts        
             
@@ -158,6 +157,8 @@ class App:
             completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
             completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
             self.gui.line_edits["input"].setCompleter(completer)
+            
+            self.process = QtCore.QProcess(self.gui)
             
             return
         
@@ -300,14 +301,15 @@ class App:
 
         def connect_nanonis() -> None:
             self.nanonis = Nanonis(hardware = self.hardware)
+            self.nanonis.connection_flag.connect(self.receive_nanonis_status)
 
             try:
                 # This is a low-level TCP-IP connection attempt
                 self.logprint(f"sock.connect({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]})", message_type = "code")
-                # sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # sock.settimeout(2)
-                # sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
-                # sock.close()
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
+                sock.close()
                 sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
                 
                 self.status["nanonis"] = "online"
@@ -320,7 +322,7 @@ class App:
                 raise
 
             # If Nanonis is online, proceed with getting parameters and scan data
-            # if self.status["nanonis"] == "online": self.on_parameters_request()
+            if self.status["nanonis"] == "online": self.on_parameters_request()
             
             # Add nanonis attributes and methods to the command input completer
             nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
@@ -418,6 +420,16 @@ class App:
 
 
     # Dynamic GUI updates
+    def receive_nanonis_status(self, status: str) -> None:
+        match status:
+            case "running":
+                self.status.update({"nanonis": "running"})
+                self.update_buttons()
+            case "idle":
+                self.status.update({"nanonis": "online"})
+                self.update_buttons()
+        return
+
     def update_buttons(self) -> None:
         buttons = self.gui.buttons
         
@@ -429,10 +441,10 @@ class App:
         match self.status["camera"]:
             case "online":
                 cam_button.changeToolTip("Camera: online")
-                cam_button.setStyleSheet(style_sheets["connected"])            
+                cam_button.setStyleSheet(style_sheets["connected"])
             case "running":
                 cam_button.changeToolTip("Camera: active USB connection")
-                cam_button.setStyleSheet(style_sheets["running"])            
+                cam_button.setStyleSheet(style_sheets["running"])
             case _:
                 cam_button.changeToolTip("Camera: offline")
                 cam_button.setStyleSheet(style_sheets["disconnected"])
@@ -458,25 +470,28 @@ class App:
 
         match self.status["nanonis"]:
             case "online":
-                nn_button.changeToolTip("Nanonis: online")
                 nn_button.setStyleSheet(style_sheets["connected"])
+                nn_button.changeToolTip("Nanonis: online")
                 nn_button.update()
+                nn_button.repaint()
                 
                 [button.setEnabled(True) for button in self.gui.action_buttons]
                 [button.setEnabled(True) for button in self.gui.arrow_buttons]
                 buttons["tip"].setEnabled(True)
             
             case "running":
-                nn_button.changeToolTip("Nanonis: active TCP connection")
                 nn_button.setStyleSheet(style_sheets["running"])
+                nn_button.changeToolTip("Nanonis: active TCP connection")
+                nn_button.repaint()
                 
                 [button.setEnabled(False) for button in self.gui.action_buttons]
                 [button.setEnabled(False) for button in self.gui.arrow_buttons]
                 buttons["tip"].setEnabled(False)
     
             case _:
-                nn_button.changeToolTip("Nanonis: offline")
                 nn_button.setStyleSheet(style_sheets["disconnected"])
+                nn_button.changeToolTip("Nanonis: offline")
+                nn_button.repaint()
                 
                 [button.setEnabled(False) for button in self.gui.action_buttons]
                 [button.setEnabled(False) for button in self.gui.arrow_buttons]
@@ -485,13 +500,10 @@ class App:
                 buttons["tip"].setStyleSheet(style_sheets["disconnected"])
                 
                 # If Nanonis is offline, proceed with cleanup and make sure the nanonis and measurements attributes are deleted
-                self.cleanup()
 
         style = nn_button.styleSheet()
         nn_button.setStyleSheet(style)
         [button.update for button in [cam_button, mla_button, nn_button]]
-        
-        self.logprint(f"[dict] status = {self.status}", message_type = "result")
         
         return
 
