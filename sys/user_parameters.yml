@@ -1,9 +1,6 @@
 scan_parameters:
  0:
-  name: current
-  I_fb: 400 pA
-  p_gain: 30 pm
-  t_const: 167 us
+  name: session
  1:
   name: standard_scan
   V: -1.8 V

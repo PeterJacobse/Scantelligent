@@ -14,7 +14,8 @@ colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_gre
 class Nanonis(QtCore.QObject):
     connection = QtCore.pyqtSignal(str)
     progress = QtCore.pyqtSignal(int)
-    #message = QtCore.pyqtSignal(tuple[str | str])
+    message = QtCore.pyqtSignal(str, str)
+    parameters = QtCore.pyqtSignal(dict)
     
     def __init__(self, hardware: dict):
         super().__init__()
@@ -35,11 +36,29 @@ class Nanonis(QtCore.QObject):
         self.status = "idle"
         self.connection.emit(self.status)
 
-    def logprint(self, message: str, color: None):
-        # Placeholder for callback function
-        pass
+    def test_function(self):
+        self.parameters.emit({"blabla": "blablabla", "ahduh": "dadnalnid"})
+        self.message.emit("This is a message from Nanonis", "warning")
+        return
 
-    def tip(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+    def start_timed_updates(self):
+        self.timer = QtCore.QTimer(self) # Timer for regular updates
+        self.timer.timeout.connect(self.send_tip_update)
+        self.timer.start(5000)
+        return
+
+    def stop_timed_updates(self):
+        if hasattr(self, "timer"):
+            self.timer.timeout.disconnect(self.send_tip_update)
+            self.timer.deleteLater()
+            delattr(self, "timer")
+        return
+
+    def send_tip_update(self):
+        self.tip_update()
+        return
+
+    def tip_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it
         """
@@ -55,7 +74,10 @@ class Nanonis(QtCore.QObject):
         # Set up the TCP connection and set/get
         try:
             if auto_connect: self.connect()
+            xy_nm = nhw.get_xy_nm()
+            [x_nm, y_nm] = xy_nm
             z_nm = nhw.get_z_nm()
+            z_bs = nhw.get_z()
             [z_min, z_max] = nhw.get_z_limits_nm()
 
             # Switch the feedback if desired, and retrieve the feedback status
@@ -74,13 +96,18 @@ class Nanonis(QtCore.QObject):
 
             # Set up a dictionary containing the actual tip status parameters
             tip_status = {
-                #"height": z_pos,
-                "z_nm": z_nm,
-                #"limits": [z_min, z_max],
-                "z_limits_nm": [z_min, z_max],
+                "dict_name": "tip_status",
+                "x (nm)": x_nm,
+                "y (nm)": y_nm,
+                "z (nm)": z_nm,
+                "location (nm)": [x_nm, y_nm, z_nm],
+                "z (bytestring)": z_bs,
+                "z_limits (nm)": [z_min, z_max],
                 "feedback": feedback_new,
                 "withdrawn": withdrawn
             }
+            
+            self.parameters.emit(tip_status)
 
         except Exception as e: error = e
         finally:
@@ -88,36 +115,48 @@ class Nanonis(QtCore.QObject):
 
         return (tip_status, error)
 
-    def parameters(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+    def parameters_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set parameters from Nanonis
         """
         # Initalize outputs
-        parameters = None
         coarse_parameters = False
         error = False
         nhw = self.nanonis_hardware
+        
+        # Extract numbers from parameters input
+        I_fb_pA = parameters.get("I_fb (pA)", None)
+        v_fwd_nm_per_s = parameters.get("v_fwd (nm_per_s)", None)
 
         # Set up the TCP connection and get
         try:
             if auto_connect: self.connect()
             V = nhw.get_V()
-            I_fb_pA = nhw.get_I_fb_pA()
+            
+            if I_fb_pA:
+                self.message.emit(f"Setting I_fb_pA to {I_fb_pA}", "code")
+                nhw.set_I_fb_pA(I_fb_pA)
+            else:
+                self.message.emit(f"Receiving I_fb_pA", "code")
+                I_fb_pA = nhw.get_I_fb_pA()
+            
             gains_dict = nhw.get_gains()
             speed_dict = nhw.get_v_scan_nm_per_s()
             v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
             session_path = nhw.get_path()
-            try: coarse_parameters = nhw.get_motor_f_A()
+            try: coarse_parameters = nhw.get_motor_f_A() # Evidently does not work in the simulator, which does not have coarse motor control
             except: pass
             
             parameters = gains_dict | speed_dict | {
+                "dict_name": "scan_parameters",
                 "V_nanonis": V,
-                "bias_V": V,
-                "I_fb_pA": I_fb_pA,
-                "v_xy_nm_per_s": v_xy_nm_per_s,
+                "I_fb (pA)": I_fb_pA,
+                "v_xy (nm_per_s)": v_xy_nm_per_s,
                 "session_path": session_path
             }
             if coarse_parameters: parameters.update({"motor_frequency": coarse_parameters.get("frequency"), "motor_amplitude": coarse_parameters.get("amplitude")})
+            
+            self.parameters.emit(parameters)
 
         except Exception as e: error = e
         finally:
@@ -125,7 +164,7 @@ class Nanonis(QtCore.QObject):
 
         return (parameters, error)
 
-    def frame(self, parameters: dict ={}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+    def frame_update(self, parameters: dict ={}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set frame
         """
@@ -138,6 +177,9 @@ class Nanonis(QtCore.QObject):
         try:
             if auto_connect: self.connect()
             frame = nhw.get_scan_frame_nm()
+            
+            frame.update({"dict_name": "frame"})
+            self.parameters.emit(frame)
         
         except Exception as e: error = e
         finally:
@@ -145,7 +187,7 @@ class Nanonis(QtCore.QObject):
 
         return (frame, error)
 
-    def grid(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+    def grid_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set grid properties
         """
@@ -215,7 +257,7 @@ class Nanonis(QtCore.QObject):
         
         return (grid, error)
 
-    def scan_metadata(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict | str]:
+    def scan_metadata_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict | str]:
         """
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
@@ -254,7 +296,7 @@ class Nanonis(QtCore.QObject):
 
         return (scan_metadata, error)
 
-    def bias(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> float:
+    def bias_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> float:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware

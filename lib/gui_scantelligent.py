@@ -28,6 +28,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
         self.shortcuts = self.make_shortcuts()
+        self.tip_slider = self.make_tip_slider()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
         self.populate_layouts()
@@ -437,6 +438,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return shortcuts
 
+    def make_tip_slider(self) -> QtWidgets.QSlider:
+        make_slider = self.gui_items.make_slider
+        
+        tip_slider = make_slider("", "Tip height (nm)", orientation = "v")
+        
+        return tip_slider
+
 
 
     # 3: Populate layouts with GUI items. Requires GUI items.
@@ -455,12 +463,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [ca_layout.addWidget(checkbox, i, 0) for i, checkbox in enumerate(self.action_checkboxes)]
         [ca_layout.addWidget(button, i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
         [ca_layout.addWidget(line_edit, i + 1, 2) for i, line_edit in enumerate(self.action_line_edits)]
-        
         [layouts["arrows"].addWidget(button, int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
+        
         [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
-        [layouts["parameters"].addWidget(box, 0, i) for i, box in enumerate(self.parameter_line_0)]
-        layouts["parameters"].addLayout(layouts["scan_parameter_sets"], 1, 0, 1, 3)        
-        [layouts["parameters"].addWidget(box, 1, i + 3) for i, box in enumerate(self.parameter_line_1)]
+        par_layout = layouts["parameters"]
+        par_layout.addWidget(self.tip_slider, 0, 0, 2, 1)
+        [par_layout.addWidget(box, 0, i + 1) for i, box in enumerate(self.parameter_line_0)]
+        par_layout.addLayout(layouts["scan_parameter_sets"], 1, 1, 1, 3)        
+        [par_layout.addWidget(box, 1, i + 4) for i, box in enumerate(self.parameter_line_1)]
         
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
         e_layout = layouts["experiment"]

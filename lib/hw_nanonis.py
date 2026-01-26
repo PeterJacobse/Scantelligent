@@ -36,21 +36,6 @@ class Conversions:
         if(f64 == 0): return "0000000000000000"
         return hex(struct.unpack('<Q', struct.pack('<d', f64))[0])[2:]
 
-    def float64_micro_to_hex(self, f64):
-        if(f64 == 0): return "0000000000000000"
-        f64_conv = f64 * 1E-6
-        return hex(struct.unpack('<Q', struct.pack('<d', f64_conv))[0])[2:] # float64 to hex
-
-    def float64_nano_to_hex(self, f64):
-        if(f64 == 0): return "0000000000000000"
-        f64_conv = f64 * 1E-9
-        return hex(struct.unpack('<Q', struct.pack('<d', f64_conv))[0])[2:] # float64 to hex
-
-    def float64_pico_to_hex(self, f64):
-        if(f64 == 0): return "0000000000000000"
-        f64_conv = f64 * 1E-12
-        return hex(struct.unpack('<Q', struct.pack('<d', f64_conv))[0])[2:] # float64 to hex
-
     def make_header(self, command_name, body_size, resp = True):
         """
         Parameters
@@ -162,8 +147,8 @@ class NanonisHardware:
             "ZStatusGet": make_header('ZCtrl.StatusGet', body_size = 0),
             
             # Scan
-            "get_v_scan": make_header('Scan.SpeedSet', body_size = 0),
-            "set_v_scan": make_header('Scan.SpeedGet', body_size = 0),
+            "get_v_scan": make_header('Scan.SpeedGet', body_size = 0),
+            "set_v_scan": make_header('Scan.SpeedSet', body_size = 22),
             "scan_action": make_header('Scan.Action', body_size = 6),
             "get_scan_status": make_header('Scan.StatusGet', body_size = 0),
             "get_scan_frame": make_header('Scan.FrameGet', body_size=0),
@@ -326,7 +311,7 @@ class NanonisHardware:
     def get_xy_nm(self, wait: bool = True) -> list:
         xy = self.get_xy(wait = wait)
         x = self.conv.hex_to_float64(xy[0 : 8]) * 1E9
-        y = self.conv.hex_to_float64(xy[0 : 8]) * 1E9
+        y = self.conv.hex_to_float64(xy[8 : 16]) * 1E9
         return [x, y]
     
     def set_xy(self, xy_hex: str, wait: bool = False) -> None:
@@ -456,7 +441,7 @@ class NanonisHardware:
         return
 
     def set_I_fb_pA(self, setpoint_pA: float) -> None:
-        setpoint_hex = self.conv.float_32_to_hex(setpoint_pA * 1E12)
+        setpoint_hex = self.conv.float32_to_hex(setpoint_pA * 1E-12)
         self.set_I_fb(setpoint_hex)
 
         return
@@ -472,9 +457,9 @@ class NanonisHardware:
         i_gain = self.conv.hex_to_float32(response[8 : 12])
         
         parameters = {
-            "p_gain_pm": p_gain * 1E12,
-            "t_const_us": t_const * 1E6,
-            "i_gain_nm_per_s": i_gain * 1E9            
+            "p_gain (pm)": p_gain * 1E12,
+            "t_const (us)": t_const * 1E6,
+            "i_gain (nm_per_s)": i_gain * 1E9            
         }
         
         return parameters
@@ -491,7 +476,7 @@ class NanonisHardware:
         limits_hex = self.get_z_limits()
         
         z_max_nm = self.conv.hex_to_float32(limits_hex[0 : 4]) * 1E9
-        z_min_nm = self.conv.hex_to_float32(limits_hex[0 : 4]) * 1E9
+        z_min_nm = self.conv.hex_to_float32(limits_hex[4 : 8]) * 1E9
         
         return [z_min_nm, z_max_nm]
 
@@ -523,10 +508,10 @@ class NanonisHardware:
         v_ratio = self.conv.hex_to_float32(response[18 : 22])
         
         speeds = {
-            "v_fwd_nm_per_s": v_fwd * 1E9,
-            "v_bwd_nm_per_s": v_bwd * 1E9,
-            "t_fwd": t_fwd,
-            "t_bwd": t_bwd,
+            "v_fwd (nm_per_s)": v_fwd * 1E9,
+            "v_bwd (nm_per_s)": v_bwd * 1E9,
+            "t_fwd (s)": t_fwd,
+            "t_bwd (s)": t_bwd,
             "const_param": const_param,
             "v_ratio": v_ratio            
         }
@@ -551,7 +536,7 @@ class NanonisHardware:
         h = h_to_f(response[12 : 16]) * 1E9
         angle = h_to_f(response[16 : 20])
         
-        frame = {"x_nm": x, "y_nm": y, "center": [x, y], "offset": [x, y], "width_nm": w, "height_nm": h, "scan_range_nm": [w, h], "angle_deg": angle, "aspect_ratio": h / w}
+        frame = {"x (nm)": x, "y (nm)": y, "center (nm)": [x, y], "offset (nm)": [x, y], "width (nm)": w, "height (nm)": h, "scan_range (nm)": [w, h], "angle (deg)": angle, "aspect_ratio": h / w}
         
         return frame
         

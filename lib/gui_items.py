@@ -420,7 +420,43 @@ class PJConsole(QtWidgets.QTextEdit):
 
 
 
-class SliderLineEdit(QtWidgets.QWidget):
+class PJSlider(QtWidgets.QSlider):
+    """
+    A QSlider with extra method changeToolTip
+    """
+    def __init__(self, parent = None, orientation: str = "h"):
+        super().__init__(parent)
+        if orientation == "h":
+            self.setOrientation(QtCore.Qt.Orientation.Horizontal)
+        else:
+            self.setOrientation(QtCore.Qt.Orientation.Vertical)
+    
+    def changeToolTip(self, text: str, line: int = 0) -> None:
+        """
+        Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+        """
+        try:
+            old_tooltip = self.toolTip()
+            tooltip_list = old_tooltip.split("\n")
+            
+            if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                tooltip_list.append(text)
+                new_tooltip = "\n".join(tooltip_list)
+            elif line < 0: # Add a line to the front if the line number is negative
+                new_tooltip_list = [text]
+                [new_tooltip_list.append(item) for item in tooltip_list]
+                new_tooltip = "\n".join(new_tooltip_list)
+            else: # Replace a line
+                tooltip_list[line] = text
+                new_tooltip = "\n".join(tooltip_list)
+
+            self.setToolTip(new_tooltip)
+        except:
+            pass
+
+
+
+class PJSliderLineEdit(QtWidgets.QWidget):
     """
     A custom widget combining a QSlider and a QLineEdit, linked together.
     """
@@ -480,6 +516,29 @@ class SliderLineEdit(QtWidgets.QWidget):
         """Sets the value of the combined widget programmatically."""
         self.slider.setValue(value)
 
+    def changeToolTip(self, text: str, line: int = 0) -> None:
+        """
+        Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+        """
+        try:
+            old_tooltip = self.toolTip()
+            tooltip_list = old_tooltip.split("\n")
+            
+            if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                tooltip_list.append(text)
+                new_tooltip = "\n".join(tooltip_list)
+            elif line < 0: # Add a line to the front if the line number is negative
+                new_tooltip_list = [text]
+                [new_tooltip_list.append(item) for item in tooltip_list]
+                new_tooltip = "\n".join(new_tooltip_list)
+            else: # Replace a line
+                tooltip_list[line] = text
+                new_tooltip = "\n".join(tooltip_list)
+
+            self.setToolTip(new_tooltip)
+        except:
+            pass
+
 
 
 class StreamRedirector(QtCore.QObject):
@@ -516,13 +575,13 @@ class GUIItems:
     def __init__(self):
         pass
 
-    def make_groupbox(self, name: str, tooltip: str = "") -> QtWidgets.QGroupBox:
+    def make_groupbox(self, name: str = "", tooltip: str = "") -> QtWidgets.QGroupBox:
         box = QtWidgets.QGroupBox(name)
         box.setToolTip(tooltip)
         box.setCheckable(True)
         return box
 
-    def make_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJPushButton:
+    def make_button(self, name: str = "", tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJPushButton:
         button = PJPushButton(name)
         button.setObjectName(name)
         button.setToolTip(tooltip)
@@ -536,7 +595,7 @@ class GUIItems:
             except: pass
         return button
 
-    def make_toggle_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0, flip_icon: bool = False) -> PJPushButton:
+    def make_toggle_button(self, name: str = "", tooltip: str = "", icon = None, rotate_icon: float = 0, flip_icon: bool = False) -> PJPushButton:
         button = PJTogglePushButton(name, flip_icon = flip_icon)
         button.setObjectName(name)
         button.setToolTip(tooltip)
@@ -550,7 +609,7 @@ class GUIItems:
             except: pass
         return button
 
-    def make_label(self, name: str, tooltip: str = "") -> QtWidgets.QLabel:
+    def make_label(self, name: str = "", tooltip: str = "") -> QtWidgets.QLabel:
         label = QtWidgets.QLabel(name)
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         label.setObjectName(name)
@@ -558,7 +617,7 @@ class GUIItems:
 
         return label
 
-    def make_radio_button(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJRadioButton:
+    def make_radio_button(self, name: str = "", tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJRadioButton:
         button = PJRadioButton(name)
         button.setObjectName(name)
         button.setToolTip(tooltip)
@@ -572,7 +631,7 @@ class GUIItems:
             except: pass
         return button
     
-    def make_checkbox(self, name: str, tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJCheckBox:
+    def make_checkbox(self, name: str = "", tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJCheckBox:
         box = PJCheckBox(name)
         box.setObjectName(name)
         box.setToolTip(tooltip)
@@ -596,7 +655,7 @@ class GUIItems:
         
         return box
 
-    def make_line_edit(self, name: str, tooltip: str = "", unit = None, limits = None, number_type: str = "float") -> PJLineEdit:
+    def make_line_edit(self, name: str = "", tooltip: str = "", unit = None, limits = None, number_type: str = "float") -> PJLineEdit:
         line_edit = PJLineEdit(unit = unit, limits = limits, number_type = number_type)
         line_edit.setObjectName(name)
         line_edit.setToolTip(tooltip)
@@ -605,7 +664,7 @@ class GUIItems:
         
         return line_edit
 
-    def make_progress_bar(self, name, tooltip: str = "") -> PJProgressBar:
+    def make_progress_bar(self, name: str = "", tooltip: str = "") -> PJProgressBar:
         bar = PJProgressBar()
         
         bar.setObjectName(name)
@@ -628,19 +687,29 @@ class GUIItems:
         layout.setSpacing(1)
         return layout
     
-    def make_console(self, name, tooltip) -> PJConsole:
+    def make_console(self, name: str = "", tooltip: str = "") -> PJConsole:
         console = PJConsole()
         console.setObjectName(name)
         console.setToolTip(tooltip)
         
         return console
 
-    def make_slider_line_edit(self, name, tooltip) -> SliderLineEdit:
-        slider_line_edit = SliderLineEdit()
+    def make_slider_line_edit(self, name: str = "", tooltip: str = "") -> PJSliderLineEdit:
+        slider_line_edit = PJSliderLineEdit()
         slider_line_edit.setObjectName(name)
         slider_line_edit.setToolTip(tooltip)
         
         return slider_line_edit
+
+    def make_slider(self, name: str = "", tooltip: str = "", orientation: str = "h") -> PJSlider:
+        slider = PJSlider(orientation = orientation)
+        slider.setObjectName(name)
+        slider.setToolTip(tooltip)
+        slider.setMinimum(-10)
+        slider.setMaximum(10)
+        slider.setValue(10)
+        
+        return slider
     
     def line_widget(self, orientation: str = "v", thickness: int = 1) -> QtWidgets.QFrame:
         line = QtWidgets.QFrame()

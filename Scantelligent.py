@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 
-colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "lightblue": "#30d0ff",
+colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff",
           "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
 style_sheets = {
     "neutral": f"background-color: {colors["black"]};",
@@ -18,7 +18,7 @@ style_sheets = {
     "hold": f"background-color: {colors["dark_orange"]};",
     "idle": f"background-color: {colors["purple"]};"
     }
-text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "result": colors["lightblue"], "success": colors["green"], "warning": colors["orange"]}
+text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "result": colors["light_blue"], "success": colors["green"], "warning": colors["orange"]}
 
 
 
@@ -39,11 +39,6 @@ class App:
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
         self.gui.show()
 
-        # Set up the Experiments class and thread and connect signals and slots
-        #self.thread_pool = QtCore.QThreadPool()
-        #self.experiment_thread = QtCore.QThread()
-        #self.timer = QtCore.QTimer()
-
 
 
     def parameters_init(self) -> None:
@@ -56,7 +51,7 @@ class App:
         self.paths["lib"] = os.path.join(self.paths["parent_folder"], "lib")
         self.paths["sys"] = os.path.join(self.paths["parent_folder"], "sys")
         self.paths["config_file"] = os.path.join(self.paths["sys"], "config.yml")
-        self.paths["parameters_file"] = os.path.join(self.paths["sys"], "parameters.yml")
+        self.paths["parameters_file"] = os.path.join(self.paths["sys"], "user_parameters.yml")
         self.paths["icon_folder"] = os.path.join(self.paths["parent_folder"], "icons")
 
         icon_files = os.listdir(self.paths["icon_folder"])
@@ -110,7 +105,7 @@ class App:
                         
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
                         
-                        ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.on_parameters_set], ["get", self.on_parameters_request],
+                        ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.set_parameters], ["get", self.get_parameters],
 
                         ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
@@ -144,32 +139,8 @@ class App:
 
             return
         
-        def connect_keys() -> None:
-            """
-            QKey = QtCore.Qt.Key
-
-            projection_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_H), self)
-            projection_toggle_shortcut.activated.connect(self.update_icons)
-
-            open_session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_1), self)
-            open_session_folder_shortcut.activated.connect(self.open_session_folder)
-
-            # Direction
-            direction_toggle_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_X), self)
-            direction_toggle_shortcut.activated.connect(self.on_toggle_direction)
-            
-            # I/O group
-            exit_shortcuts = [QtGui.QShortcut(QtGui.QKeySequence(keystroke), self) for keystroke in [QKey.Key_Q, QKey.Key_E]]
-            [exit_shortcut.activated.connect(self.on_exit) for exit_shortcut in exit_shortcuts]
-            session_folder_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QKey.Key_T), self)
-            session_folder_shortcut.activated.connect(self.open_session_folder)
-            """
-
-            return
-        
         connect_console()
-        connect_buttons()
-        connect_keys()        
+        connect_buttons()    
         return
   
     def config_init(self) -> None:
@@ -263,9 +234,11 @@ class App:
             return
 
         def connect_nanonis() -> None:
-            self.nanonis.connection.connect(self.on_receive_nanonis_status)
-            self.nanonis.progress.connect(self.on_receive_progress)
-            #self.nanonis.message.connect(self.on_receive_message)
+            # Initialize signal-slot connections
+            self.nanonis.connection.connect(self.receive_nanonis_status)
+            self.nanonis.progress.connect(self.receive_progress)
+            self.nanonis.message.connect(self.receive_message)
+            self.nanonis.parameters.connect(self.receive_parameters)
 
             if self.nanonis.status == "running": self.nanonis.disconnect()
             self.status.update({"nanonis": "offline"})
@@ -391,7 +364,9 @@ class App:
 
 
     # Dynamic GUI updates
-    def on_receive_nanonis_status(self, status: str) -> None:
+    def receive_nanonis_status(self, status: str) -> None:
+        # Nanonis emits the 'running' flag when it connects and the 'online' flag when it disconnects.
+        # These flags are used to update the corresponding status in Scantelligent and provide logic for blocking - preventing the collision of multiple simultaneous TCP code executions
         match status:
             case "running":
                 self.status.update({"nanonis": "running"})
@@ -401,9 +376,91 @@ class App:
                 self.update_buttons()
         return
 
-    def on_receive_progress(self, progress: int) -> None:
+    def receive_progress(self, progress: int) -> None:
         self.gui.progress_bars["experiment"].setValue(progress)
         return
+    
+    def receive_message(self, text: str, mtype: str):
+        self.logprint(text, message_type = mtype)
+        return
+
+    def receive_parameters(self, parameters: dict):
+        # Read the name of the dict to determine what type of parameters are in there
+        dict_name = parameters.get("dict_name")
+        match dict_name:
+
+            case "tip_status":                
+                z_limits_nm = parameters.get("z_limits (nm)")
+                z_nm = parameters.get("z (nm)")
+                
+                # Update the slider
+                self.gui.tip_slider.setMinimum(int(z_limits_nm[0]))
+                self.gui.tip_slider.setMaximum(int(z_limits_nm[1]))
+                self.gui.tip_slider.setValue(int(z_nm))
+                self.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
+            
+            case "scan_parameters":
+                self.user.scan_parameters[0].update(parameters)
+            
+            case "frame":
+                self.user.frames[0].update(parameters)
+            
+            case _:
+                pass
+        
+        return
+
+
+
+    def get_parameters(self):
+        # Request a parameter update from Nanonis, and wait to receive
+        # The received parameters are stored in self.user.scan_parameters[0] by default
+        self.nanonis.parameters_update(auto_disconnect = False)
+        self.nanonis.tip_update(auto_connect = False)
+        sleep(.2)
+        scan_parameters = self.user.scan_parameters[0]
+        
+        # Enter the scan parameters into the fields
+        line_edits = self.gui.line_edits
+        comboboxes = self.gui.comboboxes
+        
+        for key, value in scan_parameters.items():
+            if key in ["V", "bias", "V_nanonis"]:
+                self.gui.line_edits["V_nanonis"].setText(f"{value:.2f} V")
+            if key == "V_mla": self.gui.line_edits["V_mla"].setText(f"{value:.2f} V")
+            if key == "I_fb (pA)": self.gui.line_edits["I_fb"].setText(f"{value:.0f} pA")
+            if key == "p_gain (pm)": self.gui.line_edits["p_gain"].setText(f"{value:.0f} pm")
+            if key == "t_const (us)": self.gui.line_edits["t_const"].setText(f"{value:.0f} us")
+            if key == "v_fwd (nm_per_s)": self.gui.line_edits["v_fwd"].setText(f"{value:.1f} nm/s")
+            if key == "v_bwd (nm_per_s)": self.gui.line_edits["v_bwd"].setText(f"{value:.1f} nm/s")
+        
+        return
+
+    def set_parameters(self):
+        # Update Nanonis according to the parameters that were set in the GUI
+        scan_parameters = self.user.scan_parameters[0]
+        
+        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
+            str = self.gui.line_edits[tag].text()
+            numbers = self.data.extract_numbers_from_str(str)
+            if len(numbers) < 1: continue
+            flt = numbers[0]
+            
+            match tag:
+                case "V_nanonis": scan_parameters.update({"V_nanonis": flt})
+                case "V_mla": scan_parameters.update({"V_mla": flt})
+                case "I_fb": scan_parameters.update({"I_fb (pA)": flt})
+                case "p_gain": scan_parameters.update({"p_gain (ms)": flt})
+                case "t_const": scan_parameters.update({"t_const (s)": flt})
+                case "v_fwd": scan_parameters.update({"v_fwd (nm/s)": flt})
+                case "v_bwd": scan_parameters.update({"v_bwd (nm/s)": flt})
+                case _: pass
+
+        self.nanonis.parameters_update(scan_parameters)
+        
+        return
+
+
 
     def update_buttons(self) -> None:
         buttons = self.gui.buttons
@@ -508,31 +565,6 @@ class App:
                     tip_button.changeToolTip("Tip in constant height: click to toggle feedback on")
                     tip_button.setStyleSheet(style_sheets["hold"])
         
-        return
-
-    def update_parameter_fields(self) -> None:
-        # Enter the scan parameters into the fields
-        line_edits = self.gui.line_edits
-        comboboxes = self.gui.comboboxes
-        
-        parameters = self.scan_parameters[0]
-        
-        for key, value in parameters.items():
-            if key in ["V", "bias", "V_nanonis"]:
-                self.gui.line_edits["V_nanonis"].setText(f"{value:.2f} V")
-            if key == "V_mla":
-                self.gui.line_edits["V_mla"].setText(f"{value:.2f} V")
-            if key == "I_fb_pA":
-                self.gui.line_edits["I_fb"].setText(f"{value:.0f} pA")
-            if key == "p_gain_pm":
-                self.gui.line_edits["p_gain"].setText(f"{value:.0f} pm")
-            if key == "t_const_us":
-                self.gui.line_edits["t_const"].setText(f"{value:.0f} us")
-            if key == "v_fwd_nm_per_s":
-                self.gui.line_edits["v_fwd"].setText(f"{value:.1f} nm/s")
-            if key == "v_bwd_nm_per_s":
-                self.gui.line_edits["v_bwd"].setText(f"{value:.1f} nm/s")
-
         return
 
     def load_parameters(self, index) -> None:
@@ -758,8 +790,8 @@ class App:
 
         try:
             # Get tip status
-            if self.status["initialization"]: logp("(tip_status, error) = nanonis.tip()", message_type = "code")
-            (tip_status, error) = self.nanonis.tip(auto_disconnect = False)
+            if self.status["initialization"]: logp("(tip_status, error) = nanonis.tip_update()", message_type = "code")
+            (tip_status, error) = self.nanonis.tip_update(auto_disconnect = False)
             
             if error:
                 logp(f"Error retrieving the tip status: {error}", message_type = "error")
@@ -768,8 +800,8 @@ class App:
                 self.status["tip"] = tip_status
             
             # Get scan parameters
-            if self.status["initialization"]: logp("(parameters, error) = nanonis.parameters()", message_type = "code")
-            (parameters, error) = self.nanonis.parameters(auto_connect = False, auto_disconnect = False)
+            if self.status["initialization"]: logp("(parameters, error) = nanonis.parameters_update()", message_type = "code")
+            (parameters, error) = self.nanonis.parameters_update(auto_connect = False, auto_disconnect = False)
             
             if error:
                 logp(f"Error retrieving the scan parameters: {error}", message_type = "error")
@@ -792,10 +824,10 @@ class App:
 
             # Get grid parameters
             if self.status["initialization"]:
-                logp("(frame, error) = nanonis.frame()", message_type = "code")
-                logp("(grid, error) = nanonis.grid()", message_type = "code")
-            (frame, error) = self.nanonis.frame(auto_connect = False, auto_disconnect = False)
-            (grid, error) = self.nanonis.grid(auto_connect = False, auto_disconnect = False)
+                logp("(frame, error) = nanonis.frame_update()", message_type = "code")
+                logp("(grid, error) = nanonis.grid_update()", message_type = "code")
+            (frame, error) = self.nanonis.frame_update(auto_connect = False, auto_disconnect = False)
+            (grid, error) = self.nanonis.grid_update(auto_connect = False, auto_disconnect = False)
             
             if error:
                 logp(f"Error retrieving the scan frame / grid: {error}", message_type = "error")
@@ -822,7 +854,6 @@ class App:
         
         self.update_buttons()
         self.update_tip_status()
-        self.update_parameter_fields()
         
         return
 
@@ -944,26 +975,21 @@ class App:
         return True
 
     def change_tip_status(self) -> bool:
-        if not hasattr(self, "nanonis"): return False
-        
-        self.status["nanonis"] = "running"
-        self.buttons["nanonis"].setStyleSheet(style_sheets["running"])
-        
         try:
             if self.status["tip"].get("withdrawn"):
-                (tip_status, error) = self.nanonis.tip(feedback = True)
+                (tip_status, error) = self.nanonis.tip_update({"feedback": True})
                 if error:
-                    self.logprint(f"Error. {e}")
+                    self.logprint(f"Error: {e}")
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("[tuple] ([dict] status[\"tip\"] | [bool] False) = nanonis.tip(feedback = True)", message_type = "code")
+                    self.logprint("([dict] status[\"tip\"] | [bool] False) = nanonis.tip_update(\{\"feedback\": True\})", message_type = "code")
             else: # Toggle the feedback
-                (tip_status, error) = self.nanonis.tip(feedback = not self.status["tip"].get("feedback"))
+                (tip_status, error) = self.nanonis.tip_update({"feedback": not self.status["tip"].get("feedback")})
                 if error:
                     self.logprint(f"Error. {e}")
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("[tuple] ([dict] status[\"tip\"], [bool] False) = nanonis.tip(feedback = not status[\"tip\"].get(\"feedback\"])", message_type = "code")
+                    self.logprint("([dict] status[\"tip\"], [bool] False) = nanonis.tip_update(\{\"feedback\": not status[\"tip\"].get(\"feedback\"]\})", message_type = "code")
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")

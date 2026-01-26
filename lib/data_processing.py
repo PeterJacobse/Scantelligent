@@ -4,7 +4,7 @@ from scipy.ndimage import gaussian_filter
 from scipy.fft import fft2, fftshift
 from matplotlib import colors
 from scipy.linalg import lstsq
-import pint, re
+import pint, re, yaml, os
 from dataclasses import dataclass
 
 
@@ -71,7 +71,6 @@ class DataProcessing():
         regex_pattern = r"[-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?"
         number_matches = re.findall(regex_pattern, text)
         numbers = [float(x) for x in number_matches]
-        if len(numbers) < 1: numbers = None
         
         return numbers
     
@@ -584,5 +583,48 @@ class DataProcessing():
 
 class UserData:
     def __init__(self):
-        self.frame: dict = {"a": 1, "b": 2, "c": 3}
+        script_path = os.path.abspath(__file__)
+        lib_folder = os.path.dirname(script_path)
+        scantelligent_folder = os.path.dirname(lib_folder)
+        sys_folder = os.path.join(scantelligent_folder, "sys")
+        self.parameters_file = os.path.join(sys_folder, "user_parameters.yml")
+        
+        self.frames = [
+            {"a": 1, "b": 2, "c": 3}, {}, {}
+        ]
+        self.scan_parameters = [
+            {}, {}, {}
+        ]
+        self.load_parameter_sets()
+    
+    def save_yaml(self, data, path: str) -> bool | str:
+        error = False
+
+        try: # Save the currently opened scan folder to the config yaml file so it opens automatically on startup next time
+            with open(path, "w") as file:
+                yaml.safe_dump(data, file)
+        except Exception as e:
+            error = f"Failed to save to yaml: {e}"
+        
+        return error
+
+    def load_yaml(self, path: str) -> tuple[object, bool | str]:
+        error = False
+        
+        try: # Read the last scan file from the config yaml file
+            with open(path, "r") as file:
+                yaml_data = yaml.safe_load(file)
+        except Exception as e:
+            error = e
+
+        return (yaml_data, error)
+    
+    def load_parameter_sets(self):
+        (yaml_data, error) = self.load_yaml(self.parameters_file)
+        print(yaml_data)
+        return
+    
+    def save_parameter_sets(self, parameters: dict):
+        print(f"Thank you for sending me this parameter set: {parameters}")
+        return
 
