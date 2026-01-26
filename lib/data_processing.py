@@ -4,45 +4,77 @@ from scipy.ndimage import gaussian_filter
 from scipy.fft import fft2, fftshift
 from matplotlib import colors
 from scipy.linalg import lstsq
-import pint
+import pint, re
+from dataclasses import dataclass
 
 
 
 class DataProcessing():
     def __init__(self):
-        self.ureg = pint.UnitRegistry
-        self.processing_flags = self.make_processing_flage()
+        self.processing_flags = self.create_scan_processing_flage()
+        self.spec_processing_flags = self.create_spec_processing_flags()
         
-    def make_processing_flage(self) -> dict:
+    def create_scan_processing_flage(self) -> dict:
         processing_flags = {
-            "direction": "forward",
-            "up_or_down": "up",
-            "channel": "Z (m)",
-            "background": "none",
-            "rotation": False,
+            "dict_name": "processing_flags", # Self reference to facilitate the app recognizing what kind of dictionary this is
+            "direction": "forward", # Forward is the left-to-right (trace) part of the scan; backward is right-to-left (retrace) part of the scan
+            "up_or_down": "up", # Scan direction. Terminology 'direction' is avoided for up or down to avoid confusion
+            "channel": "Z", # Scan channel
+            "background": "none", # Method for background subtraction. Can be 'none', 'plane', or 'linewise'
+            "rotation": False, # Flag that determines whether the rotation of the scan frame should be shown
             "offset": False,
             "sobel": False,
             "gaussian": False,
             "gaussian_width_nm": 0,
+            "gaussian_width (nm)": 0,
             "laplace": False,
             "fft": False,
             "normal": False,
             "projection": "re",
-            "min_method": "full",
-            "min_method_value": 0,
-            "min_limit": 0,
-            "max_method": "full",
+            "phase": 0,
+            "min_method": "full", # Method to determine the lower limit of the data. Can be 'full', 'absolute', 'percentiles' or 'deviations'
+            "min_method_value": 0, # Argument to calculate the min_limit on the basis of the provided min_method
+            "min_limit": 0, # This key will hold the numerical value of the limit as determined by applying the min_method to the data using the min_method_value
+            "max_method": "full", # See explanation for min_method, min_method_value and min_limit
             "max_method_value": 1,
             "max_limit": 1,
-            "spec_locations": False,
-            "scan_range_nm": [0, 0],
-            "file_name": ""
+            "spec_locations": False, # Flag whether or not to display spectroscopy locations in the scan
+            "scan_range_nm": [0, 0], # Will be deprecated
+            "file_name": "",
+            "frame": { # A frame dict is embedded in processing flags so that the location, rotation and scan range parameters can be accessed immediately
+                "dict_name": "frame",
+                "offset_nm": [0, 0], # Deprecate underscore separations of quantities and units
+                "scan_range_nm": [0, 0],
+                "angle_deg" : 0,
+                "offset (nm)": [0, 0],
+                "scan_range (nm)": [0, 0],
+                "angle (deg)" : 0
+            }
+        }
+        
+        return processing_flags
+    
+    def create_spec_processing_flags(self) -> dict:
+        processing_flags = {
+            "line_width": 2,
+            "opacity": 1,
+            "offset": 1,
         }
         
         return processing_flags
 
 
 
+    # Misc
+    def extract_numbers_from_str(self, text: str) -> list[float] | None:
+        # Extract the numeric part
+        regex_pattern = r"[-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?"
+        number_matches = re.findall(regex_pattern, text)
+        numbers = [float(x) for x in number_matches]
+        if len(numbers) < 1: numbers = None
+        
+        return numbers
+    
     def add_tags_to_file_name(self, bare_name: str = "") -> str:
         flags = self.processing_flags
         
@@ -79,6 +111,9 @@ class DataProcessing():
                     break
             image = tensor_slice[int(self.processing_flags.get("direction") == "backward")]
             
+            # Update the frame to the processing flags
+            self.processing_flags.update({"frame": frame})
+            
         except Exception as e:
             error = e
 
@@ -86,6 +121,8 @@ class DataProcessing():
 
     def process_scan(self, image: np.ndarray) -> tuple[np.ndarray, dict, list, bool | str]:
         error = False
+        statistics = False
+        limits = [0, 1]
 
         try:
             # Apply matrix operations
@@ -104,17 +141,17 @@ class DataProcessing():
         
         except Exception as e:
             error = e
-                
+        
         return (processed_scan, statistics, limits, error)
 
     def operate_scan(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
         flags = self.processing_flags
-        gaussian_sigma = flags["gaussian_width_nm"]
-        scan_range_nm = flags["scan_range_nm"]
+        gaussian_sigma = flags["gaussian_width (nm)"]
+        scan_range_nm = flags["scan_range (nm)"]
         
         # Background subtraction
-        (image, error) = self.background_subtract(image, mode = flags["background"])
+        (image, error) = self.subtract_background(image, mode = flags["background"])
         if error: return (image, error)
         
         # Matrix operations
@@ -132,18 +169,25 @@ class DataProcessing():
         
         if flags["fft"]: (image, error) = self.apply_fft(image, scan_range_nm)
         if error: return (image, error)
+        
+        # Set phase
+        (image, error) = self.apply_phase(image)
+        if error:
+            return (image, error)
 
         # Perform the correct projection
-        match flags["projection"]:
-            case "im": image = np.imag(image)
-            case "abs": image = np.abs(image)
-            case "abs^2": image = np.abs(image) ** 2
-            case "arg (b/w)": image = np.angle(image)
-            case "arg (hue)": (image, error) = self.complex_image_to_colors(image, saturate = True)
-            case "complex": (image, error) = self.complex_image_to_colors(image, saturate = False)
-            case "log(abs)": image = np.log(np.abs(image))
-            case _: image = np.real(image)
-        
+        try:
+            match flags["projection"]:
+                case "im": image = np.imag(image)
+                case "abs": image = np.abs(image)
+                case "abs^2": image = np.abs(image) ** 2
+                case "arg (b/w)": image = np.angle(image)
+                case "arg (hue)": (image, error) = self.complex_image_to_colors(image, saturate = True)
+                case "complex": (image, error) = self.complex_image_to_colors(image, saturate = False)
+                case "log(abs)": image = np.log(np.abs(image))
+                case _: image = np.real(image)
+        except:
+            pass    
         return (image, error)
  
     def calculate_limits(self, image: np.ndarray) -> tuple[list, bool | str]:
@@ -199,6 +243,29 @@ class DataProcessing():
 
 
 
+    # Spectrum operations
+    
+    
+    # Image operations
+    def apply_phase(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
+        error = False
+        phase_shifted_image = image
+        
+        if not isinstance(image, np.ndarray):
+            error = "Error. The provided image is not a numpy array."
+            return (image, error)
+
+        try:
+            phase = self.processing_flags.get("phase", 0)
+            phase_factor = np.exp(1j * phase * np.pi / 180)
+            phase_shifted_image = phase_factor * image
+            
+            return(phase_shifted_image, error)
+
+        except Exception as e:
+            error = e
+            return(image, error)
+    
     def apply_gaussian(self, image: np.ndarray, sigma: float = 2, scan_range = None) -> tuple[np.ndarray, bool | str]:
         error = False
 
@@ -425,7 +492,7 @@ class DataProcessing():
         
         return (rgb_array, error)
 
-    def background_subtract(self, image: np.ndarray, mode: str = "plane", scan_range_nm = None) -> tuple[np.ndarray, bool | str]:
+    def subtract_background(self, image: np.ndarray, mode: str = "plane", scan_range_nm = None) -> tuple[np.ndarray, bool | str]:
         error = False
 
         if not isinstance(image, np.ndarray):
@@ -459,6 +526,9 @@ class DataProcessing():
         
         return (processed_image, error)
 
+
+
+    # Statistics
     def get_image_statistics(self, image: np.ndarray, pixels_per_bin: int = 200) -> tuple[dict, bool | str]:
         error = False
 
@@ -475,6 +545,7 @@ class DataProcessing():
             range_min, range_max = (data_sorted[0], data_sorted[-1]) # Calculate the total range
             range_total = range_max - range_min
             standard_deviation = np.sum(np.sqrt((data_sorted - range_mean) ** 2) / n_pixels) # Calculate the standard deviation
+            print(7)
 
             image_statistics = {
                 "data_sorted": data_sorted,
@@ -494,7 +565,7 @@ class DataProcessing():
             error = "Error. Image statistics could not be calculated."
             return ({}, error)
         
-        try:    
+        try:
             n_bins = int(np.floor(n_pixels / pixels_per_bin))
             counts, bounds = np.histogram(data_sorted, bins = n_bins)
             binsize = bounds[1] - bounds[0]
@@ -506,7 +577,12 @@ class DataProcessing():
         except:
             error = "Error. Histogram could not be calculated."
             return (image_statistics, error)
-        
+
         return (image_statistics, error)
 
+
+
+class UserData:
+    def __init__(self):
+        self.frame: dict = {"a": 1, "b": 2, "c": 3}
 

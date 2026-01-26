@@ -101,6 +101,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "oscillator": make_button("", "Oscillator on/off\n(O)", icon = icons.get("osc")),
             "view": make_button("", "Toggle the active view\n(V)", icon = icons.get("eye")),
             "session_folder": make_button("", "Open the session folder\n(1)", icon = icons.get("folder_yellow")),
+            "info": make_button("", "Info", self.icons.get("i")),
             
             "tip": make_button("", "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
             "V_swap": make_button("", "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
@@ -139,7 +140,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Named groups
-        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "oscillator", "session_folder", "exit"]]
+        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "oscillator", "session_folder", "info", "exit"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
         self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
         self.scan_parameter_sets = [buttons[f"scan_parameters_{i}"] for i in range(4)]
@@ -160,11 +161,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "advance": make_checkbox("", "Include advancing the tip during a move"),
             "approach": make_checkbox("", "End the tip move with an auto approach"),
 
-            "sobel": make_checkbox("Sobel", "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", self.icons.get("derivative")),
+            "sobel": make_checkbox("Sobel", "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", self.icons.get("sobel")),
             "laplace": make_checkbox("Laplace", "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + C)", self.icons.get("laplacian")),
             "fft": make_checkbox("Fft", "Compute the 2D Fourier transform\n(Shift + F)", self.icons.get("fourier")),
             "normal": make_checkbox("Normal", "Compute the z component of the surface normal\n(Shift + N)", self.icons.get("surface_normal")),
-            "gauss": make_checkbox("Gauss", "Apply a Gaussian blur\n(Shift + G)", self.icons.get("gaussian")),
+            "gaussian": make_checkbox("Gauss", "Apply a Gaussian blur\n(Shift + G)", self.icons.get("gaussian")),
+            
+            "rotation": make_checkbox("", "Show the scan frame rotation\n(R)", self.icons.get("rotation")),
+            "offset": make_checkbox("", "Show the scan frame offset(O)", self.icons.get("offset"))
         }
         
         # Named groups
@@ -222,7 +226,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "min_absolute": make_line_edit("0", "minimum absolute value"),
             "max_absolute": make_line_edit("1", "maximum absolute value"),
 
-            "gaussian_width": make_line_edit("0", "Width in nm for Gaussian blur application"),
+            "gaussian_width": make_line_edit("0 nm", "Width in nm for Gaussian blur application", unit = "nm"),
             "experiment_filename": make_line_edit("", "Base name of the file when saved to png or hdf5"),
             
             "input": make_line_edit("", "Enter a command\n(Enter to evaluate)")
@@ -268,7 +272,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Named groups
-        self.background_buttons = [radio_buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise", "bg_inferred"]]
+        self.background_buttons = [radio_buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise"]]
         self.min_radio_buttons = [radio_buttons[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_radio_buttons = [radio_buttons[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
@@ -362,6 +366,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_widgets(self) -> dict:
         layouts = self.layouts
+        make_sle = self.gui_items.make_slider_line_edit
         QWgt = QtWidgets.QWidget
         
         widgets = {
@@ -372,6 +377,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]     
+        self.phase_slider = make_sle("", "Set complex phase phi in deg\n(= multiplication by exp(i * pi * phi rad / (180 deg)))")
         
         return widgets
 
@@ -436,6 +442,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     # 3: Populate layouts with GUI items. Requires GUI items.
     def populate_layouts(self) -> None:
         layouts = self.layouts
+        checkboxes = self.checkboxes
+        line_edits = self.line_edits
+        labels = self.labels
+        comboboxes = self.comboboxes
         
         # Add items to the layouts        
         #[layouts["connections"].addWidget(button, int(i / 4), i % 4) for i, button in enumerate(self.connection_buttons)]
@@ -460,34 +470,31 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         layouts["scan_control"].addWidget(self.comboboxes["channels"], 5)
         layouts["scan_control"].addWidget(self.buttons["direction"], 1)
+        
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
+        [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rotation", "offset"]]
         p_layout = layouts["matrix_processing"]
-        [p_layout.addWidget(self.checkboxes[name], 0, i) for i, name in enumerate(["sobel", "normal", "laplace"])]
-        [p_layout.addWidget(self.checkboxes[name], i + 1, 0) for i, name in enumerate(["gauss", "fft"])]
-        [p_layout.addWidget(self.labels[name], i + 1, 1) for i, name in enumerate(["width", "show"])]
-        p_layout.addWidget(self.line_edits["gaussian_width"], 1, 2)
-        p_layout.addWidget(self.comboboxes["projection"], 2, 2)        
+        [p_layout.addWidget(checkboxes[checkbox_name], 0, index) for index, checkbox_name in enumerate(["sobel", "normal", "laplace"])]
+        p_layout.addWidget(checkboxes["gaussian"], 1, 1)
+        p_layout.addWidget(line_edits["gaussian_width"], 1, 2)
+        p_layout.addWidget(checkboxes["fft"], 1, 0)
+        p_layout.addWidget(comboboxes["projection"], 2, 0)
+        p_layout.addWidget(self.phase_slider, 2, 1, 1, 2)
         
         l_layout = layouts["limits"]
-        [l_layout.addWidget(item, i, 0) for i, item in enumerate(self.min_line_edits)]
-        [l_layout.addWidget(item, i, 1) for i, item in enumerate(self.min_radio_buttons)]
-        [l_layout.addWidget(item, i, 2) for i, item in enumerate(self.scale_buttons)]
-        [l_layout.addWidget(item, i, 3) for i, item in enumerate(self.max_radio_buttons)]
-        [l_layout.addWidget(item, i, 4) for i, item in enumerate(self.max_line_edits)]
-        
+        self.limits_columns = [self.min_line_edits, self.min_radio_buttons, self.scale_buttons, self.max_radio_buttons, self.max_line_edits]
+        for j, group in enumerate(self.limits_columns): [l_layout.addWidget(item, i, j) for i, item in enumerate(group)]
+
         ip_layout = layouts["image_processing"]
-        ip_layout.addWidget(self.labels["scan_control"])
-        ip_layout.addLayout(layouts["scan_control"])
-        ip_layout.addWidget(self.lines["scan_control"])
-        ip_layout.addWidget(self.labels["background_subtraction"])
+        ip_layout.addWidget(labels["background_subtraction"])
         ip_layout.addLayout(layouts["background_buttons"])
-        ip_layout.addWidget(self.lines["background"])
-        ip_layout.addWidget(self.labels["matrix_operations"])
-        ip_layout.addLayout(layouts["matrix_processing"])
-        ip_layout.addWidget(self.lines["matrix_operations"])
-        ip_layout.addWidget(self.labels["limits"])            
-        ip_layout.addLayout(layouts["limits"])
-        
+        ip_layout.addWidget(self.gui_items.line_widget("h", 1))
+        ip_layout.addWidget(labels["matrix_operations"])
+        ip_layout.addLayout(p_layout)
+        ip_layout.addWidget(self.gui_items.line_widget("h", 1))
+        ip_layout.addWidget(labels["limits"])         
+        ip_layout.addLayout(l_layout)
+
         cc_layout = layouts["coarse_control"]
         cc_layout.addLayout(ca_layout, 0, 0, 5, 1)
         cc_layout.addWidget(self.line_edits["V_hor"], 0, 1, 1, 1)
@@ -553,7 +560,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Finish the setup
         self.setCentralWidget(widgets["central"])
-        self.setWindowTitle("Scantelligent by Peter H. Jacobse")
+        self.setWindowTitle("Scantelligent")
         self.setGeometry(100, 50, 1400, 800) # x, y, width, height
         self.setWindowIcon(self.icons.get("scanalyzer"))
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)

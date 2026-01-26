@@ -1,7 +1,7 @@
 import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
-from lib import ScantelligentGUI, StreamRedirector, Nanonis, DataProcessing
+from lib import ScantelligentGUI, StreamRedirector, Nanonis, DataProcessing, UserData
 from time import sleep
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -69,6 +69,7 @@ class App:
                 pass
 
         self.ureg = pint.UnitRegistry()
+        self.user = UserData()
 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -105,7 +106,7 @@ class App:
             
             # Connect the buttons to their respective functions
             connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
-                        ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.open_session_folder],
+                        ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.open_session_folder], ["info", self.on_info],
                         
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
                         
@@ -568,11 +569,29 @@ class App:
         command = f"self.{text}"
         
         try:
+            compile(command, "<string>", "eval")
+            
             self.logprint(f"{text}", message_type = "code")
             result = eval(command)
             self.logprint(f"{result}", message_type = "result")
+        except SyntaxError:
+            try:
+                compile(command, "<string>", "exec")
+                
+                assignment = command.split("=")
+                assignment = [part.strip() for part in assignment]
+                
+                if assignment[1].startswith("nanonis") or assignment[1].startswith("data") or assignment[1].startswith("file_functions") or assignment[1].startswith("user"):
+                    command = f"{assignment[0]} = self.{assignment[1]}"
+                
+                self.logprint(f"{text}", message_type = "code")
+                exec(command)
+            except SyntaxError:
+                self.logprint("Invalid code.", message_type = "error")
+            except Exception as e:
+                self.logprint(f"{e}", message_type = "error")
         except Exception as e:
-            self.logprint(f"Error: {e}", message_type = "error")
+            self.logprint(f"{e}", message_type = "error")
         
         return
 
@@ -639,6 +658,20 @@ class App:
                 self.logprint(f"Failed to open session folder: {e}", message_type = "error")
         else:
             self.logprint("Error. Session folder unknown.", message_type = "error")
+        return
+
+    # Information popup
+    def on_info(self) -> None:
+        msg_box = QtWidgets.QMessageBox(self.gui)
+        
+        msg_box.setWindowTitle("Info")
+        msg_box.setText("Scantelligent (2026)\nby Peter H. Jacobse\nRice University; Lawrence Berkeley National Lab")
+        msg_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+        msg_box.setIcon(QtWidgets.QMessageBox.Icon.Information)
+
+        #QtCore.QTimer.singleShot(5000, msg_box.close)
+        retval = msg_box.exec()
+        
         return
 
     def exit(self):
@@ -846,10 +879,10 @@ class App:
                 image_item = self.gui.image_view.getImageItem()
                 
                 (frame, error) = self.nanonis.frame()                
-                width = self.frame.get("width_nm")
-                height = self.frame.get("height_nm")
+                width = self.frame.get("width (nm)")
+                height = self.frame.get("height (nm)")
                 
-                image_item.setRect(QtCore.QRectF(self.frame.get("x_nm") - 0.5 * width, self.frame.get("y_nm") - 0.5 * height, width, height))
+                image_item.setRect(QtCore.QRectF(self.frame.get("x (nm)") - 0.5 * width, self.frame.get("y (nm)") - 0.5 * height, width, height))
                 image_item.setRotation(self.frame.get("angle_deg"))
                 self.gui.image_view.autoRange()
         except Exception as e:
