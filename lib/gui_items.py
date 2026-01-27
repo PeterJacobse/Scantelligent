@@ -333,9 +333,13 @@ class PJLineEdit(QtWidgets.QLineEdit):
         entered_text = self.text()
         
         # Extract the numeric part of what was entered
-        number_matches = re.findall(r"-?\d+\.?\d*", entered_text)
-        if self.number_type == "int": numbers = [int(x) for x in number_matches]
-        else: numbers = [float(x) for x in number_matches]
+        regex_pattern = r"([-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?)(?:\s*[a-zA-Zμ°%]+)?"
+        number_matches = re.findall(regex_pattern, entered_text)
+        numbers = [float(x) for x in number_matches]
+        
+        #number_matches = re.findall(r"-?\d+\.?\d*", entered_text)
+        #if self.number_type == "int": numbers = [int(x) for x in number_matches]
+        #else: numbers = [float(x) for x in number_matches]
         
         if len(numbers) > 0:
             number = numbers[0]

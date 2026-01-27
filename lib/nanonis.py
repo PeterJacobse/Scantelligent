@@ -88,8 +88,8 @@ class Nanonis(QtCore.QObject):
             [z_min, z_max] = nhw.get_z_limits_nm()
 
             # Switch the feedback if desired, and retrieve the feedback status
-            if type(feedback) == bool: nhw.set_fb(False)
-            
+            if type(feedback) == bool: nhw.set_fb(feedback)
+                        
             withdrawn = False
             if not feedback and np.abs(z_nm - z_max) < 1E-11: # Tip is already withdrawn
                 withdrawn = True
@@ -133,7 +133,7 @@ class Nanonis(QtCore.QObject):
         
         # Extract numbers from parameters input
         I_fb_pA = parameters.get("I_fb (pA)", None)
-        v_fwd_nm_per_s = parameters.get("v_fwd (nm_per_s)", None)
+        v_fwd_nm_per_s = parameters.get("v_fwd (nm/s)", None)
         V_nanonis = parameters.get("V_nanonis (V)", None)
 
         # Set up the TCP connection and get
@@ -157,7 +157,7 @@ class Nanonis(QtCore.QObject):
                 "dict_name": "scan_parameters",
                 "V_nanonis (V)": V,
                 "I_fb (pA)": I_fb_pA,
-                "v_xy (nm_per_s)": v_xy_nm_per_s,
+                "v_xy (nm/s)": v_xy_nm_per_s,
                 "session_path": session_path
             }
             if coarse_parameters: parameters.update({"motor_frequency": coarse_parameters.get("frequency"), "motor_amplitude": coarse_parameters.get("amplitude")})
@@ -209,9 +209,9 @@ class Nanonis(QtCore.QObject):
             buffer = nhw.get_scan_buffer()
 
             # Save the data to a dictionary
-            width = frame.get("width_nm")
-            height = frame.get("height_nm")
-            angle = frame.get("angle_deg")
+            width = frame.get("width (nm)")
+            height = frame.get("height (nm)")
+            angle = frame.get("angle (deg)")
             pixels = buffer.get("pixels")
             lines = buffer.get("lines")
             grid = frame | buffer | {
@@ -244,8 +244,8 @@ class Nanonis(QtCore.QObject):
                     y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
 
             # Apply a translation
-            x_grid += grid["x_nm"]
-            y_grid += grid["y_nm"]
+            x_grid += grid["x (nm)"]
+            y_grid += grid["y (nm)"]
 
             # Add the meshgrids to the grid dictionary
             grid["x_grid"] = x_grid
@@ -402,8 +402,8 @@ class Nanonis(QtCore.QObject):
         # Set up the TCP connection and get grid dat
         try:
             if auto_connect: nhw.connect()
+            self.frame_update(auto_connect = False, auto_disconnect = False)
             scan_data = nhw.get_scan_data(channel_index, backward)
-            #frame_data = self.scan.FrameDataGrab(channel_index = channel_index, data_direction = direction)
             scan_image = scan_data["scan_data"]
             self.image.emit(np.flipud(scan_image))
             

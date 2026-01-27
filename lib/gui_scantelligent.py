@@ -27,8 +27,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.image_view = self.make_image_view()
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
-        self.shortcuts = self.make_shortcuts()
         self.tip_slider = self.make_tip_slider()
+        self.shortcuts = self.make_shortcuts()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
         self.populate_layouts()
@@ -112,6 +112,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "scan_parameters_1": make_button("", "Load scan parameter set 1\n(Ctrl + 1)", icon = icons.get("1")),
             "scan_parameters_2": make_button("", "Load scan parameter set 2\n(Ctrl + 2)", icon = icons.get("2")),
             "scan_parameters_3": make_button("", "Load scan parameter set 3\n(Ctrl + 3)", icon = icons.get("3")),
+            "scan_parameters_4": make_button("", "Load scan parameter set 3\n(Ctrl + 4)", icon = icons.get("4")),
             
             "withdraw": make_button("", "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
             "retract": make_button("", "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
@@ -144,7 +145,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "oscillator", "session_folder", "info", "exit"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
         self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
-        self.scan_parameter_sets = [buttons[f"scan_parameters_{i}"] for i in range(4)]
+        self.scan_parameter_sets = [buttons[f"scan_parameters_{i + 1}"] for i in range(4)]
         self.scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
 
         # Add the button handles to the tooltips
@@ -399,6 +400,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return consoles
 
+    def make_tip_slider(self) -> QtWidgets.QSlider:
+        make_slider = self.gui_items.make_slider
+        
+        tip_slider = make_slider("", "Tip height (nm)", orientation = "v")
+        
+        return tip_slider
+
     def make_shortcuts(self) -> dict:
         QKey = QtCore.Qt.Key
         QMod = QtCore.Qt.Modifier
@@ -436,13 +444,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [shortcuts.update({direction: QSeq(QMod.CTRL | keystroke)}) for direction, keystroke in direction_keys.items()]
         
         return shortcuts
-
-    def make_tip_slider(self) -> QtWidgets.QSlider:
-        make_slider = self.gui_items.make_slider
-        
-        tip_slider = make_slider("", "Tip height (nm)", orientation = "v")
-        
-        return tip_slider
 
 
 

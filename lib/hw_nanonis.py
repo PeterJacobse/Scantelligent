@@ -459,7 +459,7 @@ class NanonisHardware:
         parameters = {
             "p_gain (pm)": p_gain * 1E12,
             "t_const (us)": t_const * 1E6,
-            "i_gain (nm_per_s)": i_gain * 1E9            
+            "i_gain (nm/s)": i_gain * 1E9            
         }
         
         return parameters
@@ -481,7 +481,7 @@ class NanonisHardware:
         return [z_min_nm, z_max_nm]
 
     def withdraw(self, wait: bool = True, timeout: int = 60000) -> None:
-        command = self.headers["withdraw"] + self.conv.to_hex(self.headers[str(wait)], 4) + self.conv.to_hex(timeout, 4)
+        command = self.headers["withdraw"] + self.headers[str(wait)] + self.conv.to_hex(timeout, 4)
         
         self.send_command(command)
         self.receive_response(0)
@@ -508,8 +508,8 @@ class NanonisHardware:
         v_ratio = self.conv.hex_to_float32(response[18 : 22])
         
         speeds = {
-            "v_fwd (nm_per_s)": v_fwd * 1E9,
-            "v_bwd (nm_per_s)": v_bwd * 1E9,
+            "v_fwd (nm/s)": v_fwd * 1E9,
+            "v_bwd (nm/s)": v_bwd * 1E9,
             "t_fwd (s)": t_fwd,
             "t_bwd (s)": t_bwd,
             "const_param": const_param,

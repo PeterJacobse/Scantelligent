@@ -111,9 +111,9 @@ class App:
                         ]
             [connections.append([direction, lambda drxn = direction: self.on_coarse_move(drxn)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
             connections.append([f"scan_parameters_0", lambda: self.load_parameters(0)])
-            connections.append([f"scan_parameters_0", lambda: self.load_parameters(1)])
-            connections.append([f"scan_parameters_0", lambda: self.load_parameters(2)])
-            connections.append([f"scan_parameters_0", lambda: self.load_parameters(3)])
+            connections.append([f"scan_parameters_1", lambda: self.load_parameters(1)])
+            connections.append([f"scan_parameters_2", lambda: self.load_parameters(2)])
+            connections.append([f"scan_parameters_3", lambda: self.load_parameters(3)])
             
             #for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
             #    buttons[direction].clicked.connect(lambda drxn = direction: self.on_coarse_move(drxn))
@@ -191,12 +191,9 @@ class App:
                 parameters = yaml.safe_load(file)
         except Exception as e:
             self.logprint(f"Error reading the parameters from the parameters.yml file. {e}")
-            
-        scan_parameters = parameters.get("scan_parameters")
-        coarse_parameters = parameters.get("coarse_parameters")
-        
-        self.scan_parameters = [scan_parameters.get(i) for i in range(4)]
-        [self.gui.buttons[f"scan_parameters_{i}"].changeToolTip(f"Load scan parameter set {i} ({self.scan_parameters[i].get("name")})") for i in range(4)]
+
+        self.logprint(self.user.scan_parameters)        
+        [self.gui.buttons[f"scan_parameters_{i}"].changeToolTip(f"Load scan parameter set {i} ({self.user.scan_parameters[i].get("name")})") for i in range(len(self.user.scan_parameters))]
         
         # Initialize the scan parameters in the gui as parameter set 0, until a connection to Nanonis is made
         self.load_parameters(0)
@@ -287,12 +284,6 @@ class App:
         # Update the buttons in the gui
         self.update_buttons()
         return
-
-    def cleanup(self) -> None:
-        try: self.nanonis.disconnect()
-        except: pass
-        if hasattr(self, "nanonis"): delattr(self, "nanonis")
-        if hasattr(self, "measurements"): delattr(self, "measurements")
 
 
 
@@ -399,14 +390,17 @@ class App:
 
             case "tip_status":
                 tip_status = parameters
-                z_limits_nm = tip_status.get("z_limits (nm)")
-                z_nm = tip_status.get("z (nm)")
+                self.status.update({"tip_status": tip_status})
                 
                 # Update the slider
+                z_limits_nm = tip_status.get("z_limits (nm)")
+                z_nm = tip_status.get("z (nm)")
                 self.gui.tip_slider.setMinimum(int(z_limits_nm[0]))
                 self.gui.tip_slider.setMaximum(int(z_limits_nm[1]))
                 self.gui.tip_slider.setValue(int(z_nm))
                 self.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
+                
+                self.update_tip_status()
             
             case "scan_parameters":
                 scan_parameters = parameters
@@ -414,26 +408,7 @@ class App:
 
             case "frame":
                 frame = parameters
-                self.user.frames[0].update(frame)
-                
-                # Use the frame to update the imageitem box
-                scan_range_nm = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
-                offset_nm = frame.get("offset (nm)", [0, 0])
-            
-                w = scan_range_nm[0]
-                h = scan_range_nm[1]
-                x = offset_nm[0]
-                y = offset_nm[1]
-            
-                image_item = self.gui.image_view.getImageItem()
-                box = QtCore.QRectF(- w / 2, - h / 2, w, h)
-                image_item.setRect(box)
-                
-                center = image_item.boundingRect().center()
-                image_item.setTransformOriginPoint(center)           
-                image_item.setRotation(-angle_deg)
-                image_item.setPos(x, y)               
+                self.user.frames[0].update(frame)         
             
             case _:
                 pass
@@ -444,7 +419,30 @@ class App:
         if isinstance(image, np.ndarray):
             self.gui.image_view.clear()
             self.gui.image_view.setImage(image)
+            
+            # Use the frame to update the imageitem box
+            frame = self.user.frames[0]
+            
+            scan_range_nm = frame.get("scan_range (nm)", [100, 100])
+            angle_deg = frame.get("angle (deg)", 0)
+            offset_nm = frame.get("offset (nm)", [0, 0])
+        
+            w = scan_range_nm[0]
+            h = scan_range_nm[1]
+            x = offset_nm[0]
+            y = offset_nm[1]
+        
+            image_item = self.gui.image_view.getImageItem()
+            box = QtCore.QRectF(- w / 2, - h / 2, w, h)
+            image_item.setRect(box)
+            
+            center = image_item.boundingRect().center()
+            image_item.setTransformOriginPoint(center)           
+            image_item.setRotation(-angle_deg)
+            image_item.setPos(x, y)
+            
             self.gui.image_view.autoRange()
+            
         return
 
 
@@ -466,8 +464,8 @@ class App:
                 case "I_fb (pA)": le["I_fb"].setText(f"{value:.0f} pA")
                 case "p_gain (pm)": le["p_gain"].setText(f"{value:.0f} pm")
                 case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
-                case "v_fwd (nm_per_s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
-                case "v_bwd (nm_per_s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
+                case "v_fwd (nm/s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
+                case "v_bwd (nm/s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
         
         return
 
@@ -604,13 +602,21 @@ class App:
 
     def load_parameters(self, index) -> None:
         try:
-            params = self.scan_parameters[index]
+            # Close and reload UserData to catch any updates to the yml file
+            if hasattr(self, "user"): self.user.save_parameter_sets()
+            delattr(self, "user")
+            self.user = UserData()
             
-            parameter_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
-            #for tag in parameter_names:
-            #    if tag in params.keys():
+            params = self.user.scan_parameters[index]
             
-            [self.gui.line_edits[tag].setText(f"{params[tag]}") for tag in parameter_names if tag in params.keys()]
+            parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (s)", "p_gain (ms)"]
+            line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
+            units = ["V", "V", "pA", "nm/s", "nm/s", "s", "ms"]
+            line_edits = [self.gui.line_edits[name] for name in line_edit_names]
+            
+            for name, le, unit in zip(parameter_names, line_edits, units):
+                if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+
         except Exception as e:
             self.logprint(f"Error. {e}", message_type = "error")
         
@@ -741,8 +747,15 @@ class App:
         
         return
 
+    def cleanup(self) -> None:
+        self.user.save_parameter_sets()
+        try: self.nanonis.disconnect()
+        except: pass
+        if hasattr(self, "nanonis"): delattr(self, "nanonis")
+        if hasattr(self, "measurements"): delattr(self, "measurements")
+
     def exit(self):
-        self.cleanup()            
+        self.cleanup()
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
         QtWidgets.QApplication.instance().quit()
 
@@ -884,9 +897,9 @@ class App:
         # Continue with requesting the scan metadadata and finally the scan data
         try: self.nanonis.disconnect()
         except: pass
-
-        self.on_scan_data_request()
         
+        self.status["initialization"] = False
+                    
         self.update_buttons()
         self.update_tip_status()
         
@@ -979,60 +992,62 @@ class App:
         return
 
     def toggle_withdraw(self) -> bool:
-        # Return if Nanonis is not online
-        if not hasattr(self, "nanonis"): return False
-
-        self.status["nanonis"] = "running"
-        self.gui.buttons["nanonis"].setStyleSheet(style_sheets["running"])
-        
         try:
-            if self.status["tip"].get("withdrawn"):
+            tip_status = self.status["tip"]
+            tip_withdrawn = tip_status.get("withdrawn")
+            
+            if tip_withdrawn:
                 (tip_status, error) = self.nanonis.tip({"feedback": True})
                 if error: raise
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("(status[\"tip\"], error) = nanonis.tip({feedback: True})", message_type = "code")
+                    self.logprint("nanonis.tip_update({\"feedback\": True})", message_type = "code")
             else:
-                (tip_status, error) = self.nanonis.tip({"withdraw": True})
+                (tip_status, error) = self.nanonis.tip_update({"withdraw": True})
                 if error: raise
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("(status[\"tip\"], error) = nanonis.tip({withdraw: True})", message_type = "code")
-            
-            self.status["nanonis"] = "running"
+                    self.logprint("nanonis.tip_update({\"withdraw\": True})", message_type = "code")
 
         except Exception as e:
             if error: self.logprint(f"Error toggling the tip status: {error}", message_type = "error")
             else: self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
-            self.status["nanonis"] = "offline"
 
         self.update_buttons()
+        self.update_tip_status()
 
         return True
 
     def change_tip_status(self) -> bool:
         try:
-            if self.status["tip"].get("withdrawn"):
+            tip_status = self.status["tip"]
+            tip_withdrawn = tip_status.get("withdrawn")
+            tip_in_feedback = tip_status.get("feedback")
+            
+            if tip_withdrawn: # Tip is withdrawn: land it
                 (tip_status, error) = self.nanonis.tip_update({"feedback": True})
                 if error:
                     self.logprint(f"Error: {e}")
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("([dict] status[\"tip\"] | [bool] False) = nanonis.tip_update({{\"feedback\": True}})", message_type = "code")
+                    self.logprint(f"nanonis.tip_update({{\"feedback\": True}})", message_type = "code")
+            
             else: # Toggle the feedback
-                (tip_status, error) = self.nanonis.tip_update({"feedback": not self.status["tip"].get("feedback")})
+                self.logprint(f"status[\"tip\"].get(\"feedback\"] = {tip_in_feedback}", message_type = "result")
+                
+                (tip_status, error) = self.nanonis.tip_update({"feedback": not tip_in_feedback})
                 if error:
                     self.logprint(f"Error. {e}")
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("([dict] status[\"tip\"], [bool] False) = nanonis.tip_update({{\"feedback\": not status[\"tip\"].get(\"feedback\"]}})", message_type = "code")
+                    self.logprint(f"nanonis.tip_update({{\"feedback\": {not tip_in_feedback}}})", message_type = "code")
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
             return False
 
-        self.buttons["nanonis"].setStyleSheet(style_sheets["online"])
         self.update_buttons()
+        self.update_tip_status()
 
         return True
 
