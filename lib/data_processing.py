@@ -590,7 +590,7 @@ class UserData:
         self.parameters_file = os.path.join(sys_folder, "user_parameters.yml")
         
         self.frames = [
-            {"a": 1, "b": 2, "c": 3}, {}, {}
+            {}, {}, {}
         ]
         self.scan_parameters = [
             {}, {}, {}

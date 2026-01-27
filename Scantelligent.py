@@ -136,6 +136,8 @@ class App:
             
             # Instantiate process for CLI-style commands (opening folders and other programs)
             self.process = QtCore.QProcess(self.gui)
+            
+            self.gui.image_view.position_signal.connect(self.receive_double_click)
 
             return
         
@@ -239,6 +241,7 @@ class App:
             self.nanonis.progress.connect(self.receive_progress)
             self.nanonis.message.connect(self.receive_message)
             self.nanonis.parameters.connect(self.receive_parameters)
+            self.nanonis.image.connect(self.receive_image)
 
             if self.nanonis.status == "running": self.nanonis.disconnect()
             self.status.update({"nanonis": "offline"})
@@ -363,7 +366,12 @@ class App:
 
 
 
-    # Dynamic GUI updates
+    # PyQt slots
+    def receive_double_click(self, x: float, y: float) -> None:        
+        self.nanonis.tip_update({"x (nm)": x, "y (nm)": y})
+        self.logprint(f"nanonis.tip_update({{\"x (nm)\": {x}, \"y (nm)\": {y}}})", message_type = "code")
+        return
+    
     def receive_nanonis_status(self, status: str) -> None:
         # Nanonis emits the 'running' flag when it connects and the 'online' flag when it disconnects.
         # These flags are used to update the corresponding status in Scantelligent and provide logic for blocking - preventing the collision of multiple simultaneous TCP code executions
@@ -389,9 +397,10 @@ class App:
         dict_name = parameters.get("dict_name")
         match dict_name:
 
-            case "tip_status":                
-                z_limits_nm = parameters.get("z_limits (nm)")
-                z_nm = parameters.get("z (nm)")
+            case "tip_status":
+                tip_status = parameters
+                z_limits_nm = tip_status.get("z_limits (nm)")
+                z_nm = tip_status.get("z (nm)")
                 
                 # Update the slider
                 self.gui.tip_slider.setMinimum(int(z_limits_nm[0]))
@@ -400,19 +409,48 @@ class App:
                 self.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
             
             case "scan_parameters":
-                self.user.scan_parameters[0].update(parameters)
-            
+                scan_parameters = parameters
+                self.user.scan_parameters[0].update(scan_parameters)
+
             case "frame":
-                self.user.frames[0].update(parameters)
+                frame = parameters
+                self.user.frames[0].update(frame)
+                
+                # Use the frame to update the imageitem box
+                scan_range_nm = frame.get("scan_range (nm)", [100, 100])
+                angle_deg = frame.get("angle (deg)", 0)
+                offset_nm = frame.get("offset (nm)", [0, 0])
+            
+                w = scan_range_nm[0]
+                h = scan_range_nm[1]
+                x = offset_nm[0]
+                y = offset_nm[1]
+            
+                image_item = self.gui.image_view.getImageItem()
+                box = QtCore.QRectF(- w / 2, - h / 2, w, h)
+                image_item.setRect(box)
+                
+                center = image_item.boundingRect().center()
+                image_item.setTransformOriginPoint(center)           
+                image_item.setRotation(-angle_deg)
+                image_item.setPos(x, y)               
             
             case _:
                 pass
         
         return
 
+    def receive_image(self, image: np.ndarray):
+        if isinstance(image, np.ndarray):
+            self.gui.image_view.clear()
+            self.gui.image_view.setImage(image)
+            self.gui.image_view.autoRange()
+        return
+
 
 
     def get_parameters(self):
+        le = self.gui.line_edits
         # Request a parameter update from Nanonis, and wait to receive
         # The received parameters are stored in self.user.scan_parameters[0] by default
         self.nanonis.parameters_update(auto_disconnect = False)
@@ -420,25 +458,22 @@ class App:
         sleep(.2)
         scan_parameters = self.user.scan_parameters[0]
         
-        # Enter the scan parameters into the fields
-        line_edits = self.gui.line_edits
-        comboboxes = self.gui.comboboxes
-        
+        # Enter the scan parameters into the fields        
         for key, value in scan_parameters.items():
-            if key in ["V", "bias", "V_nanonis"]:
-                self.gui.line_edits["V_nanonis"].setText(f"{value:.2f} V")
-            if key == "V_mla": self.gui.line_edits["V_mla"].setText(f"{value:.2f} V")
-            if key == "I_fb (pA)": self.gui.line_edits["I_fb"].setText(f"{value:.0f} pA")
-            if key == "p_gain (pm)": self.gui.line_edits["p_gain"].setText(f"{value:.0f} pm")
-            if key == "t_const (us)": self.gui.line_edits["t_const"].setText(f"{value:.0f} us")
-            if key == "v_fwd (nm_per_s)": self.gui.line_edits["v_fwd"].setText(f"{value:.1f} nm/s")
-            if key == "v_bwd (nm_per_s)": self.gui.line_edits["v_bwd"].setText(f"{value:.1f} nm/s")
+            match key:
+                case "V_nanonis (V)": le["V_nanonis"].setText(f"{value:.2f} V")
+                case "V_mla (V)": le["V_mla"].setText(f"{value:.2f} V")
+                case "I_fb (pA)": le["I_fb"].setText(f"{value:.0f} pA")
+                case "p_gain (pm)": le["p_gain"].setText(f"{value:.0f} pm")
+                case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
+                case "v_fwd (nm_per_s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
+                case "v_bwd (nm_per_s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
         
         return
 
     def set_parameters(self):
         # Update Nanonis according to the parameters that were set in the GUI
-        scan_parameters = self.user.scan_parameters[0]
+        s_p = self.user.scan_parameters[0]
         
         for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
             str = self.gui.line_edits[tag].text()
@@ -447,16 +482,16 @@ class App:
             flt = numbers[0]
             
             match tag:
-                case "V_nanonis": scan_parameters.update({"V_nanonis": flt})
-                case "V_mla": scan_parameters.update({"V_mla": flt})
-                case "I_fb": scan_parameters.update({"I_fb (pA)": flt})
-                case "p_gain": scan_parameters.update({"p_gain (ms)": flt})
-                case "t_const": scan_parameters.update({"t_const (s)": flt})
-                case "v_fwd": scan_parameters.update({"v_fwd (nm/s)": flt})
-                case "v_bwd": scan_parameters.update({"v_bwd (nm/s)": flt})
+                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
+                case "V_mla": s_p.update({"V_mla (V)": flt})
+                case "I_fb": s_p.update({"I_fb (pA)": flt})
+                case "p_gain": s_p.update({"p_gain (ms)": flt})
+                case "t_const": s_p.update({"t_const (s)": flt})
+                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
+                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
                 case _: pass
 
-        self.nanonis.parameters_update(scan_parameters)
+        self.nanonis.parameters_update(s_p)
         
         return
 
@@ -863,7 +898,7 @@ class App:
         try:            
             # Get scan metadata
             if self.status["initialization"]: logp("(scan_metadata, error) = nanonis.scan_metadata()", message_type = "code")
-            (scan_metadata, error) = self.nanonis.scan_metadata()
+            (scan_metadata, error) = self.nanonis.scan_metadata_update()
             if error:
                 logp("Error retrieving the scan metadata.", message_type = "error")
                 raise
@@ -903,13 +938,13 @@ class App:
         except:
             self.status["nanonis"] = "offline"
             logp("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
-            
+        """
         try:
             if type(scan_image) == np.ndarray:
                 self.gui.image_view.setImage(scan_image)
                 image_item = self.gui.image_view.getImageItem()
                 
-                (frame, error) = self.nanonis.frame()                
+                (frame, error) = self.nanonis.frame_update()                
                 width = self.frame.get("width (nm)")
                 height = self.frame.get("height (nm)")
                 
@@ -921,6 +956,7 @@ class App:
         
         finally: # Switch off the initialization flag after the first successful parameter retrieval
             if hasattr(self, "frame") and hasattr(self, "grid") and hasattr(self, "scan_metadata"): self.status["initialization"] = False
+        """
 
         return
 
@@ -982,14 +1018,14 @@ class App:
                     self.logprint(f"Error: {e}")
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("([dict] status[\"tip\"] | [bool] False) = nanonis.tip_update(\{\"feedback\": True\})", message_type = "code")
+                    self.logprint("([dict] status[\"tip\"] | [bool] False) = nanonis.tip_update({{\"feedback\": True}})", message_type = "code")
             else: # Toggle the feedback
                 (tip_status, error) = self.nanonis.tip_update({"feedback": not self.status["tip"].get("feedback")})
                 if error:
                     self.logprint(f"Error. {e}")
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint("([dict] status[\"tip\"], [bool] False) = nanonis.tip_update(\{\"feedback\": not status[\"tip\"].get(\"feedback\"]\})", message_type = "code")
+                    self.logprint("([dict] status[\"tip\"], [bool] False) = nanonis.tip_update({{\"feedback\": not status[\"tip\"].get(\"feedback\"]}})", message_type = "code")
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
@@ -1143,7 +1179,7 @@ class App:
                 dirxn = "down"
         
         self.experiment_status = "running"
-        self.progress_bar.setValue(0)
+        self.gui.progress_bar.setValue(0)
         self.experiment_status = "running"
         [box.setEnabled(False) for box in [self.experiment_box, self.direction_box]]
         self.update_icons()
@@ -1210,15 +1246,6 @@ class App:
         processed_z_grid = z_grid
 
         self.gui.image_view.setImage(processed_z_grid, autoRange = True)
-
-    def receive_message(self, message_text, color_string):
-        if color_string in colors.keys():
-            self.logprint(message_text, color = color_string)
-        else:
-            self.logprint(message_text, message_type = "message")
-
-    def receive_progress(self, progress):
-        self.progress_bar.setValue(progress)
 
     def experiment_finished(self):
         self.logprint("Experiment finished", message_type = "success")

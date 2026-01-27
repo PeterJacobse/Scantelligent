@@ -541,6 +541,32 @@ class PJSliderLineEdit(QtWidgets.QWidget):
 
 
 
+class PJImageView(pg.ImageView):
+    position_signal = QtCore.pyqtSignal(float, float)
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.view.invertY(False)
+
+    def mouseDoubleClickEvent(self, event):
+        # Ensure it's a left double-click
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            # Get scene position
+            pos = event.position()
+            
+            scene_pos = self.view.mapToScene(pos)
+            
+            image_item = self.getImageItem()
+            mapped_pos = image_item.mapFromScene(scene_pos)
+            
+            self.position_signal.emit(mapped_pos.x(), mapped_pos.y())
+            return
+            
+        # Call base class implementation
+        super().mouseDoubleClickEvent(event)
+
+
+
 class StreamRedirector(QtCore.QObject):
     output_written = QtCore.pyqtSignal(str)
 
@@ -710,6 +736,14 @@ class GUIItems:
         slider.setValue(10)
         
         return slider
+
+    def make_image_view(self) -> PJImageView:
+        pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
+
+        plot_item = pg.PlotItem()
+        image_view = PJImageView(view = plot_item)      
+        
+        return image_view
     
     def line_widget(self, orientation: str = "v", thickness: int = 1) -> QtWidgets.QFrame:
         line = QtWidgets.QFrame()

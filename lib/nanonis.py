@@ -16,6 +16,7 @@ class Nanonis(QtCore.QObject):
     progress = QtCore.pyqtSignal(int)
     message = QtCore.pyqtSignal(str, str)
     parameters = QtCore.pyqtSignal(dict)
+    image = QtCore.pyqtSignal(np.ndarray)
     
     def __init__(self, hardware: dict):
         super().__init__()
@@ -66,15 +67,21 @@ class Nanonis(QtCore.QObject):
         tip_status = None
         error = False
         nhw = self.nanonis_hardware
-        
+                
         # Extract parameters from the dictionary
         withdraw = parameters.get("withdraw", False)
         feedback = parameters.get("feedback", None)
+        x_nm = parameters.get("x (nm)", None)
+        y_nm = parameters.get("y (nm)", None)
+        if x_nm and y_nm: xy_nm = [x_nm, y_nm]
+        else: xy_nm = None
 
         # Set up the TCP connection and set/get
         try:
             if auto_connect: self.connect()
-            xy_nm = nhw.get_xy_nm()
+            
+            if xy_nm: nhw.set_xy_nm(xy_nm) # Set the tip position
+            else: xy_nm = nhw.get_xy_nm() # Get the tip position
             [x_nm, y_nm] = xy_nm
             z_nm = nhw.get_z_nm()
             z_bs = nhw.get_z()
@@ -127,18 +134,17 @@ class Nanonis(QtCore.QObject):
         # Extract numbers from parameters input
         I_fb_pA = parameters.get("I_fb (pA)", None)
         v_fwd_nm_per_s = parameters.get("v_fwd (nm_per_s)", None)
+        V_nanonis = parameters.get("V_nanonis (V)", None)
 
         # Set up the TCP connection and get
         try:
             if auto_connect: self.connect()
-            V = nhw.get_V()
             
-            if I_fb_pA:
-                self.message.emit(f"Setting I_fb_pA to {I_fb_pA}", "code")
-                nhw.set_I_fb_pA(I_fb_pA)
-            else:
-                self.message.emit(f"Receiving I_fb_pA", "code")
-                I_fb_pA = nhw.get_I_fb_pA()
+            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, auto_connect = False, auto_disconnect = False)
+            else: V = nhw.get_V()
+            
+            if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
+            else: I_fb_pA = nhw.get_I_fb_pA()
             
             gains_dict = nhw.get_gains()
             speed_dict = nhw.get_v_scan_nm_per_s()
@@ -149,7 +155,7 @@ class Nanonis(QtCore.QObject):
             
             parameters = gains_dict | speed_dict | {
                 "dict_name": "scan_parameters",
-                "V_nanonis": V,
+                "V_nanonis (V)": V,
                 "I_fb (pA)": I_fb_pA,
                 "v_xy (nm_per_s)": v_xy_nm_per_s,
                 "session_path": session_path
@@ -300,17 +306,13 @@ class Nanonis(QtCore.QObject):
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
-
-        # Set default parameters
-        standard_parameters = {"V": None, "dt": .005, "dV": .01, "dz_nm": 1, "V_limits": 10}
-        standard_parameters.update(parameters)
         
         # Extract parameters from the dictionary
-        V = parameters["V"]
-        dt = parameters["dt"]
-        dV = parameters["dV"]
-        dz_nm = parameters["dz_nm"]
-        V_limits = parameters["V_limits"]
+        V = parameters.get("V_nanonis (V)", None)
+        dt = parameters.get("dt", .005)
+        dV = parameters.get("dV", .01)
+        dz_nm = parameters.get("dz_nm", 1)
+        V_limits = parameters.get("V_limits", 10)
 
         if type(V) != float and type(V) != int:
             return False
@@ -321,7 +323,7 @@ class Nanonis(QtCore.QObject):
         try:
             if auto_connect: self.connect()                            
             V_old = nhw.get_V() # Read data from Nanonis
-            if np.abs(V - V_old) < dV: return (standard_parameters, error) # If the bias is unchanged, don't slew it
+            if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
             
             feedback = nhw.get_fb()
             tip_height = nhw.get_z_nm()
@@ -343,12 +345,29 @@ class Nanonis(QtCore.QObject):
         
             if bool(feedback) and bool(polarity_difference):
                 nhw.set_fb(True) # Turn the feedback back on
+            
+            if auto_disconnect: self.disconnect()
+            return V
+
+        except Exception as e:
+            error = e
+            if auto_disconnect: self.disconnect()
+            return error
+
+    def shape_tip(self, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+        # Initalize outputs
+        error = False
+        nhw = self.nanonis_hardware
+
+        try:
+            if auto_connect: self.connect()
+            nhw.shape_tip()
 
         except Exception as e: error = e
         finally:
             if auto_disconnect: self.disconnect()
 
-        return (standard_parameters, error)
+        return error  
 
 
 
@@ -386,9 +405,11 @@ class Nanonis(QtCore.QObject):
             scan_data = nhw.get_scan_data(channel_index, backward)
             #frame_data = self.scan.FrameDataGrab(channel_index = channel_index, data_direction = direction)
             scan_image = scan_data["scan_data"]
+            self.image.emit(np.flipud(scan_image))
+            
             number_of_elements = scan_image.size
             number_of_nans = np.sum(np.isnan(scan_image))
-            completed_percentage = int(100 - 100 * (number_of_nans / number_of_elements))
+            completed_percentage = int(100 - 100 * (number_of_nans / number_of_elements))            
             self.progress.emit(completed_percentage)
 
         except Exception as e: error = e

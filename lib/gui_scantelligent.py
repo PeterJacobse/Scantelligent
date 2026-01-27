@@ -358,12 +358,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return layouts
 
     def make_image_view(self) -> pg.ImageView:
-        pg.setConfigOption("imageAxisOrder", "row-major")
-        im_view = pg.ImageView(view = pg.PlotItem())
+        make_image_view = self.gui_items.make_image_view
         
-        im_view.setToolTip("gui.image_view")
+        image_view = make_image_view()
         
-        return im_view
+        return image_view
 
     def make_widgets(self) -> dict:
         layouts = self.layouts
