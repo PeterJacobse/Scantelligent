@@ -1,77 +1,63 @@
 other_parameters: {}
 scan_parameters:
   0:
-    I_fb (pA): 19.999999920083944
-    V_nanonis (V): 0.20000000298023224
+    I_fb (pA): 8000.0
+    V_nanonis (V): 3.7
     const_param: 0
     dict_name: scan_parameters
-    i_gain (nm/s): 199.99998812636477
+    i_gain (nm/s): 18.72659183277392
+    motor_amplitude: 136.10000610351562
+    motor_frequency: 1150.0
     name: session
-    p_gain (ms): 200.0
-    p_gain (pm): 200.0000026702864
-    session_path: C:\Nanonis\2026-01-24
-    t_bwd (s): 0.2175999879837036
-    t_const (s): 1000.0
-    t_const (us): 1000.0000474974513
-    t_fwd (s): 0.2175999879837036
-    v_bwd (nm/s): 1378.6766430712305
-    v_fwd (nm/s): 1378.6766430712305
+    p_gain (pm): 4.999999980020986
+    session_path: C:\DATA\Peter\Au_tipprep_010825
+    t_bwd (s): 1.611199975013733
+    t_const (s): 267.0
+    t_const (us): 266.99999580159783
+    t_fwd (s): 1.611199975013733
+    v_bwd (nm/s): 124.13109118369903
+    v_fwd (nm/s): 124.13109118369903
     v_ratio: 1.0
-    v_xy (nm/s): 1378.6766430712305
+    v_xy (nm/s): 124.13109118369903
   1:
-    I_fb (pA): 20.0000053405728
-    V_nanonis (V): -1.6
+    I_fb (pA): 20
+    V_nanonis (V): 1.2
     const_param: 0
     dict_name: scan_parameters
-    i_gain (nm/s): 199.99998812636477
     name: scanning
-    p_gain (ms): 200.0
-    p_gain (pm): 200.0000026702864
+    p_gain (pm): 5
     session_path: C:\Nanonis\2026-01-24
-    t_bwd (s): 0.2175999879837036
-    t_const (s): 1000.0
-    t_const (us): 1000.0000474974513
-    t_fwd (s): 0.2175999879837036
-    v_bwd (nm/s): 1378.6766430712305
-    v_fwd (nm/s): 1378.6766430712305
+    t_const (us): 267
+    v_bwd (nm/s): 80
+    v_fwd (nm/s): 80
     v_ratio: 1.0
-    v_xy (nm/s): 1378.6766430712305
+    v_xy (nm/s): 80
   2:
     I_fb (pA): 8000
-    V_nanonis (V): 4
+    V_nanonis (V): 3.7
     const_param: 0
     dict_name: scan_parameters
-    i_gain (nm/s): 199.99998812636477
     name: light_emission
-    p_gain (ms): 200.0
-    p_gain (pm): 200.0000026702864
+    p_gain (pm): 3
     session_path: C:\Nanonis\2026-01-24
-    t_bwd (s): 0.2175999879837036
-    t_const (s): 1000.0
-    t_const (us): 1000.0000474974513
-    t_fwd (s): 0.2175999879837036
-    v_bwd (nm/s): 1378.6766430712305
-    v_fwd (nm/s): 1378.6766430712305
+    t_const (us): 267
+    v_bwd (nm/s): 20
+    v_fwd (nm/s): 30
     v_ratio: 1.0
-    v_xy (nm/s): 1378.6766430712305
+    v_xy (nm/s): 20
   3:
-    I_fb (pA): 400.0000053405728
-    V_nanonis (V): 1.0
+    I_fb (pA): 400
+    V_nanonis (V): 2
     const_param: 0
     dict_name: scan_parameters
-    i_gain (nm/s): 199.99998812636477
-    name: afweber
-    p_gain (ms): 200.0
-    p_gain (pm): 200.0000026702864
+    name: approach
+    p_gain (pm): 40
     session_path: C:\Nanonis\2026-01-24
-    t_bwd (s): 0.2175999879837036
-    t_const (s): 1000.0
-    t_const (us): 1000.0000474974513
-    t_fwd (s): 0.2175999879837036
-    v_bwd (nm/s): 1378.6766430712305
-    v_fwd (nm/s): 1378.6766430712305
+    t_const (us): 267
+    v_bwd (nm/s): 80
+    v_fwd (nm/s): 80
     v_ratio: 1.0
-    v_xy (nm/s): 1378.6766430712305
+    v_xy (nm/s): 80
   4:
     I_fb (pA): 400.0000053405728
     V_nanonis (V): 1.0
@@ -79,14 +65,12 @@ scan_parameters:
     dict_name: scan_parameters
     i_gain (nm/s): 199.99998812636477
     name: luis
-    p_gain (ms): 200.0
     p_gain (pm): 200.0000026702864
     session_path: C:\Nanonis\2026-01-24
     t_bwd (s): 0.2175999879837036
-    t_const (s): 1000.0
     t_const (us): 1000.0000474974513
     t_fwd (s): 0.2175999879837036
-    v_bwd (nm/s): 1378.6766430712305
-    v_fwd (nm/s): 1378.6766430712305
+    v_bwd (nm/s): 84.34548703917244
+    v_fwd (nm/s): 84.34548703917244
     v_ratio: 1.0
     v_xy (nm/s): 1378.6766430712305

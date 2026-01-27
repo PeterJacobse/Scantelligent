@@ -24,40 +24,85 @@ class Nanonis(QtCore.QObject):
         self.nanonis_hardware = NanonisHardware(hardware = hardware)
         self.status = "idle"
 
-    def connect(self):
+    def connect(self) -> None:
         nhw = self.nanonis_hardware
         if self.status == "running": self.disconnect()
         self.status = "running"
         self.connection.emit(self.status)
         nhw.connect()
     
-    def disconnect(self):
+    def disconnect(self) -> None:
         nhw = self.nanonis_hardware
         nhw.disconnect()
         self.status = "idle"
         self.connection.emit(self.status)
 
-    def test_function(self):
-        self.parameters.emit({"blabla": "blablabla", "ahduh": "dadnalnid"})
-        self.message.emit("This is a message from Nanonis", "warning")
+    def test_function(self) -> None:
+        scan_image = np.random.rand(256, 256) * 10
+        self.image.emit(np.flipud(scan_image))
         return
 
-    def start_timed_updates(self):
+    def start_timed_updates(self) -> None:
         self.timer = QtCore.QTimer(self) # Timer for regular updates
         self.timer.timeout.connect(self.send_tip_update)
         self.timer.start(5000)
         return
 
-    def stop_timed_updates(self):
+    def stop_timed_updates(self) -> None:
         if hasattr(self, "timer"):
             self.timer.timeout.disconnect(self.send_tip_update)
             self.timer.deleteLater()
             delattr(self, "timer")
         return
 
-    def send_tip_update(self):
+    def send_tip_update(self) -> None:
         self.tip_update()
         return
+
+    def get_window(self, auto_connect: bool = True, auto_disconnect: bool = True) -> None:
+        error = False
+        nhw = self.nanonis_hardware
+        window_dict = {}
+
+        try:
+            self.connect()
+            piezo_range = nhw.get_range_nm()
+            
+            window_dict = {"dict_name": "window",
+                "x_min (nm)": -0.5 * piezo_range[0], "x_max (nm)": 0.5 * piezo_range[0],
+                "y_min (nm)": -0.5 * piezo_range[1], "y_max (nm)": 0.5 * piezo_range[1],
+                "z_min (nm)": -0.5 * piezo_range[2], "z_max (nm)": 0.5 * piezo_range[2],
+                "x_range (nm)": piezo_range[0], "y_range (nm)": piezo_range[1], "z_range (nm)": piezo_range[2]
+            }
+            self.parameters.emit(window_dict)
+                
+        except Exception as e: error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+
+        return (window_dict, error)
+
+
+
+    def auto_approach(self, status: bool = True, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+        """
+        Function to turn on/off the auto approach feature of the Nanonis
+        """
+        # Initalize outputs
+        error = False
+        nhw = self.nanonis_hardware
+                
+        try:
+            if auto_connect: self.connect()
+            nhw.auto_approach(status)
+
+        except Exception as e: error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+
+        return error
+
+
 
     def tip_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """

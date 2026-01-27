@@ -90,6 +90,9 @@ class NanonisHardware:
         make_header = self.conv.make_header
         
         headers = {
+            # Auto Approach
+            "auto_approach": make_header('AutoApproach.OnOffSet', body_size = 2),
+
             # Util
             "get_path": make_header('Util.SessionPathGet', body_size = 0),
             
@@ -169,6 +172,9 @@ class NanonisHardware:
             "set_motor_f_A": make_header('Motor.FreqAmpSet', body_size = 10),
             "coarse_move": make_header('Motor.StartMove', body_size = 14),
             
+            # Piezo
+            "get_range": make_header('Piezo.RangeGet', body_size = 0),
+
             # Tipshaper
             "shape_tip": make_header('TipShaper.Start', body_size = 8),
             "get_tip_shaper": make_header('TipShaper.PropsGet', body_size = 0),
@@ -270,6 +276,15 @@ class NanonisHardware:
 
 
     # Functions
+    # Auto Approach
+    def auto_approach(self, status: bool = True) -> None:
+        command = self.headers["auto_approach"] + self.conv.to_hex(status, 2)
+        
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+
     # Util
     def get_path(self) -> str:
         command = self.headers["get_path"]
@@ -712,10 +727,13 @@ class NanonisHardware:
     def get_signals_in_slots(self) -> dict:
         command = self.headers["get_signals_in_slots"]
         
-        self.send_command(command)        
+        self.send_command(command)
         response = self.receive_response()
+
+        if 1 == 1: return response
+
         
-        signals_names_num  = self.conv.hex_to_int32(response[4 : 8])
+        signals_names_num = self.conv.hex_to_int32(response[4 : 8])
         
         index = 8
         signal_names = []
@@ -787,6 +805,22 @@ class NanonisHardware:
         self.receive_response(0)
         
         return
+
+    # Piezo
+    def get_range(self) -> str:
+        command = self.headers["get_range"]
+        
+        self.send_command(command)
+        response = self.receive_response(12)
+        
+        return response
+
+    def get_range_nm(self) -> list:
+        range_str = self.get_range()
+
+        xyz_nm = [self.conv.hex_to_float32(range_str[i : i + 4]) * 1E9 for i in range(0, 12, 4)]
+
+        return xyz_nm
 
     # Tip shaper
     def shape_tip(self, wait: bool = True, timeout = 60000) -> None:

@@ -593,8 +593,10 @@ class UserData:
         self.frames = [
             {}, {}, {}
         ]
-        self.scan_parameters = self.load_parameter_sets()        
-        self.scan_parameters[0].update({"name": "session"})
+        self.scan_parameters = self.load_parameter_sets()
+        self.windows = [{}, {}, {}]
+
+
     
     def save_yaml(self, data, path: str) -> bool | str:
         error = False

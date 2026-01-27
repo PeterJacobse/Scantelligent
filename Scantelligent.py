@@ -1,6 +1,7 @@
 import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
+import pyqtgraph as pg
 from lib import ScantelligentGUI, StreamRedirector, Nanonis, DataProcessing, UserData
 from time import sleep
 from scipy.interpolate import griddata
@@ -103,7 +104,7 @@ class App:
             connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
                         ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.open_session_folder], ["info", self.on_info],
                         
-                        ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.update_icons],
+                        ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.on_approach],
                         
                         ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.set_parameters], ["get", self.get_parameters],
 
@@ -191,8 +192,7 @@ class App:
                 parameters = yaml.safe_load(file)
         except Exception as e:
             self.logprint(f"Error reading the parameters from the parameters.yml file. {e}")
-
-        self.logprint(self.user.scan_parameters)        
+      
         [self.gui.buttons[f"scan_parameters_{i}"].changeToolTip(f"Load scan parameter set {i} ({self.user.scan_parameters[i].get("name")})") for i in range(len(self.user.scan_parameters))]
         
         # Initialize the scan parameters in the gui as parameter set 0, until a connection to Nanonis is made
@@ -254,6 +254,9 @@ class App:
                 
                 self.status.update({"nanonis": "online"})
                 self.logprint("Success! Response received. I will immediately request parameters over TCP.", message_type = "success")
+                
+                self.nanonis.get_window()
+
                 self.on_parameters_request()
         
             except socket.timeout:
@@ -408,7 +411,11 @@ class App:
 
             case "frame":
                 frame = parameters
-                self.user.frames[0].update(frame)         
+                self.user.frames[0].update(frame)
+            
+            case "window":
+                window = parameters
+                self.user.windows[0].update(window)
             
             case _:
                 pass
@@ -417,31 +424,43 @@ class App:
 
     def receive_image(self, image: np.ndarray):
         if isinstance(image, np.ndarray):
-            self.gui.image_view.clear()
-            self.gui.image_view.setImage(image)
+            try:
+                self.gui.image_view.clear()
+                self.gui.image_view.setImage(image)
+                
+                # Use the frame to update the imageitem box
+                frame = self.user.frames[0]
+                
+                scan_range_nm = frame.get("scan_range (nm)", [100, 100])
+                angle_deg = frame.get("angle (deg)", 0)
+                offset_nm = frame.get("offset (nm)", [0, 0])
             
-            # Use the frame to update the imageitem box
-            frame = self.user.frames[0]
+                w = scan_range_nm[0]
+                h = scan_range_nm[1]
+                x = offset_nm[0]
+                y = offset_nm[1]
             
-            scan_range_nm = frame.get("scan_range (nm)", [100, 100])
-            angle_deg = frame.get("angle (deg)", 0)
-            offset_nm = frame.get("offset (nm)", [0, 0])
-        
-            w = scan_range_nm[0]
-            h = scan_range_nm[1]
-            x = offset_nm[0]
-            y = offset_nm[1]
-        
-            image_item = self.gui.image_view.getImageItem()
-            box = QtCore.QRectF(- w / 2, - h / 2, w, h)
-            image_item.setRect(box)
-            
-            center = image_item.boundingRect().center()
-            image_item.setTransformOriginPoint(center)           
-            image_item.setRotation(-angle_deg)
-            image_item.setPos(x, y)
-            
-            self.gui.image_view.autoRange()
+                image_item = self.gui.image_view.getImageItem()
+                box = QtCore.QRectF(- w / 2, - h / 2, w, h)
+                image_item.setRect(box)
+                
+                center = image_item.boundingRect().center()
+                image_item.setTransformOriginPoint(center)
+                image_item.setRotation(-angle_deg)
+                image_item.setPos(x, y)
+                
+                self.gui.image_view.autoRange()
+
+                # Make the window frame
+                if not hasattr(self.user, "windows"): return
+                else:
+                    window = self.user.windows[0]
+                    roi = pg.ROI([window.get("x_min (nm)"), window.get("y_min (nm)")], [window.get("x_range (nm)"), window.get("y_range (nm)")],
+                                pen = pg.mkPen(color = colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
+                    self.gui.image_view.addItem(roi)
+
+            except Exception as e:
+                self.logprint(f"Error: {e}")
             
         return
 
@@ -483,8 +502,8 @@ class App:
                 case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
                 case "V_mla": s_p.update({"V_mla (V)": flt})
                 case "I_fb": s_p.update({"I_fb (pA)": flt})
-                case "p_gain": s_p.update({"p_gain (ms)": flt})
-                case "t_const": s_p.update({"t_const (s)": flt})
+                case "p_gain": s_p.update({"p_gain (pm)": flt})
+                case "t_const": s_p.update({"t_const (us)": flt})
                 case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
                 case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
                 case _: pass
@@ -609,9 +628,9 @@ class App:
             
             params = self.user.scan_parameters[index]
             
-            parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (s)", "p_gain (ms)"]
+            parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
             line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
-            units = ["V", "V", "pA", "nm/s", "nm/s", "s", "ms"]
+            units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
             line_edits = [self.gui.line_edits[name] for name in line_edit_names]
             
             for name, le, unit in zip(parameter_names, line_edits, units):
@@ -642,9 +661,9 @@ class App:
         command = f"self.{text}"
         
         try:
-            compile(command, "<string>", "eval")
-            
             self.logprint(f"{text}", message_type = "code")
+            compile(command, "<string>", "eval")
+
             result = eval(command)
             self.logprint(f"{result}", message_type = "result")
         except SyntaxError:
@@ -656,8 +675,7 @@ class App:
                 
                 if assignment[1].startswith("nanonis") or assignment[1].startswith("data") or assignment[1].startswith("file_functions") or assignment[1].startswith("user"):
                     command = f"{assignment[0]} = self.{assignment[1]}"
-                
-                self.logprint(f"{text}", message_type = "code")
+
                 exec(command)
             except SyntaxError:
                 self.logprint("Invalid code.", message_type = "error")
@@ -732,6 +750,13 @@ class App:
         else:
             self.logprint("Error. Session folder unknown.", message_type = "error")
         return
+
+    def on_approach(self) -> None:
+        self.logprint("Initiating automatic approach", message_type = "message")
+        self.nanonis.auto_approach(True)
+        return
+
+
 
     # Information popup
     def on_info(self) -> None:
