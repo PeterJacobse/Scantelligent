@@ -1,6 +1,7 @@
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 from .hw_nanonis import NanonisHardware
+from .data_processing import DataProcessing
 from time import sleep, time
 import pint
 
@@ -11,7 +12,7 @@ colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_gre
 
 
 
-class Nanonis(QtCore.QObject):
+class NanonisAPI(QtCore.QObject):
     connection = QtCore.pyqtSignal(str)
     progress = QtCore.pyqtSignal(int)
     message = QtCore.pyqtSignal(str, str)
@@ -22,6 +23,7 @@ class Nanonis(QtCore.QObject):
         super().__init__()
         self.ureg = pint.UnitRegistry()
         self.nanonis_hardware = NanonisHardware(hardware = hardware)
+        self.data = DataProcessing()
         self.status = "idle"
 
     def connect(self) -> None:
@@ -44,13 +46,13 @@ class Nanonis(QtCore.QObject):
 
     def start_timed_updates(self) -> None:
         self.timer = QtCore.QTimer(self) # Timer for regular updates
-        self.timer.timeout.connect(self.send_tip_update)
+        self.timer.timeout.connect(self.scan_update)
         self.timer.start(5000)
         return
 
     def stop_timed_updates(self) -> None:
         if hasattr(self, "timer"):
-            self.timer.timeout.disconnect(self.send_tip_update)
+            self.timer.timeout.disconnect(self.scan_update)
             self.timer.deleteLater()
             delattr(self, "timer")
         return
@@ -65,7 +67,7 @@ class Nanonis(QtCore.QObject):
         window_dict = {}
 
         try:
-            self.connect()
+            if auto_connect: self.connect()
             piezo_range = nhw.get_range_nm()
             
             window_dict = {"dict_name": "window",
@@ -260,8 +262,8 @@ class Nanonis(QtCore.QObject):
             pixels = buffer.get("pixels")
             lines = buffer.get("lines")
             grid = frame | buffer | {
-                "pixel_width": width / pixels,
-                "pixel_height": height / lines
+                "pixel_width (nm)": width / pixels,
+                "pixel_height (nm)": height / lines
             }
 
         except Exception as e: error = e
@@ -305,7 +307,9 @@ class Nanonis(QtCore.QObject):
             grid["top_left_corner"] = top_left_corner
         
         except Exception as e: error = e
-        
+        finally:
+            if auto_disconnect: self.disconnect()
+
         return (grid, error)
 
     def scan_metadata_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict | str]:
@@ -347,7 +351,7 @@ class Nanonis(QtCore.QObject):
 
         return (scan_metadata, error)
 
-    def bias_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> float:
+    def bias_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> float | bool:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
@@ -399,20 +403,44 @@ class Nanonis(QtCore.QObject):
             if auto_disconnect: self.disconnect()
             return error
 
-    def shape_tip(self, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+    def tip_prep(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
 
         try:
             if auto_connect: self.connect()
-            nhw.shape_tip()
+            if parameters.get("action", "pulse") == "pulse":
+                V_pulse_V = parameters.get("V_pulse (V)", 6)
+                t_pulse_ms = parameters.get("t_pulse (ms)", 1000)
+                nhw.pulse(V_pulse_V, t_pulse_ms)
+            else:
+                nhw.shape_tip()
 
         except Exception as e: error = e
         finally:
             if auto_disconnect: self.disconnect()
 
         return error  
+
+    def get_spectrum(self, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict | str]:
+        # Initalize outputs
+        data_dict = {}
+        parameters = []
+        error = False
+        nhw = self.nanonis_hardware
+
+        # Set up the TCP connection and get the frame
+        try:
+            if auto_connect: self.connect()
+            spectrum = nhw.get_spectrum()
+            #self.parameters.emit(frame)
+        
+        except Exception as e: error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+
+        return (spectrum, error)
 
 
 
@@ -438,7 +466,7 @@ class Nanonis(QtCore.QObject):
         if error_flag: return False
         else: return I_old
 
-    def get_scan(self, channel_index, backward: bool = False, auto_connect: bool = True, auto_disconnect: bool = True) -> np.ndarray:
+    def scan_update(self, channel_index, backward: bool = False, auto_connect: bool = True, auto_disconnect: bool = True) -> np.ndarray:
         # Initalize outputs
         scan_data = None
         error = False
@@ -448,14 +476,20 @@ class Nanonis(QtCore.QObject):
         try:
             if auto_connect: nhw.connect()
             self.frame_update(auto_connect = False, auto_disconnect = False)
+            self.tip_update(auto_connect = False, auto_disconnect = False)
             scan_data = nhw.get_scan_data(channel_index, backward)
             scan_image = scan_data["scan_data"]
-            self.image.emit(np.flipud(scan_image))
             
             number_of_elements = scan_image.size
             number_of_nans = np.sum(np.isnan(scan_image))
-            completed_percentage = int(100 - 100 * (number_of_nans / number_of_elements))            
+            completed_percentage = int(100 - 100 * (number_of_nans / number_of_elements))
             self.progress.emit(completed_percentage)
+            
+            if number_of_elements - number_of_nans < 2: return # Do not perform data processing if the scan is all NaNs
+            
+            #(processed_image, error) = self.data.subtract_background(scan_image)
+            
+            self.image.emit(np.flipud(scan_image))
 
         except Exception as e: error = e
         finally:

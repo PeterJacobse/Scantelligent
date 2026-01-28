@@ -492,12 +492,16 @@ class DataProcessing():
         
         return (rgb_array, error)
 
-    def subtract_background(self, image: np.ndarray, mode: str = "plane", scan_range_nm = None) -> tuple[np.ndarray, bool | str]:
+    def subtract_background(self, image: np.ndarray, mode: str = "plane") -> tuple[np.ndarray, bool | str]:
         error = False
 
         if not isinstance(image, np.ndarray):
             error = "Error. The provided image is not a numpy array."
             return (image, error)
+        
+        # Unfinished scans: remove NaN rows
+        nan_mask = np.isnan(image).any(axis = 1)
+        image = image(~nan_mask)
 
         try:
             avg_image = np.mean(image.flatten()) # The average value of the image, or the offset
@@ -593,7 +597,7 @@ class UserData:
         self.frames = [
             {}, {}, {}
         ]
-        self.scan_parameters = self.load_parameter_sets()
+        (self.scan_parameters, self.tip_prep_parameters) = self.load_parameter_sets()
         self.windows = [{}, {}, {}]
 
 
@@ -623,21 +627,33 @@ class UserData:
     def load_parameter_sets(self):
         (yaml_data, error) = self.load_yaml(self.parameters_file)
         
-        scan_parameters = []        
+        scan_parameters = []
+        tip_prep_parameters = []
+        
         for parameter_set_type, dicts_set in yaml_data.items():
+            
             match parameter_set_type:
                 case "scan_parameters":
                     for key, parameters_dict in dicts_set.items():
                         scan_parameters.append(parameters_dict)
+                
+                case "tip_prep_parameters":
+                    for key, parameters_dict in dicts_set.items():
+                        tip_prep_parameters.append(parameters_dict)
+                
                 case _:
                     pass
 
-        return scan_parameters
+        return (scan_parameters, tip_prep_parameters)
     
     def save_parameter_sets(self):
-        output_dict = {"scan_parameters": {}, "other_parameters": {}}
+        output_dict = {"scan_parameters": {}, "other_parameters": {}, "tip_prep_parameters": {}}
+        
         for index, set in enumerate(self.scan_parameters):
             output_dict["scan_parameters"].update({index: set})
+        
+        for index, set in enumerate(self.tip_prep_parameters):
+            output_dict["tip_prep_parameters"].update({index: set})
 
         self.save_yaml(output_dict, self.parameters_file)
         return

@@ -128,11 +128,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "w": make_button("", mtt + "west\n(Ctrl + ← / Ctrl + 4)", icon = arrow, rotate_icon = 180),
             "nw": make_button("", mtt + "northwest\n(Ctrl + 7)", icon = arrow, rotate_icon = 225),
             
+            "bias_pulse": make_button("", "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse")),
+            "tip_shape": make_button("", "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
+            
             "save": make_button("", "Save the experiment results to file", icon = icons.get("floppy")),
             "start_pause": make_button("", "Start experiment", icon = icons.get("start")),
             "stop": make_button("", "Stop experiment", icon = icons.get("stop")),
 
             "direction": make_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow")),
+            "fit_to_frame": make_button("", "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
+            "fit_to_range": make_button("", "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
             "full_data_range": make_button("", sivr + "to the full data range\n(U)", icons.get("100")),
             "percentiles": make_button("", sivr + "by percentiles\n(R)", icons.get("percentiles")),
             "standard_deviation": make_button("", sivr + "by standard deviations\n(D)", icons.get("deviation")),
@@ -218,6 +223,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "t_const": make_line_edit("", "Time constant in pm\n(Ctrl + P) to set", unit = "us"),
             "v_fwd": make_line_edit("", "Tip forward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
             "v_bwd": make_line_edit("", "Tip backward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
+            
+            "pulse_voltage": make_line_edit("", "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10]),
+            "pulse_duration": make_line_edit("", "Duration of the voltage pulse", unit = "ms"),
 
             "min_full": make_line_edit("", "minimum value of scan data range"),
             "max_full": make_line_edit("", "maximum value of scan data range"),
@@ -241,6 +249,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
+        
+        self.tip_prep_widgets = [buttons["bias_pulse"], line_edits["pulse_voltage"], line_edits["pulse_duration"], buttons["tip_shape"]]
         
         # Aesthetics
         [line_edits[name].setStyleSheet("QLineEdit{ background-color: #101010; }") for name in line_edits.keys()]
@@ -332,28 +342,28 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "left_side": make_layout("v"),
 
             "toolbar": make_layout("v"),
-            "connections": make_layout("g"),
-            "parameters": make_layout("g"),
+            "scan_control": make_layout("h"),
             "scan_parameter_sets": make_layout("h"),
             "channel_navigation": make_layout("h"),
 
             "bias_buttons": make_layout("h"),
 
             "coarse_actions": make_layout("g"),
-            "coarse_control": make_layout("g"),
             "arrows": make_layout("g"),
-
-            "experiment": make_layout("g"),
-            "experiment_controls": make_layout("h"),
-
-            "image_processing": make_layout("v"),
-            "scan_control": make_layout("h"),
             "background_buttons": make_layout("h"),
             "matrix_processing": make_layout("g"),
             "limits": make_layout("g"),
             "empty": make_layout("v"),
             
-            "input": make_layout("h")
+            "input": make_layout("h"),
+            "experiment_controls": make_layout("h"),
+
+            "connections": make_layout("g"),
+            "coarse_control": make_layout("g"),
+            "tip_prep": make_layout("h"),
+            "parameters": make_layout("g"),            
+            "image_processing": make_layout("v"),
+            "experiment": make_layout("g")            
         }
         
         return layouts
@@ -472,6 +482,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         par_layout.addLayout(layouts["scan_parameter_sets"], 1, 1, 1, 3)        
         [par_layout.addWidget(box, 1, i + 4) for i, box in enumerate(self.parameter_line_1)]
         
+        [layouts["tip_prep"].addWidget(widget) for widget in self.tip_prep_widgets]
+        
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
         e_layout = layouts["experiment"]
         [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiment", "direction"])]
@@ -481,8 +493,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["scan_control"].addWidget(self.comboboxes["channels"], 5)
         layouts["scan_control"].addWidget(self.buttons["direction"], 1)
         
+        layouts["channel_navigation"].addWidget(comboboxes["channels"], 4)
+        layouts["channel_navigation"].addWidget(self.buttons["direction"], 1)
+        
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rotation", "offset"]]
+        [layouts["background_buttons"].addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
         p_layout = layouts["matrix_processing"]
         [p_layout.addWidget(checkboxes[checkbox_name], 0, index) for index, checkbox_name in enumerate(["sobel", "normal", "laplace"])]
         p_layout.addWidget(checkboxes["gaussian"], 1, 1)
@@ -496,6 +512,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         for j, group in enumerate(self.limits_columns): [l_layout.addWidget(item, i, j) for i, item in enumerate(group)]
 
         ip_layout = layouts["image_processing"]
+        ip_layout.addLayout(layouts["channel_navigation"])
         ip_layout.addWidget(labels["background_subtraction"])
         ip_layout.addLayout(layouts["background_buttons"])
         ip_layout.addWidget(self.gui_items.line_widget("h", 1))
@@ -525,8 +542,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         groupboxes = {
             "connections": make_groupbox("Connections", "Connections to hardware (push to check/refresh)"),
-            "parameters": make_groupbox("Scan parameters", "Scan parameters"),
             "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
+            "tip_prep": make_groupbox("Tip prep", "Tip preparation actions"),
+            "parameters": make_groupbox("Scan parameters", "Scan parameters"),
             "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
             "experiment": make_groupbox("Experiment", "Perform experiment"),
             
@@ -534,10 +552,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
 
         # Set layouts for the groupboxes
-        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "parameters", "experiment", "image_processing"]]
+        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
         
-        # Draw experiments group: to be absorbed in gui_scantelligent.py        
-        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "coarse_control", "parameters", "experiment", "image_processing"]]
+        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
         
         return groupboxes
 

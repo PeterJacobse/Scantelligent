@@ -2,7 +2,7 @@ import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, Nanonis, DataProcessing, UserData
+from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, DataProcessing, UserData, PJTargetItem
 from time import sleep
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -35,7 +35,7 @@ class App:
         
         self.hardware = self.config_init() # Read the hardware configuration and parameters from the configuration files in the sys folder
         self.data = DataProcessing() # Class for data processing and analysis
-        self.nanonis = Nanonis(hardware = self.hardware) # Class for simple Nanonis functions
+        self.nanonis = NanonisAPI(hardware = self.hardware) # Class for simple Nanonis functions
         
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
         self.gui.show()
@@ -107,6 +107,8 @@ class App:
                         ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.on_approach],
                         
                         ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.set_parameters], ["get", self.get_parameters],
+                        
+                        ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")], ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("range")],
 
                         ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
@@ -195,8 +197,16 @@ class App:
       
         [self.gui.buttons[f"scan_parameters_{i}"].changeToolTip(f"Load scan parameter set {i} ({self.user.scan_parameters[i].get("name")})") for i in range(len(self.user.scan_parameters))]
         
+        
+        
+        
         # Initialize the scan parameters in the gui as parameter set 0, until a connection to Nanonis is made
-        self.load_parameters(0)
+        self.load_parameters("scan_parameters", index = 0)
+        self.load_parameters("tip_prep_parameters", index = 0)
+        
+        # Make a tip target item in the image_view
+        self.tip_target = PJTargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n({0}, {0}) nm")
+        self.gui.image_view.view.addItem(self.tip_target)
         
         return hardware
 
@@ -256,6 +266,7 @@ class App:
                 self.logprint("Success! Response received. I will immediately request parameters over TCP.", message_type = "success")
                 
                 self.nanonis.get_window()
+                self.nanonis.frame_update()
 
                 self.on_parameters_request()
         
@@ -358,6 +369,25 @@ class App:
         
         return f"{base_name}_{formatted_index}{extension}"
 
+    def set_view_range(self, obj: str) -> None:
+        imv = self.gui.image_view
+        
+        match obj:
+
+            case "frame":
+                if hasattr(self, "window_roi"):                    
+                    imv.removeItem(self.window_roi)
+                    imv.autoRange()
+                    imv.addItem(self.window_roi)
+
+            case "range":
+                imv.autoRange()
+
+            case _:
+                pass
+        
+        return
+
 
 
     # PyQt slots
@@ -403,6 +433,14 @@ class App:
                 self.gui.tip_slider.setValue(int(z_nm))
                 self.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
                 
+                # Update the position visible in the image_view
+                self.gui.image_view.view.removeItem(self.tip_target)
+                x_tip_nm = tip_status.get("x (nm)", 0)
+                y_tip_nm = tip_status.get("y (nm)", 0)
+                self.tip_target.setPos(x_tip_nm, y_tip_nm)
+                self.tip_target.setToolTip(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}) nm")
+                self.gui.image_view.view.addItem(self.tip_target)
+                
                 self.update_tip_status()
             
             case "scan_parameters":
@@ -412,10 +450,40 @@ class App:
             case "frame":
                 frame = parameters
                 self.user.frames[0].update(frame)
+                
+                if hasattr(self, "frame_roi"): self.gui.image_view.view.removeItem(self.frame_roi)
+                
+                [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
+                [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
+                angle_deg = frame.get("angle (deg)", 0)
+                
+                # Add the frame to the ImageView
+                self.frame_roi = pg.ROI([0, 0], [w_nm, h_nm], pen = pg.mkPen(color = colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
+                self.gui.image_view.addItem(self.frame_roi)
+                self.frame_roi.setAngle(angle = -angle_deg)
+                
+                bounding_rect = self.frame_roi.boundingRect()
+                local_center = bounding_rect.center()
+                frame_roi_center = self.frame_roi.mapToParent(local_center)
+                self.frame_roi.setPos(x_0_nm - frame_roi_center.x(), y_0_nm - frame_roi_center.y())
+            
+            case "grid":
+                grid = parameters
+                
+                self.logprint(f"{grid}", message_type = "warning")
             
             case "window":
                 window = parameters
                 self.user.windows[0].update(window)
+                
+                if hasattr(self, "window_roi"): self.gui.image_view.view.removeItem(self.window_roi)
+                
+                window_range_nm = [window.get("x_range (nm)"), window.get("y_range (nm)")]
+                window_lower_left_nm = [window.get("x_min (nm)"), window.get("y_min (nm)")]
+                self.window_roi = pg.ROI(window_lower_left_nm, window_range_nm, pen = pg.mkPen(color = colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
+                
+                # Add the frame to the ImageView
+                self.gui.image_view.addItem(self.window_roi)
             
             case _:
                 pass
@@ -424,9 +492,11 @@ class App:
 
     def receive_image(self, image: np.ndarray):
         if isinstance(image, np.ndarray):
-            try:
+            try:                
+                # Save the current state and clear the image, then set a new one
+                #current_state = self.gui.image_view.view.autoRange
                 self.gui.image_view.clear()
-                self.gui.image_view.setImage(image)
+                self.gui.image_view.setImage(image, autoRange = False)
                 
                 # Use the frame to update the imageitem box
                 frame = self.user.frames[0]
@@ -448,16 +518,6 @@ class App:
                 image_item.setTransformOriginPoint(center)
                 image_item.setRotation(-angle_deg)
                 image_item.setPos(x, y)
-                
-                self.gui.image_view.autoRange()
-
-                # Make the window frame
-                if not hasattr(self.user, "windows"): return
-                else:
-                    window = self.user.windows[0]
-                    roi = pg.ROI([window.get("x_min (nm)"), window.get("y_min (nm)")], [window.get("x_range (nm)"), window.get("y_range (nm)")],
-                                pen = pg.mkPen(color = colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
-                    self.gui.image_view.addItem(roi)
 
             except Exception as e:
                 self.logprint(f"Error: {e}")
@@ -468,10 +528,12 @@ class App:
 
     def get_parameters(self):
         le = self.gui.line_edits
+        nanonis = self.nanonis
         # Request a parameter update from Nanonis, and wait to receive
         # The received parameters are stored in self.user.scan_parameters[0] by default
-        self.nanonis.parameters_update(auto_disconnect = False)
-        self.nanonis.tip_update(auto_connect = False)
+        nanonis.parameters_update(auto_disconnect = False)
+        nanonis.frame_update(auto_disconnect = False)
+        nanonis.tip_update(auto_connect = False)
         sleep(.2)
         scan_parameters = self.user.scan_parameters[0]
         
@@ -619,25 +681,36 @@ class App:
         
         return
 
-    def load_parameters(self, index) -> None:
+    def load_parameters(self, parameters_type: str = "scan_parameters", index: int = 0) -> None:
         try:
-            # Close and reload UserData to catch any updates to the yml file
-            if hasattr(self, "user"): self.user.save_parameter_sets()
-            delattr(self, "user")
-            self.user = UserData()
-            
-            params = self.user.scan_parameters[index]
-            
-            parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
-            line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
-            units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
-            line_edits = [self.gui.line_edits[name] for name in line_edit_names]
-            
-            for name, le, unit in zip(parameter_names, line_edits, units):
-                if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+            match parameters_type:
+                case "scan_parameters":
+                    params = self.user.scan_parameters[index]
+                    
+                    parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
+                    line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
+                    units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
+                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
+                    
+                    for name, le, unit in zip(parameter_names, line_edits, units):
+                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+                
+                case "tip_prep_parameters":
+                    params = self.user.tip_prep_parameters[index]
+                    
+                    parameter_names = ["pulse_voltage (V)", "pulse_duration (ms)"]
+                    line_edit_names = ["pulse_voltage", "pulse_duration"]
+                    units = ["V", "ms"]
+                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
+                    
+                    for name, le, unit in zip(parameter_names, line_edits, units):
+                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+                    
+                case _:
+                    pass
 
         except Exception as e:
-            self.logprint(f"Error. {e}", message_type = "error")
+            self.logprint(f"Error loading parameters. {e}", message_type = "error")
         
         return
 
@@ -856,6 +929,38 @@ class App:
 
     # Nanonis functions 
     # Simple data requests over TCP-IP
+    def tip_prep(self, action: str):
+        try:
+            match action:
+            
+                case "pulse":
+                    str = self.gui.line_edits["pulse_voltage"].text()
+                    numbers = self.data.extract_numbers_from_str(str)
+                    self.logprint(numbers)
+                    if len(numbers) < 1: return
+                    else: V_pulse_V = numbers[0]
+                    
+                    str = self.gui.line_edits["pulse_duration"].text()
+                    numbers = self.data.extract_numbers_from_str(str)
+                    self.logprint(numbers)
+                    if len(numbers) < 1: return
+                    else: t_pulse_ms = numbers[0]
+                    
+                    self.user.tip_prep_parameters[0].update({"V_pulse (V)": V_pulse_V, "t_pulse (ms)": t_pulse_ms})
+                    
+                    action_dict = {"action": "pulse", "V_pulse (V)": V_pulse_V, "t_pulse (ms)": t_pulse_ms}
+                    self.nanonis.tip_prep(action_dict)
+                
+                case "shape":
+                    self.nanonis.tip_prep({"action": "shape"})
+                
+                case _:
+                    pass
+        except:
+            pass
+
+        return
+    
     def on_parameters_request(self):
         logp = self.logprint
         
@@ -966,7 +1071,7 @@ class App:
                     break
             
             if self.status["initialization"]: logp("(scan_data, error) = nanonis.get_scan()", message_type = "code")
-            (scan_image, error) = self.nanonis.get_scan(selected_channel_index, backward = False)
+            (scan_image, error) = self.nanonis.scan_update(selected_channel_index, backward = False)
             
             # All operations successful: release the Nanonis connection
             self.status["nanonis"] = "online"
@@ -1171,7 +1276,6 @@ class App:
             
         except Exception as e:
             self.logprint(f"Error. Could not send experiment control command to Nanonis: {e}", message_type = "error")
-        
         return
 
 

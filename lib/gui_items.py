@@ -558,11 +558,7 @@ class PJImageView(pg.ImageView):
             # Get scene position
             pos = event.position()
             
-            scene_pos = self.view.mapToScene(pos)
-            
-            image_item = self.getImageItem()
-            mapped_pos = image_item.mapFromScene(scene_pos)
-            
+            mapped_pos = self.view.mapToView(pos)
             self.position_signal.emit(mapped_pos.x(), mapped_pos.y())
             return
             

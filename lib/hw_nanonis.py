@@ -65,7 +65,7 @@ class NanonisHardware:
         self.headers = self.prepare_headers() # Make the headers
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Make the socket object
 
-    def get_TCP_parameters(self):
+    def get_TCP_parameters(self) -> None:
         """
         Extract the IP, port and version from the provided hardware dict
         """
@@ -85,8 +85,10 @@ class NanonisHardware:
         
         if not (self.ip and self.port and self.version):
             raise Exception("Could not extract the required TCP-IP parameters from the provided hardware dictionary")
+        
+        return
     
-    def prepare_headers(self):
+    def prepare_headers(self) -> dict:
         make_header = self.conv.make_header
         
         headers = {
@@ -99,6 +101,11 @@ class NanonisHardware:
             # Bias
             "get_V": make_header('Bias.Get', body_size = 0),
             "set_V": make_header('Bias.Set', body_size = 4),
+            "pulse": make_header('Bias.Pulse', body_size = 16),
+            
+            # BiasSpectr
+            "open_spectroscopy": make_header('BiasSpectr.Open', body_size = 0),
+            "get_spectrum": make_header('BiasSpectr.Start', body_size = 8),
             
             # Folme
             "get_xy": make_header('FolMe.XYPosGet', body_size = 4),
@@ -187,10 +194,10 @@ class NanonisHardware:
 
         return headers
 
-    def send_command(self, message):
+    def send_command(self, message) -> None:
         self.s.send(bytes.fromhex(message))
 
-    def receive_response(self, error_index = -1, keep_header = False):
+    def receive_response(self, error_index: int = -1, keep_header: bool = False) -> str:
         """
         Parameters
         error_index : index of 'error status' within the body. -1 skip check
@@ -213,7 +220,7 @@ class NanonisHardware:
         
         return response
     
-    def check_error(self, response, error_index):
+    def check_error(self, response: str, error_index: int = 0) -> None:
         """
         Checks the response from nanonis for error messages
 
@@ -259,18 +266,18 @@ class NanonisHardware:
             return
                                # raise the exception
 
-    def connect(self):
+    def connect(self) -> None:
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Re-establish the socket object if it was lost
         self.s.connect((self.ip, self.port)) # Open the TCP connection.
-        
-    def disconnect(self):
+
+    def disconnect(self) -> None:
         self.s.close()
         sleep(.1)
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         return self.connect()
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         return self.disconnect()
 
 
@@ -307,13 +314,99 @@ class NanonisHardware:
         
         return bias
 
-    def set_V(self, V: float):
+    def set_V(self, V: float) -> None:
         command = self.headers["set_V"] + self.conv.float32_to_hex(V)
         
         self.send_command(command)
         self.receive_response(0)
         
         return
+
+    def pulse(self, V_pulse: float, t_pulse_ms: float, wait: bool = True) -> None:
+        command = self.headers["pulse"] + self.headers[str(wait)] + self.conv.float32_to_hex(t_pulse_ms / 1000)
+        command += self.conv.float32_to_hex(V_pulse) + self.conv.to_hex(1, 2) + self.conv.to_hex(0, 2)
+        
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+
+    # BiasSpectr
+    def open_spectroscopy(self) -> None:
+        command = self.headers["open_spectroscopy"]
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+    
+    def get_spectrum(self) -> dict:
+        """
+        Starts a bias spectroscopy in the Bias Spectroscopy module.
+        
+        Before using this function, select the channels to record in the Bias
+        Spectroscopy module.
+
+        Parameters
+        ----------
+        get_data        : defines if the function returns the spectroscopy data
+                          True: return data from this function
+                          False: don't return data
+        save_base_name  : Base name used by the saved files. Empty string 
+                          keeps settings unchanged in nanonis
+                    
+
+        Returns
+        -------
+        if get_data  = False, this function returns None
+        
+        if get_data != False, this function returns:
+            
+        data_dict{
+            '<channel_name>' : data for this channel
+            }
+        parameters  : List of fixed parameters and parameters (in that order).
+                      To see the names of the returned parameters, use the 
+                      BiasSpectr.PropsGet function
+
+        """
+                
+        command = self.headers["get_spectrum"] + self.headers["True"] + "0000" #self.conv.to_hex("", 4)        
+        
+        self.send_command(command)
+        response = self.receive_response()
+        
+        # channels_names_size = self.NanonisTCP.hex_to_int32(response[0:4]) # Useless
+        number_of_channels  = self.conv.hex_to_int32(response[4 : 8])
+        
+        idx = 8
+        channel_names = []
+        for i in range(number_of_channels):
+            channel_name_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            channel_names.append(response[idx : idx + channel_name_size].decode())
+            idx += channel_name_size
+        
+        data_rows = self.conv.hex_to_int32(response[idx : idx + 4])
+        idx += 4
+        data_cols = self.conv.hex_to_int32(response[idx : idx + 4])
+        
+        data_dict = {}
+        for i in range(data_rows):
+            data = []
+            for j in range(data_cols):
+                idx += 4
+                data.append(self.conv.hex_to_float32(response[idx : idx + 4]))
+            data_dict[channel_names[i]] = np.array(data)
+        
+        idx += 4
+        parameters = []
+        number_of_parameters = self.conv.hex_to_int32(response[idx : idx + 4])
+        for i in range(number_of_parameters):
+            idx += 4
+            parameter = self.conv.hex_to_float32(response[idx : idx + 4])
+            parameters.append(parameter)
+        
+        return {"data_dict" : data_dict, "parameters" : parameters}
 
     # Folme
     def get_xy(self, wait: bool = True) -> str:
@@ -728,11 +821,7 @@ class NanonisHardware:
         command = self.headers["get_signals_in_slots"]
         
         self.send_command(command)
-        response = self.receive_response()
-
-        if 1 == 1: return response
-
-        
+        response = self.receive_response()        
         signals_names_num = self.conv.hex_to_int32(response[4 : 8])
         
         index = 8
