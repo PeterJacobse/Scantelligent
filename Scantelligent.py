@@ -199,13 +199,12 @@ class App:
         
         
         
-        
         # Initialize the scan parameters in the gui as parameter set 0, until a connection to Nanonis is made
         self.load_parameters("scan_parameters", index = 0)
         self.load_parameters("tip_prep_parameters", index = 0)
         
         # Make a tip target item in the image_view
-        self.tip_target = PJTargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n({0}, {0}) nm")
+        self.tip_target = PJTargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n({0}, {0}) nm", movable = True)
         self.gui.image_view.view.addItem(self.tip_target)
         
         return hardware
@@ -265,7 +264,7 @@ class App:
                 self.status.update({"nanonis": "online"})
                 self.logprint("Success! Response received. I will immediately request parameters over TCP.", message_type = "success")
                 
-                self.nanonis.get_window()
+                self.nanonis.window_update()
                 self.nanonis.frame_update()
 
                 self.on_parameters_request()
@@ -438,7 +437,7 @@ class App:
                 x_tip_nm = tip_status.get("x (nm)", 0)
                 y_tip_nm = tip_status.get("y (nm)", 0)
                 self.tip_target.setPos(x_tip_nm, y_tip_nm)
-                self.tip_target.setToolTip(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}) nm")
+                self.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}) nm")
                 self.gui.image_view.view.addItem(self.tip_target)
                 
                 self.update_tip_status()
@@ -458,7 +457,9 @@ class App:
                 angle_deg = frame.get("angle (deg)", 0)
                 
                 # Add the frame to the ImageView
-                self.frame_roi = pg.ROI([0, 0], [w_nm, h_nm], pen = pg.mkPen(color = colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
+                self.frame_roi = pg.ROI([0, 0], [w_nm, h_nm], pen = pg.mkPen(color = colors["blue"], width = 2), movable = True, resizable = False, rotatable = True)
+                self.frame_roi.addRotateHandle([0, 0.5], [0.5, 0.5])
+                
                 self.gui.image_view.addItem(self.frame_roi)
                 self.frame_roi.setAngle(angle = -angle_deg)
                 
@@ -469,8 +470,6 @@ class App:
             
             case "grid":
                 grid = parameters
-                
-                self.logprint(f"{grid}", message_type = "warning")
             
             case "window":
                 window = parameters
@@ -936,13 +935,11 @@ class App:
                 case "pulse":
                     str = self.gui.line_edits["pulse_voltage"].text()
                     numbers = self.data.extract_numbers_from_str(str)
-                    self.logprint(numbers)
                     if len(numbers) < 1: return
                     else: V_pulse_V = numbers[0]
                     
                     str = self.gui.line_edits["pulse_duration"].text()
                     numbers = self.data.extract_numbers_from_str(str)
-                    self.logprint(numbers)
                     if len(numbers) < 1: return
                     else: t_pulse_ms = numbers[0]
                     

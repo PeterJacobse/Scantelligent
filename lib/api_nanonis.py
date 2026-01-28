@@ -61,7 +61,7 @@ class NanonisAPI(QtCore.QObject):
         self.tip_update()
         return
 
-    def get_window(self, auto_connect: bool = True, auto_disconnect: bool = True) -> None:
+    def window_update(self, auto_connect: bool = True, auto_disconnect: bool = True) -> None:
         error = False
         nhw = self.nanonis_hardware
         window_dict = {}
@@ -487,9 +487,9 @@ class NanonisAPI(QtCore.QObject):
             
             if number_of_elements - number_of_nans < 2: return # Do not perform data processing if the scan is all NaNs
             
-            #(processed_image, error) = self.data.subtract_background(scan_image)
+            (processed_image, error) = self.data.subtract_background(scan_image, mode = "plane")
             
-            self.image.emit(np.flipud(scan_image))
+            self.image.emit(np.flipud(processed_image))
 
         except Exception as e: error = e
         finally:

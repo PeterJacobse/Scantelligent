@@ -414,6 +414,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         make_slider = self.gui_items.make_slider
         
         tip_slider = make_slider("", "Tip height (nm)", orientation = "v")
+        tip_slider.setEnabled(False)
         
         return tip_slider
 

@@ -499,11 +499,13 @@ class DataProcessing():
             error = "Error. The provided image is not a numpy array."
             return (image, error)
         
-        # Unfinished scans: remove NaN rows
-        nan_mask = np.isnan(image).any(axis = 1)
-        image = image(~nan_mask)
-
         try:
+            # Unfinished scans: remove NaN rows
+            num_rows = len(image)
+            nan_mask = np.isnan(image).any(axis = 1)
+            image = image[~nan_mask]
+            non_nan_rows = len(image)            
+        
             avg_image = np.mean(image.flatten()) # The average value of the image, or the offset
             (gradient_image, error) = self.image_gradient(image) # The (complex) gradient of the image
             avg_gradient = np.mean(gradient_image.flatten()) # The average value of the gradient
@@ -523,12 +525,16 @@ class DataProcessing():
                     processed_image = image - avg_image
                 case _:
                     processed_image = image
+            
+            # Pad the NaN rows back
+            if num_rows - non_nan_rows > 0: image = np.pad(processed_image, ((0, num_rows - non_nan_rows), (0, 0)), mode = 'constant', constant_values = np.nan)
+            else: image = processed_image
+    
+            return (image, error)
 
         except:
             error = "Error. Failed to perform the background subtraction."
             return (image, error)
-        
-        return (processed_image, error)
 
 
 

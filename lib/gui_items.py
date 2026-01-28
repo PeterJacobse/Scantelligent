@@ -6,8 +6,10 @@ import numpy as np
 
 
 class PJTargetItem(pg.TargetItem):
-    def __init__(self, pos = None, size = 10, pen = "y", tip_text = ""):
-        super().__init__(pos = pos, size = size, pen = pen)
+    position_signal = QtCore.pyqtSignal(float, float)
+    
+    def __init__(self, pos = None, size = 10, pen = "y", tip_text = "", movable = False):
+        super().__init__(pos = pos, size = size, pen = pen, movable = movable)
         self.size = size
         self.tip_text = tip_text
 
@@ -25,6 +27,15 @@ class PJTargetItem(pg.TargetItem):
         elif event.isExit():
             self.text_item.hide()
 
+    def mouseDragEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        
+        # Check if the drag is finished
+        if event.isFinish():
+            new_pos = self.pos()
+            self.position_signal.emit(new_pos.x(), new_pos.y())
+            # Add custom logic to emit signal or update data here
+            
 
 
 class PJGroupBox(QtWidgets.QGroupBox):
