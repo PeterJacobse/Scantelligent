@@ -572,6 +572,31 @@ class NanonisHardware:
         
         return parameters
 
+    def set_gains(self, gains: dict) -> None:
+        p_gain_pm = gains.get("p_gain (pm)", None)
+        t_const_us = gains.get("t_const (us)", None)
+        i_gain_nm_per_s = gains.get("i_gain (nm/s)", None)
+
+        gains_dict = self.get_gains() # Get current gains to fill in any missing values
+        if p_gain_pm: gains_dict.update({"p_gain (pm)": p_gain_pm})
+        if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
+        if i_gain_nm_per_s: gains_dict.update({"i_gain (nm/s)": i_gain_nm_per_s})
+
+        p_gain_pm = gains.get("p_gain (pm)", None)
+        t_const_us = gains.get("t_const (us)", None)
+        i_gain_nm_per_s = gains.get("i_gain (nm/s)", None)
+        
+        p_gain_hex = self.conv.float32_to_hex(p_gain_pm * 1E-12) if p_gain_pm is not None else "00000000"
+        t_const_hex = self.conv.float32_to_hex(t_const_us * 1E-6) if t_const_us is not None else "00000000"
+        i_gain_hex = self.conv.float32_to_hex(i_gain_nm_per_s * 1E-9) if i_gain_nm_per_s is not None else "00000000"
+        
+        command = self.headers["set_gains"] + p_gain_hex + t_const_hex + i_gain_hex
+        
+        self.send_command(command)
+        self.receive_response(0)
+        
+        return
+
     def get_z_limits(self) -> str:
         command = self.headers["get_z_limits"]
         self.send_command(command)

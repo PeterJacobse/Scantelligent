@@ -342,7 +342,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "left_side": make_layout("v"),
 
             "toolbar": make_layout("v"),
-            "scan_control": make_layout("h"),
             "scan_parameter_sets": make_layout("h"),
             "channel_navigation": make_layout("h"),
 
@@ -490,16 +489,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiment", "direction"])]
         e_layout.addLayout(layouts["experiment_controls"], 1, 0, 3, 1)
         e_layout.addWidget(self.line_edits["experiment_filename"], 1, 1)
-        
-        layouts["scan_control"].addWidget(self.comboboxes["channels"], 5)
-        layouts["scan_control"].addWidget(self.buttons["direction"], 1)
-        
-        layouts["channel_navigation"].addWidget(comboboxes["channels"], 4)
-        layouts["channel_navigation"].addWidget(self.buttons["direction"], 1)
+                
+        cn_layout = layouts["channel_navigation"]
+        cn_layout.addWidget(comboboxes["channels"], 4)
+        cn_layout.addWidget(self.buttons["direction"], 1)
+        [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
         
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rotation", "offset"]]
-        [layouts["background_buttons"].addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
         p_layout = layouts["matrix_processing"]
         [p_layout.addWidget(checkboxes[checkbox_name], 0, index) for index, checkbox_name in enumerate(["sobel", "normal", "laplace"])]
         p_layout.addWidget(checkboxes["gaussian"], 1, 1)

@@ -39,6 +39,20 @@ class NanonisAPI(QtCore.QObject):
         self.status = "idle"
         self.connection.emit(self.status)
 
+
+
+    #PyQt slots
+    @QtCore.pyqtSlot()
+    def receive_parameters(self, parameters: dict) -> None:
+        self.logprint(f"Class NanonisAPI received parameters: {parameters}", message_type = "message")
+        return
+
+    def logprint(self, message: str, message_type: str = "error") -> None:
+        self.message.emit(message, message_type)
+        return
+
+
+
     def test_function(self) -> None:
         scan_image = np.random.rand(256, 256) * 10
         self.image.emit(np.flipud(scan_image))
@@ -181,22 +195,53 @@ class NanonisAPI(QtCore.QObject):
         # Extract numbers from parameters input
         I_fb_pA = parameters.get("I_fb (pA)", None)
         v_fwd_nm_per_s = parameters.get("v_fwd (nm/s)", None)
+        v_bwd_nm_per_s = parameters.get("v_bwd (nm/s)", None)
+        t_fwd_s = parameters.get("t_fwd (s)", None)
+        t_bwd_s = parameters.get("t_bwd (s)", None)
+        const_param = parameters.get("const_param", None)
         V_nanonis = parameters.get("V_nanonis (V)", None)
+        p_gain_pm = parameters.get("p_gain (pm)", None)
+        t_const_us = parameters.get("t_const (us)", None)
 
         # Set up the TCP connection and get
         try:
             if auto_connect: self.connect()
             
+            # Bias voltage
             if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, auto_connect = False, auto_disconnect = False)
             else: V = nhw.get_V()
             
+            # Feedback current
             if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
             else: I_fb_pA = nhw.get_I_fb_pA()
-            
+
+            # Feedback gains
             gains_dict = nhw.get_gains()
+            if p_gain_pm: gains_dict.update({"p_gain (pm)": p_gain_pm})
+            if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
+            if p_gain_pm or t_const_us: nhw.set_gains(gains_dict)
+
+            # Scan speeds
             speed_dict = nhw.get_v_scan_nm_per_s()
+            new_speed_dict = {}
+            if v_fwd_nm_per_s:
+                new_speed_dict.update({"v_fwd (nm/s)": v_fwd_nm_per_s})
+            elif t_fwd_s:
+                new_speed_dict.update({"t_fwd (s)": t_fwd_s})
+            
+            if v_bwd_nm_per_s:
+                new_speed_dict.update({"v_bwd (nm/s)": v_bwd_nm_per_s})
+            elif t_bwd_s:
+                new_speed_dict.update({"t_bwd (s)": t_bwd_s})
+            if v_fwd_nm_per_s or v_bwd_nm_per_s or t_fwd_s or t_bwd_s or const_param: nhw.set_v_scan_nm_per_s(new_speed_dict)
+
+            # Tip speed
             v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
+
+            # Session path
             session_path = nhw.get_path()
+
+            # Coarse motor parameters
             try: coarse_parameters = nhw.get_motor_f_A() # Evidently does not work in the simulator, which does not have coarse motor control
             except: pass
             

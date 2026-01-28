@@ -23,12 +23,12 @@ text_colors = {"message": colors["white"], "error": colors["red"], "code": color
 
 
 
-class App:
-    #request_start = QtCore.pyqtSignal(str, int, int)
-    #start_tracking = QtCore.pyqtSignal(float, int, int) # sampling time, chunk_size, timeout
-    #request_stop = QtCore.pyqtSignal()
+class Scantelligent(QtCore.QObject):
+    abort = QtCore.pyqtSignal(bool)
+    parameters = QtCore.pyqtSignal(dict)
 
     def __init__(self):
+        super().__init__()
         icon_folder = self.parameters_init()
         self.gui = ScantelligentGUI(icon_folder)
         self.setup_connections() # Initialize the console, the button-slot, and keystroke-slot connections        
@@ -113,10 +113,10 @@ class App:
                         ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
             [connections.append([direction, lambda drxn = direction: self.on_coarse_move(drxn)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
-            connections.append([f"scan_parameters_0", lambda: self.load_parameters(0)])
-            connections.append([f"scan_parameters_1", lambda: self.load_parameters(1)])
-            connections.append([f"scan_parameters_2", lambda: self.load_parameters(2)])
-            connections.append([f"scan_parameters_3", lambda: self.load_parameters(3)])
+            connections.append([f"scan_parameters_0", lambda: self.load_parameters("scan_parameters", 0)])
+            connections.append([f"scan_parameters_1", lambda: self.load_parameters("scan_parameters", 1)])
+            connections.append([f"scan_parameters_2", lambda: self.load_parameters("scan_parameters", 2)])
+            connections.append([f"scan_parameters_3", lambda: self.load_parameters("scan_parameters", 3)])
             
             #for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
             #    buttons[direction].clicked.connect(lambda drxn = direction: self.on_coarse_move(drxn))
@@ -243,6 +243,8 @@ class App:
 
         def connect_nanonis() -> None:
             # Initialize signal-slot connections
+            self.parameters.connect(self.nanonis.receive_parameters)
+
             self.nanonis.connection.connect(self.receive_nanonis_status)
             self.nanonis.progress.connect(self.receive_progress)
             self.nanonis.message.connect(self.receive_message)
@@ -296,6 +298,148 @@ class App:
         
         # Update the buttons in the gui
         self.update_buttons()
+        return
+
+
+
+    # PyQt slots
+    @QtCore.pyqtSlot(float, float)
+    def receive_double_click(self, x: float, y: float) -> None:        
+        self.nanonis.tip_update({"x (nm)": x, "y (nm)": y})
+        self.logprint(f"nanonis.tip_update({{\"x (nm)\": {x}, \"y (nm)\": {y}}})", message_type = "code")
+        return
+    
+    @QtCore.pyqtSlot(str)
+    def receive_nanonis_status(self, status: str) -> None:
+        # Nanonis emits the 'running' flag when it connects and the 'online' flag when it disconnects.
+        # These flags are used to update the corresponding status in Scantelligent and provide logic for blocking - preventing the collision of multiple simultaneous TCP code executions
+        match status:
+            case "running":
+                self.status.update({"nanonis": "running"})
+                self.update_buttons()
+            case "idle":
+                self.status.update({"nanonis": "online"})
+                self.update_buttons()
+        return
+
+    @QtCore.pyqtSlot(int)
+    def receive_progress(self, progress: int) -> None:
+        self.gui.progress_bars["experiment"].setValue(progress)
+        return
+
+    @QtCore.pyqtSlot(str, str)
+    def receive_message(self, text: str, mtype: str):
+        self.logprint(text, message_type = mtype)
+        return
+
+    @QtCore.pyqtSlot(dict)
+    def receive_parameters(self, parameters: dict):
+        # Read the name of the dict to determine what type of parameters are in there
+        dict_name = parameters.get("dict_name")
+        match dict_name:
+
+            case "tip_status":
+                tip_status = parameters
+                self.status.update({"tip_status": tip_status})
+                
+                # Update the slider
+                z_limits_nm = tip_status.get("z_limits (nm)")
+                z_nm = tip_status.get("z (nm)")
+                self.gui.tip_slider.setMinimum(int(z_limits_nm[0]))
+                self.gui.tip_slider.setMaximum(int(z_limits_nm[1]))
+                self.gui.tip_slider.setValue(int(z_nm))
+                self.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
+                
+                # Update the position visible in the image_view
+                self.gui.image_view.view.removeItem(self.tip_target)
+                x_tip_nm = tip_status.get("x (nm)", 0)
+                y_tip_nm = tip_status.get("y (nm)", 0)
+                self.tip_target.setPos(x_tip_nm, y_tip_nm)
+                self.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}) nm")
+                self.gui.image_view.view.addItem(self.tip_target)
+                
+                self.update_tip_status()
+            
+            case "scan_parameters":
+                scan_parameters = parameters
+                self.user.scan_parameters[0].update(scan_parameters)
+
+            case "frame":
+                frame = parameters
+                self.user.frames[0].update(frame)
+                
+                if hasattr(self, "frame_roi"): self.gui.image_view.view.removeItem(self.frame_roi)
+                
+                [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
+                [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
+                angle_deg = frame.get("angle (deg)", 0)
+                
+                # Add the frame to the ImageView
+                self.frame_roi = pg.ROI([0, 0], [w_nm, h_nm], pen = pg.mkPen(color = colors["blue"], width = 2), movable = True, resizable = False, rotatable = True)
+                self.frame_roi.addRotateHandle([0, 0.5], [0.5, 0.5])
+                
+                self.gui.image_view.addItem(self.frame_roi)
+                self.frame_roi.setAngle(angle = -angle_deg)
+                
+                bounding_rect = self.frame_roi.boundingRect()
+                local_center = bounding_rect.center()
+                frame_roi_center = self.frame_roi.mapToParent(local_center)
+                self.frame_roi.setPos(x_0_nm - frame_roi_center.x(), y_0_nm - frame_roi_center.y())
+            
+            case "grid":
+                grid = parameters
+            
+            case "window":
+                window = parameters
+                self.user.windows[0].update(window)
+                
+                if hasattr(self, "window_roi"): self.gui.image_view.view.removeItem(self.window_roi)
+                
+                window_range_nm = [window.get("x_range (nm)"), window.get("y_range (nm)")]
+                window_lower_left_nm = [window.get("x_min (nm)"), window.get("y_min (nm)")]
+                self.window_roi = pg.ROI(window_lower_left_nm, window_range_nm, pen = pg.mkPen(color = colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
+                
+                # Add the frame to the ImageView
+                self.gui.image_view.addItem(self.window_roi)
+            
+            case _:
+                pass
+        
+        return
+
+    @QtCore.pyqtSlot(np.ndarray)
+    def receive_image(self, image: np.ndarray):
+        if isinstance(image, np.ndarray):
+            try:                
+                # Save the current state and clear the image, then set a new one
+                #current_state = self.gui.image_view.view.autoRange
+                self.gui.image_view.clear()
+                self.gui.image_view.setImage(image, autoRange = False)
+                
+                # Use the frame to update the imageitem box
+                frame = self.user.frames[0]
+                
+                scan_range_nm = frame.get("scan_range (nm)", [100, 100])
+                angle_deg = frame.get("angle (deg)", 0)
+                offset_nm = frame.get("offset (nm)", [0, 0])
+            
+                w = scan_range_nm[0]
+                h = scan_range_nm[1]
+                x = offset_nm[0]
+                y = offset_nm[1]
+            
+                image_item = self.gui.image_view.getImageItem()
+                box = QtCore.QRectF(- w / 2, - h / 2, w, h)
+                image_item.setRect(box)
+                
+                center = image_item.boundingRect().center()
+                image_item.setTransformOriginPoint(center)
+                image_item.setRotation(-angle_deg)
+                image_item.setPos(x, y)
+
+            except Exception as e:
+                self.logprint(f"Error: {e}")
+            
         return
 
 
@@ -386,194 +530,6 @@ class App:
                 pass
         
         return
-
-
-
-    # PyQt slots
-    def receive_double_click(self, x: float, y: float) -> None:        
-        self.nanonis.tip_update({"x (nm)": x, "y (nm)": y})
-        self.logprint(f"nanonis.tip_update({{\"x (nm)\": {x}, \"y (nm)\": {y}}})", message_type = "code")
-        return
-    
-    def receive_nanonis_status(self, status: str) -> None:
-        # Nanonis emits the 'running' flag when it connects and the 'online' flag when it disconnects.
-        # These flags are used to update the corresponding status in Scantelligent and provide logic for blocking - preventing the collision of multiple simultaneous TCP code executions
-        match status:
-            case "running":
-                self.status.update({"nanonis": "running"})
-                self.update_buttons()
-            case "idle":
-                self.status.update({"nanonis": "online"})
-                self.update_buttons()
-        return
-
-    def receive_progress(self, progress: int) -> None:
-        self.gui.progress_bars["experiment"].setValue(progress)
-        return
-    
-    def receive_message(self, text: str, mtype: str):
-        self.logprint(text, message_type = mtype)
-        return
-
-    def receive_parameters(self, parameters: dict):
-        # Read the name of the dict to determine what type of parameters are in there
-        dict_name = parameters.get("dict_name")
-        match dict_name:
-
-            case "tip_status":
-                tip_status = parameters
-                self.status.update({"tip_status": tip_status})
-                
-                # Update the slider
-                z_limits_nm = tip_status.get("z_limits (nm)")
-                z_nm = tip_status.get("z (nm)")
-                self.gui.tip_slider.setMinimum(int(z_limits_nm[0]))
-                self.gui.tip_slider.setMaximum(int(z_limits_nm[1]))
-                self.gui.tip_slider.setValue(int(z_nm))
-                self.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
-                
-                # Update the position visible in the image_view
-                self.gui.image_view.view.removeItem(self.tip_target)
-                x_tip_nm = tip_status.get("x (nm)", 0)
-                y_tip_nm = tip_status.get("y (nm)", 0)
-                self.tip_target.setPos(x_tip_nm, y_tip_nm)
-                self.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}) nm")
-                self.gui.image_view.view.addItem(self.tip_target)
-                
-                self.update_tip_status()
-            
-            case "scan_parameters":
-                scan_parameters = parameters
-                self.user.scan_parameters[0].update(scan_parameters)
-
-            case "frame":
-                frame = parameters
-                self.user.frames[0].update(frame)
-                
-                if hasattr(self, "frame_roi"): self.gui.image_view.view.removeItem(self.frame_roi)
-                
-                [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
-                
-                # Add the frame to the ImageView
-                self.frame_roi = pg.ROI([0, 0], [w_nm, h_nm], pen = pg.mkPen(color = colors["blue"], width = 2), movable = True, resizable = False, rotatable = True)
-                self.frame_roi.addRotateHandle([0, 0.5], [0.5, 0.5])
-                
-                self.gui.image_view.addItem(self.frame_roi)
-                self.frame_roi.setAngle(angle = -angle_deg)
-                
-                bounding_rect = self.frame_roi.boundingRect()
-                local_center = bounding_rect.center()
-                frame_roi_center = self.frame_roi.mapToParent(local_center)
-                self.frame_roi.setPos(x_0_nm - frame_roi_center.x(), y_0_nm - frame_roi_center.y())
-            
-            case "grid":
-                grid = parameters
-            
-            case "window":
-                window = parameters
-                self.user.windows[0].update(window)
-                
-                if hasattr(self, "window_roi"): self.gui.image_view.view.removeItem(self.window_roi)
-                
-                window_range_nm = [window.get("x_range (nm)"), window.get("y_range (nm)")]
-                window_lower_left_nm = [window.get("x_min (nm)"), window.get("y_min (nm)")]
-                self.window_roi = pg.ROI(window_lower_left_nm, window_range_nm, pen = pg.mkPen(color = colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
-                
-                # Add the frame to the ImageView
-                self.gui.image_view.addItem(self.window_roi)
-            
-            case _:
-                pass
-        
-        return
-
-    def receive_image(self, image: np.ndarray):
-        if isinstance(image, np.ndarray):
-            try:                
-                # Save the current state and clear the image, then set a new one
-                #current_state = self.gui.image_view.view.autoRange
-                self.gui.image_view.clear()
-                self.gui.image_view.setImage(image, autoRange = False)
-                
-                # Use the frame to update the imageitem box
-                frame = self.user.frames[0]
-                
-                scan_range_nm = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
-                offset_nm = frame.get("offset (nm)", [0, 0])
-            
-                w = scan_range_nm[0]
-                h = scan_range_nm[1]
-                x = offset_nm[0]
-                y = offset_nm[1]
-            
-                image_item = self.gui.image_view.getImageItem()
-                box = QtCore.QRectF(- w / 2, - h / 2, w, h)
-                image_item.setRect(box)
-                
-                center = image_item.boundingRect().center()
-                image_item.setTransformOriginPoint(center)
-                image_item.setRotation(-angle_deg)
-                image_item.setPos(x, y)
-
-            except Exception as e:
-                self.logprint(f"Error: {e}")
-            
-        return
-
-
-
-    def get_parameters(self):
-        le = self.gui.line_edits
-        nanonis = self.nanonis
-        # Request a parameter update from Nanonis, and wait to receive
-        # The received parameters are stored in self.user.scan_parameters[0] by default
-        nanonis.parameters_update(auto_disconnect = False)
-        nanonis.frame_update(auto_disconnect = False)
-        nanonis.tip_update(auto_connect = False)
-        sleep(.2)
-        scan_parameters = self.user.scan_parameters[0]
-        
-        # Enter the scan parameters into the fields        
-        for key, value in scan_parameters.items():
-            match key:
-                case "V_nanonis (V)": le["V_nanonis"].setText(f"{value:.2f} V")
-                case "V_mla (V)": le["V_mla"].setText(f"{value:.2f} V")
-                case "I_fb (pA)": le["I_fb"].setText(f"{value:.0f} pA")
-                case "p_gain (pm)": le["p_gain"].setText(f"{value:.0f} pm")
-                case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
-                case "v_fwd (nm/s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
-                case "v_bwd (nm/s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
-        
-        return
-
-    def set_parameters(self):
-        # Update Nanonis according to the parameters that were set in the GUI
-        s_p = self.user.scan_parameters[0]
-        
-        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
-            str = self.gui.line_edits[tag].text()
-            numbers = self.data.extract_numbers_from_str(str)
-            if len(numbers) < 1: continue
-            flt = numbers[0]
-            
-            match tag:
-                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
-                case "V_mla": s_p.update({"V_mla (V)": flt})
-                case "I_fb": s_p.update({"I_fb (pA)": flt})
-                case "p_gain": s_p.update({"p_gain (pm)": flt})
-                case "t_const": s_p.update({"t_const (us)": flt})
-                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
-                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
-                case _: pass
-
-        self.nanonis.parameters_update(s_p)
-        
-        return
-
-
 
     def update_buttons(self) -> None:
         buttons = self.gui.buttons
@@ -719,6 +675,57 @@ class App:
             self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment_name, ".hdf5")
         else: return
         self.logprint(self.paths["experiment_filename"])
+        return
+
+
+
+    # Simple Nanonis requests
+    def get_parameters(self):
+        le = self.gui.line_edits
+        nanonis = self.nanonis
+        # Request a parameter update from Nanonis, and wait to receive
+        # The received parameters are stored in self.user.scan_parameters[0] by default
+        nanonis.parameters_update(auto_disconnect = False)
+        nanonis.frame_update(auto_disconnect = False)
+        nanonis.tip_update(auto_connect = False)
+        sleep(.2)
+        scan_parameters = self.user.scan_parameters[0]
+        
+        # Enter the scan parameters into the fields        
+        for key, value in scan_parameters.items():
+            match key:
+                case "V_nanonis (V)": le["V_nanonis"].setText(f"{value:.2f} V")
+                case "V_mla (V)": le["V_mla"].setText(f"{value:.2f} V")
+                case "I_fb (pA)": le["I_fb"].setText(f"{value:.0f} pA")
+                case "p_gain (pm)": le["p_gain"].setText(f"{value:.0f} pm")
+                case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
+                case "v_fwd (nm/s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
+                case "v_bwd (nm/s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
+        
+        return
+
+    def set_parameters(self):
+        # Update Nanonis according to the parameters that were set in the GUI
+        s_p = self.user.scan_parameters[0]
+        
+        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
+            str = self.gui.line_edits[tag].text()
+            numbers = self.data.extract_numbers_from_str(str)
+            if len(numbers) < 1: continue
+            flt = numbers[0]
+            
+            match tag:
+                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
+                case "V_mla": s_p.update({"V_mla (V)": flt})
+                case "I_fb": s_p.update({"I_fb (pA)": flt})
+                case "p_gain": s_p.update({"p_gain (pm)": flt})
+                case "t_const": s_p.update({"t_const (us)": flt})
+                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
+                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
+                case _: pass
+
+        self.nanonis.parameters_update(s_p)
+        
         return
 
 
@@ -1405,5 +1412,5 @@ class App:
 # Main program
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
-    logic_app = App()
+    logic_app = Scantelligent()
     sys.exit(app.exec())
