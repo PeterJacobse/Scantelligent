@@ -104,7 +104,7 @@ class Scantelligent(QtCore.QObject):
             connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
                         ["oscillator", self.update_icons], ["view", self.update_icons], ["session_folder", self.open_session_folder], ["info", self.on_info],
                         
-                        ["withdraw", self.toggle_withdraw], ["retract", self.update_icons], ["advance", self.update_icons], ["approach", self.on_approach],
+                        ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
                         
                         ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.set_parameters], ["get", self.get_parameters],
                         
@@ -112,7 +112,18 @@ class Scantelligent(QtCore.QObject):
 
                         ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
-            [connections.append([direction, lambda drxn = direction: self.on_coarse_move(drxn)]) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
+
+            # for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
+            #    buttons[direction].clicked.connect(lambda drxn = direction: self.on_coarse_move(drxn))
+            buttons["n"].clicked.connect(lambda: self.on_coarse_move("n"))
+            buttons["ne"].clicked.connect(lambda: self.on_coarse_move("ne"))
+            buttons["e"].clicked.connect(lambda: self.on_coarse_move("e"))
+            buttons["se"].clicked.connect(lambda: self.on_coarse_move("se"))
+            buttons["s"].clicked.connect(lambda: self.on_coarse_move("s"))
+            buttons["sw"].clicked.connect(lambda: self.on_coarse_move("sw"))
+            buttons["w"].clicked.connect(lambda: self.on_coarse_move("w"))
+            buttons["nw"].clicked.connect(lambda: self.on_coarse_move("nw"))
+
             connections.append([f"scan_parameters_0", lambda: self.load_parameters("scan_parameters", 0)])
             connections.append([f"scan_parameters_1", lambda: self.load_parameters("scan_parameters", 1)])
             connections.append([f"scan_parameters_2", lambda: self.load_parameters("scan_parameters", 2)])
@@ -469,15 +480,7 @@ class Scantelligent(QtCore.QObject):
 
         # Print HTML text (QTextEdit.append will render it as rich text).
         print(final, flush = True)
-
-    def extract_number_from_string(self, text: str) -> float | None:
-        number_matches = re.findall(r"-?\d+\.?\d*", text)
-        numbers = [float(x) for x in number_matches]
-        
-        if len(numbers) > 0: number = numbers[0]
-        else: number = None
-        
-        return number
+        return
 
     def get_next_indexed_filename(self, folder_path, base_name, extension) -> str:
         # Pattern to match files with the base name and exactly 3 digits for the index
@@ -818,7 +821,7 @@ class Scantelligent(QtCore.QObject):
             self.logprint("Error. Scanalyzer path unknown.", message_type = "error")
         return
 
-    def open_session_folder(self) -> None:        
+    def open_session_folder(self) -> None:
         if hasattr(self, "paths") and "session_path" in list(self.paths.keys()):
             try:
                 session_path = self.paths["session_path"]
@@ -1126,12 +1129,14 @@ class Scantelligent(QtCore.QObject):
         return
 
     def toggle_withdraw(self) -> bool:
+        error = False
+
         try:
             tip_status = self.status["tip"]
             tip_withdrawn = tip_status.get("withdrawn")
             
             if tip_withdrawn:
-                (tip_status, error) = self.nanonis.tip({"feedback": True})
+                (tip_status, error) = self.nanonis.tip_update({"feedback": True})
                 if error: raise
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
@@ -1186,48 +1191,88 @@ class Scantelligent(QtCore.QObject):
         return True
 
     def on_coarse_move(self, direction: str = "n") -> bool:
-        self.logprint(direction)
         checkboxes = self.gui.checkboxes
         line_edits = self.gui.line_edits
+        motions = {}
 
-        if direction not in ["n", "ne", "e", "se", "s", "sw", "w", "nw", "0"]:
+        if direction not in ["n", "ne", "e", "se", "s", "sw", "w", "nw", "up", "down"]:
             self.logprint("Error. Unknown tip direction requested.", message_type = "error")
             return False
-        
-        try:
-            z_steps = int(self.extract_number_from_string(line_edits["z_steps"].text()))
-            h_steps = int(self.extract_number_from_string(line_edits["h_steps"].text()))
-            minus_z_steps = int(self.extract_number_from_string(line_edits["minus_z_steps"].text()))
-            
-            h_step_entries = {}
-            if direction in ["nw", "ne", "sw", "se"]:
-                h_steps = int(np.sqrt(h_steps) / 2)
-                match direction:
-                    case "nw": h_step_entries = {"n_steps": h_steps, "w_steps": h_steps}
-                    case "ne": h_step_entries = {"n_steps": h_steps, "e_steps": h_steps}
-                    case "sw": h_step_entries = {"s_steps": h_steps, "w_steps": h_steps}
-                    case "se": h_step_entries = {"s_steps": h_steps, "e_steps": h_steps}
-            else:
-                h_step_entries = {direction, h_steps}
-            
-            move_flags = {
-                "withdraw": checkboxes["withdraw"].isChecked(),
-                "retract": checkboxes["retract"].isChecked(),
-                "move": checkboxes["move"].isChecked(),
-                "advance": checkboxes["advance"].isChecked(),
-                "approach": checkboxes["approach"].isChecked(),
-                "direction": direction,
-                "z_steps": z_steps,
-                "minus_z_steps": minus_z_steps
-            }
-            move_flags.update(h_step_entries)
-            
-            self.logprint("Executing a tip move by passing the dictionary 'move_flags' to nanonis.move")
-            self.logprint(f"[dict] move_flags = {move_flags}", message_type = "result")
-            self.logprint("nanonis.move(move_flags)", message_type = "code")
-            
-            raise
 
+        try:
+            # Retrieve the checkbox states
+            withdraw = checkboxes["withdraw"].isChecked()
+            retract = checkboxes["retract"].isChecked()
+            move = checkboxes["move"].isChecked()
+            advance = checkboxes["advance"].isChecked()
+            approach = checkboxes["approach"].isChecked()
+
+            # Frequency and amplitude
+            numbers = self.data.extract_numbers_from_str(line_edits["V_hor"].text())
+            if len(numbers) > 0: V_hor = float(numbers[0])
+            else: V_hor = None
+            numbers = self.data.extract_numbers_from_str(line_edits["V_ver"].text())
+            if len(numbers) > 0: V_ver = float(numbers[0])
+            else: V_ver = None
+            numbers = self.data.extract_numbers_from_str(line_edits["f_motor"].text())
+            if len(numbers) > 0: f_motor = float(numbers[0])
+            else: f_motor = None
+
+            # Retrieve the line_edit values
+            # The number of steps up
+            numbers = self.data.extract_numbers_from_str(line_edits["z_steps"].text())
+            if len(numbers) > 0: z_steps = int(numbers[0])
+            else: z_steps = 0
+            if z_steps < 1: retract = False
+           
+            # The number of steps horizontally
+            numbers = self.data.extract_numbers_from_str(line_edits["h_steps"].text())
+            if len(numbers) > 0: h_steps = int(numbers[0])
+            else: h_steps = 0
+            if h_steps < 1: move = False
+
+            # The number of steps down
+            numbers = self.data.extract_numbers_from_str(line_edits["minus_z_steps"].text())
+            if len(numbers) > 0: minus_z_steps = int(numbers[0])
+            else: minus_z_steps = 0
+            if minus_z_steps < 1: advance = False
+
+            # Perform simple vertical motions if requested
+            match direction:
+                case "up":
+                    if z_steps > 0:
+                        motions = {"withdraw": withdraw, "direction": "up", "z_steps": z_steps, "V_motor (V)": V_ver, "f_motor (Hz)": f_motor}           
+                        self.nanonis.coarse_move(motions)
+                        return True
+                    else:
+                        return False
+                case "down":
+                    if minus_z_steps > 0:
+                        motions = {"withdraw": withdraw, "direction": "down", "minus_z_steps": minus_z_steps, "V_motor (V)": V_ver, "f_motor (Hz)": f_motor}           
+                        self.nanonis.coarse_move(motions)
+                        return True
+                    else:
+                        return False
+                case _:
+                    pass
+
+
+
+            # Horizontal (composite) motion
+            motions = {
+                "withdraw": withdraw,
+                "approach": approach,
+                "V_hor (V)": V_hor,
+                "V_ver (V)": V_ver,
+                "f_motor (Hz)": f_motor
+            }
+            
+            if retract and (z_steps > 0): motions.update({"z_steps": z_steps})
+            if advance and (minus_z_steps > 0): motions.update({"minus_z_steps": minus_z_steps})
+            if move and (h_steps > 0): motions.update({"h_steps": h_steps, "direction": direction})
+            
+            self.nanonis.coarse_move(motions)
+            
             return True
         
         except Exception as e:

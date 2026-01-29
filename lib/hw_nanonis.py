@@ -878,27 +878,32 @@ class NanonisHardware:
         self.send_command(command)
         response = self.receive_response(8)
 
-        result = {"frequency": self.conv.hex_to_float32(response[0 : 4]), "amplitude": self.conv.hex_to_float32(response[4 : 8])}
+        result = {"f_motor (Hz)": self.conv.hex_to_float32(response[0 : 4]), "V_motor (V)": self.conv.hex_to_float32(response[4 : 8])}
         
         return result
         
     def set_motor_f_A(self, parameters: dict) -> None:
-        standard_parameters = {"frequency": 1000, "amplitude": 150, "axis": 0}
-        standard_parameters.update(parameters)
-        parameters = standard_parameters
+        old_parameters = self.get_motor_f_A()
+
+        f_motor = parameters.get("f_motor (Hz)")
+        if type(f_motor) == int or type(f_motor) == float:
+            old_parameters.update({"f_motor (Hz)": f_motor})
         
-        command = self.headers["set_motor_f_A"] + self.conv.float32_to_hex(parameters.get("frequency")) + self.conv.float32_to_hex(parameters.get("amplitude")) + self.conv.to_hex(parameters.get("axis", 0), 2)
+        V_motor = parameters.get("V_motor (V)")
+        if type(V_motor) == int or type(V_motor) == float:
+            old_parameters.update({"V_motor (V)": V_motor})
+        
+        parameters = old_parameters
+        if "axis" not in parameters.keys(): parameters.update({"axis": 0})
+
+        command = self.headers["set_motor_f_A"] + self.conv.float32_to_hex(parameters.get("f_motor (Hz)")) + self.conv.float32_to_hex(parameters.get("V_motor (V)")) + self.conv.to_hex(parameters.get("axis", 0), 2)
         self.send_command(command)
         
         self.receive_response(0)
         
         return
 
-    def coarse_move(self, parameters: dict = {}) -> None:
-        standard_parameters = {"direction": "up", "steps": 3, "wait": True, "group": 1}
-        standard_parameters.update(parameters)
-        parameters = standard_parameters        
-        
+    def coarse_move(self, parameters: dict = {}, wait: bool = True) -> None:
         direction_dict = {
             "x+": 0, "e": 0, "east": 0,
             "x-": 1, "w": 1, "west": 1,
@@ -907,13 +912,16 @@ class NanonisHardware:
             "z+": 4, "up": 4, "retract": 4, "away": 4, "higher": 4,
             "z-": 5, "down": 5, "approach": 5, "advance": 5, "toward": 5, "towards": 5, "lower": 5
             }
-        direction_str = parameters.get("direction").lower()
-        direction_int = direction_dict[direction_str]
-        steps_int = parameters.get("steps", 0)
-        
-        group = 0 # Change this in the future?        
+        direction_str = parameters.get("direction", "none").lower()
 
-        command = self.headers["coarse_move"] + self.conv.to_hex(direction_int, 4) +  self.conv.to_hex(steps_int, 2) + self.conv.to_hex(group, 4) + self.headers[str(parameters.get("wait"))]
+        if direction_str not in direction_dict.keys():
+            raise ValueError(f"Invalid direction '{direction_str}'. Valid directions are: {list(direction_dict.keys())}")
+        
+        direction_int = direction_dict[direction_str]
+        steps_int = int(parameters.get("steps", 0))
+
+        group = 0 # Change this in the future?
+        command = self.headers["coarse_move"] + self.conv.to_hex(direction_int, 4) + self.conv.to_hex(steps_int, 2) + self.conv.to_hex(group, 4) + self.headers[str(wait)]
         
         self.send_command(command)
         self.receive_response(0)

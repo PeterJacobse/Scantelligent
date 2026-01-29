@@ -1,5 +1,7 @@
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
+
+from lib.functions_old import parameters
 from .hw_nanonis import NanonisHardware
 from .data_processing import DataProcessing
 from time import sleep, time
@@ -107,6 +109,7 @@ class NanonisAPI(QtCore.QObject):
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
+        self.logprint(f"nanonis.auto_approach({status})", message_type = "code")
                 
         try:
             if auto_connect: self.connect()
@@ -452,6 +455,7 @@ class NanonisAPI(QtCore.QObject):
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
+        self.logprint(f"nanonis.tip_prep({parameters})", message_type = "code")
 
         try:
             if auto_connect: self.connect()
@@ -486,6 +490,73 @@ class NanonisAPI(QtCore.QObject):
             if auto_disconnect: self.disconnect()
 
         return (spectrum, error)
+
+
+
+    # Coarse motion
+    def coarse_move(self, parameters: dict, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+        # Initalize outputs
+        error = False
+        nhw = self.nanonis_hardware
+        self.logprint(f"nanonis.coarse_move({parameters})", message_type = "code")
+
+        motions = []
+        V_hor = parameters.get("V_hor (V)")
+        V_ver = parameters.get("V_ver (V)")
+        f_motor = parameters.get("f_motor (Hz)")
+        
+        try:
+            if auto_connect: self.connect()
+            
+            # 1. Withdraw
+            withdraw = parameters.get("withdraw", True)
+            if withdraw: self.tip_update({"withdraw": True}, auto_connect = False, auto_disconnect = False)
+
+            # 2. Retract
+            steps = parameters.get("z_steps", 0)
+            if type(steps) == int and steps > 0:
+                motions.append({"direction": "up", "steps": steps, "V_motor (V)": V_ver, "f_motor (Hz)": f_motor})
+            
+            # 3. Move horizontally
+            steps = parameters.get("h_steps", 0)
+            if type(steps) == int and steps > 0:
+                direction = parameters.get("direction", "none")
+                match direction:
+                    case "up": directions = []
+                    case "down": directions = []
+                    case "ne": directions = ["n", "e"]
+                    case "se": directions = ["s", "e"]
+                    case "sw": directions = ["s", "w"]
+                    case "nw": directions = ["n", "w"]
+                    case _: directions = [direction]
+                [motions.append({"direction": drxn, "steps": steps, "V_motor (V)": V_hor, "f_motor (Hz)": f_motor}) for drxn in directions]
+            
+            # 4. Advance
+            minus_z_steps = parameters.get("minus_z_steps", 0)
+            if type(minus_z_steps) == int and minus_z_steps > 0:
+                motions.append({"direction": "down", "steps": minus_z_steps, "V_motor (V)": V_ver, "f_motor (Hz)": f_motor})
+            
+            # 5. Execute the motions
+            for motion in motions:
+                direction = motion.get("direction", "none")
+                steps = motion.get("steps", 0)
+                V_motor = motion.get("V_motor (V)")
+                f_motor = motion.get("f_motor (Hz)")
+                self.logprint(f"Moving {steps} steps in direction {direction}", message_type = "message")
+                
+                nhw.set_motor_f_A({"V_motor (V)": V_motor, "f_motor (Hz)": f_motor})
+                nhw.coarse_move({"direction": direction, "steps": steps, "wait": True})
+
+            # 5. Approach
+            approach = parameters.get("approach", False)
+            if approach: self.auto_approach(True)
+
+        except Exception as e:
+            error = e
+        finally:
+            self.disconnect()
+        
+        return error
 
 
 

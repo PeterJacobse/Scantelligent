@@ -348,10 +348,6 @@ class PJLineEdit(QtWidgets.QLineEdit):
         number_matches = re.findall(regex_pattern, entered_text)
         numbers = [float(x) for x in number_matches]
         
-        #number_matches = re.findall(r"-?\d+\.?\d*", entered_text)
-        #if self.number_type == "int": numbers = [int(x) for x in number_matches]
-        #else: numbers = [float(x) for x in number_matches]
-        
         if len(numbers) > 0:
             number = numbers[0]
             
@@ -361,6 +357,8 @@ class PJLineEdit(QtWidgets.QLineEdit):
                 if number > self.limits[1]: number = self.limits[1]
 
             # Add the unit to the number
+            if self.number_type == "int":
+                number = int(number)
             self.setText(f"{number} {self.unit}")
         else:
             self.setText("")
