@@ -6,6 +6,7 @@ from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, DataProcessing, 
 from time import sleep
 from scipy.interpolate import griddata
 from datetime import datetime
+from lib.experiment_1 import Experiment1
 
 
 
@@ -24,7 +25,7 @@ text_colors = {"message": colors["white"], "error": colors["red"], "code": color
 
 
 class Scantelligent(QtCore.QObject):
-    abort = QtCore.pyqtSignal(bool)
+    abort = QtCore.pyqtSignal()
     parameters = QtCore.pyqtSignal(dict)
 
     def __init__(self):
@@ -1110,24 +1111,9 @@ class Scantelligent(QtCore.QObject):
 
         return
 
-    # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
-    def on_parameters_set(self) -> bool:
-        try:
-            # Extract the numbers
-            number_matches = re.findall(r"-?\d+\.?\d*", self.gui.line_edits["nanonis_bias"].text())
-            self.logprint(f"{number_matches}", message_type = "error")
-            numbers = [float(x) for x in number_matches]
-            self.logprint(f"{numbers}", message_type = "error")
-            new_V = numbers[0]
-            self.logprint(f"I will try to set the bias to {new_V}")
-            self.nanonis.bias(new_V)
-        except:
-            pass
-        finally:
-            self.on_parameters_request()     
-        
-        return
 
+
+    # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
     def toggle_withdraw(self) -> bool:
         error = False
 
@@ -1295,33 +1281,58 @@ class Scantelligent(QtCore.QObject):
                         action = "pause"
                         self.status["experiment"] = f"{action}d"
                         sp_button.setIcon(self.icons.get("start"))
-                        self.nanonis.scan_control({"action": action})
+                        # self.nanonis.scan_control({"action": action})
                     case "paused":
                         action = "resume"
                         self.status["experiment"] = "running"
                         sp_button.setIcon(self.icons.get("pause"))
-                        self.nanonis.scan_control({"action": action})
+                        # self.nanonis.scan_control({"action": action})
                     case _:
                         action = "start"
                         self.status["experiment"] = "running"
                         sp_button.setIcon(self.icons.get("pause"))
                         
                         # Start a timer to connect scan updates to the GUI
-                        self.timer = QtCore.QTimer()
-                        self.timer.timeout.connect(self.on_scan_data_request)
-                        self.timer.start(2000)
+                        # self.timer = QtCore.QTimer()
+                        # self.timer.timeout.connect(self.on_scan_data_request)
+                        # self.timer.start(2000)
                         
-                        self.nanonis.scan_control({"action": "start"})
+                        # self.nanonis.scan_control({"action": "start"})
+
+                        self.experiment = Experiment1(self.hardware)
+
+                        self.parameters.connect(self.experiment.receive_parameters)
+
+                        self.experiment.connection.connect(self.receive_nanonis_status)
+                        self.experiment.progress.connect(self.receive_progress)
+                        self.experiment.message.connect(self.receive_message)
+                        self.experiment.parameters.connect(self.receive_parameters)
+                        self.experiment.image.connect(self.receive_image)
+
+                        self.thread = QtCore.QThread()
+                        self.experiment.moveToThread(self.thread)
+                        self.thread.started.connect(self.experiment.run)
+                        self.experiment.finished.connect(self.thread.quit)
+                        self.experiment.finished.connect(self.experiment.deleteLater)
+                        self.thread.finished.connect(self.thread.deleteLater)
+                        
+                        # Connect abort signal to experiment's abort handler
+                        self.abort.connect(self.experiment.abort)
+                        
+                        self.thread.start()
+
             
             elif action == "stop":
                 self.status["experiment"] = "idle"
                 sp_button.setIcon(self.icons.get("start"))
-                self.nanonis.scan_control({"action": "stop"})
+                # self.nanonis.scan_control({"action": "stop"})
+
+                self.abort.emit()
                 
                 # Kill the timer
-                self.timer.stop()
-                self.timer.disconnect()
-                self.timer.deleteLater()
+                # self.timer.stop()
+                # self.timer.disconnect()
+                # self.timer.deleteLater()
             
         except Exception as e:
             self.logprint(f"Error. Could not send experiment control command to Nanonis: {e}", message_type = "error")

@@ -11,10 +11,10 @@ scan_parameters:
     name: session
     p_gain (pm): 4.999999980020986
     session_path: C:\DATA\Peter\Au_tipprep_010825
-    t_bwd (s): 6.447999477386475
+    t_bwd (s): 1.6119998693466187
     t_const (s): 267.0
     t_const (us): 266.99999580159783
-    t_fwd (s): 6.447999477386475
+    t_fwd (s): 1.6119998693466187
     v_bwd (nm/s): 124.06948712850863
     v_fwd (nm/s): 124.06948712850863
     v_ratio: 1.0

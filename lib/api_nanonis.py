@@ -1,7 +1,6 @@
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from lib.functions_old import parameters
 from .hw_nanonis import NanonisHardware
 from .data_processing import DataProcessing
 from time import sleep, time
@@ -20,6 +19,7 @@ class NanonisAPI(QtCore.QObject):
     message = QtCore.pyqtSignal(str, str)
     parameters = QtCore.pyqtSignal(dict)
     image = QtCore.pyqtSignal(np.ndarray)
+    finished = QtCore.pyqtSignal()
     
     def __init__(self, hardware: dict):
         super().__init__()
@@ -273,12 +273,42 @@ class NanonisAPI(QtCore.QObject):
         frame = None
         error = False
         nhw = self.nanonis_hardware
+        new_parameters = {}
 
         # Set up the TCP connection and get the frame
         try:
             if auto_connect: self.connect()
-            frame = nhw.get_scan_frame_nm()
+
+            w_nm = None
+            h_nm = None
+            if "width (nm)" in parameters.keys():
+                w_nm = parameters.get("width (nm)")
+                h_nm = parameters.get("height (nm)", w_nm)
+            elif "scan_range (nm)" in parameters.keys():
+                [w_nm, h_nm] = parameters.get("scan_range (nm)")
+            elif "size (nm)" in parameters.keys():
+                [w_nm, h_nm] = parameters.get("size (nm)")
+            if w_nm and h_nm: new_parameters.update({"width (nm)": w_nm, "height (nm)": h_nm, "size (nm)": [w_nm, h_nm], "scan_range (nm)": [w_nm, h_nm]})
             
+            x_nm = None
+            y_nm = None
+            if "x (nm)" in parameters.keys():
+                x_nm = parameters.get("x (nm)")
+                y_nm = parameters.get("y (nm)", x_nm)
+            elif "offset (nm)" in parameters.keys():
+                [x_nm, y_nm] = parameters.get("offset (nm)")
+            elif "center (nm)" in parameters.keys():
+                [x_nm, y_nm] = parameters.get("center (nm)")
+            if x_nm and y_nm: new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "offset (nm)": [x_nm, y_nm], "center (nm)": [x_nm, y_nm]})
+
+            angle_deg = parameters.get("angle (deg)", None)
+            if angle_deg: new_parameters.update({"angle (deg)": angle_deg})
+
+            frame = nhw.get_scan_frame_nm()
+            if len(new_parameters) > 0:
+                frame.update(new_parameters)
+                nhw.set_scan_frame_nm(frame)
+
             frame.update({"dict_name": "frame"})
             self.parameters.emit(frame)
         

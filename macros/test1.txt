@@ -1,6 +1,0 @@
-print("Hello world")
-sleep(1)
-print("This is a macro")
-slep(2)
-print("Continue execution despite typo")
-print("This is a macro")
