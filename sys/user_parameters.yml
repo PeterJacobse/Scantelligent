@@ -1,24 +1,24 @@
 other_parameters: {}
 scan_parameters:
   0:
-    I_fb (pA): 19.999999920083944
-    V_nanonis (V): 1.2000000476837158
+    I_fb (pA): 20.0
+    V_nanonis (V): 1.2
     const_param: 0
     dict_name: scan_parameters
     i_gain (nm/s): 18.72659183277392
     motor_amplitude: null
     motor_frequency: null
     name: session
-    p_gain (pm): 4.999999980020986
+    p_gain (pm): 5.0
     session_path: C:\DATA\Peter\Au_tipprep_010825
-    t_bwd (s): 1.6119998693466187
+    t_bwd (s): 3.1751999855041504
     t_const (s): 267.0
-    t_const (us): 266.99999580159783
-    t_fwd (s): 1.6119998693466187
-    v_bwd (nm/s): 124.06948712850863
-    v_fwd (nm/s): 124.06948712850863
+    t_const (us): 267.0
+    t_fwd (s): 3.1751999855041504
+    v_bwd (nm/s): 80.0
+    v_fwd (nm/s): 80.0
     v_ratio: 1.0
-    v_xy (nm/s): 124.06948712850863
+    v_xy (nm/s): 62.98815691252457
   1:
     I_fb (pA): 20
     V_nanonis (V): 1.2
@@ -80,7 +80,7 @@ tip_prep_parameters:
     dict_name: session
     pulse_duration (ms): 300
     pulse_voltage (V): 6
-    t_pulse (ms): 500.0
+    t_pulse (ms): 800.0
   1:
     dict_name: alternative
     pulse_duration (ms): 600
