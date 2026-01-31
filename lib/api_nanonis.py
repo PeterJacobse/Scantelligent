@@ -402,25 +402,26 @@ class NanonisAPI(QtCore.QObject):
         # Set up the TCP connection and get grid dat
         try:
             if auto_connect: self.connect()
-            sig_in_slots = nhw.get_signals_in_slots()
             props = nhw.get_scan_props()
-            buffer = nhw.get_scan_buffer()
-            
-            signal_names = sig_in_slots["names"]
-            signal_indices = sig_in_slots["indices"]            
+            buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
             channel_indices = buffer["channel_indices"]
             
-            # Find out the names of the channels being recorded and their corresponding indices
+            if nhw.version > 13000: #Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
+                sig_in_slots = nhw.get_signals_in_slots()
+                signal_names = sig_in_slots["names"]
+                signal_indices = sig_in_slots["indices"]
             
-            recorded_channels = {}
-            for channel_index in channel_indices:
-                channel_name = signal_names[channel_index]
-                recorded_channels.update({str(channel_index): channel_name})
-                        
+                # Find out the names of the channels being recorded and their corresponding indices
+                channel_dict = {signal_names[index]: index for index in channel_indices}
+            
+            else:
+                signal_names = nhw.get_signal_names()
+                channel_dict = {signal_names[index]: index for index in buffer.get("channel_indices")}
+
             scan_metadata = props | {
                 "signal_names": signal_names,
                 "signal_indices": signal_indices,
-                "recorded_channels": recorded_channels
+                "channel_dict": channel_dict
                 }
 
         except Exception as e: error = e

@@ -173,6 +173,7 @@ class NanonisHardware:
 
             # Signals
             "get_signals_in_slots": make_header('Signals.InSlotsGet', body_size = 0),
+            "get_signal_names": make_header('Signals.NamesGet', body_size = 0),
             
             # Motor
             "get_motor_f_A": make_header('Motor.FreqAmpGet', body_size = 0),
@@ -910,6 +911,25 @@ class NanonisHardware:
         }
             
         return parameters
+
+    def get_signal_names(self) -> list:
+        command = self.headers["get_signal_names"]
+        
+        self.send_command(command)
+        response = self.receive_response()
+
+        signals_names_num  = self.conv.hex_to_int32(response[4 : 8])
+        
+        idx = 8
+        signal_names = []
+        for n in range(signals_names_num):
+            size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            signal_name = response[idx:idx+size].decode()
+            idx += size
+            signal_names.append(signal_name)
+        
+        return signal_names
 
     # Motor
     def get_motor_f_A(self) -> dict:
