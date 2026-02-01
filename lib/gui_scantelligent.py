@@ -25,6 +25,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
         self.image_view = self.make_image_view()
+        self.plot_widget = self.make_plot_widget()
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
         self.tip_slider = self.make_tip_slider()
@@ -379,6 +380,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return image_view
 
+    def make_plot_widget(self) -> pg.PlotWidget:        
+        plot_widget = pg.PlotWidget()
+        
+        return plot_widget
+
     def make_widgets(self) -> dict:
         layouts = self.layouts
         make_sle = self.gui_items.make_slider_line_edit
@@ -575,6 +581,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Compose the image_view plus consoles layout
         layouts["left_side"].addWidget(self.image_view, stretch = 4)
+        layouts["left_side"].addWidget(self.plot_widget, stretch = 1)
         layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
         layouts["left_side"].addWidget(self.line_edits["input"])
         self.widgets["left_side"].setLayout(layouts["left_side"])

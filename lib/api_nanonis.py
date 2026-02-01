@@ -20,6 +20,7 @@ class NanonisAPI(QtCore.QObject):
     parameters = QtCore.pyqtSignal(dict)
     image = QtCore.pyqtSignal(np.ndarray)
     finished = QtCore.pyqtSignal()
+    data_array = QtCore.pyqtSignal(np.ndarray)
     
     def __init__(self, hardware: dict):
         super().__init__()
@@ -59,15 +60,15 @@ class NanonisAPI(QtCore.QObject):
         try:
             self.connect()
 
-            (piezo_range, error) = self.piezo_range_update(auto_connect = False, auto_disconnect = False)
+            (piezo_range, error) = self.piezo_range_update(auto_disconnect = False)
             if error: raise Exception(error)
             (tip_status, error) = self.tip_update(auto_disconnect = False)
             if error: raise Exception(error)
-            (frame, error) = self.frame_update(auto_connect = False, auto_disconnect = False)
+            (frame, error) = self.frame_update(auto_disconnect = False)
             if error: raise Exception(error)
-            (parameters, error) = self.parameters_update(auto_connect = False, auto_disconnect = False)
+            (parameters, error) = self.parameters_update(auto_disconnect = False)
             if error: raise Exception(error)
-            (grid, error) = self.grid_update(auto_connect = False, auto_disconnect = False)
+            (grid, error) = self.grid_update(auto_disconnect = False)
             if error: raise Exception(error)
             (scan_metadata, error) = self.scan_metadata_update(auto_disconnect = False)
             if error: raise Exception(error)
@@ -97,9 +98,9 @@ class NanonisAPI(QtCore.QObject):
         try:
             self.connect()
 
-            self.frame_update(auto_connect = False, auto_disconnect = False)
+            self.frame_update(auto_disconnect = False)
             self.tip_update(auto_disconnect = False)
-            self.scan_metadata_update(auto_connect = False, auto_disconnect = False)
+            self.scan_metadata_update(auto_disconnect = False)
             self.scan_update(channel_index = channel_index, backward = backward, auto_disconnect = False)
         
         except Exception as e:
@@ -114,7 +115,7 @@ class NanonisAPI(QtCore.QObject):
     def abort(self) -> None:
         try:
             self.connect()
-            self.scan_control({"action": "stop"}, auto_connect = False, auto_disconnect = False)
+            self.scan_control({"action": "stop"}, auto_disconnect = False)
             self.stop_timed_updates()
         finally:
             self.disconnect()
@@ -141,7 +142,7 @@ class NanonisAPI(QtCore.QObject):
         self.tip_update()
         return
 
-    def scan_control(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+    def scan_control(self, parameters: dict = {}, auto_disconnect: bool = True) -> bool | str:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
@@ -151,7 +152,7 @@ class NanonisAPI(QtCore.QObject):
         
         # Set up the TCP connection and get grid dat
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             
             dirxn = "up"
             if direction == "down": dirxn = "down"
@@ -177,13 +178,13 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Update methods that can only read and not write
-    def piezo_range_update(self, auto_connect: bool = True, auto_disconnect: bool = True) -> None:
+    def piezo_range_update(self, auto_disconnect: bool = True) -> None:
         error = False
         nhw = self.nanonis_hardware
         piezo_range_dict = {}
 
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             piezo_range = nhw.get_range_nm()
             
             piezo_range_dict = {"dict_name": "piezo_range",
@@ -200,7 +201,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (piezo_range_dict, error)
 
-    def scan_update(self, channel_index, backward: bool = False, auto_connect: bool = True, auto_disconnect: bool = True) -> np.ndarray:
+    def scan_update(self, channel_index, backward: bool = False, auto_disconnect: bool = True) -> np.ndarray:
         # Initalize outputs
         scan_data = None
         error = False
@@ -304,7 +305,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (tip_status, error)
 
-    def parameters_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+    def parameters_update(self, parameters: dict = {}, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set parameters from Nanonis
         """
@@ -329,7 +330,7 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.connect()
             
             # Bias voltage
-            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, auto_connect = False, auto_disconnect = False)
+            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, auto_disconnect = False)
             else: V = nhw.get_V()
             
             # Feedback current
@@ -383,7 +384,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (parameters, error)
 
-    def frame_update(self, parameters: dict ={}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+    def frame_update(self, parameters: dict ={}, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set frame
         """
@@ -395,7 +396,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
 
             w_nm = None
             h_nm = None
@@ -436,7 +437,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (frame, error)
 
-    def grid_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+    def grid_update(self, parameters: dict = {}, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set grid properties
         """
@@ -447,7 +448,7 @@ class NanonisAPI(QtCore.QObject):
 
         try:
             # Get the frame and buffer
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             frame = nhw.get_scan_frame_nm()
             buffer = nhw.get_scan_buffer()
 
@@ -551,7 +552,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (scan_metadata, error)
 
-    def bias_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> float | bool:
+    def bias_update(self, parameters: dict = {}, auto_disconnect: bool = True) -> float | bool:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
@@ -570,7 +571,7 @@ class NanonisAPI(QtCore.QObject):
                 return False
 
         try:
-            if auto_connect: self.connect()                            
+            if not self.status == "running": self.connect()                            
             V_old = nhw.get_V() # Read data from Nanonis
             if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
             
@@ -603,14 +604,14 @@ class NanonisAPI(QtCore.QObject):
             if auto_disconnect: self.disconnect()
             return error
 
-    def tip_prep(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+    def tip_prep(self, parameters: dict = {}, auto_disconnect: bool = True) -> bool | str:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
         self.logprint(f"nanonis.tip_prep({parameters})", message_type = "code")
 
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             if parameters.get("action", "pulse") == "pulse":
                 V_pulse_V = parameters.get("V_pulse (V)", 6)
                 t_pulse_ms = parameters.get("t_pulse (ms)", 1000)
@@ -652,7 +653,7 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Does not work yet
-    def get_spectrum(self, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict | str]:
+    def get_spectrum(self, auto_disconnect: bool = True) -> tuple[dict | str]:
         # Initalize outputs
         data_dict = {}
         parameters = []
@@ -661,7 +662,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             spectrum = nhw.get_spectrum()
             #self.parameters.emit(frame)
         
@@ -674,7 +675,7 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Coarse motion
-    def coarse_move(self, parameters: dict, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+    def coarse_move(self, parameters: dict, auto_disconnect: bool = True) -> bool | str:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
@@ -734,11 +735,11 @@ class NanonisAPI(QtCore.QObject):
         except Exception as e:
             error = e
         finally:
-            self.disconnect()
+            if auto_disconnect: self.disconnect()
         
         return error
 
-    def auto_approach(self, status: bool = True, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+    def auto_approach(self, status: bool = True, auto_disconnect: bool = True) -> bool | str:
         """
         Function to turn on/off the auto approach feature of the Nanonis
         """
@@ -748,7 +749,7 @@ class NanonisAPI(QtCore.QObject):
         self.logprint(f"nanonis.auto_approach({status})", message_type = "code")
                 
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             nhw.auto_approach(status)
 
         except Exception as e: error = e

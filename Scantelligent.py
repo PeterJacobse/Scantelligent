@@ -489,6 +489,35 @@ class Scantelligent(QtCore.QObject):
             
         return
 
+    @QtCore.pyqtSlot(np.ndarray)
+    def receive_data(self, data_array: np.ndarray) -> None:
+        plot_colors = ["#ff00ff", "#00ffff", "#ffff00", "#a0a0a0", "#ffffff"]
+
+        self.logprint("  ".join([f"{data_array[i, 0]}" for i in range(len(data_array))]), message_type = "result")
+
+        if not hasattr(self, "lines"):
+            self.lines = []
+            for plot_number in range(len(data_array[0])):
+                y_data = data_array[:, plot_number]
+                x_data = range(len(y_data))
+                line = self.gui.plot_widget.plot(x_data, y_data, pen = plot_colors[plot_number])
+                self.lines.append(line)
+        elif not len(data_array[0]) == len(self.lines):
+            self.lines = []
+            for plot_number in range(len(data_array[0])):
+                y_data = data_array[:, plot_number]
+                x_data = range(len(y_data))
+                line = self.gui.plot_widget.plot(x_data, y_data, pen = plot_colors[plot_number])
+                self.lines.append(line)
+        else:
+            for plot_number in range(len(data_array[0])):
+                y_data = data_array[:, plot_number]
+                x_data = range(len(y_data))
+                self.lines[plot_number].setData(x_data, y_data)
+
+        return
+
+
 
 
     # Miscellaneous
@@ -729,9 +758,11 @@ class Scantelligent(QtCore.QObject):
         # The received parameters are stored in self.user.scan_parameters[0] by default
         nanonis.parameters_update(auto_disconnect = False)
         nanonis.frame_update(auto_disconnect = False)
-        nanonis.tip_update(auto_connect = False)
+        nanonis.tip_update(auto_disconnect = True)
         sleep(.2)
         scan_parameters = self.user.scan_parameters[0]
+
+        self.gui.plot_widget.plot(np.linspace(0, 2, 20), np.random.rand(20))
         
         # Enter the scan parameters into the fields        
         for key, value in scan_parameters.items():
@@ -1036,7 +1067,7 @@ class Scantelligent(QtCore.QObject):
             
             # Get scan parameters
             if self.status["initialization"]: logp("(parameters, error) = nanonis.parameters_update()", message_type = "code")
-            (parameters, error) = self.nanonis.parameters_update(auto_connect = False, auto_disconnect = False)
+            (parameters, error) = self.nanonis.parameters_update(auto_disconnect = False)
             
             if error:
                 logp(f"Error retrieving the scan parameters: {error}", message_type = "error")
@@ -1061,8 +1092,8 @@ class Scantelligent(QtCore.QObject):
             if self.status["initialization"]:
                 logp("(frame, error) = nanonis.frame_update()", message_type = "code")
                 logp("(grid, error) = nanonis.grid_update()", message_type = "code")
-            (frame, error) = self.nanonis.frame_update(auto_connect = False, auto_disconnect = False)
-            (grid, error) = self.nanonis.grid_update(auto_connect = False, auto_disconnect = False)
+            (frame, error) = self.nanonis.frame_update(auto_disconnect = False)
+            (grid, error) = self.nanonis.grid_update(auto_disconnect = False)
             
             if error:
                 logp(f"Error retrieving the scan frame / grid: {error}", message_type = "error")
@@ -1385,8 +1416,7 @@ class Scantelligent(QtCore.QObject):
                 self.experiment.moveToThread(self.thread)
                 self.thread.started.connect(self.experiment.run)
                 self.experiment.finished.connect(self.thread.quit)
-                self.experiment.finished.connect(self.experiment.deleteLater)
-                self.thread.finished.connect(self.thread.deleteLater)        
+                self.experiment.finished.connect(self.experiment.deleteLater)       
                 self.thread.start()
 
             case "capacitive_walk":
@@ -1403,13 +1433,13 @@ class Scantelligent(QtCore.QObject):
                 self.experiment.message.connect(self.receive_message)
                 self.experiment.parameters.connect(self.receive_parameters)
                 self.experiment.image.connect(self.receive_image)
+                self.experiment.data_array.connect(self.receive_data)
 
                 # Create a thread and move the experiment to the thread
                 self.experiment.moveToThread(self.thread)
                 self.thread.started.connect(self.experiment.run)
                 self.experiment.finished.connect(self.thread.quit)
-                self.experiment.finished.connect(self.experiment.deleteLater)
-                self.thread.finished.connect(self.thread.deleteLater)        
+                self.experiment.finished.connect(self.experiment.deleteLater)   
                 self.thread.start()
 
                 pass
@@ -1553,23 +1583,6 @@ class Scantelligent(QtCore.QObject):
         self.logprint(f"Starting experiment {self.experiment}")
         self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
         return False
-
-    def receive_data(self, data_chunk):
-        chunk_size = data_chunk.shape[0]
-        self.data_array[self.current_index : self.current_index + chunk_size] = data_chunk
-        self.current_index += chunk_size
-
-        xy_points = self.data_array[: self.current_index, 2:4]
-        z_points = self.data_array[: self.current_index, 4]
-
-        try:
-            z_grid = np.flip(griddata(xy_points, z_points, (self.x_grid, self.y_grid), method = "linear"), axis = 1)
-        except:
-            z_grid = np.zeros_like(self.x_grid)
-        
-        processed_z_grid = z_grid
-
-        self.gui.image_view.setImage(processed_z_grid, autoRange = True)
 
 
 

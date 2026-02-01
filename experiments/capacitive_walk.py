@@ -19,10 +19,9 @@ class Experiment(NanonisAPI):
         self.logprint("Hello from experiment capacitive walk!", message_type = "success")
 
         lockin_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)", "LI Demod 2 X (A)", "LI Demod 2 Y (A)"]
-        move_dict = {"h_steps": 1, "V_hor (V)": 200, "direction": "n"}
+        move_dict = {"h_steps": 1, "V_hor (V)": 200, "direction": "s"}
         
         (parameter_dict, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-        self.logprint("\t".join([f"{key}: {value}\t" for key, value in parameter_dict.items()]))
 
         lockin_values = [list(parameter_dict.values())]
         for i in range(10):
@@ -32,10 +31,12 @@ class Experiment(NanonisAPI):
             self.coarse_move(move_dict)
             sleep(1)
             (parameter_dict, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            self.logprint("\t".join([f"{key}: {value}\t" for key, value in parameter_dict.items()]))
             lockin_values.append(list(parameter_dict.values()))
+
+            self.data_array.emit(np.array(lockin_values, dtype = float))
         
         self.disconnect()
+        self.progress.emit(100)
         self.logprint("Capacitive walk finished!", message_type = "success")
         self.finished.emit()
     
