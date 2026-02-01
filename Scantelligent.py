@@ -491,9 +491,11 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data_array: np.ndarray) -> None:
-        plot_colors = ["#ff00ff", "#00ffff", "#ffff00", "#a0a0a0", "#ffffff"]
+        plot_colors = ["#00ffff", "#ff00ff", "#ffff00", "#a0a0a0", "#ffffff"]
 
-        self.logprint("  ".join([f"{data_array[i, 0]}" for i in range(len(data_array))]), message_type = "result")
+        data_array = data_array[:, 0:2]
+
+        # self.logprint("  ".join([f"{data_array[i, 0]}" for i in range(len(data_array))]), message_type = "result")
 
         if not hasattr(self, "lines"):
             self.lines = []
@@ -516,7 +518,6 @@ class Scantelligent(QtCore.QObject):
                 self.lines[plot_number].setData(x_data, y_data)
 
         return
-
 
 
 
@@ -913,11 +914,6 @@ class Scantelligent(QtCore.QObject):
             self.logprint("Error. Session folder unknown.", message_type = "error")
         return
 
-    def on_approach(self) -> None:
-        self.logprint("Initiating automatic approach", message_type = "message")
-        self.nanonis.auto_approach(True)
-        return
-
 
 
     # Information popup
@@ -954,65 +950,6 @@ class Scantelligent(QtCore.QObject):
 
     def closeEvent(self, event) -> None:
         self.exit()
-
-
-
-    # Camera functions
-    def update_image_display(self, frame):
-        """Slot to receive the RGB frame and update the ImageView."""
-        # pyqtgraph efficiently handles the NumPy array.
-        # We set autoRange and autoLevels to False to prevent flicker.
-        self.gui.image_view.setImage(frame, autoRange = False, autoLevels = False)
-
-    def start_camera(self):
-        """Initializes and starts a NEW worker thread."""
-        if self.is_camera_running:
-            return
-        
-        self.gui.image_view.setLevels(0, 255)
-        self.gui.image_view.ui.histogram.hide()
-        self.gui.image_view.ui.roiBtn.hide()
-        self.gui.image_view.ui.roiPlot.hide()
-
-        # 1. Instantiate NEW Thread and Worker
-        self.thread = QtCore.QThread()
-        self.worker = CameraWorker(camera_index = 0) 
-        self.worker.moveToThread(self.thread)
-
-        # 2. Define ALL Connections HERE (Crucial Step)
-        
-        # Management Connections
-        self.thread.started.connect(self.worker.start_capture)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        
-        # NEW: Final cleanup connection, triggered AFTER the thread safely quits
-        self.thread.finished.connect(self._post_camera_stop_cleanup)
-        self.thread.finished.connect(self.thread.deleteLater)
-        
-        # Data Connection
-        self.worker.frameCaptured.connect(self.update_image_display)
-
-        # 3. Start Thread and Update UI State
-        self.thread.start()
-        self.is_camera_running = True
-        self.camera_start_button.setEnabled(False)
-        self.camera_stop_button.setEnabled(True)
-
-    def stop_camera(self):
-        """Signals the worker to stop and updates the button state immediately."""
-        if not self.is_camera_running or not self.worker:
-            return
-
-        # 1. Signal the worker to stop its loop (non-blocking)
-        self.worker.stop_capture() 
-        
-        # 2. Immediately disable buttons until cleanup is complete
-        self.camera_start_button.setEnabled(False)
-        self.camera_stop_button.setEnabled(False)
-        
-        # The final cleanup will be handled by the _post_thread_stop_cleanup slot
-        # which is connected to self.thread.finished.
 
 
 
@@ -1347,6 +1284,14 @@ class Scantelligent(QtCore.QObject):
 
             return False
 
+    def on_approach(self) -> None:
+        numbers = self.data.extract_numbers_from_str(self.gui.line_edits["V_ver"].text())
+        if len(numbers) > 0: V_ver = float(numbers[0])
+        else: V_ver = None
+
+        self.nanonis.auto_approach(True, V_motor = V_ver)
+        return
+
 
 
     # Experiments and thread management
@@ -1416,7 +1361,9 @@ class Scantelligent(QtCore.QObject):
                 self.experiment.moveToThread(self.thread)
                 self.thread.started.connect(self.experiment.run)
                 self.experiment.finished.connect(self.thread.quit)
-                self.experiment.finished.connect(self.experiment.deleteLater)       
+                # Ensure the thread is deleted only after the worker finished
+                self.experiment.finished.connect(self.thread.deleteLater)
+                self.experiment.finished.connect(self.experiment.deleteLater)
                 self.thread.start()
 
             case "capacitive_walk":
@@ -1439,28 +1386,30 @@ class Scantelligent(QtCore.QObject):
                 self.experiment.moveToThread(self.thread)
                 self.thread.started.connect(self.experiment.run)
                 self.experiment.finished.connect(self.thread.quit)
-                self.experiment.finished.connect(self.experiment.deleteLater)   
+                # Ensure the thread is deleted only after the worker finished
+                self.experiment.finished.connect(self.thread.deleteLater)
+                self.experiment.finished.connect(self.experiment.deleteLater)
                 self.thread.start()
-
-                pass
             case _:
                 pass
         
         return
                
     def abort_experiment(self):
-        self.timer.stop()
+        #self.timer.stop()
         #self.timer.disconnect()
 
         self.status["experiment"] = "idle"
         self.gui.buttons["start_pause"].setIcon(self.icons.get("start"))
         
-        self.nanonis.scan_control({"action": "stop"})
-
+        # self.nanonis.scan_control({"action": "stop"})
         self.abort.emit()
-        if hasattr(self, "thread"):
-            self.thread.quit()
-            self.thread.deleteLater()
+
+        if hasattr(self, "thread") and self.thread.isRunning():
+            try:
+                self.thread.quit()
+            except Exception:
+                pass
 
         return
 
@@ -1472,14 +1421,15 @@ class Scantelligent(QtCore.QObject):
         self.gui.buttons["start_pause"].setIcon(self.icons.get("start"))
         self.gui.progress_bar.setValue(0)
         self.logprint(f"Experiment {self.experiment} finished.", message_type = "success")
-        if hasattr(self, "thread"):
-            self.thread.quit()
-            self.thread.deleteLater()
+        if hasattr(self, "thread") and self.thread.isRunning():
+            try:
+                self.thread.quit()
+            except Exception:
+                pass
 
         return
 
     def modulator_control(self, modulator_number: int = 1) -> None:
-        self.logprint(modulator_number)
         try:
             mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
             mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()

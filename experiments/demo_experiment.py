@@ -32,12 +32,12 @@ class Experiment1(NanonisAPI):
         sleep(1)
         self.check_abort_flag()
 
-        current_frame = self.frame_update(auto_connect = False, auto_disconnect = False)
+        current_frame = self.frame_update(auto_disconnect = False)
         self.logprint("Dont mind me playing with the scan frame")
         for angle in np.linspace(0, 4 * np.pi, 300):
             offset_nm = [200 * np.cos(angle), 200 * np.sin(angle)]
             angle_deg = -5 * angle * 180 / np.pi
-            self.frame_update({"offset (nm)": offset_nm, "angle (deg)": angle_deg}, auto_connect = False, auto_disconnect = False)
+            self.frame_update({"offset (nm)": offset_nm, "angle (deg)": angle_deg}, auto_disconnect = False)
             sleep(.05)
         
         self.disconnect()

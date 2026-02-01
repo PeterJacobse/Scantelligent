@@ -114,9 +114,10 @@ class NanonisAPI(QtCore.QObject):
     @QtCore.pyqtSlot()
     def abort(self) -> None:
         try:
-            self.connect()
-            self.scan_control({"action": "stop"}, auto_disconnect = False)
-            self.stop_timed_updates()
+            # self.connect()
+            # self.scan_control({"action": "stop"}, auto_disconnect = False)
+            # self.stop_timed_updates()
+            self.abort_flag = True
         finally:
             self.disconnect()
 
@@ -635,8 +636,8 @@ class NanonisAPI(QtCore.QObject):
 
         try:
             if not self.status == "running": self.connect()
-            mod1_dict = parameters.get("modulator_1_on", None)
-            mod2_dict = parameters.get("modulator_2_on", None)
+            mod1_dict = parameters.get("modulator_1", None)
+            mod2_dict = parameters.get("modulator_2", None)
 
             for mod_number, mod in enumerate([mod1_dict, mod2_dict]):
                 if isinstance(mod, dict):
@@ -739,7 +740,7 @@ class NanonisAPI(QtCore.QObject):
         
         return error
 
-    def auto_approach(self, status: bool = True, auto_disconnect: bool = True) -> bool | str:
+    def auto_approach(self, status: bool = True, V_motor: float = None, auto_disconnect: bool = True) -> bool | str:
         """
         Function to turn on/off the auto approach feature of the Nanonis
         """
@@ -750,6 +751,7 @@ class NanonisAPI(QtCore.QObject):
                 
         try:
             if not self.status == "running": self.connect()
+            if V_motor: nhw.set_motor_f_A({"V_motor (V)": V_motor})
             nhw.auto_approach(status)
 
         except Exception as e: error = e

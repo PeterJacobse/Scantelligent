@@ -19,19 +19,27 @@ class Experiment(NanonisAPI):
         self.logprint("Hello from experiment capacitive walk!", message_type = "success")
 
         lockin_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)", "LI Demod 2 X (A)", "LI Demod 2 Y (A)"]
-        move_dict = {"h_steps": 1, "V_hor (V)": 200, "direction": "s"}
+        move_dict = {"h_steps": 100, "V_hor (V)": 200, "z_steps": 0, "V_ver (V)": 120, "direction": "e"}
         
         (parameter_dict, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
 
         lockin_values = [list(parameter_dict.values())]
-        for i in range(10):
+
+        for i in range(200):
             self.check_abort_flag()
-            self.progress.emit(i * 10)
+            self.progress.emit(int(.5 * i))
             
-            self.coarse_move(move_dict)
-            sleep(1)
             (parameter_dict, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
+            sleep(.2)
+            (parameter_dict2, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
+            sleep(.2)
+
+            for key in parameter_dict.keys():
+                parameter_dict[key] = (parameter_dict[key] + parameter_dict2[key]) / 2
+            
             lockin_values.append(list(parameter_dict.values()))
+            self.coarse_move(move_dict)
+            sleep(.6)
 
             self.data_array.emit(np.array(lockin_values, dtype = float))
         
@@ -39,10 +47,6 @@ class Experiment(NanonisAPI):
         self.progress.emit(100)
         self.logprint("Capacitive walk finished!", message_type = "success")
         self.finished.emit()
-    
-    def abort(self):
-        self.logprint("Experiment 1 was aborted!", message_type = "error")
-        self.abort_flag = True
 
     def check_abort_flag(self):
         if self.abort_flag:

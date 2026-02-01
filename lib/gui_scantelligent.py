@@ -91,6 +91,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         make_button = self.gui_items.make_button
         icons = self.icons
         arrow = icons.get("single_arrow")
+        arrow45 = icons.get("single_arrow_45")
         mtt = "Move the tip "
         sivr = "Set the image value range "
 
@@ -121,13 +122,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "approach": make_button("", "Initiate auto approach\n(Ctrl + A)", icon = icons.get("approach")),
 
             "n": make_button("", mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = arrow, rotate_icon = 270),
-            "ne": make_button("", mtt + "northeast\n(Ctrl + 9)", icon = arrow, rotate_icon = 315),
+            "ne": make_button("", mtt + "northeast\n(Ctrl + 9)", icon = arrow45, rotate_icon = 0),
             "e": make_button("", mtt + "east\n(Ctrl + → / Ctrl + 6)", icon = arrow, rotate_icon = 0),
-            "se": make_button("", mtt + "southeast\n(Ctrl + 3)", icon = arrow, rotate_icon = 45),
+            "se": make_button("", mtt + "southeast\n(Ctrl + 3)", icon = arrow45, rotate_icon = 90),
             "s": make_button("", mtt + "south\n(Ctrl + ↓ / Ctrl + 2)", icon = arrow, rotate_icon = 90),
-            "sw": make_button("", mtt + "southwest\n(Ctrl + 1)", icon = arrow, rotate_icon = 135),
+            "sw": make_button("", mtt + "southwest\n(Ctrl + 1)", icon = arrow45, rotate_icon = 180),
             "w": make_button("", mtt + "west\n(Ctrl + ← / Ctrl + 4)", icon = arrow, rotate_icon = 180),
-            "nw": make_button("", mtt + "northwest\n(Ctrl + 7)", icon = arrow, rotate_icon = 225),
+            "nw": make_button("", mtt + "northwest\n(Ctrl + 7)", icon = arrow45, rotate_icon = 270),
             
             "bias_pulse": make_button("", "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse")),
             "tip_shape": make_button("", "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
@@ -181,7 +182,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "gaussian": make_checkbox("Gauss", "Apply a Gaussian blur\n(Shift + G)", self.icons.get("gaussian")),
             
             "rotation": make_checkbox("", "Show the scan frame rotation\n(R)", self.icons.get("rotation")),
-            "offset": make_checkbox("", "Show the scan frame offset(O)", self.icons.get("offset"))
+            "offset": make_checkbox("", "Show the scan frame offset(O)", self.icons.get("offset")),
+
+            "composite_motion": make_checkbox("", "When checked, combine the checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }
         
         # Named groups
