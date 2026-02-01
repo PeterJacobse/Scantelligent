@@ -194,7 +194,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = {
             "channels": make_combobox("Channels", "Available scan channels"),
             "projection": make_combobox("Projection", "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": make_combobox("Experiment", "Select an experiment", items = ["simple_scan", "grid_sampling"]),
+            "experiment": make_combobox("Experiment", "Select an experiment", items = ["nanonis_scan", "demo_experiment", "grid_sampling"]),
             "direction": make_combobox("Direction", "Select a scan direction / pattern (X)", items = ["nearest tip", "down", "up", "random"])
         }
         

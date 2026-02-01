@@ -304,8 +304,12 @@ class DataProcessing():
                 
         sobel_x = .125 * np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype = float)
         sobel_y = .125 * np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype = float)
-        ddx = convolve2d(image, sobel_x, mode = "valid") # These are the gradients computed using normalized sobel kernels
-        ddy = convolve2d(image, sobel_y, mode = "valid")
+        try:
+            ddx = convolve2d(image, sobel_x, mode = "valid") # These are the gradients computed using normalized sobel kernels
+            ddy = convolve2d(image, sobel_y, mode = "valid")
+        except:
+            error = "Error. Calculating gradient failed."
+            return (image, error)
 
         if isinstance(scan_range, np.ndarray) or isinstance(scan_range, list):
             # If a scan range is provided, the gradients will be calculated as derivatives wrt to x and y rather than wrt pixel index
@@ -494,6 +498,7 @@ class DataProcessing():
 
     def subtract_background(self, image: np.ndarray, mode: str = "plane") -> tuple[np.ndarray, bool | str]:
         error = False
+        input_image = image
 
         if not isinstance(image, np.ndarray):
             error = "Error. The provided image is not a numpy array."
@@ -504,11 +509,18 @@ class DataProcessing():
             num_rows = len(image)
             nan_mask = np.isnan(image).any(axis = 1)
             image = image[~nan_mask]
-            non_nan_rows = len(image)            
-        
+            non_nan_rows = len(image)
+
+            if non_nan_rows < 3: # Do not perform data processing if the scan is all NaNs
+                return (input_image, error)
+
             avg_image = np.mean(image.flatten()) # The average value of the image, or the offset
             (gradient_image, error) = self.image_gradient(image) # The (complex) gradient of the image
+            if error: return (image, error)
             avg_gradient = np.mean(gradient_image.flatten()) # The average value of the gradient
+            if not isinstance(avg_gradient, complex):
+                error = "Error. Could not compute average gradient for background subtraction."
+                return (input_image, error)
 
             pix_y, pix_x = np.shape(image)
             x_values = np.arange(-(pix_x - 1) / 2, pix_x / 2, 1)
@@ -527,14 +539,13 @@ class DataProcessing():
                     processed_image = image
             
             # Pad the NaN rows back
-            if num_rows - non_nan_rows > 0: image = np.pad(processed_image, ((0, num_rows - non_nan_rows), (0, 0)), mode = 'constant', constant_values = np.nan)
-            else: image = processed_image
+            if num_rows - non_nan_rows > 0: processed_image = np.pad(processed_image, ((0, num_rows - non_nan_rows), (0, 0)), mode = 'constant', constant_values = np.nan)
     
-            return (image, error)
-
-        except:
-            error = "Error. Failed to perform the background subtraction."
-            return (image, error)
+            return (processed_image, error)
+        
+        except Exception as e:
+            error = f"Error. Failed to perform the background subtraction: {e}"
+            return (input_image, error)
 
 
 

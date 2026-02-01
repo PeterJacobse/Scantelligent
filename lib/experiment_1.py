@@ -14,6 +14,7 @@ class Experiment1(NanonisAPI):
         self.connect()
         self.logprint("Hello from experiment 1", message_type = "message")
         (tip_status, error) = self.tip_update({"withdraw": True}, auto_connect = False, auto_disconnect = False)
+        self.logprint(f"{error}", message_type = "message")
 
         sleep(1)
         self.check_abort_flag()

@@ -256,7 +256,7 @@ class NanonisHardware:
 
             return
         else:
-            error_status = self.hex_to_uint16(response[i : i + 2])  # 2-byte field
+            error_status = self.conv.hex_to_uint16(response[i : i + 2])  # 2-byte field
             i += 2
 
             if error_status != 0:
@@ -268,12 +268,17 @@ class NanonisHardware:
                                # raise the exception
 
     def connect(self) -> None:
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Re-establish the socket object if it was lost
-        self.s.connect((self.ip, self.port)) # Open the TCP connection.
+        try:
+            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Re-establish the socket object if it was lost
+            self.s.settimeout(2)
+            self.s.connect((self.ip, self.port)) # Open the TCP connection.
+            return True
+        except:
+            return False
 
     def disconnect(self) -> None:
         self.s.close()
-        sleep(.1)
+        sleep(.05) # Give time to properly close the socket
 
     def __enter__(self) -> None:
         return self.connect()
@@ -376,7 +381,6 @@ class NanonisHardware:
         self.send_command(command)
         response = self.receive_response()
         
-        # channels_names_size = self.NanonisTCP.hex_to_int32(response[0:4]) # Useless
         number_of_channels  = self.conv.hex_to_int32(response[4 : 8])
         
         idx = 8
