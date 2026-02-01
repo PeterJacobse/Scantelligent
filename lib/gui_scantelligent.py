@@ -143,9 +143,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "standard_deviation": make_button("", sivr + "by standard deviations\n(D)", icons.get("deviation")),
             "absolute_values": make_button("", sivr + "by absolute values\n(A)", icons.get("numbers")),
             
-            "input": make_button(">>", "Enter command\n(Ctrl + Enter)")
+            "input": make_button(">>", "Enter command\n(Ctrl + Enter)"),
+
+            "nanonis_mod1": make_button("", "Nanonis Modulation 1 On/Off", icon = icons.get("nanonis_mod1")),
+            "nanonis_mod2": make_button("", "Nanonis Modulation 2 On/Off", icon = icons.get("nanonis_mod2"))
         }
         
+        [buttons[name].setCheckable(True) for name in ["direction", "nanonis_mod1", "nanonis_mod2"]]
+
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "oscillator", "session_folder", "info", "exit"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
@@ -194,7 +199,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = {
             "channels": make_combobox("Channels", "Available scan channels"),
             "projection": make_combobox("Projection", "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": make_combobox("Experiment", "Select an experiment", items = ["nanonis_scan", "demo_experiment", "grid_sampling"]),
+            "experiment": make_combobox("Experiment", "Select an experiment", items = ["nanonis_scan", "demo_experiment", "capacitive_walk"]),
             "direction": make_combobox("Direction", "Select a scan direction / pattern (X)", items = ["nearest tip", "down", "up", "random"])
         }
         
@@ -493,7 +498,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         cn_layout = layouts["channel_navigation"]
         cn_layout.addWidget(comboboxes["channels"], 4)
         cn_layout.addWidget(self.buttons["direction"], 1)
-        [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
+        [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range", "nanonis_mod1", "nanonis_mod2"]]
         
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rotation", "offset"]]

@@ -1,7 +1,10 @@
-from .api_nanonis import NanonisAPI
+import sys, os
 from time import sleep
 import numpy as np
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from lib import NanonisAPI
 
 
 class Experiment1(NanonisAPI):
@@ -13,7 +16,7 @@ class Experiment1(NanonisAPI):
         
         self.connect()
         self.logprint("Hello from experiment 1", message_type = "message")
-        (tip_status, error) = self.tip_update({"withdraw": True}, auto_connect = False, auto_disconnect = False)
+        (tip_status, error) = self.tip_update({"withdraw": True}, auto_disconnect = False)
         self.logprint(f"{error}", message_type = "message")
 
         sleep(1)
@@ -24,7 +27,7 @@ class Experiment1(NanonisAPI):
         [x_tip_nm, y_tip_nm] = [-value for value in [x_tip_nm, y_tip_nm]]
         self.logprint(f"New tip position will be: x = {x_tip_nm} nm, y = {y_tip_nm} nm", message_type = "message")
         tip_status.update({"x (nm)": x_tip_nm, "y (nm)": y_tip_nm})
-        self.tip_update(tip_status, auto_connect = False, auto_disconnect = False)
+        self.tip_update(tip_status, auto_disconnect = False)
 
         sleep(1)
         self.check_abort_flag()

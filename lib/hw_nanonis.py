@@ -90,7 +90,7 @@ class NanonisHardware:
     
     def prepare_headers(self) -> dict:
         make_header = self.conv.make_header
-        
+
         headers = {
             # Auto Approach
             "auto_approach": make_header('AutoApproach.OnOffSet', body_size = 2),
@@ -174,6 +174,7 @@ class NanonisHardware:
             # Signals
             "get_signals_in_slots": make_header('Signals.InSlotsGet', body_size = 0),
             "get_signal_names": make_header('Signals.NamesGet', body_size = 0),
+            "get_signal_value": make_header('Signals.ValGet', body_size = 8),
             
             # Motor
             "get_motor_f_A": make_header('Motor.FreqAmpGet', body_size = 0),
@@ -187,6 +188,9 @@ class NanonisHardware:
             "shape_tip": make_header('TipShaper.Start', body_size = 8),
             "get_tip_shaper": make_header('TipShaper.PropsGet', body_size = 0),
             "set_tip_shaper": make_header('TipShaper.PropsSet', body_size = 44),
+
+            # Lockin
+            "set_lockin": make_header('LockIn.ModOnOffSet', body_size = 8),
 
             # Booleans
             "True": self.conv.to_hex(True, 4),
@@ -935,6 +939,16 @@ class NanonisHardware:
         
         return signal_names
 
+    def get_signal_value(self, signal_index: int, wait: bool = True) -> float:
+        command = self.headers["get_signal_value"] + self.conv.to_hex(signal_index, 4) + self.headers[str(wait)]
+
+        self.send_command(command)
+        response = self.receive_response(4)
+
+        signal_value = self.conv.hex_to_float32(response[0 : 4])
+
+        return signal_value        
+
     # Motor
     def get_motor_f_A(self) -> dict:
         command = self.headers["get_motor_f_A"]        
@@ -1014,6 +1028,22 @@ class NanonisHardware:
         self.send_command(command)
         self.receive_response(0)
         
+        return
+
+    # Lock-in
+    def set_lockin(self, mod_number: int = 1, on: bool = True) -> None:
+        command = self.headers["set_lockin"] + self.conv.to_hex(mod_number, 4) + self.conv.to_hex(int(on), 4)
+        
+        self.send_command(command)
+        response = self.receive_response(0)
+
+        return response
+
+
+
+    # Work in progress
+    def get_lockin_amp(self, mod_number: int = 1) -> float:
+
         return
 
 

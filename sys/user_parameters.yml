@@ -2,7 +2,7 @@ other_parameters: {}
 scan_parameters:
   0:
     I_fb (pA): 19.999999920083944
-    V_nanonis (V): -2.0
+    V_nanonis (V): 0.10000000149011612
     const_param: 0
     dict_name: scan_parameters
     i_gain (nm/s): 18.72659183277392
@@ -11,14 +11,14 @@ scan_parameters:
     name: session
     p_gain (pm): 4.999999980020986
     session_path: C:\DATA\Peter\Betty_WS2@hBN@SiO2@Si
-    t_bwd (s): 1.5791999101638794
+    t_bwd (s): 1.5799999237060547
     t_const (s): 267.0
     t_const (us): 266.99999580159783
-    t_fwd (s): 1.5791999101638794
-    v_bwd (nm/s): 63.32320623414489
-    v_fwd (nm/s): 63.32320623414489
+    t_fwd (s): 1.5799999237060547
+    v_bwd (nm/s): 63.291146545907395
+    v_fwd (nm/s): 63.291146545907395
     v_ratio: 1.0
-    v_xy (nm/s): 63.32320623414489
+    v_xy (nm/s): 63.291146545907395
   1:
     I_fb (pA): 20
     V_nanonis (V): 1.2

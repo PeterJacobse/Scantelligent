@@ -69,7 +69,7 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             (grid, error) = self.grid_update(auto_connect = False, auto_disconnect = False)
             if error: raise Exception(error)
-            (scan_metadata, error) = self.scan_metadata_update(auto_connect = False, auto_disconnect = False)
+            (scan_metadata, error) = self.scan_metadata_update(auto_disconnect = False)
             if error: raise Exception(error)
             # (scan_image, error) = self.scan_update(channel_index = 0, backward = False, auto_connect = False, auto_disconnect = False)
             # if error: raise Exception(error)
@@ -121,18 +121,11 @@ class NanonisAPI(QtCore.QObject):
 
         return
 
-
-
     def logprint(self, message: str, message_type: str = "error") -> None:
         self.message.emit(message, message_type)
         return
 
 
-
-    def test_function(self) -> None:
-        scan_image = np.random.rand(256, 256) * 10
-        self.image.emit(np.flipud(scan_image))
-        return
 
     def start_timed_updates(self) -> None:
         self.timer.timeout.connect(self.receive_image_request)
@@ -148,6 +141,42 @@ class NanonisAPI(QtCore.QObject):
         self.tip_update()
         return
 
+    def scan_control(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+        # Initalize outputs
+        error = False
+        nhw = self.nanonis_hardware
+        
+        action = parameters.get("action", "pause")
+        direction = parameters.get("direction", "down")
+        
+        # Set up the TCP connection and get grid dat
+        try:
+            if auto_connect: self.connect()
+            
+            dirxn = "up"
+            if direction == "down": dirxn = "down"
+            match action:
+                case "start":
+                    self.progress.emit(0)
+                    nhw.start_scan(dirxn)
+                case "pause":
+                    nhw.pause_scan()
+                case "resume":
+                    nhw.resume_scan()
+                case "stop":
+                    nhw.stop_scan()
+                    self.finished.emit()
+                case _: pass
+        
+        except Exception as e: error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+
+        return error
+
+
+
+    # Update methods that can only read and not write
     def piezo_range_update(self, auto_connect: bool = True, auto_disconnect: bool = True) -> None:
         error = False
         nhw = self.nanonis_hardware
@@ -171,29 +200,44 @@ class NanonisAPI(QtCore.QObject):
 
         return (piezo_range_dict, error)
 
-
-
-    def auto_approach(self, status: bool = True, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
-        """
-        Function to turn on/off the auto approach feature of the Nanonis
-        """
+    def scan_update(self, channel_index, backward: bool = False, auto_connect: bool = True, auto_disconnect: bool = True) -> np.ndarray:
         # Initalize outputs
+        scan_data = None
         error = False
         nhw = self.nanonis_hardware
-        self.logprint(f"nanonis.auto_approach({status})", message_type = "code")
-                
+        scan_image = None
+
+        # Set up the TCP connection and get grid dat
         try:
-            if auto_connect: self.connect()
-            nhw.auto_approach(status)
+            if not self.status == "running": self.connect()
+            
+            scan_data = nhw.get_scan_data(channel_index, backward)
+            scan_image = scan_data.get("scan_data")
+            
+            n_scan_image = np.size(scan_image)
+            n_nans = np.count_nonzero(np.isnan(scan_image))
+
+            completed_percentage = int(100 * (1 - n_nans / n_scan_image))
+            self.progress.emit(completed_percentage)
+            
+            (processed_image, error) = self.data.subtract_background(scan_image, mode = "plane")
+            processed_image = np.real(processed_image)
+            self.image.emit(processed_image)
+
+            # Finished
+            if n_nans == 0:
+                self.stop_timed_updates()
+                self.finished.emit()
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if auto_disconnect: nhw.disconnect()
 
-        return error
+        return (scan_image, error)
 
 
 
+    # Update methods (Gives updates on all parameters and updates those parameters given)
     def tip_update(self, parameters: dict = {}, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it
@@ -464,7 +508,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (grid, error)
 
-    def scan_metadata_update(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict | str]:
+    def scan_metadata_update(self, auto_disconnect: bool = True) -> tuple[dict | str]:
         """
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
@@ -475,7 +519,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get grid dat
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             props = nhw.get_scan_props()
             buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
             channel_indices = buffer["channel_indices"]
@@ -490,11 +534,12 @@ class NanonisAPI(QtCore.QObject):
 
             else:
                 signal_names = nhw.get_signal_names()
-                channel_dict = {signal_names[index]: index for index in buffer.get("channel_indices")}
+                signal_dict = {signal_names[index]: index for index in range(len(signal_names))} # Signal_dict is a dict of all signals and their corresponding indices
+                channel_dict = {signal_names[index]: index for index in buffer.get("channel_indices")} # Channel_dict is the subset of signals that are actively recorded in the scan
 
             scan_metadata = props | {
-                "signal_names": signal_names,
                 "channel_dict": channel_dict,
+                "signal_dict": signal_dict,
                 "dict_name": "scan_metadata"
                 }
             
@@ -579,6 +624,34 @@ class NanonisAPI(QtCore.QObject):
 
         return error  
 
+    def lockin_update(self, parameters: dict = {}, auto_disconnect: bool = True) -> tuple[dict | str]:
+        error = False
+        nhw = self.nanonis_hardware
+
+        lockin_parameters = {}
+
+        self.logprint(f"nanonis.lockin_update({parameters})", message_type = "code")
+
+        try:
+            if not self.status == "running": self.connect()
+            mod1_dict = parameters.get("modulator_1_on", None)
+            mod2_dict = parameters.get("modulator_2_on", None)
+
+            for mod_number, mod in enumerate([mod1_dict, mod2_dict]):
+                if isinstance(mod, dict):
+                    mod_on = mod.get("on")
+                    nhw.set_lockin(mod_number + 1, mod_on)
+        
+        except Exception as e:
+            error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+        
+        return (lockin_parameters, error)
+
+
+
+    # Does not work yet
     def get_spectrum(self, auto_connect: bool = True, auto_disconnect: bool = True) -> tuple[dict | str]:
         # Initalize outputs
         data_dict = {}
@@ -613,11 +686,11 @@ class NanonisAPI(QtCore.QObject):
         f_motor = parameters.get("f_motor (Hz)")
         
         try:
-            if auto_connect: self.connect()
+            if not self.status == "running": self.connect()
             
             # 1. Withdraw
             withdraw = parameters.get("withdraw", True)
-            if withdraw: self.tip_update({"withdraw": True}, auto_connect = False, auto_disconnect = False)
+            if withdraw: self.tip_update({"withdraw": True}, auto_disconnect = False)
 
             # 2. Retract
             steps = parameters.get("z_steps", 0)
@@ -665,73 +738,60 @@ class NanonisAPI(QtCore.QObject):
         
         return error
 
-
-
-    # Work in progress
-    def scan_update(self, channel_index, backward: bool = False, auto_connect: bool = True, auto_disconnect: bool = True) -> np.ndarray:
-        # Initalize outputs
-        scan_data = None
-        error = False
-        nhw = self.nanonis_hardware
-        scan_image = None
-
-        # Set up the TCP connection and get grid dat
-        try:
-            if not self.status == "running": self.connect()
-            
-            scan_data = nhw.get_scan_data(channel_index, backward)
-            scan_image = scan_data.get("scan_data")
-            
-            n_scan_image = np.size(scan_image)
-            n_nans = np.count_nonzero(np.isnan(scan_image))
-
-            completed_percentage = int(100 * (1 - n_nans / n_scan_image))
-            self.progress.emit(completed_percentage)
-            
-            (processed_image, error) = self.data.subtract_background(scan_image, mode = "plane")
-            processed_image = np.real(processed_image)
-            self.image.emit(processed_image)
-
-            # Finished
-            if n_nans == 0:
-                self.stop_timed_updates()
-                self.finished.emit()
-
-        except Exception as e: error = e
-        finally:
-            if auto_disconnect: nhw.disconnect()
-
-        return (scan_image, error)
-
-    def scan_control(self, parameters: dict = {}, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+    def auto_approach(self, status: bool = True, auto_connect: bool = True, auto_disconnect: bool = True) -> bool | str:
+        """
+        Function to turn on/off the auto approach feature of the Nanonis
+        """
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
-        
-        action = parameters.get("action", "pause")
-        direction = parameters.get("direction", "down")
-        
-        # Set up the TCP connection and get grid dat
+        self.logprint(f"nanonis.auto_approach({status})", message_type = "code")
+                
         try:
             if auto_connect: self.connect()
-            
-            dirxn = "up"
-            if direction == "down": dirxn = "down"
-            match action:
-                case "start":
-                    self.progress.emit(0)
-                    nhw.start_scan(dirxn)
-                case "pause":
-                    nhw.pause_scan()
-                case "resume":
-                    nhw.resume_scan()
-                case "stop":
-                    nhw.stop_scan()
-                    self.finished.emit()
-                case _: pass
-        
+            nhw.auto_approach(status)
+
         except Exception as e: error = e
         finally:
             if auto_disconnect: self.disconnect()
 
         return error
+
+
+
+    # Get values of parameters
+    def get_parameter_values(self, parameter_names, auto_disconnect: bool = True) -> tuple[dict, bool | str]:
+        error = False
+        nhw = self.nanonis_hardware
+        parameter_values = {}
+
+        # If only a single parameter_name is provided, turn it into a list
+        if isinstance(parameter_names, str): parameter_names = [parameter_names]
+
+        try:
+            if not self.status == "running": self.connect()
+            
+            (scan_metadata, error) = self.scan_metadata_update(auto_disconnect = False)
+            if error: raise Exception(error)
+
+            signal_dict = scan_metadata.get("signal_dict")
+
+            # Find the requested parameters in the signal_dict
+            for parameter_name in parameter_names:
+                signal_index = signal_dict.get(parameter_name, None)
+                
+                # The parameter name is found in the dict and has a corresponding index
+                if isinstance(signal_index, int):
+                    signal_value = nhw.get_signal_value(signal_index)
+                    parameter_values.update({parameter_name: signal_value})
+                
+                else:
+                    parameter_values.update({parameter_name: "not found"})
+        
+        except Exception as e:
+            error = f"Unable to retrieve the requested parameters. {e}"
+        
+        finally:
+            if auto_disconnect: self.disconnect()
+        
+        return (parameter_values, error)

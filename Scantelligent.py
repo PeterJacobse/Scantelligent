@@ -6,7 +6,7 @@ from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, DataProcessing, 
 from time import sleep
 from scipy.interpolate import griddata
 from datetime import datetime
-from lib.experiment_1 import Experiment1
+from experiments import Experiment1, Experiment
 
 
 
@@ -113,6 +113,8 @@ class Scantelligent(QtCore.QObject):
                         ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.set_parameters], ["get", self.get_parameters],
                         
                         ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")], ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
+
+                        ["nanonis_mod1", lambda: self.modulator_control(modulator_number = 1)], ["nanonis_mod2", lambda: self.modulator_control(modulator_number = 2)],
 
                         ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
                         ]
@@ -712,6 +714,7 @@ class Scantelligent(QtCore.QObject):
         self.experiment_name = self.gui.comboboxes["experiment"].currentText()
         if "session_path" in self.paths.keys():
             self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment_name, ".hdf5")
+            self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
         else: return
         self.logprint(self.paths["experiment_filename"])
         return
@@ -1386,6 +1389,29 @@ class Scantelligent(QtCore.QObject):
                 self.thread.finished.connect(self.thread.deleteLater)        
                 self.thread.start()
 
+            case "capacitive_walk":
+                self.experiment = Experiment(self.hardware)
+
+                # Set up the PyQt signal-slot connections
+                # Scantelligent -> Experiment
+                self.parameters.connect(self.experiment.receive_parameters)
+                self.abort.connect(self.experiment.abort)
+
+                # Experiment -> Scantelligent
+                self.experiment.connection.connect(self.receive_nanonis_status)
+                self.experiment.progress.connect(self.receive_progress)
+                self.experiment.message.connect(self.receive_message)
+                self.experiment.parameters.connect(self.receive_parameters)
+                self.experiment.image.connect(self.receive_image)
+
+                # Create a thread and move the experiment to the thread
+                self.experiment.moveToThread(self.thread)
+                self.thread.started.connect(self.experiment.run)
+                self.experiment.finished.connect(self.thread.quit)
+                self.experiment.finished.connect(self.experiment.deleteLater)
+                self.thread.finished.connect(self.thread.deleteLater)        
+                self.thread.start()
+
                 pass
             case _:
                 pass
@@ -1420,6 +1446,21 @@ class Scantelligent(QtCore.QObject):
             self.thread.quit()
             self.thread.deleteLater()
 
+        return
+
+    def modulator_control(self, modulator_number: int = 1) -> None:
+        self.logprint(modulator_number)
+        try:
+            mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
+            mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
+            self.gui.buttons["nanonis_mod1"].setStyleSheet(style_sheets["running"] if mod1_on else style_sheets["neutral"])
+            self.gui.buttons["nanonis_mod2"].setStyleSheet(style_sheets["running"] if mod2_on else style_sheets["neutral"])
+
+            self.nanonis.lockin_update({"modulator_1": {"on": mod1_on}, "modulator_2": {"on": mod2_on}})
+            
+        except Exception as e:
+            self.logprint(f"Error controlling modulator {modulator_number}: {e}", message_type = "error")
+        
         return
 
 
