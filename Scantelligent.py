@@ -493,7 +493,7 @@ class Scantelligent(QtCore.QObject):
     def receive_data(self, data_array: np.ndarray) -> None:
         plot_colors = ["#00ffff", "#ff00ff", "#ffff00", "#a0a0a0", "#ffffff"]
 
-        data_array = data_array[:, 0:2]
+        data_array = data_array[:, 1:2]
 
         # self.logprint("  ".join([f"{data_array[i, 0]}" for i in range(len(data_array))]), message_type = "result")
 

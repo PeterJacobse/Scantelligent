@@ -731,7 +731,7 @@ class NanonisAPI(QtCore.QObject):
 
             # 5. Approach
             approach = parameters.get("approach", False)
-            if approach: self.auto_approach(True)
+            if approach: self.auto_approach(True, V_motor = V_ver, auto_disconnect = False)
 
         except Exception as e:
             error = e

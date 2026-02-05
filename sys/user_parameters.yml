@@ -1,8 +1,8 @@
 other_parameters: {}
 scan_parameters:
   0:
-    I_fb (pA): 19.999999920083944
-    V_nanonis (V): 2.0
+    I_fb (pA): 29.999999012764178
+    V_nanonis (V): 4.0
     const_param: 0
     dict_name: scan_parameters
     i_gain (nm/s): 22.471910554600072
@@ -11,14 +11,14 @@ scan_parameters:
     name: session
     p_gain (pm): 5.999999976025183
     session_path: C:\DATA\Peter\Betty_WS2@hBN@SiO2@Si
-    t_bwd (s): 6.48960018157959
+    t_bwd (s): 1.863999843597412
     t_const (s): 267.0
     t_const (us): 266.99999580159783
-    t_fwd (s): 6.48960018157959
-    v_bwd (nm/s): 123.27416243351763
-    v_fwd (nm/s): 123.27416243351763
+    t_fwd (s): 1.863999843597412
+    v_bwd (nm/s): 42.918458120766445
+    v_fwd (nm/s): 42.918458120766445
     v_ratio: 1.0
-    v_xy (nm/s): 123.27416243351763
+    v_xy (nm/s): 42.918458120766445
   1:
     I_fb (pA): 20
     V_nanonis (V): 1.2
@@ -80,7 +80,7 @@ tip_prep_parameters:
     dict_name: session
     pulse_duration (ms): 300
     pulse_voltage (V): 6
-    t_pulse (ms): 800.0
+    t_pulse (ms): 300.0
   1:
     dict_name: alternative
     pulse_duration (ms): 600
