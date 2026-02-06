@@ -1,20 +1,20 @@
 other_parameters: {}
 scan_parameters:
   0:
-    I_fb (pA): 7999.999773744548
-    V_nanonis (V): 3.700000047683716
+    I_fb (pA): 400.0000053405728
+    V_nanonis (V): 1.2000000476837158
     const_param: 0
     dict_name: scan_parameters
-    i_gain (nm/s): 11.235955277300036
+    i_gain (nm/s): 85.65310594121911
     motor_amplitude: null
     motor_frequency: null
     name: session
-    p_gain (pm): 2.9999999880125916
+    p_gain (pm): 39.99999984016789
     session_path: C:\Nanonis\2026-01-24
     t_bwd (s): 0.2175999879837036
     t_bwd (us): 0.2175999879837036
     t_const (s): 267.0
-    t_const (us): 266.99999580159783
+    t_const (us): 467.0000053010881
     t_fwd (s): 0.2175999879837036
     t_fwd (us): 0.2175999879837036
     v_bwd (nm/s): 1378.6766430712305
@@ -78,7 +78,7 @@ scan_parameters:
     v_xy (nm/s): 1378.6766430712305
 tip_prep_parameters:
   0:
-    V_pulse (V): 8.0
+    V_pulse (V): 6.0
     dict_name: session
     pulse_duration (ms): 300
     pulse_voltage (V): 6

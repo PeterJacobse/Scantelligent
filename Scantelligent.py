@@ -2,11 +2,10 @@ import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, DataProcessing, UserData, PJTargetItem
+from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, DataProcessing, UserData, PJTargetItem, FileFunctions
 from time import sleep
 from scipy.interpolate import griddata
 from datetime import datetime
-from experiments import Experiment1, Experiment
 
 
 
@@ -58,6 +57,7 @@ class Scantelligent(QtCore.QObject):
         self.paths["config_file"] = os.path.join(self.paths["sys"], "config.yml")
         self.paths["parameters_file"] = os.path.join(self.paths["sys"], "user_parameters.yml")
         self.paths["icon_folder"] = os.path.join(self.paths["parent_folder"], "icons")
+        self.paths["experiments_folder"] = os.path.join(self.paths["parent_folder"], "experiments")
 
         icon_files = os.listdir(self.paths["icon_folder"])
         self.icons = {}
@@ -70,6 +70,7 @@ class Scantelligent(QtCore.QObject):
 
         self.ureg = pint.UnitRegistry()
         self.user = UserData()
+        self.file_functions = FileFunctions()
         self.lines = [] # Lines for plotting in the graph
 
         # Dict to keep track of the hardware and experiment status
@@ -153,6 +154,8 @@ class Scantelligent(QtCore.QObject):
             
             # Comboboxes
             self.gui.comboboxes["channels"].currentIndexChanged.connect(self.request_nanonis_update)
+            experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
+            self.gui.comboboxes["experiment"].addItems(experiments)
             self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.on_experiment_change)
             
             # Instantiate process for CLI-style commands (opening folders and other programs)
@@ -222,7 +225,7 @@ class Scantelligent(QtCore.QObject):
         self.load_parameters_from_file("tip_prep_parameters", index = 0)
         
         # Make a tip target item in the image_view
-        self.tip_target = PJTargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n({0}, {0}) nm", movable = True)
+        self.tip_target = PJTargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = True)
         self.gui.image_view.view.addItem(self.tip_target)
         
         return hardware
@@ -237,6 +240,7 @@ class Scantelligent(QtCore.QObject):
             
             try:
                 self.logprint(f"cap = cv2.VideoCapture({argument})", message_type = "code")
+                raise
                 cap = cv2.VideoCapture(argument)
                 
                 if not cap.isOpened(): # Check if the camera opened successfully
@@ -375,7 +379,8 @@ class Scantelligent(QtCore.QObject):
                     channel_index = int(key)
                     if channel_index < 0 or channel_index > 20: continue
 
-                    self.gui.channel_checkboxes[f"{channel_index}"].setToolTip(f"Channel {channel_index}: {value}")
+                    self.gui.channel_checkboxes[f"{channel_index}"].setToolTip(f"channel {channel_index}: {value}")
+                    self.gui.channel_checkboxes[f"{channel_index}"].setChecked(True)
                     line = self.gui.plot_widget.plot()
                     self.lines.append(line)
 
@@ -395,8 +400,9 @@ class Scantelligent(QtCore.QObject):
                 self.gui.image_view.view.removeItem(self.tip_target)
                 x_tip_nm = tip_status.get("x (nm)", 0)
                 y_tip_nm = tip_status.get("y (nm)", 0)
+                z_tip_nm = tip_status.get("z (nm)", 0)
                 self.tip_target.setPos(x_tip_nm, y_tip_nm)
-                self.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}) nm")
+                self.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
                 self.gui.image_view.view.addItem(self.tip_target)
                 
                 self.update_tip_status()
@@ -737,12 +743,11 @@ class Scantelligent(QtCore.QObject):
     # Simple Nanonis requests
     def get_parameters(self) -> None:
         le = self.gui.line_edits
-        nanonis = self.nanonis
         # Request a parameter update from Nanonis, and wait to receive
         # The received parameters are stored in self.user.scan_parameters[0] by default
-        nanonis.parameters_update(auto_disconnect = False)
-        nanonis.frame_update(auto_disconnect = False)
-        nanonis.tip_update(auto_disconnect = True)
+        self.nanonis.parameters_update(auto_disconnect = False)
+        self.nanonis.frame_update(auto_disconnect = False)
+        self.nanonis.tip_update(auto_disconnect = True)
         sleep(.2)
         scan_parameters = self.user.scan_parameters[0]
 

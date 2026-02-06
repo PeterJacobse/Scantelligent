@@ -190,7 +190,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "composite_motion": make_checkbox("", "When checked, combine the checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }
         
-        channel_checkboxes = {f"{index}": make_checkbox(f"{index}", "Show data from channel {index}") for index in range(20)}
+        channel_checkboxes = {f"{index}": make_checkbox(f"{index}", f"channel {index}") for index in range(20)}
         
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "move", "advance", "approach"]]
@@ -208,7 +208,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = {
             "channels": make_combobox("Channels", "Available scan channels"),
             "projection": make_combobox("Projection", "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": make_combobox("Experiment", "Select an experiment", items = ["nanonis_scan", "demo_experiment", "capacitive_walk"]),
+            "experiment": make_combobox("Experiment", "Select an experiment", items = ["nanonis_scan", "idling"]),
             "direction": make_combobox("Direction", "Select a scan direction / pattern (X)", items = ["nearest tip", "down", "up", "random"])
         }
         
@@ -489,7 +489,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        [layouts["channels"].addWidget(self.channel_checkboxes[f"{i}"], int(i / 4), i % 4) for i in range(len(self.channel_checkboxes))]
+        [layouts["channels"].addWidget(self.channel_checkboxes[f"{i}"], i % 5, int(i / 5)) for i in range(len(self.channel_checkboxes))]
         
         layouts["graph"].addWidget(self.plot_widget, 5)
         layouts["graph"].addLayout(layouts["channels"], 1)

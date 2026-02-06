@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib import NanonisAPI
 
 
-class Experiment1(NanonisAPI):
+class Experiment(NanonisAPI):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.abort_flag = False

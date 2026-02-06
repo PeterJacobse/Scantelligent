@@ -1,4 +1,5 @@
 import re, os, yaml, pint
+import importlib.util
 import numpy as np
 import nanonispy2 as nap
 from datetime import datetime
@@ -11,6 +12,7 @@ class FileFunctions():
 
 
 
+    # IO
     def save_yaml(self, data, path: str) -> bool | str:
         error = False
 
@@ -80,6 +82,42 @@ class FileFunctions():
         
         return error
 
+    def find_experiment_files(self, directory: str):
+        all_files = os.listdir(directory)
+        python_files = [os.path.join(directory, file) for file in all_files if file.endswith(".py")]
+        
+        found_files = []
+        
+        # Iterate through each file and search for the string "class Experiment"
+        for file_path in python_files:
+            try:
+                with open(file_path, 'r', encoding = 'utf-8') as f:
+                    if "class Experiment" in f.read():
+                        found_files.append(os.path.basename(file_path)[:-3])
+            except Exception as e:
+                print(f"Could not read file {file_path}: {e}")
+                
+        return found_files
+
+    def load_experiment_from_file(self, folder_path: str, file_name: str):
+        """
+        Finds and instantiates the 'Experiment' class from a specific file.
+        """
+        file_path = os.path.join(folder_path, file_name)
+        module_name = file_name.split('.')[0] # Use filename as module name
+
+        # 1. Load the module dynamically
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        # 2. Get the 'Experiment' class and instantiate it
+        experiment = getattr(module, "Experiment")
+        return experiment()
+
+
+
+    # Misc
     def split_physical_quantity(self, text: str) -> tuple:
         error = False
         quantity = False
