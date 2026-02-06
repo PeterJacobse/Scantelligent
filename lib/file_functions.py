@@ -72,31 +72,37 @@ class FileFunctions():
             }
             
             error = self.save_yaml(clean_files_dict, path)
-            if error: raise Exception(error)
+            if error:
+                print(f"Error: {e}")
+                raise Exception(error)
         except Exception as e:
             error = e
         
         return error
 
-    def split_physical_quantity(self, text: str):
+    def split_physical_quantity(self, text: str) -> tuple:
         error = False
         quantity = False
         unit = False
+        backward = False
 
-        pattern = r"(\w+) \((.*?)\)" # Like 'X (m)' or 'current (pA)' ...
-        pattern_with_bwd = r"(\w+) [bwd] \((.*?)\)" # Like 'X (m)' or 'y_0 (nm)' ...
+        pattern = r"(.+?) \((.*?)\)" # Like 'X (m)' or 'current (pA)' ...
         
         try:
             matches = re.findall(pattern, text)
 
-            # Process results
-            for quantity, unit in matches:
-                quantity = quantity.lower()
-                unit = unit.lower()
+            if matches:
+                quantity = matches[0][0]
+                unit = matches[0][1]
+                
+                if quantity.endswith(" [bwd]"):
+                    quantity = quantity[: -6]
+                    backward = True
+                
         except:
             error = True
         
-        return (quantity, unit, error)
+        return (quantity, unit, backward, error)
 
     def get_scientific_numbers(self, text: str) -> list:
         pattern = r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
@@ -288,7 +294,7 @@ class FileFunctions():
         except Exception as e:
             error = e
             return (files_dict, error)
-        
+                
         # Create and return the dictionary
         files_dict.update({
             "scan_files": scans_dict,
@@ -308,10 +314,10 @@ class FileFunctions():
             with open(file_name, "rb") as file:
                 for line in file:
                     decoded = line.decode()
-                    
-                    (quantity, unit, error) = self.split_physical_quantity(decoded)
-                    if not error:
-                        match quantity:
+
+                    (quantity, unit, backward_bool, error) = self.split_physical_quantity(decoded)
+                    if not error and isinstance(quantity, str):
+                        match quantity.lower():
                             case "x":
                                 x_magnitude = self.get_scientific_numbers(decoded)[0]
                                 x = self.ureg.Quantity(x_magnitude, unit)
@@ -321,6 +327,8 @@ class FileFunctions():
                             case "z":
                                 z_magnitude = self.get_scientific_numbers(decoded)[0]
                                 z = self.ureg.Quantity(z_magnitude, unit)
+                            case _:
+                                pass
 
                     if "Saved Date" in decoded:
                         try:
@@ -385,7 +393,7 @@ class FileFunctions():
                 if not isinstance(value, dict): continue # The dict_name entry is of type str and should be ignored
                 file_name = value.get("path")
                 (header, error) = self.get_spectroscopy_header(file_name)
-                
+                                
                 if not error:
                     value.update(header)
                     new_spec_dict.update({key: value})
@@ -582,7 +590,7 @@ class FileFunctions():
             
             # Extract physical quantitiies and create copies with the preferred nm, pA, s units
             for key, value in spec_header.items():
-                (quantity, unit, error) = self.split_physical_quantity(key)
+                (quantity, unit, backward_bool, error) = self.split_physical_quantity(key)
                 if not error:
                     match unit:
                         case "m":
