@@ -58,7 +58,15 @@ class DataProcessing():
         processing_flags = {
             "line_width": 2,
             "opacity": 1,
-            "offset": 1,
+            "offset_0": 0,
+            "offset_1": 0,
+            "direction": "fwd_bwd",
+            "log_abs_0": False,
+            "differentiate_0": False,
+            "log_abs_1": False,
+            "differentiate_1": False,
+            "moving_average": False,
+            "moving_average_window": 1
         }
         
         return processing_flags
@@ -119,6 +127,187 @@ class DataProcessing():
 
         return (image, selected_channel, frame, error)
 
+
+
+    # Spectrum operations
+    def process_spectrum(self, spectrum: dict, index: int = 0) -> tuple[dict, bool | str]:
+        error = False
+        flags = self.spec_processing_flags
+                
+        try:
+            (spectrum, error) = self.crop_unfinished_spectrum(spectrum)
+            if error: raise Exception(error)
+
+            if flags.get("moving_average"): (spectrum, error) = self.moving_average(spectrum, flags.get("moving_average_window", 1))
+            if error: raise Exception(error)
+           
+            if flags.get(f"differentiate_{index}"): (spectrum, error) = self.differentiate(spectrum)
+            if error: raise Exception(error)
+            
+            if flags.get(f"log_abs_{index}"): (spectrum, error) = self.apply_log_abs(spectrum)
+            if error: raise Exception(error)
+            
+            (spectrum, error) = self.choose_direction(spectrum)
+            if error: raise Exception(error)
+
+        except Exception as e:
+            error = e
+        
+        return (spectrum, error)
+
+    def crop_unfinished_spectrum(self, spectrum: dict) -> tuple[dict, bool | str]:
+        error = False
+        
+        try:
+            x_data = spectrum.get("x_data")
+            y_data = spectrum.get("y_data")
+            
+            mask = np.isfinite(x_data) & np.isfinite(y_data)
+            if np.all(mask): first_nan_index = len(x_data)
+            else: first_nan_index = np.argmax(~mask)
+
+            # Slice both arrays up to the first NaN index
+            x_data_cropped = x_data[:first_nan_index]
+            y_data_cropped = y_data[:first_nan_index]
+            
+            spectrum.update({"x_data": x_data_cropped, "y_data": y_data_cropped})
+            
+            if "y_bwd_data" in spectrum.keys():
+                y_data = spectrum.get("y_bwd_data")
+   
+                mask = np.isfinite(x_data) & np.isfinite(y_data)
+                if np.all(mask): first_nan_index = len(x_data)
+                else: first_nan_index = np.argmax(~mask)
+
+                # Slice both arrays up to the first NaN index
+                x_data_cropped = x_data[:first_nan_index]
+                y_data_cropped = y_data[:first_nan_index]
+                
+                spectrum.update({"x_bwd_data": x_data_cropped, "y_bwd_data": y_data_cropped})
+                
+        except Exception as e:
+            error = e
+        
+        return (spectrum, error)
+
+    def choose_direction(self, spectrum: dict) -> tuple[dict, bool | str]:
+        error = False
+        
+        try:
+            spec_direction = self.spec_processing_flags.get("direction")
+            match spec_direction:
+                case "fwd":
+                    spectrum.pop("y_bwd_data")
+                case "bwd":
+                    x_bwd_data = spectrum.get("x_bwd_data")
+                    y_bwd_data = spectrum.get("y_bwd_data")
+                    spectrum.update({"y_data": y_bwd_data, "x_data": x_bwd_data})
+                    spectrum.pop("x_bwd_data")
+                    spectrum.pop("y_bwd_data")
+                case "average":
+                    x_fwd_data = spectrum.get("x_data")
+                    x_bwd_data = spectrum.get("x_bwd_data")
+                    y_fwd_data = spectrum.get("y_data")
+                    y_bwd_data = spectrum.get("y_bwd_data")
+                    
+                    if isinstance(x_bwd_data, np.ndarray):
+                        len_data = min(len(y_fwd_data), len(y_bwd_data))
+                        y_data = [0.5 * y_fwd_data[index] + 0.5 * y_bwd_data[index] for index in range(len_data)]
+                        x_data = [0.5 * x_fwd_data[index] + 0.5 * x_bwd_data[index] for index in range(len_data)]
+                    else:
+                        y_data = y_fwd_data
+                    spectrum.update({"y_data": y_data})
+                    spectrum.update({"x_data": x_data})
+                    spectrum.pop("x_bwd_data")
+                    spectrum.pop("y_bwd_data")
+                case "fwd_bwd":
+                    pass
+                case _:
+                    pass
+        except Exception as e:
+            error = e
+        
+        return (spectrum, error)
+    
+    def apply_log_abs(self, spectrum: dict) -> tuple[dict, bool | str]:
+        error = False
+        
+        try:
+            y_fwd_data = spectrum.get("y_data")
+            y_fwd_abs = np.abs(y_fwd_data)
+            y_fwd_abs_log = np.log10(y_fwd_abs)
+            spectrum.update({"y_data": y_fwd_abs_log})
+                        
+            y_bwd_data = spectrum.get("y_bwd_data")
+            if isinstance(y_bwd_data, np.ndarray):
+                y_bwd_abs = np.abs(y_bwd_data)
+                y_bwd_abs_log = np.log10(y_bwd_abs)
+                spectrum.update({"y_bwd_data": y_bwd_abs_log})
+        except Exception as e:
+            error = e
+        
+        return (spectrum, error)
+
+    def differentiate(self, spectrum: dict) -> tuple[dict, bool | str]:
+        error = False
+
+        try:
+            y_data = spectrum.get("y_data")
+            x_data = spectrum.get("x_data")
+            
+            dx = x_data[1] - x_data[0]
+            dy = np.diff(y_data)
+            dydx = dy / dx
+            x_avg = np.convolve(x_data, np.array([0.5, 0.5]), mode = "valid")
+            
+            spectrum.update({"x_data": x_avg, "y_data": dydx})
+
+            x_bwd_data = spectrum.get("x_bwd_data")
+            y_bwd_data = spectrum.get("y_bwd_data")
+            
+            if isinstance(x_bwd_data, np.ndarray) and isinstance(y_bwd_data, np.ndarray):
+                x_avg = np.convolve(x_bwd_data, np.array([0.5, 0.5]), mode = "valid")
+                
+                dy_bwd = np.diff(y_bwd_data)
+                dy_bwddx = dy_bwd / dx
+                
+                spectrum.update({"y_bwd_data": x_avg, "y_bwd_data": dy_bwddx})
+    
+        except Exception as e:
+            error = e
+        
+        return (spectrum, error)
+
+    def moving_average(self, spectrum: dict, window: int) -> tuple[dict, bool | str]:
+        error = False
+        
+        try:            
+            kernel = np.ones(shape = window, dtype = float)
+            kernel /= np.sum(kernel)
+                                    
+            x_data = spectrum.get("x_data")
+            y_data = spectrum.get("y_data")
+            
+            smooth_x_data = np.convolve(x_data, kernel, mode = "valid")
+            smooth_y_data = np.convolve(y_data, kernel, mode = "valid")                        
+            spectrum.update({"x_data": smooth_x_data, "y_data": smooth_y_data})
+            
+            if "x_bwd_data" in spectrum.keys():
+                x_data = spectrum.get("x_bwd_data")
+                y_data = spectrum.get("y_bwd_data")
+                
+                smooth_x_data = np.convolve(x_data, kernel, mode = "valid")
+                smooth_y_data = np.convolve(y_data, kernel, mode = "valid")
+                spectrum.update({"x_bwd_data": smooth_x_data, "y_bwd_data": smooth_y_data})
+        
+        except Exception as e:
+            error = e
+        
+        return (spectrum, error)
+
+
+    
+    # Image operations
     def process_scan(self, image: np.ndarray) -> tuple[np.ndarray, dict, list, bool | str]:
         error = False
         statistics = False
@@ -243,10 +432,6 @@ class DataProcessing():
 
 
 
-    # Spectrum operations
-    
-    
-    # Image operations
     def apply_phase(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
         phase_shifted_image = image
@@ -257,6 +442,7 @@ class DataProcessing():
 
         try:
             phase = self.processing_flags.get("phase", 0)
+            if phase == 0: return(image, error)
             phase_factor = np.exp(1j * phase * np.pi / 180)
             phase_shifted_image = phase_factor * image
             
@@ -554,7 +740,8 @@ class DataProcessing():
         error = False
 
         try:
-            data_sorted = np.sort(image.flatten())
+            data_sorted_c = np.sort(image.flatten())
+            data_sorted = np.real(data_sorted_c)
             n_pixels = len(data_sorted)
             data_firsthalf = data_sorted[:int(n_pixels / 2)]
             data_secondhalf = data_sorted[-int(n_pixels / 2):]
@@ -566,7 +753,6 @@ class DataProcessing():
             range_min, range_max = (data_sorted[0], data_sorted[-1]) # Calculate the total range
             range_total = range_max - range_min
             standard_deviation = np.sum(np.sqrt((data_sorted - range_mean) ** 2) / n_pixels) # Calculate the standard deviation
-            print(7)
 
             image_statistics = {
                 "data_sorted": data_sorted,
@@ -614,8 +800,9 @@ class UserData:
         self.frames = [
             {}, {}, {}
         ]
-        (self.scan_parameters, self.tip_prep_parameters) = self.load_parameter_sets()
+        (self.scan_parameters, self.tip_prep_parameters, self.coarse_parameters) = self.load_parameter_sets()
         self.windows = [{}, {}, {}]
+        self.coarse_parameters = [{}, {}, {}]
 
 
     
@@ -646,6 +833,7 @@ class UserData:
         
         scan_parameters = []
         tip_prep_parameters = []
+        coarse_parameters = []
         
         for parameter_set_type, dicts_set in yaml_data.items():
             
@@ -658,10 +846,14 @@ class UserData:
                     for key, parameters_dict in dicts_set.items():
                         tip_prep_parameters.append(parameters_dict)
                 
+                case "coarse_parameters":
+                    for key, parameters_dict in dicts_set.items():
+                        coarse_parameters.append(parameters_dict)
+                
                 case _:
                     pass
 
-        return (scan_parameters, tip_prep_parameters)
+        return (scan_parameters, tip_prep_parameters, coarse_parameters)
     
     def save_parameter_sets(self):
         output_dict = {"scan_parameters": {}, "other_parameters": {}, "tip_prep_parameters": {}}

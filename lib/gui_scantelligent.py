@@ -10,6 +10,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         super().__init__()
         
         # 1: Read icons from file.
+        self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
+                           "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#c00000", "#905020", "#707000", "#2020ff"]
+        print(len(self.color_list))
         self.icons_path = icons_path
         self.get_icons()
         
@@ -17,7 +20,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.gui_items = GUIItems()
         self.labels = self.make_labels()
         self.buttons = self.make_buttons()
-        self.checkboxes = self.make_checkboxes()
+        (self.checkboxes, self.channel_checkboxes) = self.make_checkboxes()
         self.comboboxes = self.make_comboboxes()
         self.line_edits = self.make_line_edits()
         self.radio_buttons = self.make_radio_buttons()
@@ -187,6 +190,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "composite_motion": make_checkbox("", "When checked, combine the checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }
         
+        channel_checkboxes = {f"{index}": make_checkbox(f"{index}", "Show data from channel {index}") for index in range(20)}
+        
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "move", "advance", "approach"]]
         [checkbox.setChecked(True) for checkbox in self.action_checkboxes]
@@ -195,7 +200,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Add the button handles to the tooltips
         [checkboxes[name].changeToolTip(f"gui.checkboxes[\"{name}\"]", line = 10) for name in checkboxes.keys()]
 
-        return checkboxes
+        return (checkboxes, channel_checkboxes)
 
     def make_comboboxes(self) -> dict:
         make_combobox = self.gui_items.make_combobox
@@ -365,6 +370,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "input": make_layout("h"),
             "experiment_controls": make_layout("h"),
+            
+            "graph": make_layout("h"),
+            "channels": make_layout("g"),
 
             "connections": make_layout("g"),
             "coarse_control": make_layout("g"),
@@ -383,7 +391,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return image_view
 
-    def make_plot_widget(self) -> pg.PlotWidget:        
+    def make_plot_widget(self) -> pg.PlotWidget:
         plot_widget = pg.PlotWidget()
         
         return plot_widget
@@ -397,7 +405,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "central": QWgt(),
             "left_side": QWgt(),
             "coarse_actions": QWgt(),
-            "arrows": QWgt()
+            "arrows": QWgt(),
+            "graph": QWgt()
         }
         
         self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]     
@@ -479,8 +488,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         labels = self.labels
         comboboxes = self.comboboxes
         
-        # Add items to the layouts        
-        #[layouts["connections"].addWidget(button, int(i / 4), i % 4) for i, button in enumerate(self.connection_buttons)]
+        # Graphing
+        [layouts["channels"].addWidget(self.channel_checkboxes[f"{i}"], int(i / 4), i % 4) for i in range(len(self.channel_checkboxes))]
+        
+        layouts["graph"].addWidget(self.plot_widget, 5)
+        layouts["graph"].addLayout(layouts["channels"], 1)
+        self.widgets["graph"].setLayout(layouts["graph"])
+        
+        # Right column
         [layouts["connections"].addWidget(button, 0, i) for i, button in enumerate(self.connection_buttons)]
         
         ca_layout = layouts["coarse_actions"]
@@ -584,12 +599,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Compose the image_view plus consoles layout
         layouts["left_side"].addWidget(self.image_view, stretch = 4)
-        layouts["left_side"].addWidget(self.plot_widget, stretch = 1)
+        layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
         layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
         layouts["left_side"].addWidget(self.line_edits["input"])
         self.widgets["left_side"].setLayout(layouts["left_side"])
         
-        # Attach the toolbar        
+        # Attach the toolbar
         layouts["main"].addWidget(self.widgets["left_side"], stretch = 4)
         layouts["main"].addLayout(layouts["toolbar"], 1)
         

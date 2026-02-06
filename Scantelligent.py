@@ -70,6 +70,7 @@ class Scantelligent(QtCore.QObject):
 
         self.ureg = pint.UnitRegistry()
         self.user = UserData()
+        self.lines = [] # Lines for plotting in the graph
 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -260,6 +261,7 @@ class Scantelligent(QtCore.QObject):
 
         def connect_nanonis() -> None:
             # Initialize signal-slot connections
+            
             # Scantelligent -> Nanonis
             self.parameters.connect(self.nanonis.receive_parameters)
             self.image_request.connect(self.nanonis.receive_image_request)
@@ -272,33 +274,20 @@ class Scantelligent(QtCore.QObject):
             self.nanonis.parameters.connect(self.receive_parameters)
             self.nanonis.image.connect(self.receive_image)
             self.nanonis.finished.connect(self.experiment_finished)
-
-            if self.nanonis.status == "running": self.nanonis.disconnect()
-            self.status.update({"nanonis": "offline"})
-
-            try:
-                # This is a low-level TCP-IP connection attempt
-                # self.logprint(f"sock.connect({self.hardware["nanonis_ip"]}, {self.hardware["nanonis_port"]})", message_type = "code")
-                # sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # sock.settimeout(2)
-                # sock.connect((self.hardware["nanonis_ip"], self.hardware["nanonis_port"]))
-                # sock.close()
-                # sleep(.2) # Short delay is necessary to avoid having the hardware refuse the next connection request
-
-                self.nanonis.connect()
-                self.nanonis.disconnect()
-                sleep(.2)
-                if self.status["nanonis"] != "online": raise
+            self.nanonis.data_array.connect(self.receive_data)
+            
+            match self.status["nanonis"]:
+                case "idle": # Nanonis was already online. Create an active TCP-IP connection
+                    try: self.nanonis.connect()
+                    except: pass
                 
-                self.logprint("Success! Response received. I will immediately request parameters over TCP.", message_type = "success")
-                self.nanonis.initialize()
-
-                # Set up timed Nanonis updates
-                # self.timer.timeout.connect(self.request_nanonis_update)
-                # self.timer.start(2000)
-
-            except:
-                self.logprint("Warning. Failed to connect to Nanonis.", message_type = "warning")
+                case "running": # Nanonis is currently running. Close the TCP-IP connection
+                    try: self.nanonis.disconnect()
+                    except: pass
+                
+                case _: # Nanonis was offline, either not yet initizialized or flagged offline due to an error
+                    try: self.nanonis.initialize(auto_disconnect = True)
+                    except: pass
 
             return
 
@@ -344,7 +333,7 @@ class Scantelligent(QtCore.QObject):
                 self.status.update({"nanonis": "running"})
                 self.update_buttons()
             case "idle":
-                self.status.update({"nanonis": "online"})
+                self.status.update({"nanonis": "idle"})
                 self.update_buttons()
             case "offline":
                 self.status.update({"nanonis": "offline"})
@@ -367,7 +356,28 @@ class Scantelligent(QtCore.QObject):
     def receive_parameters(self, parameters: dict) -> None:
         # Read the name of the dict to determine what type of parameters are in there
         dict_name = parameters.get("dict_name")
+        self.logprint(dict_name, message_type = "code")
+        
         match dict_name:
+            
+            case "coarse_parameters":
+                self.user.coarse_parameters[0].update(parameters)
+                
+                # Remove this once a 'set' and 'get' are implemented
+                self.gui.line_edits["V_hor"].setText(str(parameters.get("V_motor (V)")))
+                self.gui.line_edits["V_ver"].setText(str(parameters.get("V_motor (V)")))
+                self.gui.line_edits["f_motor"].setText(str(parameters.get("f_motor (Hz)")))
+            
+            case "channels":
+                for key, value in parameters.items():
+                    if key == "dict_name": continue
+
+                    channel_index = int(key)
+                    if channel_index < 0 or channel_index > 20: continue
+
+                    self.gui.channel_checkboxes[f"{channel_index}"].setToolTip(f"Channel {channel_index}: {value}")
+                    line = self.gui.plot_widget.plot()
+                    self.lines.append(line)
 
             case "tip_status":
                 tip_status = parameters
@@ -491,31 +501,16 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data_array: np.ndarray) -> None:
-        plot_colors = ["#00ffff", "#ff00ff", "#ffff00", "#a0a0a0", "#ffffff"]
-
-        data_array = data_array[:, 1:2]
-
-        # self.logprint("  ".join([f"{data_array[i, 0]}" for i in range(len(data_array))]), message_type = "result")
-
-        if not hasattr(self, "lines"):
-            self.lines = []
-            for plot_number in range(len(data_array[0])):
-                y_data = data_array[:, plot_number]
-                x_data = range(len(y_data))
-                line = self.gui.plot_widget.plot(x_data, y_data, pen = plot_colors[plot_number])
-                self.lines.append(line)
-        elif not len(data_array[0]) == len(self.lines):
-            self.lines = []
-            for plot_number in range(len(data_array[0])):
-                y_data = data_array[:, plot_number]
-                x_data = range(len(y_data))
-                line = self.gui.plot_widget.plot(x_data, y_data, pen = plot_colors[plot_number])
-                self.lines.append(line)
-        else:
-            for plot_number in range(len(data_array[0])):
-                y_data = data_array[:, plot_number]
-                x_data = range(len(y_data))
-                self.lines[plot_number].setData(x_data, y_data)
+        
+        self.logprint(f"Data: {data_array}")
+        
+        for plot_number in range(len(data_array[0])):
+            pen = pg.mkPen(color = self.gui.color_list[plot_number])
+            
+            y_data = data_array[:, plot_number]
+            x_data = range(len(y_data))
+            
+            self.lines[plot_number].setData(x_data, y_data)
 
         return
 
@@ -639,35 +634,23 @@ class Scantelligent(QtCore.QObject):
                 buttons["oscillator"].setEnabled(False)
 
         match self.status["nanonis"]:
-            case "online":
+            case "idle":
                 self.timer.blockSignals(False)
                 nn_button.setStyleSheet(style_sheets["connected"])
-                nn_button.changeToolTip("Nanonis: online")
-                nn_button.update()
+                nn_button.changeToolTip("Nanonis: idle")
                 nn_button.repaint()
-                
-                [button.setEnabled(True) for button in self.gui.action_buttons]
-                [button.setEnabled(True) for button in self.gui.arrow_buttons]
-                buttons["tip"].setEnabled(True)
-            
+                            
             case "running":
                 nn_button.setStyleSheet(style_sheets["running"])
                 nn_button.changeToolTip("Nanonis: active TCP connection")
                 nn_button.repaint()
-                
-                [button.setEnabled(False) for button in self.gui.action_buttons]
-                [button.setEnabled(False) for button in self.gui.arrow_buttons]
-                buttons["tip"].setEnabled(False)
-    
+                    
             case _:
                 self.timer.blockSignals(True)
                 nn_button.setStyleSheet(style_sheets["disconnected"])
                 nn_button.changeToolTip("Nanonis: offline")
                 nn_button.repaint()
-                
-                [button.setEnabled(False) for button in self.gui.action_buttons]
-                [button.setEnabled(False) for button in self.gui.arrow_buttons]
-                buttons["tip"].setEnabled(False)                
+                          
                 buttons["tip"].changeToolTip("Tip status: unknown")
                 buttons["tip"].setStyleSheet(style_sheets["disconnected"])
 
@@ -681,7 +664,7 @@ class Scantelligent(QtCore.QObject):
         buttons = self.gui.buttons
         tip_button = buttons["tip"]
         
-        if self.status["nanonis"] in ["online", "running"]:
+        if self.status["nanonis"] in ["idle", "running"]:
             if self.status["tip"].get("withdrawn"):
                 tip_button.changeToolTip("Tip withdrawn; click to land")
                 tip_button.setIcon(self.icons.get("withdrawn"))
@@ -808,7 +791,7 @@ class Scantelligent(QtCore.QObject):
             backward = self.gui.buttons["direction"].isChecked()
             channel_index = self.channels.get(channel_name)
 
-            if self.status["nanonis"] == "online":
+            if self.status["nanonis"] == "idle":
                 self.image_request.emit(channel_index, backward)
             else:
                 pass
@@ -1100,7 +1083,7 @@ class Scantelligent(QtCore.QObject):
             (scan_image, error) = self.nanonis.scan_update(selected_channel_index, backward = False)
             
             # All operations successful: release the Nanonis connection
-            self.status["nanonis"] = "online"
+            self.status["nanonis"] = "idle"
             
             if self.status["initialization"]: logp("Successfully updated the following dictionaries: 'status[\"tip\"]', 'scan_parameters[0]', 'grid', 'scan_metadata'", message_type = "success")
 
@@ -1330,10 +1313,13 @@ class Scantelligent(QtCore.QObject):
     def start_new_experiment(self):
         sp_button = self.gui.buttons["start_pause"]
         experiment_name = self.gui.comboboxes["experiment"].currentText()
+        self.logprint(experiment_name)
 
         action = "start"
         self.status["experiment"] = "running"
         sp_button.setIcon(self.icons.get("pause"))
+        
+        if 2 == 2: return
 
         match experiment_name:
             

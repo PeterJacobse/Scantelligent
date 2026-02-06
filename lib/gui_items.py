@@ -6,12 +6,14 @@ import numpy as np
 
 
 class PJTargetItem(pg.TargetItem):
+    clicked = QtCore.pyqtSignal(str)
     position_signal = QtCore.pyqtSignal(float, float)
     
-    def __init__(self, pos = None, size = 10, pen = "y", tip_text = "", movable = False):
+    def __init__(self, pos = None, rel_pos = [], size: int = 10, pen = "y", tip_text: str = "", movable = False):
         super().__init__(pos = pos, size = size, pen = pen, movable = movable)
         self.size = size
         self.tip_text = tip_text
+        self.rel_pos = rel_pos # Position relative to the scan frame
 
         self.text_item = pg.TextItem(tip_text, anchor = (0, 1), fill = 'k')
         self.text_item.setParentItem(self)
@@ -21,11 +23,18 @@ class PJTargetItem(pg.TargetItem):
     def hoverEvent(self, event) -> None:
         super().hoverEvent(event)
 
-        if event.isEnter():
-            self.text_item.setPos(0, 0) # Adjust position as needed
-            self.text_item.show()
-        elif event.isExit():
-            self.text_item.hide()
+        if event.isEnter(): self.activate_tooltip()
+        elif event.isExit(): self.deactivate_tooltip()
+        return
+
+    def activate_tooltip(self) -> None:
+        self.text_item.setPos(0, 0)
+        self.text_item.show()
+        return
+    
+    def deactivate_tooltip(self) -> None:
+        self.text_item.hide()
+        return
 
     def mouseDragEvent(self, event) -> None:
         super().mouseReleaseEvent(event)
@@ -34,8 +43,14 @@ class PJTargetItem(pg.TargetItem):
         if event.isFinish():
             new_pos = self.pos()
             self.position_signal.emit(new_pos.x(), new_pos.y())
-            # Add custom logic to emit signal or update data here
-            
+
+    def mouseClickEvent(self, event) -> None:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            event.accept()
+            self.clicked.emit(self.tip_text)
+        else:
+            super().mouseClickEvent(event)
+
 
 
 class PJGroupBox(QtWidgets.QGroupBox):
@@ -346,7 +361,8 @@ class PJLineEdit(QtWidgets.QLineEdit):
         # Extract the numeric part of what was entered
         regex_pattern = r"([-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?)(?:\s*[a-zA-Zμ°%]+)?"
         number_matches = re.findall(regex_pattern, entered_text)
-        numbers = [float(x) for x in number_matches]
+        if self.number_type == "int": numbers = [int(x) for x in number_matches]
+        else: numbers = [float(x) for x in number_matches]
         
         if len(numbers) > 0:
             number = numbers[0]
@@ -475,12 +491,12 @@ class PJSliderLineEdit(QtWidgets.QWidget):
     """
     valueChanged = QtCore.pyqtSignal(int)
 
-    def __init__(self, parent = None, min_val = -180, max_val = 180, initial_val = 0):
+    def __init__(self, parent = None, min_val = -180, max_val = 180, initial_val = 0, unit = "deg"):
         super().__init__(parent)
         
         # 1: Create the widgets
         self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.line_edit = QtWidgets.QLineEdit()
+        self.line_edit = PJLineEdit()
 
         # 2: Configure widgets
         self.slider.setRange(min_val, max_val)
@@ -491,12 +507,12 @@ class PJSliderLineEdit(QtWidgets.QWidget):
         self.line_edit.setText(str(initial_val))
 
         # 3: Set up the layout
-        layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(self.slider)
-        layout.addWidget(self.line_edit)
+        self.widget_layout = QtWidgets.QHBoxLayout()
+        self.widget_layout.addWidget(self.slider)
+        self.widget_layout.addWidget(self.line_edit)
         # Remove extra margins from the layout
-        layout.setContentsMargins(0, 0, 0, 0) 
-        self.setLayout(layout)
+        self.widget_layout.setContentsMargins(0, 0, 0, 0) 
+        self.setLayout(self.widget_layout)
 
         # 4: Connect signals and slots
         self.slider.valueChanged.connect(self._update_line_edit)
@@ -508,15 +524,25 @@ class PJSliderLineEdit(QtWidgets.QWidget):
 
     def _update_line_edit(self, value):
         self.line_edit.blockSignals(True) 
-        self.line_edit.setText(str(value))
+        self.line_edit.setText(f"{value} deg")
         self.line_edit.blockSignals(False)
 
     def _update_slider(self):
         try:
-            value = int(self.line_edit.text())
+            text = self.line_edit.text()
+            if text.startswith("."): text = "0" + text
+            regex_pattern = r"[-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?"
+            number_matches = re.findall(regex_pattern, text)
+            numbers = [int(x) for x in number_matches]
+            value = numbers[0]            
+            
             self.slider.blockSignals(True)
             self.slider.setValue(value)
             self.slider.blockSignals(False)
+
+            self.line_edit.blockSignals(True) 
+            self.line_edit.setText(f"{value} deg")
+            self.line_edit.blockSignals(False)
         except ValueError:
             # Handle empty or invalid input by resetting to the current slider value
             self.line_edit.setText(str(self.slider.value()))
@@ -576,6 +602,42 @@ class PJImageView(pg.ImageView):
 
 
 
+class PhaseSlider(PJSliderLineEdit):
+    """
+    A slider line edit with buttons for controlling a phase
+    """
+    def __init__(self, parent = None, unit = "", phase_0_icon = None, phase_180_icon = None):
+        super().__init__(parent, unit = unit, min_val = -180, max_val = 180, initial_val = 0)
+        
+        self.phase_0_button = PJPushButton()
+        self.phase_0_button.setToolTip("Set the phase to 0")
+        if isinstance(phase_0_icon, QtGui.QIcon): self.phase_0_button.setIcon(phase_0_icon)
+        self.phase_180_button = PJPushButton()
+        self.phase_180_button.setToolTip("Set the phase to 180 deg")
+        if isinstance(phase_180_icon, QtGui.QIcon): self.phase_180_button.setIcon(phase_180_icon)
+        
+        self.widget_layout.addWidget(self.phase_0_button)
+        self.widget_layout.addWidget(self.phase_180_button)
+        # Remove extra margins from the layout
+        self.setLayout(self.widget_layout)
+        
+        self.phase_0_button.clicked.connect(self.set_phase_0)
+        self.phase_180_button.clicked.connect(self.set_phase_180)
+        
+    def set_phase_0(self):
+        self.line_edit.blockSignals(True) 
+        self.line_edit.setText(f"0 deg")
+        self.line_edit.blockSignals(False)
+        self.slider.setValue(0)
+
+    def set_phase_180(self):
+        self.line_edit.blockSignals(True) 
+        self.line_edit.setText(f"180 deg")
+        self.line_edit.blockSignals(False)
+        self.slider.setValue(180)
+
+
+
 class StreamRedirector(QtCore.QObject):
     output_written = QtCore.pyqtSignal(str)
 
@@ -583,7 +645,7 @@ class StreamRedirector(QtCore.QObject):
         super().__init__(parent)
         self._buffer = ""
 
-    def write(self, text: str) -> None:
+    def write(self, text: str = "") -> None:
         if not text:
             return
         # Accumulate text and only emit complete lines. This avoids
@@ -745,6 +807,13 @@ class GUIItems:
         slider.setValue(10)
         
         return slider
+
+    def make_phase_slider(self, name: str = "", tooltip: str = "", unit: str = "deg", phase_0_icon = None, phase_180_icon = None) -> PhaseSlider:
+        phase_slider = PhaseSlider(unit = unit, phase_0_icon = phase_0_icon, phase_180_icon = phase_180_icon)
+        phase_slider.setObjectName(name)
+        phase_slider.setToolTip(tooltip)
+        
+        return phase_slider        
 
     def make_image_view(self) -> PJImageView:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)

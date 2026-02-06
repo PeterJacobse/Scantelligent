@@ -652,8 +652,8 @@ class NanonisHardware:
         speeds = {
             "v_fwd (nm/s)": v_fwd * 1E9,
             "v_bwd (nm/s)": v_bwd * 1E9,
-            "t_fwd (s)": t_fwd,
-            "t_bwd (s)": t_bwd,
+            "t_fwd (us)": t_fwd,
+            "t_bwd (us)": t_bwd,
             "const_param": const_param,
             "v_ratio": v_ratio            
         }
