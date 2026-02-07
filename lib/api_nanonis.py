@@ -931,8 +931,6 @@ class NanonisAPI(QtCore.QObject):
                 if mod_iteration == chunk_size - 1: self.data_array.emit(data)
                 
                 if t > timeout: break
-            
-            self.data_array.emit(data)
         
         except Exception as e:
             error = e
