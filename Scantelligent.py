@@ -269,7 +269,6 @@ class Scantelligent(QtCore.QObject):
             # Scantelligent -> Nanonis
             self.parameters.connect(self.nanonis.receive_parameters)
             self.image_request.connect(self.nanonis.receive_image_request)
-            self.abort.connect(self.nanonis.abort)
 
             # Nanonis -> Scantelligent
             self.nanonis.connection.connect(self.receive_nanonis_status)
@@ -1390,23 +1389,13 @@ class Scantelligent(QtCore.QObject):
         #self.timer.stop()
         #self.timer.disconnect()
 
-        self.status["experiment"] = "idle"
-        self.gui.buttons["start_pause"].setIcon(self.icons.get("start"))
-        
-        # self.nanonis.scan_control({"action": "stop"})
-        self.abort.emit()
-
-        if hasattr(self, "thread") and self.thread.isRunning():
-            try:
-                self.thread.quit()
-            except Exception:
-                pass
-
+        if hasattr(self, "thread"):
+            self.thread.requestInterruption()
         return
 
     def experiment_finished(self):
-        self.timer.stop()
-        self.timer.disconnect(self.request_nanonis_update)
+        # self.timer.stop()
+        # self.timer.disconnect(self.request_nanonis_update)
 
         self.status["experiment"] = "idle"
         self.gui.buttons["start_pause"].setIcon(self.icons.get("start"))

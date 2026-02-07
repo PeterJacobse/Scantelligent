@@ -1,6 +1,5 @@
 import numpy as np
-from PyQt6 import QtCore, QtGui, QtWidgets
-
+from PyQt6 import QtCore
 from .hw_nanonis import NanonisHardware
 from .data_processing import DataProcessing
 from time import sleep, time
@@ -114,17 +113,14 @@ class NanonisAPI(QtCore.QObject):
 
         return
 
-    @QtCore.pyqtSlot()
-    def abort(self) -> None:
-        try:
-            # self.connect()
-            # self.scan_control({"action": "stop"}, auto_disconnect = False)
-            # self.stop_timed_updates()
-            self.abort_flag = True
-        finally:
+    def check_abort(self):
+        abort_requested = QtCore.QThread.currentThread().isInterruptionRequested()
+        if abort_requested:
+            self.logprint("Experiment aborted", message_type = "error")
             self.disconnect()
-
-        return
+            self.finished.emit()
+        
+        return False
 
     def logprint(self, message: str, message_type: str = "error") -> None:
         self.message.emit(message, message_type)

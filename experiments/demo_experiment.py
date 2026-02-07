@@ -1,26 +1,24 @@
 import sys, os
 from time import sleep
 import numpy as np
+from PyQt6 import QtCore
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from lib import NanonisAPI
 
 
 class Experiment(NanonisAPI):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.abort_flag = False
 
     def run(self):
-        
         self.connect()
         self.logprint("Hello from experiment 1", message_type = "message")
-        (tip_status, error) = self.tip_update({"withdraw": True}, auto_disconnect = False)
+        (tip_status, error) = self.tip_update({"withdraw": True})
         self.logprint(f"{error}", message_type = "message")
 
         sleep(1)
-        self.check_abort_flag()
+        self.check_abort()
         
         self.logprint("Look at this witchcraft. I will move the tip to the opposite corner!", message_type = "warning")
         [x_tip_nm, y_tip_nm] = [tip_status.get(value) for value in ["x (nm)", "y (nm)"]]
@@ -30,7 +28,7 @@ class Experiment(NanonisAPI):
         self.tip_update(tip_status, auto_disconnect = False)
 
         sleep(1)
-        self.check_abort_flag()
+        self.check_abort()
 
         current_frame = self.frame_update(auto_disconnect = False)
         self.logprint("Dont mind me playing with the scan frame")
@@ -43,17 +41,4 @@ class Experiment(NanonisAPI):
         self.disconnect()
         self.logprint("Experiment 1 finished!", message_type = "success")
         self.finished.emit()
-    
-    def abort(self):
-        self.logprint("Experiment 1 was aborted!", message_type = "error")
-        self.abort_flag = True
-
-    def check_abort_flag(self):
-        if self.abort_flag:
-            self.abort_flag = False
-            self.disconnect()
-            self.finished.emit()
-            return True
-        return False
-
 
