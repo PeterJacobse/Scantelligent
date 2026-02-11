@@ -831,9 +831,36 @@ class FileFunctions():
         try:
             scan_object = nap.read.Scan(file_name) # Read the scan data. scan_data is an object whose attributes contain all the data of the scan
             scans = scan_object.signals # Read the scans
-            channels = np.array(list(scan_object.signals.keys())) # Read the channels
-
             scan_header = scan_object.header
+            data_info = scan_header.get("data_info")
+                                    
+            # Attach the units to the scan array keys
+            chan_names = np.array(data_info.get("Name"))
+            chan_units = np.array(data_info.get("Unit"))
+            unitized_scans = {}
+            for scan_channel, scan_array in scans.items():
+                if scan_channel in chan_names:
+                    index = np.where(scan_channel == chan_names)[0][0]
+                    channel_unit = chan_units[index]
+                    
+                    # Translate to preferred units
+                    match channel_unit:
+                        case "A":
+                            channel_unit = "pA"
+                            for array in scan_array.values(): array *= 1E12
+                        case "m":
+                            channel_unit = "nm"                            
+                            for array in scan_array.values(): array *= 1E9
+                        case _:
+                            pass
+                    unitized_scans.update({f"{scan_channel} ({channel_unit})": scan_array})
+                else:
+                    unitized_scans.update({f"{scan_channel}": scan_array})
+            scans = unitized_scans
+            channels = np.array(list(scans.keys())) # Read the channels. Only the quantity names are returned, no units
+            
+            
+            
             up_or_down = scan_header.get("scan_dir", "down") # Read whether the scan was recorded in the upward or downward direction
             (pixels, lines_uncropped) = scan_header.get("scan_pixels", np.array([100, 100], dtype = int)) # Read the number of pixels in the scan
             scan_range_uncropped = scan_header.get("scan_range", np.array([1E-8, 1E-8], dtype = float)) # Read the size of the scan
@@ -893,11 +920,11 @@ class FileFunctions():
             channel_units = filtered_channel_units
             
             # Rescale the scan data by the multiplication factors determined in the reunitization        
-            for channel in channels:
-                for direction in ["forward", "backward"]:
-                    if channel in length_channels: scans[channel][direction] = np.array(scans[channel][direction] * L_multiplication_factor, dtype = float)
-                    elif channel in current_channels: scans[channel][direction] = np.array(scans[channel][direction] * I_multiplication_factor, dtype = float)
-            
+            #for channel in channels:
+            #    for direction in ["forward", "backward"]:
+            #        if channel in length_channels: scans[channel][direction] = np.array(scans[channel][direction] * L_multiplication_factor, dtype = float)
+            #        elif channel in current_channels: scans[channel][direction] = np.array(scans[channel][direction] * I_multiplication_factor, dtype = float)
+          
             # Stack the forward and backward scans for each channel in a tensor. Flip the backward scan
             scan_tensor_uncropped = np.stack([np.stack((np.array(scans[channel]["forward"], dtype = float), np.flip(np.array(scans[channel]["backward"], dtype = float), axis = 1))) for channel in channels])
             if up_or_down == "down": scan_tensor_uncropped = np.flip(scan_tensor_uncropped, axis = 2) # Flip the scan if it recorded in the upward direction

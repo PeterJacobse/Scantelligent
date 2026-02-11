@@ -167,7 +167,30 @@ class PJComboBox(QtWidgets.QComboBox):
     A QComboBox with extra method changeToolTip
     """
     def __init__(self, *args, **kwargs):
+        self.name = kwargs.pop("name") if "name" in kwargs.keys() else None
+        self.tooltip = kwargs.pop("tooltip") if "tooltip" in kwargs.keys() else None
+        self.max_width = kwargs.pop("max_width") if "max_width" in kwargs.keys() else None
+        self.style_sheet = kwargs.pop("style_sheet") if "style_sheet" in kwargs.keys() else None
+        items = kwargs.pop("items") if "items" in kwargs.keys() else None
+        
         super().__init__(*args, **kwargs)
+        
+        self.set_defaults()
+        if isinstance(items, list): self.addItems(items)
+
+
+    
+    def set_defaults(self) -> None:
+        if isinstance(self.name, str): self.setObjectName(self.name)
+        if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
+        if isinstance(self.max_width, int):
+            self.setMaximumWidth(self.max_width)
+        else:
+            self.setMaximumWidth(150)
+        if isinstance(self.style_sheet, str):
+            self.setStyleSheet(self.style_sheet)
+        else:
+            self.setStyleSheet("QCombobox{ background-color: #101010; icon-size: 22px 22px; }")
     
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
@@ -325,12 +348,38 @@ class PJLineEdit(QtWidgets.QLineEdit):
     A QLineEdit with extra method changeToolTip, and which adds a unit after editing is finished
     """
     def __init__(self, parent = None, **kwargs):
+        self.name = kwargs.pop("name", None)
+        self.tooltip = kwargs.pop("tooltip", None)
+        self.unit = kwargs.pop("unit", None)
+        self.limits = kwargs.pop("limits", None)
+        self.number_type = kwargs.pop("number_type", "float")
+        self.max_width = kwargs.pop("max_width", None)
+        self.style_sheet = kwargs.pop("style_sheet", None)
+        
         super().__init__(parent)
-        self.unit = kwargs.get("unit", None)
-        self.limits = kwargs.get("limits", None)
-        self.number_type = kwargs.get("number_type", "float")
-        if self.unit: self.editingFinished.connect(self.addUnit)
+        
+        self.set_defaults()
+        if isinstance(self.unit, str): self.editingFinished.connect(self.addUnit) 
+
+
     
+    def set_defaults(self) -> None:
+        if isinstance(self.name, str):
+            self.setObjectName(self.name)
+            if isinstance(self.unit, str):
+                self.setText(self.name + " " + self.unit)
+            else:
+                self.setText(self.name)
+        if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
+        if isinstance(self.max_width, int):
+            self.setMaximumWidth(self.max_width)
+        else:
+            self.setMaximumWidth(150)
+        if isinstance(self.style_sheet, str):
+            self.setStyleSheet(self.style_sheet)
+        else:
+            self.setStyleSheet("QLineEdit{ background-color: #101010 }")
+   
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
         Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
@@ -353,8 +402,13 @@ class PJLineEdit(QtWidgets.QLineEdit):
             self.setToolTip(new_tooltip)
         except:
             pass
-    
-    def addUnit(self):
+
+    def setUnit(self, unit: str = "") -> None:
+        self.unit = unit
+        self.addUnit()
+        return
+
+    def addUnit(self) -> None:
         self.blockSignals(True)
         entered_text = self.text()
         
@@ -381,6 +435,14 @@ class PJLineEdit(QtWidgets.QLineEdit):
         
         self.blockSignals(False)
         
+        return
+
+    def setValue(self, value) -> None:
+        if isinstance(self.unit, str):
+            self.setText(f"{value} {self.unit}")
+        else:
+            self.setText(f"{value}")
+
         return
 
 
@@ -491,12 +553,12 @@ class PJSliderLineEdit(QtWidgets.QWidget):
     """
     valueChanged = QtCore.pyqtSignal(int)
 
-    def __init__(self, parent = None, min_val = -180, max_val = 180, initial_val = 0, unit = "deg"):
+    def __init__(self, parent = None, min_val = -180, max_val = 180, initial_val = 0, max_width = 150, unit = ""):
         super().__init__(parent)
         
         # 1: Create the widgets
         self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.line_edit = PJLineEdit()
+        self.line_edit = PJLineEdit(max_width = max_width, unit = unit)
 
         # 2: Configure widgets
         self.slider.setRange(min_val, max_val)
@@ -607,7 +669,7 @@ class PhaseSlider(PJSliderLineEdit):
     A slider line edit with buttons for controlling a phase
     """
     def __init__(self, parent = None, unit = "", phase_0_icon = None, phase_180_icon = None):
-        super().__init__(parent, unit = unit, min_val = -180, max_val = 180, initial_val = 0)
+        super().__init__(parent, unit = unit, min_val = -180, max_val = 180, initial_val = 0, max_width = 80)
         
         self.phase_0_button = PJPushButton()
         self.phase_0_button.setToolTip("Set the phase to 0")
@@ -623,6 +685,8 @@ class PhaseSlider(PJSliderLineEdit):
         
         self.phase_0_button.clicked.connect(self.set_phase_0)
         self.phase_180_button.clicked.connect(self.set_phase_180)
+        
+        self.set_phase_0()
         
     def set_phase_0(self):
         self.line_edit.blockSignals(True) 
