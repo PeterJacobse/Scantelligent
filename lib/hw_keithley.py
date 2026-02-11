@@ -12,7 +12,9 @@ class KeithleyHW:
         except Exception as e:
             print(f"Error connecting the Keithley: {e}")
         
-        self.mode = f"{self.keithleyhw.source_mode} control"
+        self.V_max = 200
+        self.I_max = 1E-9
+        self.mode = self.keithleyhw.source_mode
         self.buffer = 10
     
     def get_GPIB_parameters(self) -> str:
@@ -34,11 +36,71 @@ class KeithleyHW:
 
 
 
-    def set_mode(self):
+    def connect(self, terminal_side: str = "front") -> None:
+        khw = self.keithleyhw
+        khw.reset()
+        
+        match terminal_side:
+            case "front":
+                khw.use_front_terminals()
+            case "rear":
+                khw.use_rear_terminals()
+            case _:
+                pass
+
+        khw.source_voltage = 0
+        khw.source_current = 0
+
+        khw.enable_source()
+
         return
 
-    def get_V(self, buffer = None):
+    def disconnect(self) -> None:
         khw = self.keithleyhw
+
+        khw.shutdown()
+
+        return
+
+    def set_I_max(self, I_max: float = 0) -> None:
+        khw = self.keithleyhw
+        
+        self.I_max = I_max
+
+        match khw.source_mode:
+            case "voltage":
+                self.set_mode("voltage", cc = I_max)
+            case _:
+                pass
+
+        return
+
+    def set_mode(self, mode: str = "voltage", cc = None, cv = None) -> str:
+        khw = self.keithleyhw
+
+        match mode.lower():
+            case "voltage":
+                if not cc == None:
+                    khw.apply_voltage(compliance_current = cc)
+                else:
+                    khw.apply_voltage()
+                khw.measure_voltage()
+            case "current":
+                if not cv == None:
+                    khw.apply_current(compliance_voltage = cv)
+                else:
+                    khw.apply_current()
+                khw.measure_current()
+            case _:
+                pass
+
+        self.mode = khw.source_mode
+
+        return self.mode
+
+    def get_V(self, buffer = None) -> float:
+        khw = self.keithleyhw
+        v_avg = False
 
         if khw.source_mode == "voltage":
             return khw.source_voltage
@@ -57,7 +119,7 @@ class KeithleyHW:
     def set_V(self):
         return
 
-    def get_I(self, buffer = None):
+    def get_I(self, buffer = None) -> float:
         khw = self.keithleyhw
 
         if khw.source_mode == "current":
@@ -73,6 +135,9 @@ class KeithleyHW:
             return i_avg
         
         return khw.source_mode
+
+    def set_I(self) -> float:
+        return
 
     def echo(self):
         print("Hello from Keithley!")

@@ -122,6 +122,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "retract": make_button("", "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
             "advance": make_button("", "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
             "approach": make_button("", "Initiate auto approach\n(Ctrl + A)", icon = icons.get("approach")),
+            "set_coarse": make_button("", "Set the new coarse parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_coarse": make_button("", "Get the coarse parameters\n(P)", icon = icons.get("get")),
 
             "n": make_button("", mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = arrow, rotate_icon = 270),
             "ne": make_button("", mtt + "northeast\n(Ctrl + 9)", icon = arrow45, rotate_icon = 0),
@@ -405,7 +407,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "left_side": QWgt(),
             "coarse_actions": QWgt(),
             "arrows": QWgt(),
-            "graph": QWgt()
+            "graph": QWgt(),
+
+            "connections": QWgt(),
+            "coarse_control": QWgt(),
+            "tip_prep": QWgt(),
+            "parameters": QWgt(),
+            "image_processing": QWgt(),
+            "experiment": QWgt()
         }
         
         self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]     
@@ -560,6 +569,21 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return
 
 
+    """
+    def make_tabs(self) -> dict:
+        QTW = QtWidgets.QTabWidget
+
+        tab_widgets = {
+            "coarse_control": QTW(),
+            "scan_control": QTW()
+        }
+
+        [tab_widgets["coarse_conrol"].addTab(self.widgets[name]) for name in ["coarse_vertical", "coarse_horizontal"]]
+
+        return tabs
+    """
+
+
 
     # 4: Make widgets and groupboxes and set their layouts. Requires layouts.
     def make_groupboxes(self) -> dict:
@@ -577,8 +601,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "dummy": make_groupbox("Dummy", "Invisible groupbox to swap out layouts to make other groupboxes collapse")
         }
 
+        QTW = QtWidgets.QTabWidget
+        self.tab_widget = QTW()
+
         # Set layouts for the groupboxes
         [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
+        
+        #[self.widgets[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
+
+        [self.tab_widget.addTab(self.widgets[name], "") for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
+        #self.layouts["toolbar"].addWidget(self.tab_widget)
         
         [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
         
