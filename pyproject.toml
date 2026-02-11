@@ -12,6 +12,7 @@ dependencies = [
     "opencv-python>=4.11.0.86",
     "pint>=0.25.2",
     "pip>=25.3",
+    "pymeasure>=0.15.0",
     "pyqt6>=6.10.0",
     "pyqtgraph>=0.14.0",
     "pyyaml>=6.0.3",

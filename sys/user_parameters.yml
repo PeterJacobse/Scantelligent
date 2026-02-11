@@ -1,26 +1,26 @@
 other_parameters: {}
 scan_parameters:
   0:
-    I_fb (pA): 400.0000053405728
-    V_nanonis (V): 1.2000000476837158
+    I_fb (pA): 9.999999960041972
+    V_nanonis (V): 2.4000000953674316
     const_param: 0
     dict_name: scan_parameters
-    i_gain (nm/s): 85.65310594121911
+    i_gain (nm/s): 29.962546221895536
     motor_amplitude: null
     motor_frequency: null
     name: session
-    p_gain (pm): 39.99999984016789
-    session_path: C:\Nanonis\2026-01-24
+    p_gain (pm): 7.999999968033578
+    session_path: C:\DATA\Peter\2026-02-08
     t_bwd (s): 0.2175999879837036
-    t_bwd (us): 0.2175999879837036
+    t_bwd (us): 10.009599685668945
     t_const (s): 267.0
-    t_const (us): 467.0000053010881
+    t_const (us): 266.99999580159783
     t_fwd (s): 0.2175999879837036
-    t_fwd (us): 0.2175999879837036
-    v_bwd (nm/s): 1378.6766430712305
-    v_fwd (nm/s): 1378.6766430712305
+    t_fwd (us): 10.009599685668945
+    v_bwd (nm/s): 59.94245810825305
+    v_fwd (nm/s): 59.94245810825305
     v_ratio: 1.0
-    v_xy (nm/s): 1378.6766430712305
+    v_xy (nm/s): 59.94245810825305
   1:
     I_fb (pA): 20
     V_nanonis (V): 1.2

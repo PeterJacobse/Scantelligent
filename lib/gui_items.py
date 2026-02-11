@@ -374,7 +374,8 @@ class PJLineEdit(QtWidgets.QLineEdit):
         if isinstance(self.max_width, int):
             self.setMaximumWidth(self.max_width)
         else:
-            self.setMaximumWidth(150)
+            pass
+            # self.setMaximumWidth(150)
         if isinstance(self.style_sheet, str):
             self.setStyleSheet(self.style_sheet)
         else:

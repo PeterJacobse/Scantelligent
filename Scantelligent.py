@@ -2,7 +2,7 @@ import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, DataProcessing, UserData, PJTargetItem, FileFunctions
+from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyHW, DataProcessing, UserData, PJTargetItem, FileFunctions
 from time import sleep
 from scipy.interpolate import griddata
 from datetime import datetime
@@ -38,6 +38,8 @@ class Scantelligent(QtCore.QObject):
         self.data = DataProcessing() # Class for data processing and analysis
         self.timer = QtCore.QTimer()
         self.thread = QtCore.QThread()
+        
+        self.keithley = KeithleyHW(hardware = self.hardware)
         self.nanonis = NanonisAPI(hardware = self.hardware) # Class for simple Nanonis functions
         
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
@@ -195,11 +197,17 @@ class Scantelligent(QtCore.QObject):
                     camera_settings = config.get("camera")
                     camera_argument = camera_settings.get("argument", 0)
 
+                    keithley_settings = config.get("keithley")
+                    keithley_visa_no = keithley_settings.get("visa_no", 0)
+                    keithley_address = keithley_settings.get("address", 0)
+
                     hardware = {
                         "nanonis_ip": tcp_ip,
                         "nanonis_port": tcp_port,
                         "nanonis_version": version_number,
-                        "camera_argument": camera_argument
+                        "camera_argument": camera_argument,
+                        "keithley_visa_no": keithley_visa_no,
+                        "keithley_address": keithley_address
                     }
                     self.logprint("I found the config.yml file and was able to set up a dictionary called 'hardware'", message_type = "success")
                     self.logprint(f"[dict] hardware = {hardware}", message_type = "result")
@@ -254,7 +262,7 @@ class Scantelligent(QtCore.QObject):
             except Exception as e:
                 self.logprint("Warning. Failed to connect to the camera.", message_type = "warning")
             
-            return    
+            return
 
         def connect_mla() -> None:
             self.status["mla"] = "offline"
@@ -750,7 +758,8 @@ class Scantelligent(QtCore.QObject):
         sleep(.2)
         scan_parameters = self.user.scan_parameters[0]
 
-        self.gui.plot_widget.plot(np.linspace(0, 2, 20), np.random.rand(20))
+        self.keithley.echo()
+        self.keithley.get_V()
         
         # Enter the scan parameters into the fields        
         for key, value in scan_parameters.items():

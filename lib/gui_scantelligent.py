@@ -12,7 +12,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # 1: Read icons from file.
         self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
                            "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#c00000", "#905020", "#707000", "#2020ff"]
-        print(len(self.color_list))
         self.icons_path = icons_path
         self.get_icons()
         
