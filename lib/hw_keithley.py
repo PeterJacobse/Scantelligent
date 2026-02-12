@@ -7,15 +7,14 @@ class KeithleyHW:
     def __init__(self, hardware: dict = {}):
         self.hardware = hardware
         self.GPIB = self.get_GPIB_parameters()
-        try:
-            self.keithleyhw = Keithley2400(self.GPIB)
-        except Exception as e:
-            print(f"Error connecting the Keithley: {e}")
-        
         self.V_max = 200
         self.I_max = 1E-9
-        self.mode = self.keithleyhw.source_mode
         self.buffer = 10
+        try:
+            self.keithleyhw = Keithley2400(self.GPIB)
+            self.mode = self.keithleyhw.source_mode
+        except Exception as e:
+            print(f"Error connecting the Keithley: {e}")
     
     def get_GPIB_parameters(self) -> str:
         self.visa_no = False

@@ -4,7 +4,6 @@ from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
 from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyHW, DataProcessing, UserData, PJTargetItem, FileFunctions
 from time import sleep
-from scipy.interpolate import griddata
 from datetime import datetime
 
 
@@ -172,6 +171,7 @@ class Scantelligent(QtCore.QObject):
         return
   
     def config_init(self) -> None:
+        hardware = {}
         
         # Read the config file to get the hardware configuration parameters
         try:

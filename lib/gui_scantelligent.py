@@ -1,7 +1,7 @@
 import os
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from . import GUIItems
+from . import GUIItems, PJComboBox, PJLineEdit, PJGroupBox
 
 
 
@@ -223,9 +223,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         buttons = self.buttons
         
         line_edits = {
-            "z_steps": make_line_edit("20 steps up", "Steps in the +Z (retract) direction", unit = "steps up", number_type = "int"),
-            "h_steps": make_line_edit("100 steps in dir:", "Steps in the horizontal direction", unit = "steps in dir:", number_type = "int"),
-            "minus_z_steps": make_line_edit("0 steps down", "Steps in the -Z (advance) direction", unit = "steps down", number_type = "int"),
+            "z_steps": PJLineEdit(name = "20", tooltip = "Steps in the +Z (retract) direction", unit = "steps up", number_type = "int"),
+            "h_steps": PJLineEdit(name = "100", tooltip = "Steps in the horizontal direction", unit = "steps", number_type = "int"),
+            "minus_z_steps": PJLineEdit(name = "0", tooltip = "Steps in the -Z (advance) direction", unit = "steps down", number_type = "int"),
             
             "V_hor": make_line_edit("150 V (xy)", "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", number_type = "int"),
             "V_ver": make_line_edit("150 V (z)", "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", number_type = "int"),
@@ -233,11 +233,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "V_nanonis": make_line_edit("", "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
             "V_mla": make_line_edit("", "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
-            "I_fb": make_line_edit("", "Feedback current in pA\n(Ctrl + P) to set", unit = "pA"),
-            "p_gain": make_line_edit("", "Proportional gain in pm\n(Ctrl + P) to set", unit = "pm"),
+            "I_fb": make_line_edit("", "Feedback current in pA\n(Ctrl + P) to set", unit = "pA", number_type = int),
+            "p_gain": make_line_edit("", "Proportional gain in pm\n(Ctrl + P) to set", unit = "pm", number_type = int),
             "t_const": make_line_edit("", "Time constant in pm\n(Ctrl + P) to set", unit = "us"),
             "v_fwd": make_line_edit("", "Tip forward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
             "v_bwd": make_line_edit("", "Tip backward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
+            
+            "V_keithley": make_line_edit("", "Keithley bias", unit = "V", limits = [-200, 200]),
+            "I_keithley": make_line_edit("", "Keithley current", unit = "pA", limits = [-200, 200]),
+            
+            "frame_height": make_line_edit("", "frame heigth", unit = "nm"),
+            "frame_width": make_line_edit("", "frame width", unit = "nm"),
+            "frame_x": make_line_edit("", "frame offset (x)", unit = "nm"),
+            "frame_y": make_line_edit("", "frame offset (y)", unit = "nm"),
+            "frame_angle": make_line_edit("", "frame angle", unit = "deg"),
             
             "pulse_voltage": make_line_edit("", "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10]),
             "pulse_duration": make_line_edit("", "Duration of the voltage pulse", unit = "ms"),

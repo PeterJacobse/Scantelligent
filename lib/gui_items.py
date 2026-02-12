@@ -480,6 +480,24 @@ class PJProgressBar(QtWidgets.QProgressBar):
 
 
 
+class PJGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, title, parent = None, *args, **kwargs):
+        super().__init__(title, parent)
+        
+        if "name" in kwargs: self.setObjectName(kwargs["name"])
+        if "tooltip" in kwargs: self.setToolTip(kwargs["tooltip"])
+        
+        self.setCheckable(True)
+        self.setChecked(True)
+        
+        self.content_container = QtWidgets.QWidget()
+        self.content_layout = QtWidgets.QVBoxLayout(self.content_container)
+                
+        self.toggled.connect(self.content_container.setVisible)
+        self.content_container.setVisible(True)
+    
+    
+
 class PJConsole(QtWidgets.QTextEdit):
     """
     A QTextEdit with extra method changeToolTip
