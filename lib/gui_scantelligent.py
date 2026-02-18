@@ -79,7 +79,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "matrix_operations": make_label("Matrix operations"),
 
             "z_steps": make_label("steps"),
-            "move": make_label("move"),
+            "move_horizontally": make_label("< horizontal motion >", "In composite motion, horizontal motion\nis carried out between retract and advance\nSee 'horizontal'"),
             "h_steps": make_label("steps in direction"),
             "steps_and": make_label("steps, and")
         }
@@ -112,11 +112,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "V_swap": make_button("", "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
             "set": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
             "get": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "scan_parameters_0": make_button("", "Load scan parameter set 0\n(Ctrl + 0)", icon = icons.get("0")),
-            "scan_parameters_1": make_button("", "Load scan parameter set 1\n(Ctrl + 1)", icon = icons.get("1")),
-            "scan_parameters_2": make_button("", "Load scan parameter set 2\n(Ctrl + 2)", icon = icons.get("2")),
-            "scan_parameters_3": make_button("", "Load scan parameter set 3\n(Ctrl + 3)", icon = icons.get("3")),
-            "scan_parameters_4": make_button("", "Load scan parameter set 3\n(Ctrl + 4)", icon = icons.get("4")),
             
             "withdraw": make_button("", "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
             "retract": make_button("", "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
@@ -154,7 +149,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod1": make_button("", "Nanonis Modulation 1 On/Off", icon = icons.get("nanonis_mod1")),
             "nanonis_mod2": make_button("", "Nanonis Modulation 2 On/Off", icon = icons.get("nanonis_mod2"))
         }
-        
+
+        for i in range(6):
+            buttons.update({f"scan_parameters_{i}": make_button("", f"Load scan parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"coarse_parameters_{i}": make_button("", f"Load coarse parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"gain_parameters_{i}": make_button("", f"Load gain parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"speed_parameters_{i}": make_button("", f"Load speed parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+
         [buttons[name].setCheckable(True) for name in ["direction", "nanonis_mod1", "nanonis_mod2"]]
 
         # Named groups
@@ -175,7 +176,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         checkboxes = {
             "withdraw": make_checkbox("", "Include withdrawing of the tip during a tip move"),
             "retract": make_checkbox("", "Include retracting the tip during a tip move"),
-            "move": make_checkbox("", "Allow horizontal tip motion"),
             "advance": make_checkbox("", "Include advancing the tip during a move"),
             "approach": make_checkbox("", "End the tip move with an auto approach"),
 
@@ -188,13 +188,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "rotation": make_checkbox("", "Show the scan frame rotation\n(R)", self.icons.get("rotation")),
             "offset": make_checkbox("", "Show the scan frame offset(O)", self.icons.get("offset")),
 
-            "composite_motion": make_checkbox("", "When checked, combine the checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
+            "composite_motion": make_checkbox("", "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }
         
         channel_checkboxes = {f"{index}": make_checkbox(f"{index}", f"channel {index}") for index in range(20)}
         
         # Named groups
-        self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "move", "advance", "approach"]]
+        self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
         [checkbox.setChecked(True) for checkbox in self.action_checkboxes]
         checkboxes["advance"].setChecked(False)
 
@@ -229,7 +229,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "V_hor": make_line_edit("150 V (xy)", "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", number_type = "int"),
             "V_ver": make_line_edit("150 V (z)", "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", number_type = "int"),
-            "f_motor": make_line_edit("1000 Hz", "Frequency supplied to the coarse piezos during movement", unit = "Hz", number_type = "int"),
+            "f_motor": make_line_edit("1000 Hz", "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", number_type = "int"),
 
             "V_nanonis": make_line_edit("", "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
             "V_mla": make_line_edit("", "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
@@ -364,15 +364,22 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts = {
             "main": make_layout("h"),
             "left_side": make_layout("v"),
-
             "toolbar": make_layout("v"),
+            
+            "parameters_0": make_layout("v"),
             "scan_parameter_sets": make_layout("h"),
+            
+            "scan_parameters": make_layout("g"),
+            "gain_parameters": make_layout("g"),
+            "frame_parameters": make_layout("g"),
+
             "channel_navigation": make_layout("h"),
 
             "bias_buttons": make_layout("h"),
 
-            "coarse_actions": make_layout("g"),
-            "arrows": make_layout("g"),
+            "coarse_vertical": make_layout("g"),
+            "coarse_horizontal": make_layout("g"),
+
             "background_buttons": make_layout("h"),
             "matrix_processing": make_layout("g"),
             "limits": make_layout("g"),
@@ -385,7 +392,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "channels": make_layout("g"),
 
             "connections": make_layout("g"),
-            "coarse_control": make_layout("g"),
+            "coarse_control": make_layout("h"),
             "tip_prep": make_layout("h"),
             "parameters": make_layout("g"),            
             "image_processing": make_layout("v"),
@@ -515,11 +522,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Right column
         [layouts["connections"].addWidget(button, 0, i) for i, button in enumerate(self.connection_buttons)]
         
-        ca_layout = layouts["coarse_actions"]
-        [ca_layout.addWidget(checkbox, i, 0) for i, checkbox in enumerate(self.action_checkboxes)]
-        [ca_layout.addWidget(button, i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
-        [ca_layout.addWidget(line_edit, i + 1, 2) for i, line_edit in enumerate(self.action_line_edits)]
-        [layouts["arrows"].addWidget(button, int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
+        cv_layout = layouts["coarse_vertical"]
+        [cv_layout.addWidget(checkbox, i + int(i / 2), 0) for i, checkbox in enumerate(self.action_checkboxes)]
+        [cv_layout.addWidget(button, i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
+        [cv_layout.addWidget(line_edit, i + 1, 2) for i, line_edit in enumerate(self.action_line_edits)]
+        
+        ch_layout = layouts["coarse_horizontal"]
+        ch_layout.addWidget(line_edits["V_hor"], 0, 0, 1, 3)
+        ch_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3)
+        [ch_layout.addWidget(button, 2 + int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
+        ch_layout.addWidget(checkboxes["composite_motion"], 5, 0, 1, 3)
         
         [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
         par_layout = layouts["parameters"]
@@ -565,12 +577,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         ip_layout.addWidget(self.gui_items.line_widget("h", 1))
         ip_layout.addWidget(labels["limits"])         
         ip_layout.addLayout(l_layout)
-
-        cc_layout = layouts["coarse_control"]
-        cc_layout.addLayout(ca_layout, 0, 0, 5, 1)
-        cc_layout.addWidget(self.line_edits["V_hor"], 0, 1, 1, 1)
-        cc_layout.addWidget(self.line_edits["V_ver"], 0, 2, 1, 1)
-        cc_layout.addLayout(layouts["arrows"], 1, 1, 3, 2)
         
         #layouts["input"].addWidget(self.buttons["input"], 1)
         layouts["input"].addWidget(self.consoles["input"])
@@ -602,6 +608,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         groupboxes = {
             "connections": make_groupbox("Connections", "Connections to hardware (push to check/refresh)"),
             "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
+            "coarse_vertical": make_groupbox("Vertical", "Vertical coarse motion"),
+            "coarse_horizontal": make_groupbox("Horizontal", "Vertical coarse motion"),
+
             "tip_prep": make_groupbox("Tip prep", "Tip preparation actions"),
             "parameters": make_groupbox("Scan parameters", "Scan parameters"),
             "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
@@ -614,15 +623,19 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.tab_widget = QTW()
 
         # Set layouts for the groupboxes
-        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
-        
-        #[self.widgets[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
+        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "coarse_horizontal", "coarse_vertical", "tip_prep", "parameters", "experiment", "image_processing"]]
 
-        [self.tab_widget.addTab(self.widgets[name], "") for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
-        #self.layouts["toolbar"].addWidget(self.tab_widget)
+        # Second level groupboxes
+        [layouts["coarse_control"].addWidget(groupboxes[name]) for name in ["coarse_horizontal", "coarse_vertical"]]
         
-        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
+        # Make tabs
+        tab_names = ["coarse_control", "tip_prep", "parameters", "image_processing"]
+        [self.widgets[name].setLayout(layouts[name]) for name in tab_names]
+        [self.tab_widget.addTab(self.widgets[name], name) for name in tab_names]
         
+        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "experiment"]] #, "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
+        self.layouts["toolbar"].addWidget(self.tab_widget)
+
         return groupboxes
 
 
