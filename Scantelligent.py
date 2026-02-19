@@ -2,7 +2,7 @@ import os, sys, re, html, yaml, cv2, pint, socket, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyHW, DataProcessing, UserData, PJTargetItem, FileFunctions
+from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyHW, DataProcessing, UserData, PJTargetItem, FileFunctions, Camera
 from time import sleep
 from datetime import datetime
 
@@ -31,12 +31,13 @@ class Scantelligent(QtCore.QObject):
         super().__init__()
         icon_folder = self.parameters_init()
         self.gui = ScantelligentGUI(icon_folder)
-        self.setup_connections() # Initialize the console, the button-slot, and keystroke-slot connections        
+        self.connect_console() # Initialize the console, the button-slot, and keystroke-slot connections
+        self.connect_buttons()
+        #self.setup_connections() 
         
         self.hardware = self.config_init() # Read the hardware configuration and parameters from the configuration files in the sys folder
         self.data = DataProcessing() # Class for data processing and analysis
         self.timer = QtCore.QTimer()
-        self.thread = QtCore.QThread()
         
         self.keithley = KeithleyHW(hardware = self.hardware)
         self.nanonis = NanonisAPI(hardware = self.hardware) # Class for simple Nanonis functions
@@ -73,7 +74,7 @@ class Scantelligent(QtCore.QObject):
         self.user = UserData()
         self.file_functions = FileFunctions()
         self.lines = [] # Lines for plotting in the graph
-
+        
         # Dict to keep track of the hardware and experiment status
         self.status = {
             "initialization": True,
@@ -87,87 +88,77 @@ class Scantelligent(QtCore.QObject):
         
         return self.paths["icon_folder"]
 
-    def setup_connections(self) -> None:
-        """
-        Initialize the console, the button-slot, and keystroke-slot connections
-        """
+    def connect_console(self) -> None:
+        # Redirect output to the console
+        self.stdout_redirector = StreamRedirector()
+        self.stdout_redirector.output_written.connect(lambda text: self.gui.consoles["output"].append(text))
+        sys.stdout = self.stdout_redirector
+        #sys.stderr = self.stdout_redirector
+        now = datetime.now()
+        self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
 
-        def connect_console() -> None:
-            # Redirect output to the console
-            self.stdout_redirector = StreamRedirector()
-            self.stdout_redirector.output_written.connect(lambda text: self.gui.consoles["output"].append(text))
-            sys.stdout = self.stdout_redirector
-            #sys.stderr = self.stdout_redirector
-            now = datetime.now()
-            self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
-
-            return
+        return
+    
+    def connect_buttons(self) -> None:
+        buttons = self.gui.buttons
+        shortcuts = self.gui.shortcuts        
         
-        def connect_buttons() -> None:
-            buttons = self.gui.buttons
-            shortcuts = self.gui.shortcuts        
-            
-            # Connect the buttons to their respective functions
-            connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
-                        ["oscillator", self.toggle_withdraw], ["view", self.toggle_withdraw], ["session_folder", self.open_session_folder], ["info", self.on_info],
-                        
-                        ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
-                        
-                        ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set", self.set_parameters], ["get", self.get_parameters],
-                        
-                        ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")], ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
+        # Connect the buttons to their respective functions
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
+                    ["oscillator", self.toggle_withdraw], ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.on_info],
+                    
+                    ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
+                    
+                    ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set_scan_parameters", self.set_parameters], ["get_scan_parameters", self.get_parameters],
 
-                        ["nanonis_mod1", lambda: self.modulator_control(modulator_number = 1)], ["nanonis_mod2", lambda: self.modulator_control(modulator_number = 2)],
+                    ["get_frame_parameters", lambda: self.get("gains")], ["get_gain_parameters", lambda: self.get("gains")],
+                    
+                    ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")], ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
 
-                        ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
-                        ]
+                    ["nanonis_mod1", lambda: self.modulator_control(modulator_number = 1)], ["nanonis_mod2", lambda: self.modulator_control(modulator_number = 2)],
 
-            # for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
-            #    buttons[direction].clicked.connect(lambda drxn = direction: self.on_coarse_move(drxn))
-            buttons["n"].clicked.connect(lambda: self.on_coarse_move("n"))
-            buttons["ne"].clicked.connect(lambda: self.on_coarse_move("ne"))
-            buttons["e"].clicked.connect(lambda: self.on_coarse_move("e"))
-            buttons["se"].clicked.connect(lambda: self.on_coarse_move("se"))
-            buttons["s"].clicked.connect(lambda: self.on_coarse_move("s"))
-            buttons["sw"].clicked.connect(lambda: self.on_coarse_move("sw"))
-            buttons["w"].clicked.connect(lambda: self.on_coarse_move("w"))
-            buttons["nw"].clicked.connect(lambda: self.on_coarse_move("nw"))
+                    ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
+                    ]
 
-            connections.append([f"scan_parameters_0", lambda: self.load_parameters_from_file("scan_parameters", 0)])
-            connections.append([f"scan_parameters_1", lambda: self.load_parameters_from_file("scan_parameters", 1)])
-            connections.append([f"scan_parameters_2", lambda: self.load_parameters_from_file("scan_parameters", 2)])
-            connections.append([f"scan_parameters_3", lambda: self.load_parameters_from_file("scan_parameters", 3)])
-            
-            #for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
-            #    buttons[direction].clicked.connect(lambda drxn = direction: self.on_coarse_move(drxn))
-            
-            for connection in connections:
-                name = connection[0]
-                connected_function = connection[1]
-                buttons[name].clicked.connect(connected_function)
-                
-                if name in shortcuts.keys():
-                    shortcut = QtGui.QShortcut(shortcuts[name], self.gui)
-                    shortcut.activated.connect(connected_function)
-            
-            # Line edits
-            self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
-            
-            # Comboboxes
-            self.gui.comboboxes["channels"].currentIndexChanged.connect(self.request_nanonis_update)
-            experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
-            self.gui.comboboxes["experiment"].addItems(experiments)
-            self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.on_experiment_change)
-            
-            # Instantiate process for CLI-style commands (opening folders and other programs)
-            self.process = QtCore.QProcess(self.gui)
-            
-            self.gui.image_view.position_signal.connect(self.receive_double_click)
+        connections.append([f"scan_parameters_0", lambda: self.load_parameters_from_file("scan_parameters", 0)])
+        connections.append([f"scan_parameters_1", lambda: self.load_parameters_from_file("scan_parameters", 1)])
+        connections.append([f"scan_parameters_2", lambda: self.load_parameters_from_file("scan_parameters", 2)])
+        connections.append([f"scan_parameters_3", lambda: self.load_parameters_from_file("scan_parameters", 3)])
 
-            return
+        for connection in connections:
+            name = connection[0]
+            connected_function = connection[1]
+            buttons[name].clicked.connect(connected_function)
+            
+            if name in shortcuts.keys():
+                shortcut = QtGui.QShortcut(shortcuts[name], self.gui)
+                shortcut.activated.connect(connected_function)
         
-        connect_console()
-        connect_buttons()    
+        # for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
+        [buttons[direction].clicked.connect(lambda checked, drxn = direction: self.on_coarse_move(drxn)) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
+        # buttons["n"].clicked.connect(lambda: self.on_coarse_move("n"))
+        # buttons["ne"].clicked.connect(lambda: self.on_coarse_move("ne"))
+        # buttons["e"].clicked.connect(lambda: self.on_coarse_move("e"))
+        # buttons["se"].clicked.connect(lambda: self.on_coarse_move("se"))
+        # buttons["s"].clicked.connect(lambda: self.on_coarse_move("s"))
+        # buttons["sw"].clicked.connect(lambda: self.on_coarse_move("sw"))
+        # buttons["w"].clicked.connect(lambda: self.on_coarse_move("w"))
+        # buttons["nw"].clicked.connect(lambda: self.on_coarse_move("nw"))
+
+        # Line edits
+        self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
+        
+        # Comboboxes
+        self.gui.comboboxes["channels"].currentIndexChanged.connect(self.request_nanonis_update)
+        experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
+        self.gui.comboboxes["experiment"].addItems(experiments)
+        self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.on_experiment_change)
+        
+        # Instantiate process for CLI-style commands (opening folders and other programs)
+        self.process = QtCore.QProcess(self.gui)
+        
+        self.gui.image_view.position_signal.connect(self.receive_double_click)
+
         return
   
     def config_init(self) -> None:
@@ -427,21 +418,34 @@ class Scantelligent(QtCore.QObject):
                 [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
                 [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
                 angle_deg = frame.get("angle (deg)", 0)
+                aspect_ratio = h_nm / w_nm
+
+                # Update the fields in the GUI
+                [self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
                 
                 # Add the frame to the ImageView
-                self.frame_roi = pg.ROI([0, 0], [w_nm, h_nm], pen = pg.mkPen(color = colors["blue"], width = 2), movable = True, resizable = False, rotatable = True)
-                self.frame_roi.addRotateHandle([0, 0.5], [0.5, 0.5])
-                
-                self.gui.image_view.addItem(self.frame_roi)
-                self.frame_roi.setAngle(angle = -angle_deg)
-                
-                bounding_rect = self.frame_roi.boundingRect()
-                local_center = bounding_rect.center()
-                frame_roi_center = self.frame_roi.mapToParent(local_center)
-                self.frame_roi.setPos(x_0_nm - frame_roi_center.x(), y_0_nm - frame_roi_center.y())
+                if self.status["view"] == "nanonis":
+                    self.frame_roi = pg.ROI([0, 0], [w_nm, h_nm], pen = pg.mkPen(color = colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)                
+                                    
+                    self.gui.image_view.addItem(self.frame_roi)
+                    self.frame_roi.setAngle(angle = -angle_deg)
+                    
+                    bounding_rect = self.frame_roi.boundingRect()
+                    local_center = bounding_rect.center()
+                    frame_roi_center = self.frame_roi.mapToParent(local_center)
+                    self.frame_roi.setPos(x_0_nm - frame_roi_center.x(), y_0_nm - frame_roi_center.y())
             
             case "grid":
                 grid = parameters
+
+                pixels = grid.get("pixels")
+                lines = grid.get("lines")
+                pixel_width = grid.get("pixel_width (nm)")
+                pixel_height = grid.get("pixel_height (nm)")
+                aspect_ratio = lines / pixels
+
+                # Update the fields in the GUI
+                [self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
             
             case "piezo_range":
                 piezo_range = parameters
@@ -453,7 +457,7 @@ class Scantelligent(QtCore.QObject):
                 self.piezo_roi = pg.ROI(piezo_lower_left_nm, piezo_range_nm, pen = pg.mkPen(color = colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
                 
                 # Add the frame to the ImageView
-                self.gui.image_view.addItem(self.piezo_roi)
+                if self.status["view"] == "nanonis": self.gui.image_view.addItem(self.piezo_roi)
             
             case "scan_metadata":
                 scan_metadata = parameters
@@ -477,9 +481,8 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_image(self, image: np.ndarray) -> None:
-        try:                
-            # Save the current state and clear the image, then set a new one
-            #current_state = self.gui.image_view.view.autoRange
+        try:
+            
             self.gui.image_view.clear()
             try:
                 self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)
@@ -748,6 +751,26 @@ class Scantelligent(QtCore.QObject):
 
 
     # Simple Nanonis requests
+    def get(self, parameter_type: str = "frame") -> None:
+        match parameter_type:
+
+            case "frame":
+                self.nanonis.frame_update()
+
+            case "grid":
+                self.nanonis.grid_update()
+
+            case "speeds":
+                self.nanonis.frame_update()
+
+            case "gains":
+                self.nanonis.frame_update()
+            
+            case _:
+                pass
+
+        return
+
     def get_parameters(self) -> None:
         le = self.gui.line_edits
         # Request a parameter update from Nanonis, and wait to receive
@@ -757,9 +780,6 @@ class Scantelligent(QtCore.QObject):
         self.nanonis.tip_update(auto_disconnect = True)
         sleep(.2)
         scan_parameters = self.user.scan_parameters[0]
-
-        self.keithley.echo()
-        self.keithley.get_V()
         
         # Enter the scan parameters into the fields        
         for key, value in scan_parameters.items():
@@ -771,6 +791,7 @@ class Scantelligent(QtCore.QObject):
                 case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
                 case "v_fwd (nm/s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
                 case "v_bwd (nm/s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
+                case _: pass
         
         return
 
@@ -851,39 +872,48 @@ class Scantelligent(QtCore.QObject):
 
 
 
-    # Button slots
-    def on_next_chan(self):
-        pass
+    def toggle_view(self):
+        match self.status["view"]:
 
-    def on_previous_chan(self):
-        pass
+            # Set to Camera
+            case "none":
+                self.gui.image_view.clear()
+                self.status.update({"view": "camera"})
+                self.gui.buttons["view"].setIcon(self.icons.get("view_camera"))
 
-    def on_toggle_direction(self) -> None:
-        buttons = self.gui.buttons
+                self.camera = Camera({"index": 0})
+                self.camera_thread = QtCore.QThread()
+                self.camera.moveToThread(self.camera_thread)
+                
+                self.camera.frameCaptured.connect(self.receive_image)
+                self.camera.message.connect(self.receive_message)
+                self.camera.finished.connect(self.camera_thread.quit)
+                self.camera_thread.started.connect(self.camera.run)
+                self.camera_thread.finished.connect(self.camera.deleteLater)
+                self.camera_thread.finished.connect(self.camera_thread.deleteLater)
 
-        if hasattr(self, "scan_direction") and self.scan_direction == "forward": self.scan_direction = "backward"
-        else: self.scan_direction = "forward"
+                self.camera_thread.start()
 
-        buttons["direction"].blockSignals(True)
-        buttons["direction"].setChecked(self.scan_direction == "backward")
-        buttons["direction"].setText(f"direXion: {self.scan_direction}")
-        buttons["direction"].blockSignals(False)
+            # Set to Nanonis
+            case "camera":
+                if hasattr(self, "camera_thread"):
+                    self.camera_thread.requestInterruption()
+
+                self.gui.image_view.view.clear()
+                self.status.update({"view": "nanonis"})
+                self.gui.buttons["view"].setIcon(self.icons.get("view_nanonis"))
+                self.nanonis.piezo_range_update()
+                self.nanonis.frame_update(auto_disconnect = True)
+
+            # Set to None
+            case _:
+
+                #self.gui.image_view.clear()
+                self.gui.image_view.view.clear()
+                self.status.update({"view": "none"})
+                self.gui.buttons["view"].setIcon(self.icons.get("eye"))
 
         return
-
-    def view_toggle(self):
-        # Toggle view between camera and scan
-        print(f"View index is {self.view_index}")
-
-        self.view_index = 1 - self.view_index
-        
-        if self.view_index == 1:
-            self.view_swap_button.setText("View: camera")
-            self.start_camera()
-        else:
-            self.view_swap_button.setText("View: scan")
-            self.stop_camera()
-        print(f"View index is {self.view_index}")
 
     def launch_scanalyzer(self) -> None:
         if hasattr(self, "paths") and "scanalyzer_path" in list(self.paths.keys()):

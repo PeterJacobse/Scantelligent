@@ -138,10 +138,6 @@ class NanonisAPI(QtCore.QObject):
         self.timer.stop()
         return
 
-    def send_tip_update(self) -> None:
-        self.tip_update()
-        return
-
     def scan_control(self, parameters: dict = {}, auto_disconnect: bool = False) -> bool | str:
         # Initalize outputs
         error = False
@@ -201,6 +197,52 @@ class NanonisAPI(QtCore.QObject):
             if auto_disconnect: self.disconnect()
 
         return (piezo_range_dict, error)
+
+    def scan_metadata_update(self, auto_disconnect: bool = False) -> tuple[dict | str]:
+        """
+        get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
+        """
+        # Initalize outputs
+        scan_metadata = None
+        error = False
+        nhw = self.nanonis_hardware
+
+        # Set up the TCP connection and get grid dat
+        try:
+            self.message.emit(f"scan_metadata_update()", "code")
+            
+            if not self.status == "running": self.connect()
+            props = nhw.get_scan_props()
+            buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
+            channel_indices = buffer["channel_indices"]
+
+            if nhw.version > 14000: #Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
+                sig_in_slots = nhw.get_signals_in_slots()
+                signal_names = sig_in_slots["names"]
+                signal_indices = sig_in_slots["indices"]
+            
+                # Find out the names of the channels being recorded and their corresponding indices
+                channel_dict = {signal_names[index]: index for index in channel_indices}
+
+            else:
+                signal_names = nhw.get_signal_names()
+            
+            signal_dict = {signal_names[index]: index for index in range(len(signal_names))} # Signal_dict is a dict of all signals and their corresponding indices
+            channel_dict = {signal_names[index]: index for index in buffer.get("channel_indices")} # Channel_dict is the subset of signals that are actively recorded in the scan
+
+            scan_metadata = props | {
+                "channel_dict": channel_dict,
+                "signal_dict": signal_dict,
+                "dict_name": "scan_metadata"
+                }
+            
+            self.parameters.emit(scan_metadata)
+
+        except Exception as e: error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+
+        return (scan_metadata, error)
 
     def scan_update(self, channel_index, backward: bool = False, auto_disconnect: bool = False) -> np.ndarray:
         # Initalize outputs
@@ -493,7 +535,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (parameters, error)
 
-    def frame_update(self, parameters: dict ={}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def frame_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
         """
         Function to get and set frame
         """
@@ -594,8 +636,8 @@ class NanonisAPI(QtCore.QObject):
             x_grid = np.zeros_like(x_grid_local)
             y_grid = np.zeros_like(y_grid_local)
 
-            for i in range(pixels):
-                for j in range(lines):
+            for i in range(lines):
+                for j in range(pixels):
                     x_grid[i, j] = x_grid_local[i, j] * cos + y_grid_local[i, j] * sin
                     y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
 
@@ -622,52 +664,6 @@ class NanonisAPI(QtCore.QObject):
             if auto_disconnect: self.disconnect()
 
         return (grid, error)
-
-    def scan_metadata_update(self, auto_disconnect: bool = False) -> tuple[dict | str]:
-        """
-        get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
-        """
-        # Initalize outputs
-        scan_metadata = None
-        error = False
-        nhw = self.nanonis_hardware
-
-        # Set up the TCP connection and get grid dat
-        try:
-            self.message.emit(f"scan_metadata_update()", "code")
-            
-            if not self.status == "running": self.connect()
-            props = nhw.get_scan_props()
-            buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
-            channel_indices = buffer["channel_indices"]
-
-            if nhw.version > 14000: #Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
-                sig_in_slots = nhw.get_signals_in_slots()
-                signal_names = sig_in_slots["names"]
-                signal_indices = sig_in_slots["indices"]
-            
-                # Find out the names of the channels being recorded and their corresponding indices
-                channel_dict = {signal_names[index]: index for index in channel_indices}
-
-            else:
-                signal_names = nhw.get_signal_names()
-            
-            signal_dict = {signal_names[index]: index for index in range(len(signal_names))} # Signal_dict is a dict of all signals and their corresponding indices
-            channel_dict = {signal_names[index]: index for index in buffer.get("channel_indices")} # Channel_dict is the subset of signals that are actively recorded in the scan
-
-            scan_metadata = props | {
-                "channel_dict": channel_dict,
-                "signal_dict": signal_dict,
-                "dict_name": "scan_metadata"
-                }
-            
-            self.parameters.emit(scan_metadata)
-
-        except Exception as e: error = e
-        finally:
-            if auto_disconnect: self.disconnect()
-
-        return (scan_metadata, error)
 
     def bias_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> float | bool:
         # Initalize outputs

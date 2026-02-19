@@ -348,28 +348,24 @@ class PJLineEdit(QtWidgets.QLineEdit):
     A QLineEdit with extra method changeToolTip, and which adds a unit after editing is finished
     """
     def __init__(self, parent = None, **kwargs):
-        self.name = kwargs.pop("name", None)
+        self.value = kwargs.pop("value", None)
         self.tooltip = kwargs.pop("tooltip", None)
         self.unit = kwargs.pop("unit", None)
         self.limits = kwargs.pop("limits", None)
         self.number_type = kwargs.pop("number_type", "float")
         self.max_width = kwargs.pop("max_width", None)
         self.style_sheet = kwargs.pop("style_sheet", None)
+        self.digits = kwargs.pop("digits", None)
+        self.block = kwargs.pop("block", False)
+        if isinstance(self.digits, int) and self.digits < 1: self.number_type = "int"
         
         super().__init__(parent)
         
         self.set_defaults()
-        if isinstance(self.unit, str): self.editingFinished.connect(self.addUnit) 
-
-
+        if not self.block: self.editingFinished.connect(self.addUnit) 
     
     def set_defaults(self) -> None:
-        if isinstance(self.name, str):
-            self.setObjectName(self.name)
-            if isinstance(self.unit, str):
-                self.setText(self.name + " " + self.unit)
-            else:
-                self.setText(self.name)
+        if isinstance(self.value, str) or isinstance(self.value, int) or isinstance(self.value, float): self.setValue(self.value)
         if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
         if isinstance(self.max_width, int):
             self.setMaximumWidth(self.max_width)
@@ -423,14 +419,20 @@ class PJLineEdit(QtWidgets.QLineEdit):
             number = numbers[0]
             
             # Apply limits in case the number is too big or small
-            if type(self.limits) == list:
+            if isinstance(self.limits, list):
                 if number < self.limits[0]: number = self.limits[0]
                 if number > self.limits[1]: number = self.limits[1]
 
             # Add the unit to the number
+            if isinstance(self.digits, int):
+                number = round(number, self.digits)
             if self.number_type == "int":
                 number = int(number)
-            self.setText(f"{number} {self.unit}")
+            
+            if isinstance(self.unit, str):
+                self.setText(f"{number} {self.unit}")
+            else:
+                self.setText(f"{number}")
         else:
             self.setText("")
         
@@ -438,9 +440,48 @@ class PJLineEdit(QtWidgets.QLineEdit):
         
         return
 
+    def getValue(self) -> float | str:
+        entered_text = self.text()
+        
+        # Extract the numeric part of what was entered
+        regex_pattern = r"([-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?)(?:\s*[a-zA-Zμ°%]+)?"
+        number_matches = re.findall(regex_pattern, entered_text)
+        
+        if self.number_type == "int": numbers = [int(x) for x in number_matches]
+        else: numbers = [float(x) for x in number_matches]
+        
+        if len(numbers) > 0:
+            number = numbers[0]
+            
+            # Apply limits in case the number is too big or small
+            if isinstance(self.limits, list):
+                if number < self.limits[0]: number = self.limits[0]
+                if number > self.limits[1]: number = self.limits[1]
+
+            # Add the unit to the number
+            if isinstance(self.digits, int):
+                number = round(number, self.digits)
+            if self.number_type == "int":
+                number = int(number)
+            
+            return number
+
+        return entered_text
+
     def setValue(self, value) -> None:
-        if isinstance(self.unit, str):
-            self.setText(f"{value} {self.unit}")
+        if isinstance(value, int) or isinstance(value, float):
+            number = value
+
+            if isinstance(self.digits, int):
+                number = round(number, self.digits)
+            if self.number_type == "int":
+                number = int(number)
+
+            if isinstance(self.unit, str):
+                self.setText(f"{number} {self.unit}")
+            else:
+                self.setText(f"{number}")
+        
         else:
             self.setText(f"{value}")
 
@@ -758,7 +799,7 @@ class GUIItems:
     def make_groupbox(self, name: str = "", tooltip: str = "") -> QtWidgets.QGroupBox:
         box = QtWidgets.QGroupBox(name)
         box.setToolTip(tooltip)
-        box.setCheckable(True)
+        box.setCheckable(False)
         return box
 
     def make_button(self, name: str = "", tooltip: str = "", icon = None, rotate_icon: float = 0) -> PJPushButton:
@@ -835,13 +876,20 @@ class GUIItems:
         
         return box
 
-    def make_line_edit(self, name: str = "", tooltip: str = "", unit = None, limits = None, number_type: str = "float") -> PJLineEdit:
+    def make_line_edit(self, value: str = "", tooltip: str = "", unit = None, limits = None, number_type: str = "float", icon = None, rotate_icon: float = 0) -> PJLineEdit:
         line_edit = PJLineEdit(unit = unit, limits = limits, number_type = number_type)
-        line_edit.setObjectName(name)
+        line_edit.setObjectName(value)
         line_edit.setToolTip(tooltip)
-        line_edit.setText(name)
+        line_edit.setText(value)
         line_edit.setStyleSheet("QLineEdit{ background-color: #101010 }")
         
+        if isinstance(icon, QtGui.QIcon):
+            if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
+                try: icon = self.rotate_icon(icon, rotate_icon)
+                except: pass
+            try: line_edit.setWindowIcon(icon)
+            except: pass
+
         return line_edit
 
     def make_progress_bar(self, name: str = "", tooltip: str = "") -> PJProgressBar:

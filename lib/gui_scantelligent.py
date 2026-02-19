@@ -42,6 +42,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # 5: Set up the main window layout
         self.setup_main_window()
 
+        # 6: Interconnect mutually interdependent signals and slots
+        self.interconnect()
+
 
 
     # 1: Read icons from file.
@@ -71,6 +74,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "number_of_files": make_label("which contains 1 sxm file"),
             "channel_selected": make_label("Channel selected:"),
 
+            "frame": make_label("frame"),
+            "grid": make_label("grid"),
+
             "scan_control": make_label("Scan channel / direction"),
             "background_subtraction": make_label("Background subtraction"),
             "width": make_label("Width (nm):"),
@@ -91,6 +97,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     
     def make_buttons(self) -> dict:
         make_button = self.gui_items.make_button
+        make_toggle_button = self.gui_items.make_toggle_button
         icons = self.icons
         arrow = icons.get("single_arrow")
         arrow45 = icons.get("single_arrow_45")
@@ -110,8 +117,19 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "tip": make_button("", "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
             "V_swap": make_button("", "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
-            "set": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            
+            "set_scan_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_scan_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            "set_coarse_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_coarse_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            "set_gain_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_gain_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            "set_speed_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_speed_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            "set_frame_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_frame_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            "set_grid_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_grid_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
             
             "withdraw": make_button("", "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
             "retract": make_button("", "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
@@ -136,13 +154,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "start_pause": make_button("", "Start experiment", icon = icons.get("start")),
             "stop": make_button("", "Stop experiment", icon = icons.get("stop")),
 
-            "direction": make_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow")),
+            "direction": make_toggle_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow")),
             "fit_to_frame": make_button("", "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
             "fit_to_range": make_button("", "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
             "full_data_range": make_button("", sivr + "to the full data range\n(U)", icons.get("100")),
             "percentiles": make_button("", sivr + "by percentiles\n(R)", icons.get("percentiles")),
             "standard_deviation": make_button("", sivr + "by standard deviations\n(D)", icons.get("deviation")),
             "absolute_values": make_button("", sivr + "by absolute values\n(A)", icons.get("numbers")),
+
+            "frame_aspect": make_toggle_button("", "Lock the frame aspect ratio", icon = icons.get("lock_aspect")),
+            "grid_aspect": make_toggle_button("", "Lock the grid aspect ratio", icon = icons.get("lock_aspect")),
             
             "input": make_button(">>", "Enter command\n(Ctrl + Enter)"),
 
@@ -155,14 +176,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             buttons.update({f"coarse_parameters_{i}": make_button("", f"Load coarse parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
             buttons.update({f"gain_parameters_{i}": make_button("", f"Load gain parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
             buttons.update({f"speed_parameters_{i}": make_button("", f"Load speed parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"grid_parameters_{i}": make_button("", f"Load grid parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
 
-        [buttons[name].setCheckable(True) for name in ["direction", "nanonis_mod1", "nanonis_mod2"]]
+        #[buttons[name].setCheckable(True) for name in ["direction", "nanonis_mod1", "nanonis_mod2", "frame_aspect", "grid_aspect"]]
 
         # Named groups
-        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "oscillator", "session_folder", "info", "exit"]]
+        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "session_folder", "info", "exit"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
         self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
+        
         self.scan_parameter_sets = [buttons[f"scan_parameters_{i + 1}"] for i in range(4)]
+        
         self.scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
 
         # Add the button handles to the tooltips
@@ -223,35 +247,62 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         buttons = self.buttons
         
         line_edits = {
-            "z_steps": PJLineEdit(name = "20", tooltip = "Steps in the +Z (retract) direction", unit = "steps up", number_type = "int"),
-            "h_steps": PJLineEdit(name = "100", tooltip = "Steps in the horizontal direction", unit = "steps", number_type = "int"),
-            "minus_z_steps": PJLineEdit(name = "0", tooltip = "Steps in the -Z (advance) direction", unit = "steps down", number_type = "int"),
-            
-            "V_hor": make_line_edit("150 V (xy)", "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", number_type = "int"),
-            "V_ver": make_line_edit("150 V (z)", "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", number_type = "int"),
-            "f_motor": make_line_edit("1000 Hz", "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", number_type = "int"),
+            # Experiment
+            "experiment_filename": make_line_edit("", "Base name of the file when saved to png or hdf5"),
 
-            "V_nanonis": make_line_edit("", "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
-            "V_mla": make_line_edit("", "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10]),
-            "I_fb": make_line_edit("", "Feedback current in pA\n(Ctrl + P) to set", unit = "pA", number_type = int),
-            "p_gain": make_line_edit("", "Proportional gain in pm\n(Ctrl + P) to set", unit = "pm", number_type = int),
-            "t_const": make_line_edit("", "Time constant in pm\n(Ctrl + P) to set", unit = "us"),
-            "v_fwd": make_line_edit("", "Tip forward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
-            "v_bwd": make_line_edit("", "Tip backward speed in nm/s\n(Ctrl + P) to set", unit = "nm/s"),
+            # Coarse
+            "z_steps": PJLineEdit(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", digits = 0),
+            "h_steps": PJLineEdit(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", digits = 0),
+            "minus_z_steps": PJLineEdit(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", digits = 0),
             
-            "V_keithley": make_line_edit("", "Keithley bias", unit = "V", limits = [-200, 200]),
-            "I_keithley": make_line_edit("", "Keithley current", unit = "pA", limits = [-200, 200]),
-            
-            "frame_height": make_line_edit("", "frame heigth", unit = "nm"),
-            "frame_width": make_line_edit("", "frame width", unit = "nm"),
-            "frame_x": make_line_edit("", "frame offset (x)", unit = "nm"),
-            "frame_y": make_line_edit("", "frame offset (y)", unit = "nm"),
-            "frame_angle": make_line_edit("", "frame angle", unit = "deg"),
-            
-            "pulse_voltage": make_line_edit("", "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10]),
-            "pulse_duration": make_line_edit("", "Duration of the voltage pulse", unit = "ms"),
+            "V_hor": PJLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0),
+            "V_ver": PJLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0),
+            "f_motor": PJLineEdit(value = 1000, tooltip = "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0),
 
-            "min_full": make_line_edit("", "minimum value of scan data range"),
+            # Parameters
+            "V_nanonis": PJLineEdit(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
+            "V_mla": PJLineEdit(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
+            "V_keithley": PJLineEdit(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3),
+
+            "dV": PJLineEdit(tooltip = "Step size dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
+            "dt": PJLineEdit(tooltip = "Step size dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
+            "dz": PJLineEdit(tooltip = "Step size dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
+
+            "dV_keithley": PJLineEdit(tooltip = "Step size dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1),
+            "dt_keithley": PJLineEdit(tooltip = "Step size dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0),
+
+            "I_fb": PJLineEdit(tooltip = "Feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0),
+            "I_keithley": PJLineEdit(tooltip = "Keithley current", unit = "pA", digits = 0),
+            "I_limit": PJLineEdit(tooltip = "Maximum Keithley current", unit = "pA", digits = 0),
+            
+            "p_gain": PJLineEdit(tooltip = "Proportional gain\n(Ctrl + P) to set", unit = "pm", digits = 0),
+            "t_const": PJLineEdit(tooltip = "Time constant\n(Ctrl + P) to set", unit = "us", digits = 0),
+            "i_gain": PJLineEdit(tooltip = "Integral gain\n(Ctrl + P) to set"),
+            
+            "v_fwd": PJLineEdit(tooltip = "Tip forward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
+            "v_bwd": PJLineEdit(tooltip = "Tip backward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
+            
+            # Frame
+            "frame_height": PJLineEdit(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
+            "frame_width": PJLineEdit(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1),
+            "frame_x": PJLineEdit(tooltip = "frame offset (x)", unit = "nm", limits = [-1000, 1000], digits = 1),
+            "frame_y": PJLineEdit(tooltip = "frame offset (y)", unit = "nm", limits = [-1000, 1000], digits = 1),
+            "frame_angle": PJLineEdit(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1),
+            "frame_aspect": PJLineEdit(tooltip = "frame aspect ratio (height / width)", digits = 4),
+
+            # Grid
+            "grid_pixels": PJLineEdit(tooltip = "Number of pixels", unit = "px", limits = [1, 10000], digits = 0),
+            "grid_lines": PJLineEdit(tooltip = "Number of lines", unit = "px", limits = [1, 10000], digits = 0),
+            "grid_aspect": PJLineEdit(tooltip = "grid aspect ratio (lines / pixels)", digits = 4),
+            "pixel_width": PJLineEdit(tooltip = "pixel width", unit = "nm", digits = 4),
+            "pixel_height": PJLineEdit(tooltip = "pixel height", unit = "nm", digits = 4),
+            
+            # Tip shaper
+            "pulse_voltage": PJLineEdit(tooltip = "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
+            "pulse_duration": PJLineEdit(tooltip = "Duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
+
+            # Image processing
+            "min_full": make_line_edit("", "minimum value of scan data range", icon = self.icons.get("0")),
             "max_full": make_line_edit("", "maximum value of scan data range"),
             "min_percentiles": make_line_edit("2", "minimum percentile of data range"),
             "max_percentiles": make_line_edit("98", "maximum percentile of data range"),
@@ -260,21 +311,26 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "min_absolute": make_line_edit("0", "minimum absolute value"),
             "max_absolute": make_line_edit("1", "maximum absolute value"),
 
-            "gaussian_width": make_line_edit("0 nm", "Width in nm for Gaussian blur application", unit = "nm"),
-            "experiment_filename": make_line_edit("", "Base name of the file when saved to png or hdf5"),
+            "gaussian_width": PJLineEdit(name = "0", tooltip = "Width in nm for Gaussian blur application", unit = "nm"),
             
-            "input": make_line_edit("", "Enter a command\n(Enter to evaluate)")
+            # Console            
+            "input": PJLineEdit(tooltip = "Enter a command\n(Enter to evaluate)", block = True)
         }
         
         # Named groups
-        self.parameter_line_0 = [buttons["tip"], line_edits["V_nanonis"], buttons["V_swap"], line_edits["V_mla"], line_edits["I_fb"], buttons["set"], buttons["get"]]
+        self.parameter_line_0 = [buttons["tip"], line_edits["V_nanonis"], buttons["V_swap"], line_edits["V_mla"], line_edits["I_fb"], buttons["set_scan_parameters"], buttons["get_scan_parameters"]]
         self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd", "v_bwd"]]
+
+        self.gain_line_edits = [line_edits[name] for name in ["p_gain", "t_const", "i_gain"]]
         
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
         self.tip_prep_widgets = [buttons["bias_pulse"], line_edits["pulse_voltage"], line_edits["pulse_duration"], buttons["tip_shape"]]
+
+        self.frame_widgets = [line_edits[name] for name in ["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"]]
+        self.grid_widgets = [line_edits[name] for name in ["grid_lines", "grid_pixels", "grid_aspect"]]
         
         # Aesthetics
         [line_edits[name].setStyleSheet("QLineEdit{ background-color: #101010; }") for name in line_edits.keys()]
@@ -370,8 +426,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "scan_parameter_sets": make_layout("h"),
             
             "scan_parameters": make_layout("g"),
-            "gain_parameters": make_layout("g"),
-            "frame_parameters": make_layout("g"),
+            
+            "gains": make_layout("h"),
+            "gain_parameter_sets": make_layout("h"),
+
+            "speeds": make_layout("h"),
+            "speeds_parameter_sets": make_layout("h"),
+            
+            "frame_grid": make_layout("g"),
+            "frame": make_layout("g"),
+            "grid": make_layout("g"),
+            "frame_grid_parameter_sets": make_layout("h"),
+
+            "lockins": make_layout("g"),
+            "lockin_parameter_sets": make_layout("h"),
 
             "channel_navigation": make_layout("h"),
 
@@ -427,10 +495,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "connections": QWgt(),
             "coarse_control": QWgt(),
+            "frame_grid": QWgt(),
             "tip_prep": QWgt(),
             "parameters": QWgt(),
             "image_processing": QWgt(),
-            "experiment": QWgt()
+            "experiment": QWgt(),
+            "lockins": QWgt()
         }
         
         self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]     
@@ -508,6 +578,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def populate_layouts(self) -> None:
         layouts = self.layouts
         checkboxes = self.checkboxes
+        buttons = self.buttons
         line_edits = self.line_edits
         labels = self.labels
         comboboxes = self.comboboxes
@@ -519,35 +590,82 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["graph"].addLayout(layouts["channels"], 1)
         self.widgets["graph"].setLayout(layouts["graph"])
         
-        # Right column
+        # Toolbar
+        # Connections
         [layouts["connections"].addWidget(button, 0, i) for i, button in enumerate(self.connection_buttons)]
-        
-        cv_layout = layouts["coarse_vertical"]
-        [cv_layout.addWidget(checkbox, i + int(i / 2), 0) for i, checkbox in enumerate(self.action_checkboxes)]
-        [cv_layout.addWidget(button, i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
-        [cv_layout.addWidget(line_edit, i + 1, 2) for i, line_edit in enumerate(self.action_line_edits)]
-        
-        ch_layout = layouts["coarse_horizontal"]
-        ch_layout.addWidget(line_edits["V_hor"], 0, 0, 1, 3)
-        ch_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3)
-        [ch_layout.addWidget(button, 2 + int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
-        ch_layout.addWidget(checkboxes["composite_motion"], 5, 0, 1, 3)
-        
-        [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
-        par_layout = layouts["parameters"]
-        par_layout.addWidget(self.tip_slider, 0, 0, 2, 1)
-        [par_layout.addWidget(box, 0, i + 1) for i, box in enumerate(self.parameter_line_0)]
-        par_layout.addLayout(layouts["scan_parameter_sets"], 1, 1, 1, 3)        
-        [par_layout.addWidget(box, 1, i + 4) for i, box in enumerate(self.parameter_line_1)]
-        
-        [layouts["tip_prep"].addWidget(widget) for widget in self.tip_prep_widgets]
-        
+
+        # Experiment
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
         e_layout = layouts["experiment"]
         [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiment", "direction"])]
         e_layout.addLayout(layouts["experiment_controls"], 1, 0, 3, 1)
         e_layout.addWidget(self.line_edits["experiment_filename"], 1, 1)
-                
+        
+        # Coarse
+        cv_layout = layouts["coarse_vertical"]
+        cv_layout.addWidget(line_edits["V_ver"], 0, 0, 1, 3)
+        cv_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3)
+        [cv_layout.addWidget(checkbox, 2 + i + int(i / 2), 0) for i, checkbox in enumerate(self.action_checkboxes)]
+        [cv_layout.addWidget(button, 2 + i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
+        cv_layout.addWidget(line_edits["z_steps"], 3, 2)
+        cv_layout.addWidget(labels["move_horizontally"], 4, 0, 1, 3)
+        cv_layout.addWidget(line_edits["minus_z_steps"], 5, 2)
+        cv_layout.setRowStretch(cv_layout.rowCount(), 1)
+        
+        ch_layout = layouts["coarse_horizontal"]
+        ch_layout.addWidget(line_edits["V_hor"], 0, 0, 1, 3)
+        ch_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3)
+        ch_layout.addWidget(line_edits["h_steps"], 2, 0, 1, 3)
+        [ch_layout.addWidget(button, 3 + int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
+        ch_layout.addWidget(checkboxes["composite_motion"], 6, 0, 1, 3)
+        ch_layout.setRowStretch(ch_layout.rowCount(), 1)
+        
+        # Parameters
+        [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
+        #par_layout = layouts["parameters"]
+        #par_layout.addWidget(self.tip_slider, 0, 0, 2, 1)
+        #[par_layout.addWidget(box, 0, i) for i, box in enumerate(self.parameter_line_0)]
+        #par_layout.addLayout(layouts["scan_parameter_sets"], 0, 1, 1, 3)        
+        #[par_layout.addWidget(box, 1, i + 3) for i, box in enumerate(self.parameter_line_1)]
+
+        # Gains
+        [layouts["gains"].addWidget(widget) for i, widget in enumerate(self.gain_line_edits)]
+
+        # Frame_grid
+        [layouts["frame_grid_parameter_sets"].addWidget(buttons[f"grid_parameters_{i}"]) for i in range(6)]
+
+        fg_layout = layouts["frame_grid"]
+        fg_layout.addWidget(labels["frame"], 0, 0, 1, 2)
+        fg_layout.addWidget(self.gui_items.line_widget("h"), 1, 0, 1, 2)
+        fg_layout.addWidget(buttons["frame_aspect"], 2, 0)
+        fg_layout.addWidget(line_edits["frame_height"], 2, 1)
+        fg_layout.addWidget(line_edits["frame_width"], 3, 0)
+        fg_layout.addWidget(line_edits["frame_aspect"], 3, 1)
+        fg_layout.addWidget(line_edits["frame_x"], 4, 0)
+        fg_layout.addWidget(line_edits["frame_y"], 4, 1)
+        fg_layout.addWidget(line_edits["frame_angle"], 5, 0, 1, 2)
+
+        fg_layout.addWidget(buttons["get_frame_parameters"], 6, 0)
+        fg_layout.addWidget(buttons["set_frame_parameters"], 6, 1)
+
+        fg_layout.addWidget(labels["grid"], 0, 2, 1, 2)
+        fg_layout.addWidget(self.gui_items.line_widget("h"), 1, 2, 1, 2)
+        fg_layout.addWidget(buttons["grid_aspect"], 2, 2)
+        fg_layout.addWidget(line_edits["grid_lines"], 2, 3)
+        fg_layout.addWidget(line_edits["grid_pixels"], 3, 2)
+        fg_layout.addWidget(line_edits["grid_aspect"], 3, 3)
+        fg_layout.addWidget(line_edits["pixel_width"], 4, 2)
+        fg_layout.addWidget(line_edits["pixel_height"], 4, 3)
+
+        fg_layout.addWidget(buttons["get_grid_parameters"], 6, 2)
+        fg_layout.addWidget(buttons["set_grid_parameters"], 6, 3)
+
+        fg_layout.addLayout(layouts["frame_grid_parameter_sets"], 7, 0, 1, 4)
+        
+        # Tip prep
+        [layouts["tip_prep"].addWidget(widget) for widget in self.tip_prep_widgets]
+        
+        # Image processing                
         cn_layout = layouts["channel_navigation"]
         cn_layout.addWidget(comboboxes["channels"], 4)
         cn_layout.addWidget(self.buttons["direction"], 1)
@@ -611,6 +729,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "coarse_vertical": make_groupbox("Vertical", "Vertical coarse motion"),
             "coarse_horizontal": make_groupbox("Horizontal", "Vertical coarse motion"),
 
+            "frame_grid": make_groupbox("Frame / grid", "Frame and grid parameters"),
+            "gains": make_groupbox("Feedback gains", "Feedback gains"),
+
             "tip_prep": make_groupbox("Tip prep", "Tip preparation actions"),
             "parameters": make_groupbox("Scan parameters", "Scan parameters"),
             "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
@@ -623,15 +744,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.tab_widget = QTW()
 
         # Set layouts for the groupboxes
-        [groupboxes[name].setLayout(layouts[name]) for name in ["connections", "coarse_control", "coarse_horizontal", "coarse_vertical", "tip_prep", "parameters", "experiment", "image_processing"]]
+        groupbox_names = ["connections", "coarse_control", "coarse_horizontal", "coarse_vertical", "gains", "frame_grid", "tip_prep", "parameters", "experiment", "image_processing"]
+        [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
-        # Second level groupboxes
+        # Make layouts of several groupboxes
         [layouts["coarse_control"].addWidget(groupboxes[name]) for name in ["coarse_horizontal", "coarse_vertical"]]
+        [layouts["parameters"].addWidget(groupboxes[name]) for name in ["gains", "frame_grid"]]
         
         # Make tabs
-        tab_names = ["coarse_control", "tip_prep", "parameters", "image_processing"]
-        [self.widgets[name].setLayout(layouts[name]) for name in tab_names]
-        [self.tab_widget.addTab(self.widgets[name], name) for name in tab_names]
+        tabs = ["coarse_control", "tip_prep", "parameters", "image_processing"]
+        tab_names = ["Coarse", "Prep", "Parameters", "Processing"]
+        [self.widgets[name0].setLayout(layouts[name0]) for name0 in tabs]
+        [self.tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
         
         [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "experiment"]] #, "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
         self.layouts["toolbar"].addWidget(self.tab_widget)
@@ -675,5 +799,69 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.setFocus()
         self.activateWindow()
         
+        return
+
+
+
+    def interconnect(self) -> None:
+        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.height_width_aspect(name_0)) for name in ["frame_width", "frame_height", "frame_aspect"]]
+        return
+
+
+
+    def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
+        [self.line_edits[name].blockSignals(True) for name in ["frame_width", "frame_height", "frame_aspect"]]
+
+        match line_edit_name:
+
+            case "frame_width":
+                frame_width = self.line_edits["frame_width"].getValue()
+                if not isinstance(frame_width, float) and not isinstance(frame_width, int): return
+
+                if self.buttons["frame_aspect"].isChecked():
+                    frame_aspect = self.line_edits["frame_aspect"].getValue()
+
+                    if isinstance(frame_aspect, float) or isinstance(frame_aspect, int):
+                        frame_height = frame_width * frame_aspect
+                        self.line_edits["frame_height"].setValue(frame_height)
+                else:
+                    frame_height = self.line_edits["frame_height"].getValue()
+
+                    print(f"Frame height = {frame_height}")
+
+                    if isinstance(frame_height, float) or isinstance(frame_height, int):
+                        frame_aspect = frame_height / frame_width
+                        self.line_edits["frame_aspect"].setValue(frame_aspect)
+
+            case "frame_height":
+                frame_height = self.line_edits["frame_height"].getValue()
+                if not isinstance(frame_height, float) and not isinstance(frame_height, int): return
+
+                if self.buttons["frame_aspect"].isChecked():
+                    frame_aspect = self.line_edits["frame_aspect"].getValue()
+
+                    if isinstance(frame_aspect, float) or isinstance(frame_aspect, int):
+                        frame_width = frame_height / frame_aspect
+                        self.line_edits["frame_width"].setValue(frame_width)
+                else:
+                    frame_width = self.line_edits["frame_width"].getValue()
+                    
+                    if isinstance(frame_width, float) or isinstance(frame_width, int):
+                        frame_aspect = frame_height / frame_width
+                        self.line_edits["frame_aspect"].setValue(frame_aspect)
+
+            case "frame_aspect":
+                frame_aspect = self.line_edits["frame_aspect"].getValue()
+                if not isinstance(frame_aspect, float) and not isinstance(frame_aspect, int): return
+
+                frame_width = self.line_edits["frame_width"].getValue()
+                if isinstance(frame_width, float) or isinstance(frame_width, int):
+                    frame_height = frame_width * frame_aspect
+                    self.line_edits["frame_height"].setValue(frame_height)
+
+            case _:
+                pass
+
+        [self.line_edits[name].blockSignals(False) for name in ["frame_width", "frame_height", "frame_aspect"]]
         return
 
