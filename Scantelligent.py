@@ -1,4 +1,4 @@
-import os, sys, re, html, yaml, cv2, pint, socket, atexit
+import os, sys, re, html, yaml, cv2, pint, atexit
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
@@ -123,8 +123,10 @@ class Scantelligent(QtCore.QObject):
 
 
     def parameters_init(self) -> None:
+        # Cleanup
         atexit.register(self.cleanup)
         
+        # Paths
         self.paths = {
             "script": os.path.abspath(__file__), # The full path of Scanalyzer.py
             "parent_folder": os.path.dirname(os.path.abspath(__file__)),            
@@ -136,6 +138,7 @@ class Scantelligent(QtCore.QObject):
         self.paths["icon_folder"] = os.path.join(self.paths["parent_folder"], "icons")
         self.paths["experiments_folder"] = os.path.join(self.paths["parent_folder"], "experiments")
 
+        # Icons
         icon_files = os.listdir(self.paths["icon_folder"])
         self.icons = {}
         for icon_file in icon_files:
@@ -145,6 +148,7 @@ class Scantelligent(QtCore.QObject):
             except:
                 pass
 
+        # Important classes and objects
         self.ureg = pint.UnitRegistry()
         self.user = UserData()
         self.file_functions = FileFunctions()
@@ -158,7 +162,7 @@ class Scantelligent(QtCore.QObject):
             "mla": "offline",
             "camera": "offline",
             "tip": {"withdrawn": True, "feedback": False},
-            "experiment": "idle",
+            "experiment": {"name": None, "status": "idle"},
             "view": "none"
         }
         
@@ -235,11 +239,8 @@ class Scantelligent(QtCore.QObject):
         # Comboboxes
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.request_nanonis_update)
         experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
-        self.gui.comboboxes["experiment"].addItems(experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.change_experiment)
-        
-        # Instantiate process for CLI-style commands (opening folders and other programs)
-        self.process = QtCore.QProcess(self.gui)
+        self.gui.comboboxes["experiment"].addItems(experiments)
         
         self.gui.image_view.position_signal.connect(self.receive_double_click)
 
@@ -387,6 +388,7 @@ class Scantelligent(QtCore.QObject):
         
         # Update the buttons in the gui and populate the autocomplete suggestions in the command input
         self.update_buttons()
+        self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
 
         return
 
@@ -431,9 +433,12 @@ class Scantelligent(QtCore.QObject):
     def receive_parameters(self, parameters: dict) -> None:
         # Read the name of the dict to determine what type of parameters are in there
         dict_name = parameters.get("dict_name")
-        self.logprint(dict_name, message_type = "code")
         
         match dict_name:
+
+            case "session_path":
+                session_path = parameters.get("path")
+                self.paths.update({"session_path": session_path})
             
             case "coarse_parameters":
                 self.user.coarse_parameters[0].update(parameters)
@@ -1262,11 +1267,15 @@ class Scantelligent(QtCore.QObject):
 
     # Experiments and thread management
     def change_experiment(self) -> None:
-        self.experiment_name = self.gui.comboboxes["experiment"].currentText()
+        experiment_name = self.gui.comboboxes["experiment"].currentText()
+        self.status["experiment"].update({"name": experiment_name})
+        
         if "session_path" in self.paths.keys():
-            self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment_name, ".hdf5")
+            self.paths.update({"experiment_filename": self.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
             self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
-        else: return
+        else:
+            return
+        
         self.logprint(self.paths["experiment_filename"])
         return
 

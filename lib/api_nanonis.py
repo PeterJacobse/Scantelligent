@@ -59,6 +59,8 @@ class NanonisAPI(QtCore.QObject):
         try:
             if not self.status == "running": self.connect()
 
+            (session_path, error) = self.session_path_update() # Sends piezo range data with "dict_name": "piezo_range"
+            if error: raise Exception(error)
             (piezo_range, error) = self.piezo_range_update() # Sends piezo range data with "dict_name": "piezo_range"
             if error: raise Exception(error)
             (coarse_parameters, error) = self.coarse_parameters_update() # Sends coarse parameter data with "dict_name": "coarse_parameters"
@@ -114,13 +116,10 @@ class NanonisAPI(QtCore.QObject):
         return
 
     def check_abort(self):
-        abort_requested = QtCore.QThread.currentThread().isInterruptionRequested()
-        if abort_requested:
+        if self.thread().isInterruptionRequested():
             self.logprint("Experiment aborted", message_type = "error")
-            self.disconnect()
-            self.finished.emit()
-        
-        return False
+            self.abort_flag = True
+        return
 
     def logprint(self, message: str, message_type: str = "error") -> None:
         self.message.emit(message, message_type)
@@ -174,13 +173,32 @@ class NanonisAPI(QtCore.QObject):
 
 
     # 'update' methods that can only read and not write
+    def session_path_update(self, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+        session_path = {"dict_name": "session_path"}
+        error = False
+        nhw = self.nanonis_hardware        
+        
+        # Set up the TCP connection and set/get
+        try:
+            self.logprint(f"nanonis.session_path_update()", "code")
+            if not self.status == "running": self.connect()
+            
+            session_path.update({"path": nhw.get_path()})
+            self.parameters.emit(session_path)
+        
+        except Exception as e: error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+
+        return (session_path, error)
+
     def piezo_range_update(self, auto_disconnect: bool = False) -> None:
         error = False
         nhw = self.nanonis_hardware
         piezo_range_dict = {}
 
         try:
-            self.message.emit(f"piezo_range_update()", "code")
+            self.logprint(f"nanonis.piezo_range_update()", "code")
             if not self.status == "running": self.connect()
             piezo_range = nhw.get_range_nm()
             
@@ -209,7 +227,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get grid dat
         try:
-            self.message.emit(f"scan_metadata_update()", "code")
+            self.logprint(f"nanonis.scan_metadata_update()", "code")
             
             if not self.status == "running": self.connect()
             props = nhw.get_scan_props()
@@ -301,7 +319,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and set/get
         try:
-            self.message.emit(f"tip_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.tip_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
             
             if xy_nm: nhw.set_xy_nm(xy_nm) # Set the tip position
@@ -356,7 +374,7 @@ class NanonisAPI(QtCore.QObject):
         
         # Set up the TCP connection and get
         try:
-            self.message.emit(f"coarse_parameters_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.coarse_parameters_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
             
             # Read the parameters from Nanonis
@@ -400,6 +418,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get
         try:
+            self.logprint(f"nanonis.scan_speeds_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
             
             # Bias voltage
@@ -480,7 +499,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get
         try:
-            self.message.emit(f"parameters_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.parameters_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
             
             # Bias voltage
@@ -539,7 +558,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            self.message.emit(f"gains_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.gains_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
 
             # Extract the parameters from the provided dict
@@ -573,7 +592,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            self.message.emit(f"frame_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.frame_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
 
             w_nm = None
@@ -625,7 +644,7 @@ class NanonisAPI(QtCore.QObject):
         nhw = self.nanonis_hardware
 
         try:
-            self.message.emit(f"grid_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.grid_update(parameters = {parameters})", "code")
             # Get the frame and buffer
             if not self.status == "running": self.connect()
             frame = nhw.get_scan_frame_nm()
@@ -710,7 +729,7 @@ class NanonisAPI(QtCore.QObject):
                 return False
 
         try:
-            self.message.emit(f"bias_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.bias_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()                            
             V_old = nhw.get_V() # Read data from Nanonis
             if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
@@ -750,10 +769,8 @@ class NanonisAPI(QtCore.QObject):
 
         lockin_parameters = {}
 
-        self.logprint(f"nanonis.lockin_update({parameters})", message_type = "code")
-
         try:
-            self.message.emit(f"lockin_update({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.lockin_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
             mod1_dict = parameters.get("modulator_1", None)
             mod2_dict = parameters.get("modulator_2", None)
@@ -777,10 +794,9 @@ class NanonisAPI(QtCore.QObject):
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
-        self.logprint(f"nanonis.tip_prep({parameters})", message_type = "code")
 
         try:
-            self.message.emit(f"tip_prep({{parameters = {parameters}}})", "code")
+            self.logprint(f"nanonis.tip_prep(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
             if parameters.get("action", "pulse") == "pulse":
                 V_pulse_V = parameters.get("V_pulse (V)", 6)
@@ -799,7 +815,6 @@ class NanonisAPI(QtCore.QObject):
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
-        self.logprint(f"nanonis.coarse_move({parameters})", message_type = "code")
 
         motions = []
         V_hor = parameters.get("V_hor (V)")
@@ -807,6 +822,7 @@ class NanonisAPI(QtCore.QObject):
         f_motor = parameters.get("f_motor (Hz)")
         
         try:
+            self.logprint(f"nanonis.coarse_move({parameters})", message_type = "code")
             if not self.status == "running": self.connect()
             
             # 1. Withdraw
