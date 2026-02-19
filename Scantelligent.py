@@ -22,9 +22,87 @@ text_colors = {"message": colors["white"], "error": colors["red"], "code": color
 
 
 
+# Parameter management (getting from hardware, setting, loading from file and saving)
+class Parameters:
+    def __init__(self, parent):
+        self.parent = parent # Reference to Scantelligent class
+
+    def get(self, parameter_type: str = "frame") -> None:
+        nanonis = self.parent.nanonis
+
+        match parameter_type:
+
+            case "feedback":
+                nanonis.parameters_update(auto_disconnect = True)
+
+            case "frame":
+                nanonis.frame_update(auto_disconnect = True)
+
+            case "grid":
+                nanonis.grid_update(auto_disconnect = True)
+
+            case "speeds":
+                nanonis.frame_update(auto_disconnect = True)
+
+            case "gain":
+                nanonis.gains_update(auto_disconnect = True)
+            
+            case _:
+                pass
+
+        return
+    
+    def set(self, parameter_type: str = "frame") -> None:
+        nanonis = self.parent.nanonis
+
+        match parameter_type:
+
+            case "feedback":
+                nanonis.parameters_update(auto_disconnect = True)
+
+            case "frame":
+                nanonis.frame_update(auto_disconnect = True)
+
+            case "grid":
+                nanonis.grid_update(auto_disconnect = True)
+
+            case "speeds":
+                nanonis.frame_update(auto_disconnect = True)
+
+            case "gain":
+                nanonis.gains_update(auto_disconnect = True)
+            
+            case _:
+                pass
+
+        """
+        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
+            str = self.gui.line_edits[tag].text()
+            numbers = self.data.extract_numbers_from_str(str)
+            if len(numbers) < 1: continue
+            flt = numbers[0]
+            
+            match tag:
+                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
+                case "V_mla": s_p.update({"V_mla (V)": flt})
+                case "I_fb": s_p.update({"I_fb (pA)": flt})
+                case "p_gain": s_p.update({"p_gain (pm)": flt})
+                case "t_const": s_p.update({"t_const (us)": flt})
+                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
+                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
+                case _: pass
+
+        self.nanonis.parameters_update(s_p)
+        """
+
+        return
+
+
+
+# Main class
 class Scantelligent(QtCore.QObject):
     abort = QtCore.pyqtSignal()
-    parameters = QtCore.pyqtSignal(dict)
+    parameter_dict = QtCore.pyqtSignal(dict)
     image_request = QtCore.pyqtSignal(int, bool) #, name='image_request'
 
     def __init__(self):
@@ -33,16 +111,13 @@ class Scantelligent(QtCore.QObject):
         self.gui = ScantelligentGUI(icon_folder)
         self.connect_console() # Initialize the console, the button-slot, and keystroke-slot connections
         self.connect_buttons()
-        #self.setup_connections() 
         
         self.hardware = self.config_init() # Read the hardware configuration and parameters from the configuration files in the sys folder
         self.data = DataProcessing() # Class for data processing and analysis
         self.timer = QtCore.QTimer()
         
-        self.keithley = KeithleyHW(hardware = self.hardware)
-        self.nanonis = NanonisAPI(hardware = self.hardware) # Class for simple Nanonis functions
-        
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
+        self.populate_completer()
         self.gui.show()
 
 
@@ -74,6 +149,7 @@ class Scantelligent(QtCore.QObject):
         self.user = UserData()
         self.file_functions = FileFunctions()
         self.lines = [] # Lines for plotting in the graph
+        self.parameters = Parameters(parent = self) # Intantiate the class Parameters, which implements easy parameter getting, setting, loading and saving
         
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -105,20 +181,28 @@ class Scantelligent(QtCore.QObject):
         
         # Connect the buttons to their respective functions
         connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
-                    ["oscillator", self.toggle_withdraw], ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.on_info],
+                    ["oscillator", self.toggle_withdraw], ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.info_popup],
                     
+                    # Experiment
+                    ["start_pause", lambda checked: self.on_experiment_control(action = "start_pause")], ["stop", lambda checked: self.on_experiment_control(action = "stop")],
+                    
+                    # Coarse motion
                     ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
-                    
-                    ["tip", self.change_tip_status], ["V_swap", self.on_scan_data_request], ["set_scan_parameters", self.set_parameters], ["get_scan_parameters", self.get_parameters],
 
-                    ["get_frame_parameters", lambda: self.get("gains")], ["get_gain_parameters", lambda: self.get("gains")],
-                    
-                    ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")], ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
+                    # Parameters                    
+                    ["tip", self.change_tip_status], ["V_swap", self.get_parameters], ["set_scan_parameters", self.set_parameters], ["get_scan_parameters", self.get_parameters],
 
+                    # Tip prep
+                    ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")],
+
+                    # Lockins
                     ["nanonis_mod1", lambda: self.modulator_control(modulator_number = 1)], ["nanonis_mod2", lambda: self.modulator_control(modulator_number = 2)],
-
-                    ["start_pause", lambda action: self.on_experiment_control(action = "start_pause")], ["stop", lambda action: self.on_experiment_control(action = "stop")],
+                    
+                    # Processing
+                    ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
                     ]
+
+        [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain"]]
 
         connections.append([f"scan_parameters_0", lambda: self.load_parameters_from_file("scan_parameters", 0)])
         connections.append([f"scan_parameters_1", lambda: self.load_parameters_from_file("scan_parameters", 1)])
@@ -152,7 +236,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.request_nanonis_update)
         experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
         self.gui.comboboxes["experiment"].addItems(experiments)
-        self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.on_experiment_change)
+        self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.change_experiment)
         
         # Instantiate process for CLI-style commands (opening folders and other programs)
         self.process = QtCore.QProcess(self.gui)
@@ -233,6 +317,7 @@ class Scantelligent(QtCore.QObject):
         """
         Test and set up all connections, and request parameters from the hardware components
         """
+        self.keithley = KeithleyHW(hardware = self.hardware)
 
         def connect_camera() -> None:            
             argument = self.hardware.get("camera_argument")
@@ -263,10 +348,12 @@ class Scantelligent(QtCore.QObject):
             return
 
         def connect_nanonis() -> None:
+            self.nanonis = NanonisAPI(hardware = self.hardware) # Instantiate the NanonisAPI class
+            
             # Initialize signal-slot connections
             
             # Scantelligent -> Nanonis
-            self.parameters.connect(self.nanonis.receive_parameters)
+            self.parameter_dict.connect(self.nanonis.receive_parameters)
             self.image_request.connect(self.nanonis.receive_image_request)
 
             # Nanonis -> Scantelligent
@@ -293,20 +380,6 @@ class Scantelligent(QtCore.QObject):
 
             return
 
-        def populate_completer() -> None:
-            # Populate the command input completer with all attributes and methods of self and self.gui
-            self.all_attributes = dir(self)
-            gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
-            nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
-            nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith('__')]
-            data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith('__')]
-            
-            [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes]]
-            completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
-            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-            completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
-            self.gui.line_edits["input"].setCompleter(completer)
-
         self.logprint("Attempting to connect to hardware", message_type = "message")
         connect_camera()
         connect_mla()
@@ -314,7 +387,7 @@ class Scantelligent(QtCore.QObject):
         
         # Update the buttons in the gui and populate the autocomplete suggestions in the command input
         self.update_buttons()
-        populate_completer()
+
         return
 
 
@@ -446,7 +519,21 @@ class Scantelligent(QtCore.QObject):
 
                 # Update the fields in the GUI
                 [self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
-            
+
+            case "gains":
+                gains = parameters
+
+                self.logprint(gains)
+
+                #pixels = grid.get("pixels")
+                #lines = grid.get("lines")
+                #pixel_width = grid.get("pixel_width (nm)")
+                #pixel_height = grid.get("pixel_height (nm)")
+                #aspect_ratio = lines / pixels
+
+                # Update the fields in the GUI
+                #[self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
+
             case "piezo_range":
                 piezo_range = parameters
                 
@@ -592,6 +679,20 @@ class Scantelligent(QtCore.QObject):
         
         return f"{base_name}_{formatted_index}{extension}"
 
+    def populate_completer(self) -> None:
+        # Populate the command input completer with all attributes and methods of self and self.gui
+        self.all_attributes = dir(self)
+        gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
+        nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
+        nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith('__')]
+        data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith('__')]
+        
+        [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes]]
+        completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
+        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+        self.gui.line_edits["input"].setCompleter(completer)
+
     def set_view_range(self, obj: str) -> None:
         imv = self.gui.image_view
         
@@ -706,136 +807,6 @@ class Scantelligent(QtCore.QObject):
         
         return
 
-    def load_parameters_from_file(self, parameters_type: str = "scan_parameters", index: int = 0) -> None:
-        try:
-            match parameters_type:
-                case "scan_parameters":
-                    params = self.user.scan_parameters[index]
-                    
-                    parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
-                    line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
-                    units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
-                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
-                    
-                    for name, le, unit in zip(parameter_names, line_edits, units):
-                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
-                
-                case "tip_prep_parameters":
-                    params = self.user.tip_prep_parameters[index]
-                    
-                    parameter_names = ["pulse_voltage (V)", "pulse_duration (ms)"]
-                    line_edit_names = ["pulse_voltage", "pulse_duration"]
-                    units = ["V", "ms"]
-                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
-                    
-                    for name, le, unit in zip(parameter_names, line_edits, units):
-                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
-                    
-                case _:
-                    pass
-
-        except Exception as e:
-            self.logprint(f"Error loading parameters. {e}", message_type = "error")
-        
-        return
-
-    def on_experiment_change(self) -> None:
-        self.experiment_name = self.gui.comboboxes["experiment"].currentText()
-        if "session_path" in self.paths.keys():
-            self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment_name, ".hdf5")
-            self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
-        else: return
-        self.logprint(self.paths["experiment_filename"])
-        return
-
-
-
-    # Simple Nanonis requests
-    def get(self, parameter_type: str = "frame") -> None:
-        match parameter_type:
-
-            case "frame":
-                self.nanonis.frame_update()
-
-            case "grid":
-                self.nanonis.grid_update()
-
-            case "speeds":
-                self.nanonis.frame_update()
-
-            case "gains":
-                self.nanonis.frame_update()
-            
-            case _:
-                pass
-
-        return
-
-    def get_parameters(self) -> None:
-        le = self.gui.line_edits
-        # Request a parameter update from Nanonis, and wait to receive
-        # The received parameters are stored in self.user.scan_parameters[0] by default
-        self.nanonis.parameters_update(auto_disconnect = False)
-        self.nanonis.frame_update(auto_disconnect = False)
-        self.nanonis.tip_update(auto_disconnect = True)
-        sleep(.2)
-        scan_parameters = self.user.scan_parameters[0]
-        
-        # Enter the scan parameters into the fields        
-        for key, value in scan_parameters.items():
-            match key:
-                case "V_nanonis (V)": le["V_nanonis"].setText(f"{value:.2f} V")
-                case "V_mla (V)": le["V_mla"].setText(f"{value:.2f} V")
-                case "I_fb (pA)": le["I_fb"].setText(f"{value:.0f} pA")
-                case "p_gain (pm)": le["p_gain"].setText(f"{value:.0f} pm")
-                case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
-                case "v_fwd (nm/s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
-                case "v_bwd (nm/s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
-                case _: pass
-        
-        return
-
-    def set_parameters(self) -> None:
-        # Update Nanonis according to the parameters that were set in the GUI
-        s_p = self.user.scan_parameters[0]
-        
-        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
-            str = self.gui.line_edits[tag].text()
-            numbers = self.data.extract_numbers_from_str(str)
-            if len(numbers) < 1: continue
-            flt = numbers[0]
-            
-            match tag:
-                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
-                case "V_mla": s_p.update({"V_mla (V)": flt})
-                case "I_fb": s_p.update({"I_fb (pA)": flt})
-                case "p_gain": s_p.update({"p_gain (pm)": flt})
-                case "t_const": s_p.update({"t_const (us)": flt})
-                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
-                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
-                case _: pass
-
-        self.nanonis.parameters_update(s_p)
-        
-        return
-
-    def request_nanonis_update(self) -> None:
-        try:
-            channel_name = self.gui.comboboxes["channels"].currentText()
-            backward = self.gui.buttons["direction"].isChecked()
-            channel_index = self.channels.get(channel_name)
-
-            if self.status["nanonis"] == "idle":
-                self.image_request.emit(channel_index, backward)
-            else:
-                pass
-        except:
-            pass
-        return
-
-
-
-    # Command executions
     def execute_command(self) -> None:
         input_le = self.gui.line_edits["input"]
         input_le.blockSignals(True)
@@ -869,8 +840,6 @@ class Scantelligent(QtCore.QObject):
             self.logprint(f"{e}", message_type = "error")
         
         return
-
-
 
     def toggle_view(self):
         match self.status["view"]:
@@ -940,10 +909,7 @@ class Scantelligent(QtCore.QObject):
             self.logprint("Error. Session folder unknown.", message_type = "error")
         return
 
-
-
-    # Information popup
-    def on_info(self) -> None:
+    def info_popup(self) -> None:
         msg_box = QtWidgets.QMessageBox(self.gui)
         
         msg_box.setWindowTitle("Info")
@@ -979,6 +945,110 @@ class Scantelligent(QtCore.QObject):
 
 
 
+    # Getting, setting, loading parameters. To be deprecated after completion of the Parameters class
+    def get(self, parameter_type: str = "frame") -> None:
+        match parameter_type:
+
+            case "frame":
+                self.nanonis.frame_update()
+
+            case "grid":
+                self.nanonis.grid_update()
+
+            case "speeds":
+                self.nanonis.frame_update()
+
+            case "gains":
+                self.nanonis.frame_update()
+            
+            case _:
+                pass
+
+        return
+
+    def get_parameters(self) -> None:
+        le = self.gui.line_edits
+        # Request a parameter update from Nanonis, and wait to receive
+        # The received parameters are stored in self.user.scan_parameters[0] by default
+        self.nanonis.parameters_update(auto_disconnect = False)
+        self.nanonis.frame_update(auto_disconnect = False)
+        self.nanonis.tip_update(auto_disconnect = True)
+        sleep(.2)
+        scan_parameters = self.user.scan_parameters[0]
+        
+        # Enter the scan parameters into the fields        
+        for key, value in scan_parameters.items():
+            match key:
+                case "V_nanonis (V)": le["V_nanonis"].setText(f"{value:.2f} V")
+                case "V_mla (V)": le["V_mla"].setText(f"{value:.2f} V")
+                case "I_fb (pA)": le["I_fb"].setText(f"{value:.0f} pA")
+                case "p_gain (pm)": le["p_gain"].setText(f"{value:.0f} pm")
+                case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
+                case "v_fwd (nm/s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
+                case "v_bwd (nm/s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
+                case _: pass
+        
+        return
+
+    def set_parameters(self) -> None:
+        # Update Nanonis according to the parameters that were set in the GUI
+        s_p = self.user.scan_parameters[0]
+        
+        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
+            str = self.gui.line_edits[tag].text()
+            numbers = self.data.extract_numbers_from_str(str)
+            if len(numbers) < 1: continue
+            flt = numbers[0]
+            
+            match tag:
+                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
+                case "V_mla": s_p.update({"V_mla (V)": flt})
+                case "I_fb": s_p.update({"I_fb (pA)": flt})
+                case "p_gain": s_p.update({"p_gain (pm)": flt})
+                case "t_const": s_p.update({"t_const (us)": flt})
+                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
+                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
+                case _: pass
+
+        self.nanonis.parameters_update(s_p)
+        
+        return
+
+    def load_parameters_from_file(self, parameters_type: str = "scan_parameters", index: int = 0) -> None:
+        try:
+            match parameters_type:
+                case "scan_parameters":
+                    params = self.user.scan_parameters[index]
+                    
+                    parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
+                    line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
+                    units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
+                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
+                    
+                    for name, le, unit in zip(parameter_names, line_edits, units):
+                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+                
+                case "tip_prep_parameters":
+                    params = self.user.tip_prep_parameters[index]
+                    
+                    parameter_names = ["pulse_voltage (V)", "pulse_duration (ms)"]
+                    line_edit_names = ["pulse_voltage", "pulse_duration"]
+                    units = ["V", "ms"]
+                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
+                    
+                    for name, le, unit in zip(parameter_names, line_edits, units):
+                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+                    
+                case _:
+                    pass
+
+        except Exception as e:
+            self.logprint(f"Error loading parameters. {e}", message_type = "error")
+        
+        return
+
+
+
     # Nanonis functions 
     # Simple data requests over TCP-IP
     def tip_prep(self, action: str):
@@ -1011,148 +1081,18 @@ class Scantelligent(QtCore.QObject):
 
         return
 
-    # Deprecated
-    def on_parameters_request(self):
-        logp = self.logprint
-        
-        if self.status["initialization"]: logp("Attempting to retrieve information from Nanonis", message_type = "message")
-
+    def request_nanonis_update(self) -> None:
         try:
-            # Get tip status
-            if self.status["initialization"]: logp("(tip_status, error) = nanonis.tip_update()", message_type = "code")
-            (tip_status, error) = self.nanonis.tip_update(auto_disconnect = False)
-            
-            if error:
-                logp(f"Error retrieving the tip status: {error}", message_type = "error")
-                raise
+            channel_name = self.gui.comboboxes["channels"].currentText()
+            backward = self.gui.buttons["direction"].isChecked()
+            channel_index = self.channels.get(channel_name)
+
+            if self.status["nanonis"] == "idle":
+                self.image_request.emit(channel_index, backward)
             else:
-                self.status["tip"] = tip_status
-            
-            # Get scan parameters
-            if self.status["initialization"]: logp("(parameters, error) = nanonis.parameters_update()", message_type = "code")
-            (parameters, error) = self.nanonis.parameters_update(auto_disconnect = False)
-            
-            if error:
-                logp(f"Error retrieving the scan parameters: {error}", message_type = "error")
-                raise
-            else:
-                self.scan_parameters[0].update(parameters)
-                self.paths["session_path"] = parameters.get("session_path")
-                name = self.scan_parameters[0].get("name")
-                
-                self.gui.buttons["session_folder"].setToolTip(f"Open session folder {self.paths['session_path']} (1)")
-                self.paths["experiment_file"] = self.get_next_indexed_filename(self.paths["session_path"], "experiment", ".hdf5")
-
-                if self.status["initialization"]:
-                    logp(f"I was able to retrieve the tip status and scan parameters and save them to dictionaries called 'status' and 'scan_parameters[0]' (\"{name}\")", message_type = "success")
-                    logp(f"[dict] status[\"tip\"] = tip_status = {tip_status}", message_type = "result")
-                    logp(f"[dict] scan_parameters[0] = parameters", message_type = "result")
-                    logp(f"scan_parameters[0].keys() = {self.scan_parameters[0].keys()}", message_type = "result")
-
-
-
-            # Get grid parameters
-            if self.status["initialization"]:
-                logp("(frame, error) = nanonis.frame_update()", message_type = "code")
-                logp("(grid, error) = nanonis.grid_update()", message_type = "code")
-            (frame, error) = self.nanonis.frame_update(auto_disconnect = False)
-            (grid, error) = self.nanonis.grid_update(auto_disconnect = False)
-            
-            if error:
-                logp(f"Error retrieving the scan frame / grid: {error}", message_type = "error")
-                raise
-            else:
-                self.frame = frame
-                self.grid = grid
-                
-                if self.status["initialization"]:
-                    logp(f"I obtained frame/grid and scan metadata from nanonis, now available in the dictionaries 'grid' and 'scan_metadata'", message_type = "success")
-                    logp(f"frame.keys() = {self.frame.keys()}", message_type = "result")
-                    logp(f"grid.keys() = {self.grid.keys()}", message_type = "result")
-                    logp(f"scan_metadata.keys() = {self.scan_metadata.keys()}", message_type = "result")
-        
+                pass
         except:
-            self.status["nanonis"] = "offline"
-            logp("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
-        
-        # Continue with requesting the scan metadadata and finally the scan data
-        try: self.nanonis.disconnect()
-        except: pass
-        
-        self.status["initialization"] = False
-                    
-        self.update_buttons()
-        self.update_tip_status()
-        
-        return
-
-    # Deprecated
-    def on_scan_data_request(self):
-        logp = self.logprint
-        
-        try:            
-            # Get scan metadata
-            if self.status["initialization"]: logp("(scan_metadata, error) = nanonis.scan_metadata_update()", message_type = "code")
-            (scan_metadata, error) = self.nanonis.scan_metadata_update()
-            if error:
-                logp("Error retrieving the scan metadata.", message_type = "error")
-                raise
-            else:
-                self.scan_metadata = scan_metadata
-                
-                # Refresh the recorded channels
-                if hasattr(self, "channels"): 
-                    recorded_channels_old = self.channels
-                else:
-                    recorded_channels_old = {}
-
-                self.channels = self.scan_metadata.get("recorded_channels")
-                
-                # Update the channels combobox with the channels that are being recorded if there is a change
-                if self.channels == recorded_channels_old:
-                    pass
-                else:
-                    self.gui.comboboxes["channels"].renewItems(list(self.channels.values()))
-                    self.gui.comboboxes["channels"].selectItem("Z (m)")
-            
-            # Find the channel index from the channels combobox, then get the scan data from nanonis
-            selected_channel_name = self.gui.comboboxes["channels"].currentText()
-            for key, value in self.channels.items():
-                if value == selected_channel_name:
-                    selected_channel_index = int(key)
-                    break
-            
-            if self.status["initialization"]: logp("(scan_data, error) = nanonis.get_scan()", message_type = "code")
-            (scan_image, error) = self.nanonis.scan_update(selected_channel_index, backward = False)
-            
-            # All operations successful: release the Nanonis connection
-            self.status["nanonis"] = "idle"
-            
-            if self.status["initialization"]: logp("Successfully updated the following dictionaries: 'status[\"tip\"]', 'scan_parameters[0]', 'grid', 'scan_metadata'", message_type = "success")
-
-        except:
-            self.status["nanonis"] = "offline"
-            logp("[str] status[\"nanonis\"] = \"offline\"", message_type = "result")
-        """
-        try:
-            if type(scan_image) == np.ndarray:
-                self.gui.image_view.setImage(scan_image)
-                image_item = self.gui.image_view.getImageItem()
-                
-                (frame, error) = self.nanonis.frame_update()                
-                width = self.frame.get("width (nm)")
-                height = self.frame.get("height (nm)")
-                
-                image_item.setRect(QtCore.QRectF(self.frame.get("x (nm)") - 0.5 * width, self.frame.get("y (nm)") - 0.5 * height, width, height))
-                image_item.setRotation(self.frame.get("angle_deg"))
-                self.gui.image_view.autoRange()
-        except Exception as e:
-            self.logprint(f"Error: {e}")
-        
-        finally: # Switch off the initialization flag after the first successful parameter retrieval
-            if hasattr(self, "frame") and hasattr(self, "grid") and hasattr(self, "scan_metadata"): self.status["initialization"] = False
-        """
-
+            pass
         return
 
 
@@ -1321,6 +1261,17 @@ class Scantelligent(QtCore.QObject):
 
 
     # Experiments and thread management
+    def change_experiment(self) -> None:
+        self.experiment_name = self.gui.comboboxes["experiment"].currentText()
+        if "session_path" in self.paths.keys():
+            self.paths["experiment_filename"] = self.get_next_indexed_filename(self.paths["session_path"], self.experiment_name, ".hdf5")
+            self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
+        else: return
+        self.logprint(self.paths["experiment_filename"])
+        return
+
+
+
     def on_experiment_control(self, action: str = "start_pause") -> None:
         sp_button = self.gui.buttons["start_pause"]
         
@@ -1376,7 +1327,7 @@ class Scantelligent(QtCore.QObject):
 
                 # Set up the PyQt signal-slot connections
                 # Scantelligent -> Experiment
-                self.parameters.connect(self.experiment.receive_parameters)
+                self.parameter_dict.connect(self.experiment.receive_parameters)
                 self.abort.connect(self.experiment.abort)
 
                 # Experiment -> Scantelligent
@@ -1400,7 +1351,7 @@ class Scantelligent(QtCore.QObject):
 
                 # Set up the PyQt signal-slot connections
                 # Scantelligent -> Experiment
-                self.parameters.connect(self.experiment.receive_parameters)
+                self.parameter_dict.connect(self.experiment.receive_parameters)
                 self.abort.connect(self.experiment.abort)
 
                 # Experiment -> Scantelligent

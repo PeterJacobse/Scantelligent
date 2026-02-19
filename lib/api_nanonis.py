@@ -477,8 +477,6 @@ class NanonisAPI(QtCore.QObject):
         t_bwd_s = parameters.get("t_bwd (s)", None)
         const_param = parameters.get("const_param", None)
         V_nanonis = parameters.get("V_nanonis (V)", None)
-        p_gain_pm = parameters.get("p_gain (pm)", None)
-        t_const_us = parameters.get("t_const (us)", None)
 
         # Set up the TCP connection and get
         try:
@@ -492,12 +490,6 @@ class NanonisAPI(QtCore.QObject):
             # Feedback current
             if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
             else: I_fb_pA = nhw.get_I_fb_pA()
-
-            # Feedback gains
-            gains_dict = nhw.get_gains()
-            if p_gain_pm: gains_dict.update({"p_gain (pm)": p_gain_pm})
-            if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
-            if p_gain_pm or t_const_us: nhw.set_gains(gains_dict)
 
             # Scan speeds
             speed_dict = nhw.get_v_scan_nm_per_s()
@@ -519,7 +511,7 @@ class NanonisAPI(QtCore.QObject):
             # Session path
             session_path = nhw.get_path()
             
-            parameters = gains_dict | speed_dict | {
+            parameters = speed_dict | {
                 "dict_name": "scan_parameters",
                 "V_nanonis (V)": V,
                 "I_fb (pA)": I_fb_pA,
@@ -534,6 +526,40 @@ class NanonisAPI(QtCore.QObject):
             if auto_disconnect: self.disconnect()
 
         return (parameters, error)
+
+    def gains_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+        """
+        Function to get and set gains
+        """
+        # Initalize outputs
+        gains = {}
+        error = False
+        nhw = self.nanonis_hardware
+        new_parameters = {}
+
+        # Set up the TCP connection and get the frame
+        try:
+            self.message.emit(f"gains_update({{parameters = {parameters}}})", "code")
+            if not self.status == "running": self.connect()
+
+            # Extract the parameters from the provided dict
+            p_gain_pm = parameters.get("p_gain (pm)", None)
+            t_const_us = parameters.get("t_const (us)", None)
+
+            # Retrieve the current gains from Nanonis, then overwrite them with the requested new parameters
+            gains_dict = nhw.get_gains()
+            if p_gain_pm: gains_dict.update({"p_gain (pm)": p_gain_pm})
+            if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
+            if p_gain_pm or t_const_us: nhw.set_gains(gains_dict)
+        
+            gains.update({"dict_name": "gains"})
+            self.parameters.emit(gains)
+        
+        except Exception as e: error = e
+        finally:
+            if auto_disconnect: self.disconnect()
+
+        return (gains, error)
 
     def frame_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
         """

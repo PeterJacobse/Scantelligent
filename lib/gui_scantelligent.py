@@ -168,7 +168,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "input": make_button(">>", "Enter command\n(Ctrl + Enter)"),
 
             "nanonis_mod1": make_button("", "Nanonis Modulation 1 On/Off", icon = icons.get("nanonis_mod1")),
-            "nanonis_mod2": make_button("", "Nanonis Modulation 2 On/Off", icon = icons.get("nanonis_mod2"))
+            "nanonis_mod2": make_button("", "Nanonis Modulation 2 On/Off", icon = icons.get("nanonis_mod2")),
+            "mla_mod1": make_button("", "MLA Modulation 1 On/Off", icon = icons.get("mla_mod1"))
         }
 
         for i in range(6):
@@ -248,7 +249,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         line_edits = {
             # Experiment
-            "experiment_filename": make_line_edit("", "Base name of the file when saved to png or hdf5"),
+            "experiment_filename": PJLineEdit(tooltip = "Base name of the file when saved to png or hdf5"),
+            "experiment_0": PJLineEdit(tooltip = "Experiment parameter field 0"),
+            "experiment_1": PJLineEdit(tooltip = "Experiment parameter field 1"),
+            "experiment_2": PJLineEdit(tooltip = "Experiment parameter field 2"),
 
             # Coarse
             "z_steps": PJLineEdit(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", digits = 0),
@@ -320,6 +324,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Named groups
         self.parameter_line_0 = [buttons["tip"], line_edits["V_nanonis"], buttons["V_swap"], line_edits["V_mla"], line_edits["I_fb"], buttons["set_scan_parameters"], buttons["get_scan_parameters"]]
         self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd", "v_bwd"]]
+
+        self.experiment_parameter_fields = [line_edits[f"experiment_{i}"] for i in range(3)]
 
         self.gain_line_edits = [line_edits[name] for name in ["p_gain", "t_const", "i_gain"]]
         
@@ -455,6 +461,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "input": make_layout("h"),
             "experiment_controls": make_layout("h"),
+            "experiment_fields": make_layout("h"),
             
             "graph": make_layout("h"),
             "channels": make_layout("g"),
@@ -596,10 +603,15 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         # Experiment
         [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
+        [layouts["experiment_fields"].addWidget(widget) for widget in self.experiment_parameter_fields]
         e_layout = layouts["experiment"]
-        [e_layout.addWidget(self.comboboxes[name], 0, i) for i, name in enumerate(["experiment", "direction"])]
-        e_layout.addLayout(layouts["experiment_controls"], 1, 0, 3, 1)
-        e_layout.addWidget(self.line_edits["experiment_filename"], 1, 1)
+        e_layout.addWidget(self.tip_slider, 0, 0, 3, 1)
+        e_layout.addWidget(self.comboboxes["experiment"], 0, 1, 1, 2)
+        e_layout.addWidget(self.comboboxes["direction"], 0, 3)
+        # [e_layout.addWidget(self.comboboxes[name], 0, i + 1) for i, name in enumerate(["experiment", "direction"])]
+        e_layout.addLayout(layouts["experiment_controls"], 1, 1, 1, 2)
+        e_layout.addWidget(self.line_edits["experiment_filename"], 1, 3)
+        e_layout.addLayout(layouts["experiment_fields"], 2, 1, 1, 3)
         
         # Coarse
         cv_layout = layouts["coarse_vertical"]
@@ -752,8 +764,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["gains", "frame_grid"]]
         
         # Make tabs
-        tabs = ["coarse_control", "tip_prep", "parameters", "image_processing"]
-        tab_names = ["Coarse", "Prep", "Parameters", "Processing"]
+        tabs = ["coarse_control", "tip_prep", "parameters", "image_processing", "lockins"]
+        tab_names = ["Coarse", "Prep", "Parameters", "Processing", "Lock-ins"]
         [self.widgets[name0].setLayout(layouts[name0]) for name0 in tabs]
         [self.tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
         
