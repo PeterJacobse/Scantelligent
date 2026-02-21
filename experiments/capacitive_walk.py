@@ -9,8 +9,8 @@ from lib import NanonisAPI
 
 
 class Experiment(NanonisAPI):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(hardware = parent.hardware)
         self.abort_flag = False
 
     def run(self):

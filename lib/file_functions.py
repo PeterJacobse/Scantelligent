@@ -99,11 +99,11 @@ class FileFunctions():
                 
         return found_files
 
-    def load_experiment_from_file(self, folder_path: str, file_name: str):
+    def load_experiment_from_file(self, file_path: str, parent):
         """
         Finds and instantiates the 'Experiment' class from a specific file.
         """
-        file_path = os.path.join(folder_path, file_name)
+        file_name = os.path.basename(file_path)
         module_name = file_name.split('.')[0] # Use filename as module name
 
         # 1. Load the module dynamically
@@ -113,7 +113,7 @@ class FileFunctions():
 
         # 2. Get the 'Experiment' class and instantiate it
         experiment = getattr(module, "Experiment")
-        return experiment()
+        return experiment(parent)
 
 
 

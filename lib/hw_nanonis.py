@@ -37,16 +37,6 @@ class Conversions:
         return hex(struct.unpack('<Q', struct.pack('<d', f64))[0])[2:]
 
     def make_header(self, command_name, body_size, resp = True):
-        """
-        Parameters
-        command_name : name of the Nanonis function
-        body_size    : size of the message body in bytes
-        resp         : tell nanonis to send a response. response contains error
-                       message so will nearly always want to receive it
-
-        Returns
-        hex_rep : hex representation of the header string
-        """
         hex_rep = command_name.encode('utf-8').hex()                            # command name
         hex_rep += "{0:#0{1}}".format(0,(64 - len(hex_rep)))                    # command name (fixed 32)
         hex_rep += self.to_hex(body_size, 4)                                    # Body size (fixed 4)
@@ -838,22 +828,14 @@ class NanonisHardware:
         
         return parameters
 
-    def scan_action(self, parameters: dict) -> None:
-        direction = parameters.get("direction", "down")
-        
-        if "start" in parameters.items(): self.start_scan(direction)
-        elif "stop" in parameters.items(): self.stop_scan()
-        elif "resume" in parameters.items(): self.resume_scan()
-        else: self.pause_scan()
-        
-        return
-
     def start_scan(self, direction: str = "up") -> None:
-        action_dict = {"start": 0, "stop": 1, "pause" : 2, "resume": 3, "down": 0, "up": 1}
+        # action_dict = {"start": 0, "stop": 1, "pause" : 2, "resume": 3, "down": 0, "up": 1}
 
         if direction == "up": dir_command = self.conv.to_hex(1, 4)
         else: dir_command = self.conv.to_hex(0, 4)
         command = self.headers["scan_action"] + self.conv.to_hex(0, 2) + dir_command
+        
+        print(command)
         
         self.send_command(command)
         self.receive_response(0)

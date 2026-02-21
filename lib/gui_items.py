@@ -487,6 +487,45 @@ class PJLineEdit(QtWidgets.QLineEdit):
 
         return
 
+    def wheelEvent(self, event) -> None:
+        delta = event.angleDelta().y()
+        
+        if not self.hasFocus(): return
+        
+        if delta > 0:
+            pos = self.cursorPosition() - 1
+            if pos < 0: return
+
+            txt = self.text()
+            text_pos = txt[pos]
+            if not text_pos.isnumeric(): return
+
+            number = int(text_pos)
+            new_number = number + 1
+            if new_number > 9: new_number = 0
+            
+            new_txt = txt[:pos] + str(new_number) + txt[pos + 1:]
+            self.setText(new_txt)
+            self.setCursorPosition(pos + 1)
+            
+        else:
+            pos = self.cursorPosition() - 1
+            if pos < 0: return
+
+            txt = self.text()
+            text_pos = txt[pos]
+            if not text_pos.isnumeric(): return
+
+            number = int(text_pos)
+            new_number = number - 1
+            if new_number < 0: new_number = 9
+            
+            new_txt = txt[:pos] + str(new_number) + txt[pos + 1:]
+            self.setText(new_txt)
+            self.setCursorPosition(pos + 1)
+
+        return
+
 
 
 class PJProgressBar(QtWidgets.QProgressBar):
@@ -876,19 +915,12 @@ class GUIItems:
         
         return box
 
-    def make_line_edit(self, value: str = "", tooltip: str = "", unit = None, limits = None, number_type: str = "float", icon = None, rotate_icon: float = 0) -> PJLineEdit:
+    def make_line_edit(self, value: str = "", tooltip: str = "", unit = None, limits = None, number_type: str = "float") -> PJLineEdit:
         line_edit = PJLineEdit(unit = unit, limits = limits, number_type = number_type)
         line_edit.setObjectName(value)
         line_edit.setToolTip(tooltip)
         line_edit.setText(value)
         line_edit.setStyleSheet("QLineEdit{ background-color: #101010 }")
-        
-        if isinstance(icon, QtGui.QIcon):
-            if type(rotate_icon) == float or type(rotate_icon) == int and rotate_icon != 0:
-                try: icon = self.rotate_icon(icon, rotate_icon)
-                except: pass
-            try: line_edit.setWindowIcon(icon)
-            except: pass
 
         return line_edit
 

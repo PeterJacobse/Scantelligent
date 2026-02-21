@@ -28,6 +28,7 @@ class NanonisAPI(QtCore.QObject):
         self.data = DataProcessing()
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.timer = QtCore.QTimer()
+        self.abort_flag = False
 
     def connect(self) -> None:
         nhw = self.nanonis_hardware
@@ -580,7 +581,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (gains, error)
 
-    def frame_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def frame_update(self, parameters: dict = {}, auto_disconnect: bool = False, update_new_frame: bool = False) -> tuple[dict, bool | str]:
         """
         Function to get and set frame
         """
@@ -618,7 +619,7 @@ class NanonisAPI(QtCore.QObject):
             if x_nm and y_nm: new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "offset (nm)": [x_nm, y_nm], "center (nm)": [x_nm, y_nm]})
 
             angle_deg = parameters.get("angle (deg)", None)
-            if angle_deg: new_parameters.update({"angle (deg)": angle_deg})
+            if isinstance(angle_deg, float) or isinstance(angle_deg, int): new_parameters.update({"angle (deg)": angle_deg})
 
             frame = nhw.get_scan_frame_nm()
             if len(new_parameters) > 0:
@@ -627,6 +628,10 @@ class NanonisAPI(QtCore.QObject):
 
             frame.update({"dict_name": "frame"})
             self.parameters.emit(frame)
+            
+            if update_new_frame:
+                frame.update({"dict_name": "new_frame"})
+                self.parameters.emit(frame)
         
         except Exception as e: error = e
         finally:
@@ -882,9 +887,9 @@ class NanonisAPI(QtCore.QObject):
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
-        self.logprint(f"nanonis.auto_approach({status})", message_type = "code")
-                
+
         try:
+            self.logprint(f"nanonis.auto_approach({status})", "code")
             if not self.status == "running": self.connect()
             if V_motor: nhw.set_motor_f_A({"V_motor (V)": V_motor})
             nhw.auto_approach(status)
@@ -904,6 +909,7 @@ class NanonisAPI(QtCore.QObject):
         if isinstance(parameter_names, str): parameter_names = [parameter_names]
 
         try:
+            self.logprint(f"nanonis.get_parameter_values(parameter_names = {parameter_names})", "code")
             if not self.status == "running": self.connect()
             
             (scan_metadata, error) = self.scan_metadata_update(auto_disconnect = False)
@@ -930,6 +936,28 @@ class NanonisAPI(QtCore.QObject):
             if auto_disconnect: self.disconnect()
         
         return (parameter_values, error)
+
+    def scan_action(self, parameters: dict, auto_disconnect: bool = False) -> None:
+        error = False
+        nhw = self.nanonis_hardware
+        direction = parameters.get("direction", "down")
+        
+        try:
+            self.logprint(f"nanonis.scan_action(parameters = {parameters})", "code")
+            if not self.status == "running": self.connect()
+            
+            if "start" in parameters.values(): nhw.start_scan(direction)
+            elif "stop" in parameters.values(): nhw.stop_scan()
+            elif "resume" in parameters.values(): nhw.resume_scan()
+            else: nhw.pause_scan()
+        
+        except Exception as e:
+            error = f"Unable to execute the scan action. {e}"
+        
+        finally:
+            if auto_disconnect: self.disconnect()
+        
+        return error
 
 
 

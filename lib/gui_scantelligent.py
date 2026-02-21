@@ -1,7 +1,7 @@
 import os
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from . import GUIItems, PJComboBox, PJLineEdit, PJGroupBox
+from . import GUIItems, PJComboBox, PJLineEdit, PJGroupBox, PJTargetItem
 
 
 
@@ -12,6 +12,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # 1: Read icons from file.
         self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
                            "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#c00000", "#905020", "#707000", "#2020ff"]
+        self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff",
+                  "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
         self.icons_path = icons_path
         self.get_icons()
         
@@ -23,10 +25,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.comboboxes = self.make_comboboxes()
         self.line_edits = self.make_line_edits()
         self.radio_buttons = self.make_radio_buttons()
-        self.lines = self.make_lines()
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
         self.image_view = self.make_image_view()
+        (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
         self.plot_widget = self.make_plot_widget()
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
@@ -38,6 +40,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # 4: Make groupboxes and set their layouts. Requires populated layouts.
         self.groupboxes = self.make_groupboxes()
+        
+        # 5: Make the tab widget
+        self.tab_widget = self.make_tab_widget()
         
         # 5: Set up the main window layout
         self.setup_main_window()
@@ -105,9 +110,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         sivr = "Set the image value range "
 
         buttons = {
+            # Connections
             "scanalyzer": make_button("", "Launch Scanalyzer", icon = icons.get("scanalyzer")),
             "nanonis": make_button("", "Nanonis: offline\n(Ctrl + C)", icon = icons.get("nanonis")),
             "mla": make_button("", "Multifrequency Lockin Amplifier: offline\n(Ctrl + C)", icon = icons.get("imp")),
+            "keithley": make_button("", "Keithley: offline\n(Ctrl + C)", icon = icons.get("keithley")),
             "camera": make_button("", "Camera: offline\n(Ctrl + C)", icon = icons.get("camera")),
             "exit": make_button("", "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape")),
             "oscillator": make_button("", "Oscillator on/off\n(O)", icon = icons.get("osc")),
@@ -115,9 +122,19 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "session_folder": make_button("", "Open the session folder\n(1)", icon = icons.get("folder_yellow")),
             "info": make_button("", "Info", self.icons.get("i")),
             
+            # Experiment
+            "save": make_button("", "Save the experiment results to file", icon = icons.get("floppy")),
+            "start_pause": make_button("", "Start experiment", icon = icons.get("start")),
+            "stop": make_button("", "Stop experiment", icon = icons.get("stop")),
+            
+            # Parameters
+            "frame_aspect": make_toggle_button("", "Lock the frame aspect ratio", icon = icons.get("lock_aspect")),
+            "grid_aspect": make_toggle_button("", "Lock the grid aspect ratio", icon = icons.get("lock_aspect")),
+            
             "tip": make_button("", "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
             "V_swap": make_button("", "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
             
+            # Parameters: getters and setters
             "set_scan_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
             "get_scan_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
             "set_coarse_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
@@ -131,6 +148,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "set_grid_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
             "get_grid_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
             
+            # Coarse vertical
             "withdraw": make_button("", "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
             "retract": make_button("", "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
             "advance": make_button("", "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
@@ -138,6 +156,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "set_coarse": make_button("", "Set the new coarse parameters\n(Ctrl + P)", icon = icons.get("set")),
             "get_coarse": make_button("", "Get the coarse parameters\n(P)", icon = icons.get("get")),
 
+            # Coarse horizontal
             "n": make_button("", mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = arrow, rotate_icon = 270),
             "ne": make_button("", mtt + "northeast\n(Ctrl + 9)", icon = arrow45, rotate_icon = 0),
             "e": make_button("", mtt + "east\n(Ctrl + → / Ctrl + 6)", icon = arrow, rotate_icon = 0),
@@ -147,13 +166,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "w": make_button("", mtt + "west\n(Ctrl + ← / Ctrl + 4)", icon = arrow, rotate_icon = 180),
             "nw": make_button("", mtt + "northwest\n(Ctrl + 7)", icon = arrow45, rotate_icon = 270),
             
+            # Tip prep
             "bias_pulse": make_button("", "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse")),
             "tip_shape": make_button("", "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
             
-            "save": make_button("", "Save the experiment results to file", icon = icons.get("floppy")),
-            "start_pause": make_button("", "Start experiment", icon = icons.get("start")),
-            "stop": make_button("", "Stop experiment", icon = icons.get("stop")),
+            # Lockins
+            "nanonis_mod1": make_button("", "Nanonis modulator 1 On/Off", icon = icons.get("nanonis_mod1")),
+            "nanonis_mod2": make_button("", "Nanonis modulator 2 On/Off", icon = icons.get("nanonis_mod2")),
+            "mla_mod1": make_button("", "MLA modulator 1 On/Off", icon = icons.get("mla_oscillator")),
 
+            # Processing
             "direction": make_toggle_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow")),
             "fit_to_frame": make_button("", "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
             "fit_to_range": make_button("", "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
@@ -161,15 +183,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "percentiles": make_button("", sivr + "by percentiles\n(R)", icons.get("percentiles")),
             "standard_deviation": make_button("", sivr + "by standard deviations\n(D)", icons.get("deviation")),
             "absolute_values": make_button("", sivr + "by absolute values\n(A)", icons.get("numbers")),
-
-            "frame_aspect": make_toggle_button("", "Lock the frame aspect ratio", icon = icons.get("lock_aspect")),
-            "grid_aspect": make_toggle_button("", "Lock the grid aspect ratio", icon = icons.get("lock_aspect")),
             
-            "input": make_button(">>", "Enter command\n(Ctrl + Enter)"),
-
-            "nanonis_mod1": make_button("", "Nanonis Modulation 1 On/Off", icon = icons.get("nanonis_mod1")),
-            "nanonis_mod2": make_button("", "Nanonis Modulation 2 On/Off", icon = icons.get("nanonis_mod2")),
-            "mla_mod1": make_button("", "MLA Modulation 1 On/Off", icon = icons.get("mla_mod1"))
+            "input": make_button(">>", "Enter command\n(Ctrl + Enter)")
         }
 
         for i in range(6):
@@ -179,10 +194,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             buttons.update({f"speed_parameters_{i}": make_button("", f"Load speed parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
             buttons.update({f"grid_parameters_{i}": make_button("", f"Load grid parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
 
-        #[buttons[name].setCheckable(True) for name in ["direction", "nanonis_mod1", "nanonis_mod2", "frame_aspect", "grid_aspect"]]
+        # Increase size of important buttons
+        [buttons[name].setStyleSheet("QPushButton{ background-color: #101010; icon-size: 28px 28px; }") for name in ["stop", "start_pause", "view", "exit"]]
+        buttons["frame_aspect"].setChecked(True)
 
         # Named groups
-        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "scanalyzer", "view", "session_folder", "info", "exit"]]
+        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
         self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
         
@@ -195,7 +212,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         return buttons
 
-    def make_checkboxes(self) -> dict:
+    def make_checkboxes(self) -> tuple[dict, dict]:
         make_checkbox = self.gui_items.make_checkbox
         
         checkboxes = {
@@ -234,7 +251,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = {
             "channels": make_combobox("Channels", "Available scan channels"),
             "projection": make_combobox("Projection", "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": make_combobox("Experiment", "Select an experiment", items = ["nanonis_scan", "idling"]),
+            "experiment": make_combobox("Experiment"),
             "direction": make_combobox("Direction", "Select a scan direction / pattern (X)", items = ["nearest tip", "down", "up", "random"])
         }
         
@@ -292,7 +309,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "frame_x": PJLineEdit(tooltip = "frame offset (x)", unit = "nm", limits = [-1000, 1000], digits = 1),
             "frame_y": PJLineEdit(tooltip = "frame offset (y)", unit = "nm", limits = [-1000, 1000], digits = 1),
             "frame_angle": PJLineEdit(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1),
-            "frame_aspect": PJLineEdit(tooltip = "frame aspect ratio (height / width)", digits = 4),
+            "frame_aspect": PJLineEdit(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4),
 
             # Grid
             "grid_pixels": PJLineEdit(tooltip = "Number of pixels", unit = "px", limits = [1, 10000], digits = 0),
@@ -304,9 +321,21 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             # Tip shaper
             "pulse_voltage": PJLineEdit(tooltip = "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
             "pulse_duration": PJLineEdit(tooltip = "Duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
+            
+            # Lockins
+            "nanonis_mod1_f": PJLineEdit(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "nanonis_mod1_V": PJLineEdit(tooltip = "Nanonis modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "nanonis_mod1_phi": PJLineEdit(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "nanonis_mod2_f": PJLineEdit(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "nanonis_mod2_V": PJLineEdit(tooltip = "Nanonis modulator 2 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "nanonis_mod2_phi": PJLineEdit(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            
+            "mla_mod1_f": PJLineEdit(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "mla_mod1_V": PJLineEdit(tooltip = "MLA modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "mla_mod1_phi": PJLineEdit(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
 
             # Image processing
-            "min_full": make_line_edit("", "minimum value of scan data range", icon = self.icons.get("0")),
+            "min_full": make_line_edit("", "minimum value of scan data range"),
             "max_full": make_line_edit("", "maximum value of scan data range"),
             "min_percentiles": make_line_edit("2", "minimum percentile of data range"),
             "max_percentiles": make_line_edit("98", "maximum percentile of data range"),
@@ -337,6 +366,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         self.frame_widgets = [line_edits[name] for name in ["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"]]
         self.grid_widgets = [line_edits[name] for name in ["grid_lines", "grid_pixels", "grid_aspect"]]
+        
+        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_V"], line_edits["nanonis_mod1_phi"],
+                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_V"], line_edits["nanonis_mod2_phi"],
+                                  buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_V"], line_edits["mla_mod1_phi"]]
         
         # Aesthetics
         [line_edits[name].setStyleSheet("QLineEdit{ background-color: #101010; }") for name in line_edits.keys()]
@@ -393,17 +426,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return radio_buttons
 
-    def make_lines(self) -> dict:
-        make_line = self.gui_items.line_widget
-        
-        lines = {
-            "scan_control": make_line("h"),
-            "background": make_line("h"),
-            "matrix_operations": make_line("h")
-        }
-        
-        return lines
-
     def make_progress_bars(self) -> dict:
         make_progress_bar = self.gui_items.make_progress_bar
         
@@ -416,7 +438,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [self.experiment_controls.append(self.buttons[name]) for name in ["start_pause", "stop", "save"]]
         
         # Add the progress_bar handles to the tooltips
-        [progress_bars[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in progress_bars.keys()]
+        [progress_bars[name].changeToolTip(f"gui.progress_bars[\"{name}\"]", line = 10) for name in progress_bars.keys()]
         
         return progress_bars
 
@@ -453,6 +475,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "coarse_vertical": make_layout("g"),
             "coarse_horizontal": make_layout("g"),
+            
+            "modulators": make_layout("g"),
+            "demodulators": make_layout("g"),
 
             "background_buttons": make_layout("h"),
             "matrix_processing": make_layout("g"),
@@ -460,7 +485,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "empty": make_layout("v"),
             
             "input": make_layout("h"),
-            "experiment_controls": make_layout("h"),
+            "experiment_controls_0": make_layout("v"),
+            "experiment_controls_1": make_layout("h"),
             "experiment_fields": make_layout("h"),
             
             "graph": make_layout("h"),
@@ -481,7 +507,21 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         image_view = make_image_view()
         
+        # Make a tip target item in the image_view
+        self.tip_target = PJTargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = True)
+        image_view.view.addItem(self.tip_target)
+        
         return image_view
+
+    def make_rois(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
+        piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
+        frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
+        new_frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["light_blue"], width = 2), movable = True, resizable = True, rotatable = True)
+        
+        new_frame_roi.addScaleHandle([1, 0], [0, 1])
+        new_frame_roi.addRotateHandle([0.5, 0], [0.5, 0.5])
+        
+        return (piezo_roi, frame_roi, new_frame_roi)
 
     def make_plot_widget(self) -> pg.PlotWidget:
         plot_widget = pg.PlotWidget()
@@ -507,7 +547,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "parameters": QWgt(),
             "image_processing": QWgt(),
             "experiment": QWgt(),
-            "lockins": QWgt()
+            "lockins": QWgt(),
         }
         
         self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]     
@@ -599,19 +639,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Toolbar
         # Connections
-        [layouts["connections"].addWidget(button, 0, i) for i, button in enumerate(self.connection_buttons)]
+        layouts["connections"].addWidget(buttons["view"], 0, 0, 2, 1)
+        [layouts["connections"].addWidget(button, 0, i + 1) for i, button in enumerate(self.connection_buttons[:4])]
+        [layouts["connections"].addWidget(button, 1, i + 1) for i, button in enumerate(self.connection_buttons[4:])]
+        layouts["connections"].addWidget(buttons["exit"], 0, 5, 2, 1)
 
         # Experiment
-        [layouts["experiment_controls"].addWidget(widget) for widget in self.experiment_controls]
+        [layouts["experiment_controls_0"].addWidget(buttons[name]) for name in ["stop", "start_pause"]]
+        [layouts["experiment_controls_1"].addWidget(widget) for widget in [self.progress_bars["experiment"], buttons["save"], line_edits["experiment_filename"]]]
         [layouts["experiment_fields"].addWidget(widget) for widget in self.experiment_parameter_fields]
         e_layout = layouts["experiment"]
-        e_layout.addWidget(self.tip_slider, 0, 0, 3, 1)
-        e_layout.addWidget(self.comboboxes["experiment"], 0, 1, 1, 2)
-        e_layout.addWidget(self.comboboxes["direction"], 0, 3)
+        e_layout.addLayout(layouts["experiment_controls_0"], 0, 0, 3, 1)
+        e_layout.addWidget(self.tip_slider, 0, 1, 3, 1)
+        e_layout.addWidget(self.comboboxes["experiment"], 0, 2, 1, 2)
+        e_layout.addWidget(self.comboboxes["direction"], 0, 4)
         # [e_layout.addWidget(self.comboboxes[name], 0, i + 1) for i, name in enumerate(["experiment", "direction"])]
-        e_layout.addLayout(layouts["experiment_controls"], 1, 1, 1, 2)
-        e_layout.addWidget(self.line_edits["experiment_filename"], 1, 3)
-        e_layout.addLayout(layouts["experiment_fields"], 2, 1, 1, 3)
+        e_layout.addLayout(layouts["experiment_controls_1"], 1, 2, 1, 3)
+        e_layout.addWidget(self.line_edits["experiment_filename"], 2, 3)
+        e_layout.addLayout(layouts["experiment_fields"], 2, 2, 1, 3)
         
         # Coarse
         cv_layout = layouts["coarse_vertical"]
@@ -677,11 +722,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Tip prep
         [layouts["tip_prep"].addWidget(widget) for widget in self.tip_prep_widgets]
         
+        # Lockins
+        [layouts["modulators"].addWidget(widget, int(i / 4), i % 4) for i, widget in enumerate(self.modulator_widgets)]
+        
         # Image processing                
         cn_layout = layouts["channel_navigation"]
         cn_layout.addWidget(comboboxes["channels"], 4)
         cn_layout.addWidget(self.buttons["direction"], 1)
-        [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range", "nanonis_mod1", "nanonis_mod2"]]
+        [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
         
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rotation", "offset"]]
@@ -714,21 +762,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return
 
 
-    """
-    def make_tabs(self) -> dict:
-        QTW = QtWidgets.QTabWidget
-
-        tab_widgets = {
-            "coarse_control": QTW(),
-            "scan_control": QTW()
-        }
-
-        [tab_widgets["coarse_conrol"].addTab(self.widgets[name]) for name in ["coarse_vertical", "coarse_horizontal"]]
-
-        return tabs
-    """
-
-
 
     # 4: Make widgets and groupboxes and set their layouts. Requires layouts.
     def make_groupboxes(self) -> dict:
@@ -736,13 +769,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts = self.layouts
         
         groupboxes = {
+            # Connections
             "connections": make_groupbox("Connections", "Connections to hardware (push to check/refresh)"),
+            
+            # Coarse
             "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
             "coarse_vertical": make_groupbox("Vertical", "Vertical coarse motion"),
             "coarse_horizontal": make_groupbox("Horizontal", "Vertical coarse motion"),
 
             "frame_grid": make_groupbox("Frame / grid", "Frame and grid parameters"),
             "gains": make_groupbox("Feedback gains", "Feedback gains"),
+            "modulators": make_groupbox("Modulators", "Modulators"),
+            "demodulators": make_groupbox("Demodulators", "Demodulators"),
 
             "tip_prep": make_groupbox("Tip prep", "Tip preparation actions"),
             "parameters": make_groupbox("Scan parameters", "Scan parameters"),
@@ -752,27 +790,29 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "dummy": make_groupbox("Dummy", "Invisible groupbox to swap out layouts to make other groupboxes collapse")
         }
 
-        QTW = QtWidgets.QTabWidget
-        self.tab_widget = QTW()
-
         # Set layouts for the groupboxes
-        groupbox_names = ["connections", "coarse_control", "coarse_horizontal", "coarse_vertical", "gains", "frame_grid", "tip_prep", "parameters", "experiment", "image_processing"]
+        groupbox_names = ["connections", "coarse_control", "coarse_horizontal", "coarse_vertical", "gains", "frame_grid", "tip_prep", "parameters", "modulators", "demodulators", "experiment", "image_processing"]
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
         # Make layouts of several groupboxes
         [layouts["coarse_control"].addWidget(groupboxes[name]) for name in ["coarse_horizontal", "coarse_vertical"]]
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["gains", "frame_grid"]]
-        
-        # Make tabs
-        tabs = ["coarse_control", "tip_prep", "parameters", "image_processing", "lockins"]
-        tab_names = ["Coarse", "Prep", "Parameters", "Processing", "Lock-ins"]
-        [self.widgets[name0].setLayout(layouts[name0]) for name0 in tabs]
-        [self.tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
-        
-        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "experiment"]] #, "coarse_control", "tip_prep", "parameters", "experiment", "image_processing"]]
-        self.layouts["toolbar"].addWidget(self.tab_widget)
+        [layouts["lockins"].addWidget(groupboxes[name]) for name in ["modulators", "demodulators"]]
 
         return groupboxes
+
+
+
+    # 5: Make the tab widget
+    def make_tab_widget(self) -> QtWidgets.QTabWidget:
+        tab_widget = QtWidgets.QTabWidget()
+        
+        tabs = ["coarse_control", "tip_prep", "parameters", "image_processing", "lockins"]
+        tab_names = ["Coarse", "Prep", "Parameters", "Processing", "Lock-ins"]
+        [self.widgets[name0].setLayout(self.layouts[name0]) for name0 in tabs]
+        [tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
+
+        return tab_widget
 
 
 
@@ -780,10 +820,15 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def setup_main_window(self) -> None:
         layouts = self.layouts
         widgets = self.widgets
+        groupboxes = self.groupboxes
 
         # Aesthetics
         layouts["left_side"].setContentsMargins(0, 0, 0, 0)
         layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
+        
+        # Create the toolbar
+        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "experiment"]]
+        self.layouts["toolbar"].addWidget(self.tab_widget)
         layouts["toolbar"].addStretch(1)
         
         # Compose the image_view plus consoles layout
@@ -815,8 +860,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
 
 
+    # 6: Interconnect interdependent widgets
     def interconnect(self) -> None:
+        self.new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.height_width_aspect(name_0)) for name in ["frame_width", "frame_height", "frame_aspect"]]
+        [self.line_edits[name].editingFinished.connect(self.update_frame_from_fields) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle", "frame_aspect"]]
         return
 
 
@@ -875,5 +923,60 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                 pass
 
         [self.line_edits[name].blockSignals(False) for name in ["frame_width", "frame_height", "frame_aspect"]]
+        return
+
+
+
+    def update_fields_from_frame_change(self) -> None:        
+        [self.line_edits[name].blockSignals(True) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
+        
+        new_width = self.new_frame_roi.size().x()
+        self.line_edits["frame_width"].setValue(new_width)
+        
+        if self.buttons["frame_aspect"].isChecked():
+            new_height = new_width * self.line_edits["frame_aspect"].getValue()
+            
+            self.new_frame_roi.blockSignals(True)
+            self.new_frame_roi.setSize([new_width, new_height])
+            self.new_frame_roi.blockSignals(False)
+        else:
+            new_height = self.new_frame_roi.size().y()
+            self.line_edits["frame_aspect"].setValue(new_height / new_width)
+        
+        self.line_edits["frame_height"].setValue(new_height)
+                
+        bounding_rect = self.new_frame_roi.boundingRect()
+        local_center = bounding_rect.center()
+        abs_center = self.new_frame_roi.mapToParent(local_center)
+        
+        self.line_edits["frame_x"].setValue(abs_center.x())
+        self.line_edits["frame_y"].setValue(abs_center.y())
+        
+        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle())
+        
+        [self.line_edits[name].blockSignals(False) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
+        return
+
+    def update_frame_from_fields(self) -> None:
+        self.new_frame_roi.blockSignals(True)
+        
+        new_width = self.line_edits["frame_width"].getValue()
+        new_height = self.line_edits["frame_height"].getValue()
+        new_angle = self.line_edits["frame_angle"].getValue()
+        new_x = self.line_edits["frame_x"].getValue()
+        new_y = self.line_edits["frame_y"].getValue()
+        
+        self.new_frame_roi.setPos([0, 0])
+        self.new_frame_roi.setSize([new_width, new_height])
+        self.new_frame_roi.setAngle(-new_angle)
+        
+        bounding_rect = self.new_frame_roi.boundingRect()
+        local_center = bounding_rect.center()
+        abs_center = self.new_frame_roi.mapToParent(local_center)
+
+        self.new_frame_roi.setPos(new_x - abs_center.x(), new_y - abs_center.y())
+        
+        self.new_frame_roi.blockSignals(False)        
+        
         return
 
