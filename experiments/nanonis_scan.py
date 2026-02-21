@@ -38,6 +38,7 @@ class Experiment(NanonisAPI):
         [x, y, z] = [tip_status.get(f"{dim} (nm)") for dim in ["x", "y", "z"]]
         curr = tip_status.get("I (pA)")
         [t0, x0, y0, z0, curr0] = [t, x, y, z, curr]
+        self.parameters.emit({"dict_name": "channels", 0: "time (s)", 1: "x (nm)", 2: "y (nm)", 3: "z (nm)", 4: "I (pA)"})
         
         match direction:
             case "up":

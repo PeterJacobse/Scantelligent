@@ -93,9 +93,14 @@ class NanonisAPI(QtCore.QObject):
 
 
     #PyQt slots
-    @QtCore.pyqtSlot()
+    @QtCore.pyqtSlot(dict)
     def receive_parameters(self, parameters: dict) -> None:
-        self.logprint(f"Class NanonisAPI received parameters: {parameters}", message_type = "message")
+        match parameters.get("dict_name"):
+            case "processing_flags":
+                self.data.processing_flags.update(parameters)
+                print(self.data.processing_flags)
+            case _:
+                pass
         return
 
     @QtCore.pyqtSlot(int, bool)

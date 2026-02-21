@@ -247,10 +247,10 @@ class Scantelligent(QtCore.QObject):
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
         
         # Comboboxes
-        self.gui.comboboxes["channels"].currentIndexChanged.connect(self.request_nanonis_update)
+        self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
         self.experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
-        self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.change_experiment)
         self.gui.comboboxes["experiment"].addItems(self.experiments)
+        self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.change_experiment)        
         
         self.gui.image_view.position_signal.connect(self.receive_double_click)
 
@@ -450,7 +450,6 @@ class Scantelligent(QtCore.QObject):
             case "coarse_parameters":
                 self.user.coarse_parameters[0].update(parameters)
                 
-                # Remove this once a 'set' and 'get' are implemented
                 line_edits["V_hor"].setText(str(parameters.get("V_motor (V)")))
                 line_edits["V_ver"].setText(str(parameters.get("V_motor (V)")))
                 line_edits["f_motor"].setText(str(parameters.get("f_motor (Hz)")))
@@ -1113,6 +1112,10 @@ class Scantelligent(QtCore.QObject):
         
         return
 
+    def update_processing_flags(self) -> None:
+        self.parameter_dict.emit({"dict_name": "processing_flags", "channel": "blub"})
+        return
+
 
 
     # Nanonis functions 
@@ -1363,6 +1366,7 @@ class Scantelligent(QtCore.QObject):
             self.experiment.parameters.connect(self.receive_parameters)
             self.experiment.image.connect(self.receive_image)
             self.experiment.data_array.connect(self.receive_data)
+            self.parameter_dict.connect(self.experiment.receive_parameters)
             
         except Exception as e:
             self.logprint(f"Error loading the experiment: {e}", "error")

@@ -43,8 +43,6 @@ class DataProcessing():
             "file_name": "",
             "frame": { # A frame dict is embedded in processing flags so that the location, rotation and scan range parameters can be accessed immediately
                 "dict_name": "frame",
-                "offset_nm": [0, 0], # Deprecate underscore separations of quantities and units
-                "scan_range_nm": [0, 0],
                 "angle_deg" : 0,
                 "offset (nm)": [0, 0],
                 "scan_range (nm)": [0, 0],
