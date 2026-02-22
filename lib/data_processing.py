@@ -43,7 +43,6 @@ class DataProcessing():
             "file_name": "",
             "frame": { # A frame dict is embedded in processing flags so that the location, rotation and scan range parameters can be accessed immediately
                 "dict_name": "frame",
-                "angle_deg" : 0,
                 "offset (nm)": [0, 0],
                 "scan_range (nm)": [0, 0],
                 "angle (deg)" : 0
@@ -304,7 +303,7 @@ class DataProcessing():
         return (spectrum, error)
 
 
-    
+
     # Image operations
     def process_scan(self, image: np.ndarray) -> tuple[np.ndarray, dict, list, bool | str]:
         error = False
@@ -338,7 +337,7 @@ class DataProcessing():
         scan_range_nm = flags["scan_range (nm)"]
         
         # Background subtraction
-        (image, error) = self.subtract_background(image, mode = flags["background"])
+        (image, error) = self.subtract_background(image)
         if error: return (image, error)
         
         # Matrix operations
@@ -680,9 +679,10 @@ class DataProcessing():
         
         return (rgb_array, error)
 
-    def subtract_background(self, image: np.ndarray, mode: str = "plane") -> tuple[np.ndarray, bool | str]:
+    def subtract_background(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
         input_image = image
+        mode = self.processing_flags.get("background", "none")
 
         if not isinstance(image, np.ndarray):
             error = "Error. The provided image is not a numpy array."

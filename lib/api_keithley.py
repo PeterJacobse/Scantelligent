@@ -1,9 +1,12 @@
+from PyQt6 import QtCore
 from pymeasure.instruments.keithley import Keithley2400
 import numpy as np
 
 
 
-class KeithleyHW:
+class KeithleyAPI(QtCore.QObject):
+    connection = QtCore.pyqtSignal(str, str)
+
     def __init__(self, hardware: dict = {}):
         self.hardware = hardware
         self.GPIB = self.get_GPIB_parameters()
@@ -13,9 +16,11 @@ class KeithleyHW:
         try:
             self.keithleyhw = Keithley2400(self.GPIB)
             self.mode = self.keithleyhw.source_mode
-        except Exception as e:
-            print(f"Error connecting the Keithley: {e}")
-    
+            print(self.mode)
+        except Exception as e: raise
+
+
+
     def get_GPIB_parameters(self) -> str:
         self.visa_no = False
         self.address = False
@@ -59,6 +64,10 @@ class KeithleyHW:
 
         khw.shutdown()
 
+        return
+
+    def initialize(self) -> None:
+        self.connection.emit("keithley", "online")
         return
 
     def set_I_max(self, I_max: float = 0) -> None:
@@ -138,7 +147,4 @@ class KeithleyHW:
     def set_I(self) -> float:
         return
 
-    def echo(self):
-        print("Hello from Keithley!")
-        return
 

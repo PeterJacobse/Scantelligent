@@ -1,11 +1,10 @@
 import numpy as np
 from PyQt6 import QtCore
 import cv2
-from time import sleep
 
 
 
-class Camera(QtCore.QObject):
+class CameraAPI(QtCore.QObject):
     frameCaptured = QtCore.pyqtSignal(np.ndarray)
     finished = QtCore.pyqtSignal()
     message = QtCore.pyqtSignal(str, str)
@@ -14,6 +13,11 @@ class Camera(QtCore.QObject):
         super().__init__()
         self.running = False
         self.configure(config)
+        success = self.cap.isOpened()
+        if not success: raise
+        else: pass
+
+            
     
     def configure(self, config):
         if "camera" in config.keys() and isinstance(config["camera"], dict):
@@ -58,5 +62,6 @@ class Camera(QtCore.QObject):
         self.finished.emit() # Notify the main thread that the work is done
 
     def check_abort(self):
-        if self.thread().isInterruptionRequested(): self.running = False
+        if self.thread().isInterruptionRequested():
+            self.running = False
         return

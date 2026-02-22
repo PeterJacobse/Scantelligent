@@ -9,11 +9,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def __init__(self, icons_path):
         super().__init__()
         
-        # 1: Read icons from file.
         self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
                            "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#c00000", "#905020", "#707000", "#2020ff"]
         self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff",
                   "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+        self.style_sheets = {
+            "neutral": f"background-color: {self.colors["black"]};",
+            "connected": f"background-color: {self.colors["dark_green"]};",
+            "disconnected": f"background-color: {self.colors["dark_red"]};",
+            "running": f"background-color: {self.colors["blue"]};",
+            "hold": f"background-color: {self.colors["dark_orange"]};",
+            "idle": f"background-color: {self.colors["purple"]};"
+            }
+
+        # 1: Read icons from file.
         self.icons_path = icons_path
         self.get_icons()
         
@@ -227,8 +236,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "normal": make_checkbox("Normal", "Compute the z component of the surface normal\n(Shift + N)", self.icons.get("surface_normal")),
             "gaussian": make_checkbox("Gauss", "Apply a Gaussian blur\n(Shift + G)", self.icons.get("gaussian")),
             
-            "rotation": make_checkbox("", "Show the scan frame rotation\n(R)", self.icons.get("rotation")),
-            "offset": make_checkbox("", "Show the scan frame offset(O)", self.icons.get("offset")),
+            "rot_trans": make_checkbox("", "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", self.icons.get("rot_trans")),
 
             "composite_motion": make_checkbox("", "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }
@@ -732,7 +740,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
         
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
-        [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rotation", "offset"]]
+        [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rot_trans"]]
         p_layout = layouts["matrix_processing"]
         [p_layout.addWidget(checkboxes[checkbox_name], 0, index) for index, checkbox_name in enumerate(["sobel", "normal", "laplace"])]
         p_layout.addWidget(checkboxes["gaussian"], 1, 1)

@@ -11,7 +11,7 @@ class Experiment(NanonisAPI):
     def __init__(self, parent, *args, **kwargs):
         
         # 'parent' is a reference to the Scantelligent app itself. It is passed by default when loading the experiment in Scantelligent
-        super().__init__(parent.hardware)
+        super().__init__(parent, parent.hardware)
         self.line_edits = [parent.gui.line_edits[f"experiment_{i}"] for i in range(3)]
         self.direction_box = parent.gui.comboboxes["direction"]
         
@@ -24,12 +24,15 @@ class Experiment(NanonisAPI):
         [self.line_edits[i].setUnit(unit) for i, unit in enumerate(["s", "nm", "pA"])]
         [self.line_edits[i].setValue(0) for i in range(1, 3)]
 
+
+
     def run(self):
         # Correct way to extract data from the line edits
         experiment_parameters = [self.line_edits[i].getValue() for i in range(3)]
         timeout = experiment_parameters[0]
         direction = self.direction_box.currentText()
-        
+        flags = self.data.processing_flags
+
         self.connect()
         self.logprint("Experiment nanonis_scan started", message_type = "success")
         
@@ -42,38 +45,48 @@ class Experiment(NanonisAPI):
         
         match direction:
             case "up":
-                self.scan_action({"action": "start", "direction": "up"})
+                self.data.processing_flags.update({"up_or_down": "up"})
+                self.scan_action({"action": "start", "direction": "up"})                
             
             case "down":
+                self.data.processing_flags.update({"up_or_down": "down"})
                 self.scan_action({"action": "start", "direction": "down"})
             
             case _:
                 pass
         
-        for iteration in range(1000):
+        for iteration in range(100000):
             self.check_abort()
             if self.abort_flag:
                 self.cleanup()
                 break
             
             t = time() - t0
-            (tip_status, error) = self.tip_update()
+            (tip_status, error) = self.tip_update(verbose = False)
             [x, y, z] = [tip_status.get(f"{dim} (nm)") for dim in ["x", "y", "z"]]
             curr = tip_status.get("I (pA)")
-        
-            self.logprint(f"Elapsed time: {t}")
+    
             if t > timeout:
                 self.logprint("Timeout encountered", "warning")
                 break
             
-            self.frame_update()
-            self.scan_metadata_update()
-            print(self.data.processing_flags)
+            # Update frame, scan metadata and scan image
+            self.frame_update(verbose = False)
+            (scan_metadata, error) = self.scan_metadata_update(verbose = False)
+            channel_dict = scan_metadata.get("channel_dict")
             
-            sleep(1)
+            requested_channel = flags.get("channel")
+            backward = flags.get("direction") == "backward"
+            for channel_name, index in channel_dict.items():
+                if channel_name == requested_channel: break
+            (scan_image, error) = self.scan_update(index, backward = backward, verbose = False)
+            
+            if not np.isnan(scan_image).any():
+                self.logprint("Scan completed", "success")
+                break
 
         if not self.abort_flag:
-            self.logprint("Experiment nanonis_scan finished!", message_type = "success")
+            self.logprint("Experiment nanonis_scan finished", "success")
             self.cleanup()
         return
     

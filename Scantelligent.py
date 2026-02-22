@@ -1,24 +1,11 @@
-import os, sys, re, html, yaml, cv2, pint, atexit
+import os, sys, re, html, yaml, pint, atexit
+from PIL import Image
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyHW, DataProcessing, UserData, PJTargetItem, FileFunctions, Camera
+from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI
 from time import sleep
 from datetime import datetime
-
-
-
-colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff",
-          "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
-style_sheets = {
-    "neutral": f"background-color: {colors["black"]};",
-    "connected": f"background-color: {colors["dark_green"]};",
-    "disconnected": f"background-color: {colors["dark_red"]};",
-    "running": f"background-color: {colors["blue"]};",
-    "hold": f"background-color: {colors["dark_orange"]};",
-    "idle": f"background-color: {colors["purple"]};"
-    }
-text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "result": colors["light_blue"], "success": colors["green"], "warning": colors["orange"]}
 
 
 
@@ -124,10 +111,11 @@ class Scantelligent(QtCore.QObject):
         self.hardware = self.config_init() # Read the hardware configuration and parameters from the configuration files in the sys folder
         self.data = DataProcessing() # Class for data processing and analysis
         self.timer = QtCore.QTimer()
-        
+
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
         self.populate_completer()
         self.gui.show()
+        self.toggle_view("none")
 
 
 
@@ -161,7 +149,9 @@ class Scantelligent(QtCore.QObject):
         self.ureg = pint.UnitRegistry()
         self.user = UserData()
         self.file_functions = FileFunctions()
+        
         self.lines = [] # Lines for plotting in the graph
+        self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = Parameters(parent = self) # Intantiate the class Parameters, which implements easy parameter getting, setting, loading and saving
         
         # Dict to keep track of the hardware and experiment status
@@ -170,6 +160,7 @@ class Scantelligent(QtCore.QObject):
             "nanonis": "offline",
             "mla": "offline",
             "camera": "offline",
+            "keithley": "offline",
             "tip": {"withdrawn": True, "feedback": False},
             "experiment": {"name": None, "status": "idle"},
             "view": "none"
@@ -253,6 +244,10 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.change_experiment)        
         
         self.gui.image_view.position_signal.connect(self.receive_double_click)
+        
+        # Checkboxes and radio buttons
+        [self.gui.radio_buttons[name].clicked.connect(self.update_processing_flags) for name in ["bg_none", "bg_plane", "bg_linewise", "min_absolute", "min_deviations", "min_percentiles", "min_full", "max_absolute", "max_deviations", "max_percentiles", "max_full"]]
+        [self.gui.checkboxes[operation].clicked.connect(self.update_processing_flags) for operation in ["sobel", "gaussian", "normal", "fft", "laplace", "rot_trans"]]
 
         return
   
@@ -324,45 +319,46 @@ class Scantelligent(QtCore.QObject):
         """
         Test and set up all connections, and request parameters from the hardware components
         """
-        self.keithley = KeithleyHW(hardware = self.hardware)
 
-        def connect_camera() -> None:            
-            argument = self.hardware.get("camera_argument")
+        self.logprint("Attempting to connect to hardware", message_type = "message")
+        
+        # Keithley
+        try:
+            # Instantiate
+            self.keithley = KeithleyAPI(hardware = self.hardware)
             
-            try:
-                self.logprint(f"cap = cv2.VideoCapture({argument})", message_type = "code")
-                raise
-                cap = cv2.VideoCapture(argument)
-                
-                if not cap.isOpened(): # Check if the camera opened successfully
-                    raise
-                else:
-                    cap.release()
-                    self.status["camera"] = "online"
-                    
-                    self.logprint("Success! Camera stream received.", message_type = "success")
+            # Set up signal-slot connections
+            # Keithley -> Scantelligent
+            self.keithley.connection.connect(self.receive_connection_status)
+            
+            # Get parameters from Keithley
+            self.keithley.initialize()
+            
+            self.logprint("Found the Keithley source meter and instantiated KeithleyHW as keithley", "success")        
+        except Exception as e:
+            self.logprint("Unable to connect to the Keithley source meter", "warning")
+        
+        # Camera
+        try:
+            # Instantiate
+            self.camera = CameraAPI({"argument": 0})
+            
+            # Set up signal-slot connections            
+            self.logprint("Found the camera and instantiated CameraHW as camera", "success")
+        
+        except Exception as e:
+            self.logprint(f"Unable to connect to camera", "warning")
 
-            except Exception as e:
-                self.logprint("Warning. Failed to connect to the camera.", message_type = "warning")
+        # MLA
+        self.status["mla"] = "offline"            
+        self.logprint("Unable to connect to the MLA", "warning")
+        
+        # Nanonis
+        try:
+            # Instantiate
+            self.nanonis = NanonisAPI(parent = self, hardware = self.hardware)
             
-            return
-
-        def connect_mla() -> None:
-            self.status["mla"] = "offline"
-            
-            self.logprint("Warning. Failed to connect to the MLA.", message_type = "warning")
-            
-            return
-
-        def connect_nanonis() -> None:
-            self.nanonis = NanonisAPI(hardware = self.hardware) # Instantiate the NanonisAPI class
-            
-            # Initialize signal-slot connections
-            
-            # Scantelligent -> Nanonis
-            self.parameter_dict.connect(self.nanonis.receive_parameters)
-            self.image_request.connect(self.nanonis.receive_image_request)
-
+            # Set up signal-slot connections
             # Nanonis -> Scantelligent
             self.nanonis.connection.connect(self.receive_nanonis_status)
             self.nanonis.progress.connect(self.receive_progress)
@@ -371,25 +367,12 @@ class Scantelligent(QtCore.QObject):
             self.nanonis.image.connect(self.receive_image)
             self.nanonis.data_array.connect(self.receive_data)
             
-            match self.status["nanonis"]:
-                case "idle": # Nanonis was already online. Create an active TCP-IP connection
-                    try: self.nanonis.connect()
-                    except: pass
-                
-                case "running": # Nanonis is currently running. Close the TCP-IP connection
-                    try: self.nanonis.disconnect()
-                    except: pass
-                
-                case _: # Nanonis was offline, either not yet initizialized or flagged offline due to an error
-                    try: self.nanonis.initialize(auto_disconnect = True)
-                    except: pass
-
-            return
-
-        self.logprint("Attempting to connect to hardware", message_type = "message")
-        connect_camera()
-        connect_mla()
-        connect_nanonis()
+            # Get parameters from Nanonis
+            self.nanonis.initialize()
+            
+            self.logprint(f"Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")        
+        except Exception as e:
+            self.logprint(f"Unable to connect to Nanonis", "error")
         
         # Update the buttons in the gui and populate the autocomplete suggestions in the command input
         self.update_buttons()
@@ -402,8 +385,7 @@ class Scantelligent(QtCore.QObject):
     # PyQt slots
     @QtCore.pyqtSlot(float, float)
     def receive_double_click(self, x: float, y: float) -> None:
-        self.nanonis.tip_update({"x (nm)": x, "y (nm)": y})
-        self.logprint(f"nanonis.tip_update({{\"x (nm)\": {x}, \"y (nm)\": {y}}})", message_type = "code")
+        self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, auto_disconnect = True)
         return
     
     @QtCore.pyqtSlot(str)
@@ -485,7 +467,7 @@ class Scantelligent(QtCore.QObject):
                 z_tip_nm = tip_status.get("z (nm)", 0)
                 self.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
                 self.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
-                self.gui.image_view.view.addItem(self.gui.tip_target)
+                if self.status["view"] == "nanonis": self.gui.image_view.view.addItem(self.gui.tip_target)
                 
                 self.update_tip_status()
             
@@ -590,7 +572,7 @@ class Scantelligent(QtCore.QObject):
                 
                 piezo_range_nm = [piezo_range.get("x_range (nm)"), piezo_range.get("y_range (nm)")]
                 piezo_lower_left_nm = [piezo_range.get("x_min (nm)"), piezo_range.get("y_min (nm)")]
-                piezo_roi.setSize(piezo_range_nm, [0, 0], [0, 0]) # = pg.ROI(piezo_lower_left_nm, piezo_range_nm, pen = pg.mkPen(color = colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
+                piezo_roi.setSize(piezo_range_nm, [0, 0], [0, 0])
                 piezo_roi.setPos(piezo_lower_left_nm)
                 
                 # Add the frame to the ImageView
@@ -610,6 +592,7 @@ class Scantelligent(QtCore.QObject):
                 else:
                     self.gui.comboboxes["channels"].renewItems(list(self.channels.keys()))
                     self.gui.comboboxes["channels"].selectItem("Z (m)")
+                    self.update_processing_flags()
 
             case _:
                 pass
@@ -619,36 +602,40 @@ class Scantelligent(QtCore.QObject):
     @QtCore.pyqtSlot(np.ndarray)
     def receive_image(self, image: np.ndarray) -> None:
         try:
-            
-            self.gui.image_view.clear()
+            """
+            view_box = self.gui.image_view.getView()
+            for item in view_box.allChildItems():
+                if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
+            """
             try:
                 self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)
             except:
                 pass
             
-            # Use the frame to update the imageitem box
-            frame = self.user.frames[0]
+            if self.status["view"] == "nanonis":
+                # Use the frame to update the imageitem box
+                frame = self.user.frames[0]
+                
+                scan_range_nm = frame.get("scan_range (nm)", [100, 100])
+                angle_deg = frame.get("angle (deg)", 0)
+                offset_nm = frame.get("offset (nm)", [0, 0])
             
-            scan_range_nm = frame.get("scan_range (nm)", [100, 100])
-            angle_deg = frame.get("angle (deg)", 0)
-            offset_nm = frame.get("offset (nm)", [0, 0])
-        
-            w = scan_range_nm[0]
-            h = scan_range_nm[1]
-            x = offset_nm[0]
-            y = offset_nm[1]
-        
-            image_item = self.gui.image_view.getImageItem()
-            box = QtCore.QRectF(- w / 2, - h / 2, w, h)
-            image_item.setRect(box)
+                w = scan_range_nm[0]
+                h = scan_range_nm[1]
+                x = offset_nm[0]
+                y = offset_nm[1]
             
-            center = image_item.boundingRect().center()
-            image_item.setTransformOriginPoint(center)
-            image_item.setRotation(90 - angle_deg)
-            image_item.setPos(x, y)
+                image_item = self.gui.image_view.getImageItem()
+                box = QtCore.QRectF(- w / 2, - h / 2, w, h)
+                image_item.setRect(box)
+                
+                center = image_item.boundingRect().center()
+                image_item.setTransformOriginPoint(center)
+                image_item.setRotation(90 - angle_deg)
+                image_item.setPos(x, y)
 
         except Exception as e:
-            self.logprint(f"Error: {e}")
+            self.logprint(f"Error: {e}", "error")
             
         return
 
@@ -678,6 +665,9 @@ class Scantelligent(QtCore.QObject):
         - timestamp: whether to prepend HH:MM:SS timestamp
         - type: type of message. The style of the message will be selected according to its type
         """
+        colors = self.gui.colors
+        text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "result": colors["light_blue"], "success": colors["green"], "warning": colors["orange"]}
+
         current_time = datetime.now().strftime("%H:%M:%S")
         
         color = text_colors["error"]
@@ -733,9 +723,13 @@ class Scantelligent(QtCore.QObject):
         # Populate the command input completer with all attributes and methods of self and self.gui
         self.all_attributes = dir(self)
         gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
-        nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith('__')]
-        nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith('__')]
-        data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith('__')]
+        
+        nanonis_attributes = []
+        nanonis_hw_attributes = []
+        if hasattr(self, "nanonis"):
+            nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
+            nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith("_")]
+        data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith("_")]
         
         [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes]]
         completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
@@ -749,10 +743,11 @@ class Scantelligent(QtCore.QObject):
         match obj:
 
             case "frame":
-                if hasattr(self, "piezo_roi"):                    
-                    imv.removeItem(self.piezo_roi)
-                    imv.autoRange()
-                    imv.addItem(self.piezo_roi)                    
+                if hasattr(self.gui, "piezo_roi"): imv.removeItem(self.gui.piezo_roi)
+                if hasattr(self.gui, "new_frame_roi"): imv.removeItem(self.gui.new_frame_roi)
+                imv.autoRange()
+                try: [imv.addItem(item) for item in [self.gui.piezo_roi, self.gui.new_frame_roi]]
+                except: pass
 
             case "piezo_range":                
                 imv.autoRange()
@@ -764,12 +759,25 @@ class Scantelligent(QtCore.QObject):
 
     def update_buttons(self) -> None:
         buttons = self.gui.buttons
+        style_sheets = self.gui.style_sheets
         
+        keithley_button = buttons["keithley"]
         cam_button = buttons["camera"]
         mla_button = buttons["mla"]
         nn_button = buttons["nanonis"]
+        
         # Activate/deactivate and color buttons according to hardware status
-
+        match self.status["keithley"]:
+            case "online":
+                keithley_button.changeToolTip("Keithley: idle")
+                keithley_button.setStyleSheet(style_sheets["connected"])
+            case "running":
+                keithley_button.changeToolTip("Keithley: active GPIB connection")
+                keithley_button.setStyleSheet(style_sheets["running"])
+            case _:
+                keithley_button.changeToolTip("Keithley: offline")
+                keithley_button.setStyleSheet(style_sheets["disconnected"])
+        
         match self.status["camera"]:
             case "online":
                 cam_button.changeToolTip("Camera: idle")
@@ -784,50 +792,34 @@ class Scantelligent(QtCore.QObject):
         match self.status["mla"]:
             case "online":
                 mla_button.changeToolTip("Multifrequency Lockin Amplifier: idle")
-                mla_button.setStyleSheet(style_sheets["connected"])
-                
-                buttons["oscillator"].setEnabled(True)
-            
+                mla_button.setStyleSheet(style_sheets["connected"])            
             case "running":
                 mla_button.changeToolTip("Multifrequency Lockin Amplifier: active TCP connection")
-                mla_button.setStyleSheet(style_sheets["running"])
-                
-                buttons["oscilator"].setEnabled(False)
-            
+                mla_button.setStyleSheet(style_sheets["running"])            
             case _:
                 mla_button.changeToolTip("Multifrequency Lockin Amplifier: offline")
                 mla_button.setStyleSheet(style_sheets["disconnected"])
-                
-                buttons["oscillator"].setEnabled(False)
 
         match self.status["nanonis"]:
             case "idle":
                 self.timer.blockSignals(False)
                 nn_button.setStyleSheet(style_sheets["connected"])
                 nn_button.changeToolTip("Nanonis: idle")
-                nn_button.repaint()
                             
             case "running":
                 nn_button.setStyleSheet(style_sheets["running"])
                 nn_button.changeToolTip("Nanonis: active TCP connection")
-                nn_button.repaint()
                     
             case _:
                 self.timer.blockSignals(True)
                 nn_button.setStyleSheet(style_sheets["disconnected"])
                 nn_button.changeToolTip("Nanonis: offline")
-                nn_button.repaint()
-                          
-                buttons["tip"].changeToolTip("Tip status: unknown")
-                buttons["tip"].setStyleSheet(style_sheets["disconnected"])
 
-        style = nn_button.styleSheet()
-        nn_button.setStyleSheet(style)
-        [button.update for button in [cam_button, mla_button, nn_button]]
-        
+        [button.update() for button in [keithley_button, cam_button, mla_button, nn_button]]
         return
 
     def update_tip_status(self) -> None:
+        style_sheets = self.gui.style_sheets
         buttons = self.gui.buttons
         tip_button = buttons["tip"]
         
@@ -903,11 +895,17 @@ class Scantelligent(QtCore.QObject):
                 case "none": new_view = "camera"
                 case "camera": new_view = "nanonis"
                 case "nanonis": new_view = "none"
-                case _: new_view = "none"
+                case _: pass
 
         # Clean up old processes and the imageview
         if hasattr(self, "camera_thread"): self.camera_thread.requestInterruption()
-        self.gui.image_view.view.clear()
+        
+        view_box = self.gui.image_view.getView()
+        for item in view_box.allChildItems():
+            if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
+
+        if not hasattr(self, "camera"): new_view = "nanonis"
+        if not hasattr(self, "nanonis"): new_view = "none"
 
 
 
@@ -915,11 +913,8 @@ class Scantelligent(QtCore.QObject):
             case "camera":
                 self.status.update({"view": "camera"})
                 self.gui.buttons["view"].setIcon(self.icons.get("view_camera"))
-                
-                return
 
                 try:
-                    self.camera = Camera({"index": 0})
                     self.camera_thread = QtCore.QThread()
                     self.camera.moveToThread(self.camera_thread)
                     
@@ -927,7 +922,6 @@ class Scantelligent(QtCore.QObject):
                     self.camera.message.connect(self.receive_message)
                     self.camera.finished.connect(self.camera_thread.quit)
                     self.camera_thread.started.connect(self.camera.run)
-                    self.camera_thread.finished.connect(self.camera.deleteLater)
                     self.camera_thread.finished.connect(self.camera_thread.deleteLater)
 
                     self.camera_thread.start()
@@ -941,11 +935,12 @@ class Scantelligent(QtCore.QObject):
                 [self.gui.image_view.addItem(roi) for roi in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi]]
                 self.gui.image_view.addItem(self.gui.tip_target)
                 self.nanonis.piezo_range_update()
-                self.nanonis.frame_update(auto_disconnect = True)                
+                self.nanonis.frame_update(auto_disconnect = True)
 
-            case "none":
+            case _:
                 self.status.update({"view": "none"})
                 self.gui.buttons["view"].setIcon(self.icons.get("eye"))
+                self.gui.image_view.setImage(self.splash_screen)
 
         return
 
@@ -1113,7 +1108,62 @@ class Scantelligent(QtCore.QObject):
         return
 
     def update_processing_flags(self) -> None:
-        self.parameter_dict.emit({"dict_name": "processing_flags", "channel": "blub"})
+        flags = {"dict_name": "processing_flags"}
+        
+        checkboxes = self.gui.checkboxes
+        buttons = self.gui.buttons
+        comboboxes = self.gui.comboboxes
+        radio_buttons = self.gui.radio_buttons
+        line_edits = self.gui.line_edits
+                
+        # Background
+        bg_methods = ["none", "plane", "linewise"]
+        for method in bg_methods:
+            if radio_buttons[f"bg_{method}"].isChecked():
+                flags.update({"background": f"{method}"})
+                break
+        
+        if checkboxes["rot_trans"].isChecked(): flags.update({"rotation": True, "offset": True})
+        else: flags.update({"rotation": False, "offset": False})
+        
+        # Limits
+        lim_methods = ["full", "percentiles", "deviations", "absolute"]
+        for method in lim_methods:
+            if radio_buttons[f"min_{method}"].isChecked():
+                min_value = 0
+                try:
+                    min_str = line_edits[f"min_{method}"].text()
+                    numbers = self.data.extract_numbers_from_str(min_str)
+                    if len(numbers) > 0: min_value = numbers[0]
+                except:
+                    pass
+                flags.update({"min_method": f"{method}", "min_method_value": f"{min_value}"})
+            if radio_buttons[f"max_{method}"].isChecked():
+                max_value = 1
+                try:
+                    max_str = line_edits[f"max_{method}"].text()
+                    numbers = self.data.extract_numbers_from_str(max_str)
+                    if len(numbers) > 0: max_value = numbers[0]
+                    else: max_value = 0
+                except: pass
+                flags.update({"max_method": f"{method}", "max_method_value": f"{max_value}"})
+
+        # Channel, direction, projection
+        try:
+            channel = comboboxes["channels"].currentText()
+            direction = "backward" if buttons["direction"].isChecked() else "forward"
+            projection = comboboxes["projection"].currentText()
+            flags.update({"channel": channel, "direction": direction, "projection": projection})
+        except:
+            print("Error updating the image processing flags.")
+        
+        # Operations
+        try: [flags.update({operation: checkboxes[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
+        except: pass
+        phase = self.gui.phase_slider.value()
+        flags.update({"phase": phase})
+
+        self.data.processing_flags.update(flags)
         return
 
 
@@ -1121,6 +1171,8 @@ class Scantelligent(QtCore.QObject):
     # Nanonis functions 
     # Simple data requests over TCP-IP
     def tip_prep(self, action: str):
+        if not hasattr(self, "nanonis"): return
+        
         try:
             match action:
             
@@ -1168,6 +1220,8 @@ class Scantelligent(QtCore.QObject):
 
     # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
     def toggle_withdraw(self) -> bool:
+        if not hasattr(self, "nanonis"): return
+        
         error = False
 
         try:
@@ -1197,6 +1251,8 @@ class Scantelligent(QtCore.QObject):
         return True
 
     def change_tip_status(self) -> bool:
+        if not hasattr(self, "nanonis"): return
+        
         try:
             tip_status = self.status["tip"]
             tip_withdrawn = tip_status.get("withdrawn")
@@ -1230,6 +1286,8 @@ class Scantelligent(QtCore.QObject):
         return True
 
     def on_coarse_move(self, direction: str = "n") -> bool:
+        if not hasattr(self, "nanonis"): return
+        
         checkboxes = self.gui.checkboxes
         line_edits = self.gui.line_edits
         motions = {}
@@ -1320,6 +1378,8 @@ class Scantelligent(QtCore.QObject):
             return False
 
     def on_approach(self) -> None:
+        if not hasattr(self, "nanonis"): return
+        
         numbers = self.data.extract_numbers_from_str(self.gui.line_edits["V_ver"].text())
         if len(numbers) > 0: V_ver = float(numbers[0])
         else: V_ver = None
@@ -1335,6 +1395,7 @@ class Scantelligent(QtCore.QObject):
             return
         
         self.gui.buttons["start_pause"].setIcon(self.icons.get("start"))
+        self.gui.progress_bars["experiment"].setValue(0)
         experiment_name = self.gui.comboboxes["experiment"].currentText()
         self.status["experiment"].update({"name": experiment_name})
         
@@ -1365,8 +1426,7 @@ class Scantelligent(QtCore.QObject):
             self.experiment.message.connect(self.receive_message)
             self.experiment.parameters.connect(self.receive_parameters)
             self.experiment.image.connect(self.receive_image)
-            self.experiment.data_array.connect(self.receive_data)
-            self.parameter_dict.connect(self.experiment.receive_parameters)
+            self.experiment.data_array.connect(self.receive_data)            
             
         except Exception as e:
             self.logprint(f"Error loading the experiment: {e}", "error")
@@ -1401,6 +1461,10 @@ class Scantelligent(QtCore.QObject):
         return
 
     def modulator_control(self, modulator_number: int = 1) -> None:
+        if not hasattr(self, "nanonis"): return
+        
+        style_sheets = self.gui.style_sheets
+        
         try:
             mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
             mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
@@ -1499,11 +1563,6 @@ class Scantelligent(QtCore.QObject):
         self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
         self.experiment_thread.start()
         """
-
-    def start_grid_sampling(self):
-        self.logprint(f"Starting experiment {self.experiment}")
-        self.logprint(f"The experiment will be saved to {self.paths["experiment_file"]}")
-        return False
 
 
 

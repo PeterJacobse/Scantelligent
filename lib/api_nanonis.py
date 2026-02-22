@@ -1,14 +1,8 @@
 import numpy as np
 from PyQt6 import QtCore
 from .hw_nanonis import NanonisHardware
-from .data_processing import DataProcessing
 from time import sleep, time
 import pint
-
-
-
-colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "lightblue": "#30d0ff",
-          "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
 
 
 
@@ -21,14 +15,19 @@ class NanonisAPI(QtCore.QObject):
     finished = QtCore.pyqtSignal() # Signal to indicate an experiment is finished
     data_array = QtCore.pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, hardware: dict):
+    def __init__(self, parent, hardware: dict):
         super().__init__()
         self.ureg = pint.UnitRegistry() # For dealing with quantities
         self.nanonis_hardware = NanonisHardware(hardware = hardware)
-        self.data = DataProcessing()
+        # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
+        # The exception is caught in Scantelligent rather than here
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.timer = QtCore.QTimer()
         self.abort_flag = False
+        self.scantelligent = parent
+        self.data = self.scantelligent.data
+
+
 
     def connect(self) -> None:
         nhw = self.nanonis_hardware
@@ -69,7 +68,7 @@ class NanonisAPI(QtCore.QObject):
             # Not useful to raise this error because the simulator does not have motor control
             (tip_status, error) = self.tip_update() # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
-            (frame, error) = self.frame_update() # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
+            (frame, error) = self.frame_update(update_new_frame = True) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
             if error: raise Exception(error)
             (parameters, error) = self.parameters_update() # Sends scan parameters like voltage, current, feedback and scan speed with "dict_name": "scan_parameters"
             if error: raise Exception(error)
@@ -91,17 +90,6 @@ class NanonisAPI(QtCore.QObject):
         return error
 
 
-
-    #PyQt slots
-    @QtCore.pyqtSlot(dict)
-    def receive_parameters(self, parameters: dict) -> None:
-        match parameters.get("dict_name"):
-            case "processing_flags":
-                self.data.processing_flags.update(parameters)
-                print(self.data.processing_flags)
-            case _:
-                pass
-        return
 
     @QtCore.pyqtSlot(int, bool)
     def receive_image_request(self, channel_index: int = 0, backward: bool = False) -> None:
@@ -222,7 +210,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (piezo_range_dict, error)
 
-    def scan_metadata_update(self, auto_disconnect: bool = False) -> tuple[dict | str]:
+    def scan_metadata_update(self, auto_disconnect: bool = False, verbose: bool = True) -> tuple[dict | str]:
         """
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
@@ -233,7 +221,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get grid dat
         try:
-            self.logprint(f"nanonis.scan_metadata_update()", "code")
+            if verbose: self.logprint(f"nanonis.scan_metadata_update()", "code")
             
             if not self.status == "running": self.connect()
             props = nhw.get_scan_props()
@@ -268,7 +256,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (scan_metadata, error)
 
-    def scan_update(self, channel_index, backward: bool = False, auto_disconnect: bool = False) -> np.ndarray:
+    def scan_update(self, channel_index: int, backward: bool = False, auto_disconnect: bool = False, verbose: bool = True) -> np.ndarray:
         # Initalize outputs
         scan_data = None
         error = False
@@ -277,6 +265,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get grid dat
         try:
+            if verbose: self.logprint(f"nanonis.scan_update(channel_index = {channel_index}, backward = {backward})", "code")
             if not self.status == "running": self.connect()
             
             scan_data = nhw.get_scan_data(channel_index, backward)
@@ -288,14 +277,12 @@ class NanonisAPI(QtCore.QObject):
             completed_percentage = int(100 * (1 - n_nans / n_scan_image))
             self.progress.emit(completed_percentage)
             
-            (processed_image, error) = self.data.subtract_background(scan_image, mode = "plane")
-            processed_image = np.real(processed_image)
-            self.image.emit(processed_image)
-
-            # Finished
-            if n_nans == 0:
-                self.stop_timed_updates()
-                self.finished.emit()
+            (processed_scan, error) = self.data.subtract_background(scan_image)
+            scan_image = processed_scan
+            
+            #(processed_scan, statistics, limits, error) = self.data.process_scan(scan_image)
+            #self.logprint(f"{error}", "error")
+            self.image.emit(scan_image)
 
         except Exception as e: error = e
         finally:
@@ -306,7 +293,7 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Update methods (Gives updates on all parameters and updates those parameters given)
-    def tip_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def tip_update(self, parameters: dict = {}, auto_disconnect: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it
         """
@@ -325,7 +312,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and set/get
         try:
-            self.logprint(f"nanonis.tip_update(parameters = {parameters})", "code")
+            if verbose: self.logprint(f"nanonis.tip_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
             
             if xy_nm: nhw.set_xy_nm(xy_nm) # Set the tip position
@@ -586,7 +573,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (gains, error)
 
-    def frame_update(self, parameters: dict = {}, auto_disconnect: bool = False, update_new_frame: bool = False) -> tuple[dict, bool | str]:
+    def frame_update(self, parameters: dict = {}, auto_disconnect: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set frame
         """
@@ -598,7 +585,7 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            self.logprint(f"nanonis.frame_update(parameters = {parameters})", "code")
+            if verbose: self.logprint(f"nanonis.frame_update(parameters = {parameters})", "code")
             if not self.status == "running": self.connect()
 
             w_nm = None

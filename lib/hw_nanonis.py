@@ -54,6 +54,11 @@ class NanonisHardware:
         self.conv = Conversions() # Load the conversions
         self.headers = self.prepare_headers() # Make the headers
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Make the socket object
+        connected = self.connect()
+        if not connected == True: raise
+        else: self.disconnect()
+
+
 
     def get_TCP_parameters(self) -> None:
         """
@@ -267,8 +272,8 @@ class NanonisHardware:
             self.s.settimeout(2)
             self.s.connect((self.ip, self.port)) # Open the TCP connection.
             return True
-        except:
-            return False
+        except Exception as e:
+            return e
 
     def disconnect(self) -> None:
         self.s.close()
@@ -834,8 +839,6 @@ class NanonisHardware:
         if direction == "up": dir_command = self.conv.to_hex(1, 4)
         else: dir_command = self.conv.to_hex(0, 4)
         command = self.headers["scan_action"] + self.conv.to_hex(0, 2) + dir_command
-        
-        print(command)
         
         self.send_command(command)
         self.receive_response(0)
