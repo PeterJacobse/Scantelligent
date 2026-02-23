@@ -707,7 +707,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (grid, error)
 
-    def bias_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> float | bool:
+    def bias_update(self, parameters: dict = {}, auto_disconnect: bool = False, verbose: bool = True) -> float | bool:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
@@ -726,7 +726,9 @@ class NanonisAPI(QtCore.QObject):
                 return False
 
         try:
-            self.logprint(f"nanonis.bias_update(parameters = {parameters})", "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.bias_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.bias_update()", "code")
             if not self.status == "running": self.connect()                            
             V_old = nhw.get_V() # Read data from Nanonis
             if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
@@ -760,22 +762,43 @@ class NanonisAPI(QtCore.QObject):
             if auto_disconnect: self.disconnect()
             return error
 
-    def lockin_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict | str]:
+    def lockin_update(self, parameters: dict = {}, auto_disconnect: bool = False, verbose: bool = True) -> tuple[dict | str]:
         error = False
         nhw = self.nanonis_hardware
 
-        lockin_parameters = {}
+        lockin_parameters = {"dict_name": "lockin"}
 
         try:
-            self.logprint(f"nanonis.lockin_update(parameters = {parameters})", "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.lockin_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.lockin_update()", "code")
+                    
             if not self.status == "running": self.connect()
             mod1_dict = parameters.get("modulator_1", None)
             mod2_dict = parameters.get("modulator_2", None)
 
             for mod_number, mod in enumerate([mod1_dict, mod2_dict]):
+                mod_on = nhw.get_lockin(mod_number + 1)
+                amplitude_V = nhw.get_lockin_amp(mod_number + 1)
+                frequency_Hz = nhw.get_lockin_freq(mod_number + 1)
+                phase_deg = nhw.get_lockin_phase(mod_number + 1)
+                
                 if isinstance(mod, dict):
-                    mod_on = mod.get("on")
-                    nhw.set_lockin(mod_number + 1, mod_on)
+                    mod_on = mod.get("on", None)
+                    if isinstance(mod_on, bool):
+                        nhw.set_lockin(mod_number + 1, mod_on)
+                        mod.update({"on": mod_on})
+                    
+                    amp = mod.get("amplitude (V)", None)
+                    #if isinstance(amp, float) or isinstance(amp, int):
+                    #    nhw.set_lockin_amp(mod_number + 1, amp)
+                    
+                else:
+                    mod = {"on": mod_on, "frequency (Hz)": frequency_Hz, "amplitude (V)": amplitude_V, "phase (deg)": phase_deg}
+                
+                lockin_parameters.update({f"modulator_{mod_number + 1}": mod})
+        
+            self.parameters.emit(lockin_parameters)
         
         except Exception as e:
             error = e

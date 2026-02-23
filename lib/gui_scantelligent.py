@@ -156,6 +156,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "get_frame_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
             "set_grid_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
             "get_grid_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            "set_lockin_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_lockin_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
             
             # Coarse vertical
             "withdraw": make_button("", "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
@@ -180,12 +182,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "tip_shape": make_button("", "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
             
             # Lockins
-            "nanonis_mod1": make_button("", "Nanonis modulator 1 On/Off", icon = icons.get("nanonis_mod1")),
-            "nanonis_mod2": make_button("", "Nanonis modulator 2 On/Off", icon = icons.get("nanonis_mod2")),
-            "mla_mod1": make_button("", "MLA modulator 1 On/Off", icon = icons.get("mla_oscillator")),
+            "nanonis_mod1": make_toggle_button("", "Nanonis modulator 1 On/Off", icon = icons.get("nanonis_mod1")),
+            "nanonis_mod2": make_toggle_button("", "Nanonis modulator 2 On/Off", icon = icons.get("nanonis_mod2")),
+            "mla_mod1": make_toggle_button("", "MLA modulator 1 On/Off", icon = icons.get("mla_oscillator")),
 
             # Processing
-            "direction": make_toggle_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow")),
+            "direction": make_toggle_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow"), flip_icon = True),
             "fit_to_frame": make_button("", "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
             "fit_to_range": make_button("", "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
             "full_data_range": make_button("", sivr + "to the full data range\n(U)", icons.get("100")),
@@ -485,6 +487,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "coarse_horizontal": make_layout("g"),
             
             "modulators": make_layout("g"),
+            "mod_set_get": make_layout("h"),
             "demodulators": make_layout("g"),
 
             "background_buttons": make_layout("h"),
@@ -731,7 +734,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["tip_prep"].addWidget(widget) for widget in self.tip_prep_widgets]
         
         # Lockins
+        [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
         [layouts["modulators"].addWidget(widget, int(i / 4), i % 4) for i, widget in enumerate(self.modulator_widgets)]
+        layouts["modulators"].addLayout(layouts["mod_set_get"], 3, 0, 1, 4)
         
         # Image processing                
         cn_layout = layouts["channel_navigation"]

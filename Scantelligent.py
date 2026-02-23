@@ -10,13 +10,16 @@ from datetime import datetime
 
 
 # Parameter management (getting from hardware, setting, loading from file and saving)
-class Parameters:
+class Parameters(QtCore.QObject):
     def __init__(self, parent):
-        self.parent = parent # Reference to Scantelligent class
+        self.scantelligent = parent # Reference to Scantelligent class
+
+
 
     def get(self, parameter_type: str = "frame") -> None:
-        nanonis = self.parent.nanonis
-        line_edits = self.parent.gui.line_edits
+        nanonis = self.scantelligent.nanonis
+        gui = self.scantelligent.gui
+        line_edits = gui.line_edits
 
         match parameter_type:
 
@@ -35,14 +38,18 @@ class Parameters:
             case "gain":
                 nanonis.gains_update(auto_disconnect = True)
             
+            case "lockin":
+                nanonis.lockin_update(auto_disconnect = True)
+            
             case _:
                 pass
 
         return
     
     def set(self, parameter_type: str = "frame") -> None:
-        nanonis = self.parent.nanonis
-        line_edits = self.parent.gui.line_edits
+        nanonis = self.scantelligent.nanonis
+        gui = self.scantelligent.gui
+        line_edits = gui.line_edits
 
         match parameter_type:
 
@@ -93,6 +100,26 @@ class Parameters:
 
         return
 
+    @QtCore.pyqtSlot(dict)
+    def receive(self, parameters: dict) -> None:
+        gui = self.scantelligent.gui
+        line_edits = gui.line_edits
+        
+        if not "dict_name" in parameters.keys(): return
+
+        match parameters["dict_name"]:
+            case "lockin":
+                print("Lockin parameters received")
+            
+            case _:
+                pass
+
+        return
+
+    def echo(self):
+        print("hello")
+        return
+
 
 
 # Main class
@@ -107,13 +134,9 @@ class Scantelligent(QtCore.QObject):
         self.gui = ScantelligentGUI(icon_folder)
         self.connect_console() # Initialize the console, the button-slot, and keystroke-slot connections
         self.connect_buttons()
-        
+    
         self.hardware = self.config_init() # Read the hardware configuration and parameters from the configuration files in the sys folder
-        self.data = DataProcessing() # Class for data processing and analysis
-        self.timer = QtCore.QTimer()
-
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
-        self.populate_completer()
         self.gui.show()
         self.toggle_view("none")
 
@@ -149,7 +172,8 @@ class Scantelligent(QtCore.QObject):
         self.ureg = pint.UnitRegistry()
         self.user = UserData()
         self.file_functions = FileFunctions()
-        
+        self.data = DataProcessing() # Class for data processing and analysis
+        self.timer = QtCore.QTimer()
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = Parameters(parent = self) # Intantiate the class Parameters, which implements easy parameter getting, setting, loading and saving
@@ -184,7 +208,7 @@ class Scantelligent(QtCore.QObject):
         shortcuts = self.gui.shortcuts        
         
         # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.connect_hardware], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.dis_reconnect], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
                     ["oscillator", self.toggle_withdraw], ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.info_popup],
                     
                     # Experiment
@@ -206,7 +230,7 @@ class Scantelligent(QtCore.QObject):
                     ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
                     ]
 
-        [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain"]]
+        [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
         [connections.append([f"set_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain"]]
 
         connections.append([f"scan_parameters_0", lambda: self.load_parameters_from_file("scan_parameters", 0)])
@@ -355,6 +379,8 @@ class Scantelligent(QtCore.QObject):
         
         # Nanonis
         try:
+            print(self.parameters.receive)
+            
             # Instantiate
             self.nanonis = NanonisAPI(parent = self, hardware = self.hardware)
             
@@ -377,7 +403,18 @@ class Scantelligent(QtCore.QObject):
         # Update the buttons in the gui and populate the autocomplete suggestions in the command input
         self.update_buttons()
         self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
+        self.populate_completer()
 
+        return
+
+    def dis_reconnect(self) -> None:
+        if self.status["nanonis"] == "running":
+            try:
+                self.nanonis.disconnect()
+            except:
+                pass
+        else:
+            self.connect_hardware()
         return
 
 
@@ -593,6 +630,10 @@ class Scantelligent(QtCore.QObject):
                     self.gui.comboboxes["channels"].renewItems(list(self.channels.keys()))
                     self.gui.comboboxes["channels"].selectItem("Z (m)")
                     self.update_processing_flags()
+            
+            case "lockin":
+                for i, mod_dict in enumerate([parameters.get("modulator_1"), parameters.get("modulator_2")]):
+                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "V", "phi"], [mod_dict.get("frequency (Hz)"), mod_dict.get("amplitude (V)"), mod_dict.get("phase (deg)")])]
 
             case _:
                 pass
@@ -1468,8 +1509,6 @@ class Scantelligent(QtCore.QObject):
         try:
             mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
             mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
-            self.gui.buttons["nanonis_mod1"].setStyleSheet(style_sheets["running"] if mod1_on else style_sheets["neutral"])
-            self.gui.buttons["nanonis_mod2"].setStyleSheet(style_sheets["running"] if mod2_on else style_sheets["neutral"])
 
             self.nanonis.lockin_update({"modulator_1": {"on": mod1_on}, "modulator_2": {"on": mod2_on}})
             

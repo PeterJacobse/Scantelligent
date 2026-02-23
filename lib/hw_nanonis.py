@@ -159,9 +159,7 @@ class NanonisHardware:
             "get_scan_frame": make_header('Scan.FrameGet', body_size = 0),
             "set_scan_frame": make_header('Scan.FrameSet', body_size = 20),
             "get_scan_buffer": make_header('Scan.BufferGet', body_size = 0),
-            #"set_scan_buffer": make_header('Scan.BufferSet', body_size = body_size)
             "get_scan_props": make_header('Scan.PropsGet', body_size = 0),
-            #"set_scan_props": make_header('Scan.PropsSet', body_size = body_size),
             "scan_wait_line": make_header('Scan.WaitEndOfLine', body_size = 4),
             "scan_wait_scan": make_header('Scan.WaitEndOfScan', body_size = 4),
             "get_scan_data": make_header('Scan.FrameDataGrab', body_size = 8),
@@ -185,6 +183,10 @@ class NanonisHardware:
             "set_tip_shaper": make_header('TipShaper.PropsSet', body_size = 44),
 
             # Lockin
+            "get_lockin": make_header('LockIn.ModOnOffGet', body_size = 4),
+            "get_lockin_amp": make_header('LockIn.ModAmpGet', body_size = 4),
+            "get_lockin_freq": make_header('LockIn.ModPhasFreqGet', body_size = 4),
+            "get_lockin_phase": make_header('LockIn.ModPhasGet', body_size = 4),
             "set_lockin": make_header('LockIn.ModOnOffSet', body_size = 8),
 
             # Booleans
@@ -1027,8 +1029,41 @@ class NanonisHardware:
 
 
     # Work in progress
-    def get_lockin_amp(self, mod_number: int = 1) -> float:
+    def get_lockin(self, mod_number: int = 1) -> bool:
+        command = self.headers["get_lockin"] + self.conv.to_hex(mod_number, 4)
+        
+        self.send_command(command)
+        response = self.receive_response()
+        lockin_onoff = bool(self.conv.hex_to_uint32(response[0 : 4]))
+        
+        return lockin_onoff
 
-        return
+    def get_lockin_amp(self, mod_number: int = 1) -> float:
+        command = self.headers["get_lockin_amp"] + self.conv.to_hex(mod_number, 4)        
+        
+        self.send_command(command)        
+        response = self.receive_response()
+        amplitude = self.conv.hex_to_float32(response[0 : 4])
+        
+        return amplitude
+
+    def get_lockin_freq(self, mod_number: int = 1) -> float:        
+        command = self.headers["get_lockin_freq"] + self.conv.to_hex(mod_number, 4)
+        
+        self.send_command(command)        
+        response = self.receive_response()        
+        frequency = self.conv.hex_to_float64(response[0 : 8])
+        
+        return frequency
+
+    def get_lockin_phase(self, mod_number: int = 1) -> float:
+        command = self.headers["get_lockin_phase"] + self.conv.to_hex(mod_number, 4)
+        
+        self.send_command(command)
+        response = self.receive_response()        
+        phase_deg = self.conv.hex_to_float32(response[0 : 4])
+        
+        return phase_deg
+
 
 
