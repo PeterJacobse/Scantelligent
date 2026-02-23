@@ -5,7 +5,7 @@ import cv2
 
 
 class CameraAPI(QtCore.QObject):
-    frameCaptured = QtCore.pyqtSignal(np.ndarray)
+    frame_captured = QtCore.pyqtSignal(np.ndarray)
     finished = QtCore.pyqtSignal()
     message = QtCore.pyqtSignal(str, str)
 
@@ -49,17 +49,22 @@ class CameraAPI(QtCore.QObject):
             
             if ret:
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                self.frameCaptured.emit(rgb_frame)
+                self.frame_captured.emit(rgb_frame)
             else:
                 self.message.emit("Warning: Failed to read frame from camera.", "error")
                 break
 
             self.check_abort()
 
-        if self.cap:
-            self.cap.release()
+        try:
+            if self.cap: self.cap.release()
+        except:
+            pass
         self.running = False
+        
         self.finished.emit() # Notify the main thread that the work is done
+        self.message.emit("Camera thread ended", "message")
+        return
 
     def check_abort(self):
         if self.thread().isInterruptionRequested():

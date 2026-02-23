@@ -29,35 +29,34 @@ class NanonisAPI(QtCore.QObject):
 
 
 
-    def connect(self) -> None:
+    def link(self) -> None:
         nhw = self.nanonis_hardware
         if self.status == "running":
             self.logprint("Attempting to connect to Nanonis while it is already running. Operation aborted.", message_type = "error")
             return False
 
-        connection_success = nhw.connect()
+        connection_success = nhw.link()
         if connection_success:
             self.status = "running"
         else:
             self.status = "offline"
             self.logprint("Failed to connect to Nanonis.", message_type = "error")
-        
-        self.connection.emit(self.status)
 
+        self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
         return f"Nanonis status: {self.status}"
 
-    def disconnect(self) -> None:
+    def unlink(self) -> None:
         nhw = self.nanonis_hardware
-        nhw.disconnect()
+        nhw.unlink()
         self.status = "idle"
-        self.connection.emit(self.status)
-        return
+        self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
+        return f"Nanonis status: {self.status}"
 
-    def initialize(self, auto_disconnect: bool = True) -> None:
+    def initialize(self, unlink: bool = True) -> None:
         # Set up the TCP connection and get all relevant parameters
         self.logprint("nanonis.initialize()", message_type = "code")
         try:
-            if not self.status == "running": self.connect()
+            if not self.status == "running": self.link()
 
             (session_path, error) = self.session_path_update() # Sends piezo range data with "dict_name": "piezo_range"
             if error: raise Exception(error)
@@ -85,9 +84,9 @@ class NanonisAPI(QtCore.QObject):
             error = e
             self.logprint(f"Initialization failed: {e}", "error")
             self.status == "offline"
-            self.connection.emit("offline")
+            self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return error
 
@@ -96,18 +95,18 @@ class NanonisAPI(QtCore.QObject):
     @QtCore.pyqtSlot(int, bool)
     def receive_image_request(self, channel_index: int = 0, backward: bool = False) -> None:
         try:
-            self.connect()
+            self.link()
 
-            self.frame_update(auto_disconnect = False)
-            self.tip_update(auto_disconnect = False)
-            self.scan_metadata_update(auto_disconnect = False)
-            self.scan_update(channel_index = channel_index, backward = backward, auto_disconnect = False)
+            self.frame_update(unlink = False)
+            self.tip_update(unlink = False)
+            self.scan_metadata_update(unlink = False)
+            self.scan_update(channel_index = channel_index, backward = backward, unlink = False)
         
         except Exception as e:
             self.logprint(f"Error in receive_image_request: {e}", message_type = "error")
         
         finally:
-            self.disconnect()
+            self.unlink()
 
         return
 
@@ -123,79 +122,40 @@ class NanonisAPI(QtCore.QObject):
 
 
 
-    def start_timed_updates(self) -> None:
-        self.timer.timeout.connect(self.receive_image_request)
-        self.timer.start(1000)
+    def echo_data(self) -> None:
+
+        self.data_array.emit(np.array(np.random.random((15, 4))))
         return
-
-    def stop_timed_updates(self) -> None:
-        self.timer.timeout.disconnect(self.receive_image_request)
-        self.timer.stop()
-        return
-
-    def scan_control(self, parameters: dict = {}, auto_disconnect: bool = False) -> bool | str:
-        # Initalize outputs
-        error = False
-        nhw = self.nanonis_hardware
-        
-        action = parameters.get("action", "pause")
-        direction = parameters.get("direction", "down")
-        
-        # Set up the TCP connection and get grid dat
-        try:
-            if not self.status == "running": self.connect()
-            
-            dirxn = "up"
-            if direction == "down": dirxn = "down"
-            match action:
-                case "start":
-                    self.progress.emit(0)
-                    nhw.start_scan(dirxn)
-                case "pause":
-                    nhw.pause_scan()
-                case "resume":
-                    nhw.resume_scan()
-                case "stop":
-                    nhw.stop_scan()
-                    self.finished.emit()
-                case _: pass
-        
-        except Exception as e: error = e
-        finally:
-            if auto_disconnect: self.disconnect()
-
-        return error
-
 
 
     # 'update' methods that can only read and not write
-    def session_path_update(self, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def session_path_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         session_path = {"dict_name": "session_path"}
         error = False
         nhw = self.nanonis_hardware        
         
         # Set up the TCP connection and set/get
         try:
-            self.logprint(f"nanonis.session_path_update()", "code")
-            if not self.status == "running": self.connect()
+            if verbose: self.logprint(f"nanonis.session_path_update()", "code")
+            if not self.status == "running": self.link()
             
             session_path.update({"path": nhw.get_path()})
             self.parameters.emit(session_path)
         
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (session_path, error)
 
-    def piezo_range_update(self, auto_disconnect: bool = False) -> None:
+    def piezo_range_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         nhw = self.nanonis_hardware
         piezo_range_dict = {}
 
         try:
-            self.logprint(f"nanonis.piezo_range_update()", "code")
-            if not self.status == "running": self.connect()
+            if verbose: self.logprint(f"nanonis.piezo_range_update()", "code")
+            if not self.status == "running": self.link()
             piezo_range = nhw.get_range_nm()
             
             piezo_range_dict = {"dict_name": "piezo_range",
@@ -208,11 +168,11 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (piezo_range_dict, error)
 
-    def scan_metadata_update(self, auto_disconnect: bool = False, verbose: bool = True) -> tuple[dict | str]:
+    def scan_metadata_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
         """
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
@@ -225,7 +185,7 @@ class NanonisAPI(QtCore.QObject):
         try:
             if verbose: self.logprint(f"nanonis.scan_metadata_update()", "code")
             
-            if not self.status == "running": self.connect()
+            if not self.status == "running": self.link()
             props = nhw.get_scan_props()
             buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
             channel_indices = buffer["channel_indices"]
@@ -254,11 +214,11 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (scan_metadata, error)
 
-    def scan_update(self, channel_index: int, backward: bool = False, auto_disconnect: bool = False, verbose: bool = True) -> np.ndarray:
+    def scan_update(self, channel_index: int, backward: bool = False, unlink: bool = False, verbose: bool = True) -> np.ndarray:
         # Initalize outputs
         scan_data = None
         error = False
@@ -268,7 +228,7 @@ class NanonisAPI(QtCore.QObject):
         # Set up the TCP connection and get grid dat
         try:
             if verbose: self.logprint(f"nanonis.scan_update(channel_index = {channel_index}, backward = {backward})", "code")
-            if not self.status == "running": self.connect()
+            if not self.status == "running": self.link()
             
             scan_data = nhw.get_scan_data(channel_index, backward)
             scan_image = scan_data.get("scan_data")
@@ -288,14 +248,14 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: nhw.disconnect()
+            if unlink: self.unlink()
 
         return (scan_image, error)
 
 
 
     # Update methods (Gives updates on all parameters and updates those parameters given)
-    def tip_update(self, parameters: dict = {}, auto_disconnect: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def tip_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it
         """
@@ -314,8 +274,10 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and set/get
         try:
-            if verbose: self.logprint(f"nanonis.tip_update(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.tip_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.tip_update()", "code")
+            if not self.status == "running": self.link()
             
             if xy_nm: nhw.set_xy_nm(xy_nm) # Set the tip position
             xy_nm = nhw.get_xy_nm() # Get the tip position
@@ -358,19 +320,21 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (tip_status, error)
 
-    def coarse_parameters_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def coarse_parameters_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         nhw = self.nanonis_hardware
         motor_dict = {}
         
         # Set up the TCP connection and get
         try:
-            self.logprint(f"nanonis.coarse_parameters_update(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.coarse_parameters_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.coarse_parameters_update()", "code")
+            if not self.status == "running": self.link()
             
             # Read the parameters from Nanonis
             motor_dict = nhw.get_motor_f_A()
@@ -387,11 +351,11 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e            
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (motor_dict, error)
 
-    def scan_speeds_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def scan_speeds_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set speed parameters from Nanonis
         """
@@ -413,11 +377,13 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get
         try:
-            self.logprint(f"nanonis.scan_speeds_update(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.scan_speeds_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.scan_speeds_update()", "code")
+            if not self.status == "running": self.link()
             
             # Bias voltage
-            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, auto_disconnect = False)
+            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, unlink = False)
             else: V = nhw.get_V()
             
             # Feedback current
@@ -467,14 +433,14 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (parameters, error)
 
 
 
     # To do: break this up in scan_parameters, gains, scan_speeds
-    def parameters_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def parameters_update(self, parameters: dict = {}, unlink: bool = False) -> tuple[dict, bool | str]:
         """
         Function to get and set parameters from Nanonis
         """
@@ -495,10 +461,10 @@ class NanonisAPI(QtCore.QObject):
         # Set up the TCP connection and get
         try:
             self.logprint(f"nanonis.parameters_update(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if not self.status == "running": self.link()
             
             # Bias voltage
-            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, auto_disconnect = False)
+            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, unlink = False)
             else: V = nhw.get_V()
             
             # Feedback current
@@ -537,11 +503,11 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (parameters, error)
 
-    def gains_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def gains_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set gains
         """
@@ -553,8 +519,10 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            self.logprint(f"nanonis.gains_update(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.gains_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.gains_update()", "code")
+            if not self.status == "running": self.link()
 
             # Extract the parameters from the provided dict
             p_gain_pm = parameters.get("p_gain (pm)", None)
@@ -571,11 +539,11 @@ class NanonisAPI(QtCore.QObject):
         
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (gains, error)
 
-    def frame_update(self, parameters: dict = {}, auto_disconnect: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def frame_update(self, parameters: dict = {}, unlink: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set frame
         """
@@ -587,8 +555,10 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            if verbose: self.logprint(f"nanonis.frame_update(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.frame_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.frame_update()", "code")
+            if not self.status == "running": self.link()
 
             w_nm = None
             h_nm = None
@@ -629,11 +599,11 @@ class NanonisAPI(QtCore.QObject):
         
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (frame, error)
 
-    def grid_update(self, parameters: dict = {}, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def grid_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set grid properties
         """
@@ -643,9 +613,11 @@ class NanonisAPI(QtCore.QObject):
         nhw = self.nanonis_hardware
 
         try:
-            self.logprint(f"nanonis.grid_update(parameters = {parameters})", "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.grid_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.grid_update()", "code")
+            if not self.status == "running": self.link()
             # Get the frame and buffer
-            if not self.status == "running": self.connect()
             frame = nhw.get_scan_frame_nm()
             buffer = nhw.get_scan_buffer()
 
@@ -663,7 +635,7 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         if error: return (grid, error)
         
@@ -705,11 +677,11 @@ class NanonisAPI(QtCore.QObject):
         
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (grid, error)
 
-    def bias_update(self, parameters: dict = {}, auto_disconnect: bool = False, verbose: bool = True) -> float | bool:
+    def bias_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> float | bool:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
@@ -731,7 +703,7 @@ class NanonisAPI(QtCore.QObject):
             if verbose:
                 if len(parameters) > 0: self.logprint(f"nanonis.bias_update(parameters = {parameters})", "code")
                 else: self.logprint(f"nanonis.bias_update()", "code")
-            if not self.status == "running": self.connect()                            
+            if not self.status == "running": self.link()                            
             V_old = nhw.get_V() # Read data from Nanonis
             if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
             
@@ -756,15 +728,15 @@ class NanonisAPI(QtCore.QObject):
             if bool(feedback) and bool(polarity_difference):
                 nhw.set_fb(True) # Turn the feedback back on
             
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
             return V
 
         except Exception as e:
             error = e
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
             return error
 
-    def lockin_update(self, parameters: dict = {}, auto_disconnect: bool = False, verbose: bool = True) -> tuple[dict | str]:
+    def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
         error = False
         nhw = self.nanonis_hardware
 
@@ -775,7 +747,7 @@ class NanonisAPI(QtCore.QObject):
                 if len(parameters) > 0: self.logprint(f"nanonis.lockin_update(parameters = {parameters})", "code")
                 else: self.logprint(f"nanonis.lockin_update()", "code")
                     
-            if not self.status == "running": self.connect()
+            if not self.status == "running": self.link()
             mod1_dict = parameters.get("modulator_1", None)
             mod2_dict = parameters.get("modulator_2", None)
 
@@ -786,28 +758,39 @@ class NanonisAPI(QtCore.QObject):
                 phase_deg = nhw.get_lockin_phase(mod_number + 1)
                 
                 mod_new = {"on": mod_on, "frequency (Hz)": frequency_Hz, "amplitude (mV)": amplitude_mV, "phase (deg)": phase_deg}    
-                
+    
                 if isinstance(mod, dict):
                     mod_on = mod.get("on", None)
                     if isinstance(mod_on, bool):
-                        nhw.set_lockin(mod_number + 1, mod_on)
-                        mod_new.update({"on": mod_on})
+                        try:
+                            nhw.set_lockin(mod_number + 1, mod_on)
+                            mod_new.update({"on": mod_on})
+                        except:
+                            pass
                     
                     amp = mod.get("amplitude (mV)", None)
                     if isinstance(amp, float) or isinstance(amp, int):
-                        nhw.set_lockin_amp(mod_number + 1, amp)
-                        mod_new.update({"amplitude (mV)": amp})
+                        try:
+                            nhw.set_lockin_amp(mod_number + 1, amp)
+                            mod_new.update({"amplitude (mV)": amp})
+                        except:
+                            pass
                     
                     freq = mod.get("frequency (Hz)", None)
                     if isinstance(freq, float) or isinstance(freq, int):
-                        self.logprint(f"nhw.set_lockin_freq({mod_number + 1}, {freq})", "code")
-                        nhw.set_lockin_freq(mod_number + 1, freq)
-                        mod_new.update({"frequency (Hz)": freq})
+                        try:
+                            nhw.set_lockin_freq(mod_number + 1, freq)
+                            mod_new.update({"frequency (Hz)": freq})
+                        except:
+                            pass
                     
                     phase = mod.get("phase (deg)", None)
                     if isinstance(phase, float) or isinstance(phase, int):
-                        nhw.set_lockin_phase(mod_number + 1, phase)
-                        mod_new.update({"phase (deg)": phase})
+                        try:
+                            nhw.set_lockin_phase(mod_number + 1, phase)
+                            mod_new.update({"phase (deg)": phase})
+                        except:
+                            pass
                     
                 lockin_parameters.update({f"modulator_{mod_number + 1}": mod_new})
         
@@ -816,21 +799,21 @@ class NanonisAPI(QtCore.QObject):
         except Exception as e:
             error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
         
         return (lockin_parameters, error)
 
 
 
     # Simple actions
-    def tip_prep(self, parameters: dict = {}, auto_disconnect: bool = False) -> bool | str:
+    def tip_prep(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> bool | str:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
 
         try:
-            self.logprint(f"nanonis.tip_prep(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if verbose: self.logprint(f"nanonis.tip_prep(parameters = {parameters})", "code")
+            if not self.status == "running": self.link()
             if parameters.get("action", "pulse") == "pulse":
                 V_pulse_V = parameters.get("V_pulse (V)", 6)
                 t_pulse_ms = parameters.get("t_pulse (ms)", 1000)
@@ -840,11 +823,11 @@ class NanonisAPI(QtCore.QObject):
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return error
 
-    def coarse_move(self, parameters: dict, auto_disconnect: bool = False) -> bool | str:
+    def coarse_move(self, parameters: dict, unlink: bool = False, verbose: bool = True) -> bool | str:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
@@ -855,12 +838,12 @@ class NanonisAPI(QtCore.QObject):
         f_motor = parameters.get("f_motor (Hz)")
         
         try:
-            self.logprint(f"nanonis.coarse_move({parameters})", message_type = "code")
-            if not self.status == "running": self.connect()
+            if verbose: self.logprint(f"nanonis.coarse_move(parameters = {parameters})", message_type = "code")
+            if not self.status == "running": self.link()
             
             # 1. Withdraw
             withdraw = parameters.get("withdraw", True)
-            if withdraw: self.tip_update({"withdraw": True}, auto_disconnect = False)
+            if withdraw: self.tip_update({"withdraw": True}, unlink = False)
 
             # 2. Retract
             steps = parameters.get("z_steps", 0)
@@ -899,16 +882,16 @@ class NanonisAPI(QtCore.QObject):
 
             # 5. Approach
             approach = parameters.get("approach", False)
-            if approach: self.auto_approach(True, V_motor = V_ver, auto_disconnect = False)
+            if approach: self.auto_approach(True, V_motor = V_ver, unlink = False)
 
         except Exception as e:
             error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
         
         return error
 
-    def auto_approach(self, status: bool = True, V_motor: float = None, auto_disconnect: bool = False) -> bool | str:
+    def auto_approach(self, status: bool = True, V_motor: float = None, unlink: bool = False, verbose: bool = True) -> bool | str:
         """
         Function to turn on/off the auto approach feature of the Nanonis
         """
@@ -917,18 +900,18 @@ class NanonisAPI(QtCore.QObject):
         nhw = self.nanonis_hardware
 
         try:
-            self.logprint(f"nanonis.auto_approach({status})", "code")
-            if not self.status == "running": self.connect()
+            if verbose: self.logprint(f"nanonis.auto_approach({status})", "code")
+            if not self.status == "running": self.link()
             if V_motor: nhw.set_motor_f_A({"V_motor (V)": V_motor})
             nhw.auto_approach(status)
 
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return error
 
-    def get_parameter_values(self, parameter_names, auto_disconnect: bool = False) -> tuple[dict, bool | str]:
+    def get_parameter_values(self, parameter_names: str | list, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         nhw = self.nanonis_hardware
         parameter_values = {}
@@ -937,10 +920,10 @@ class NanonisAPI(QtCore.QObject):
         if isinstance(parameter_names, str): parameter_names = [parameter_names]
 
         try:
-            self.logprint(f"nanonis.get_parameter_values(parameter_names = {parameter_names})", "code")
-            if not self.status == "running": self.connect()
+            if verbose: self.logprint(f"nanonis.get_parameter_values(parameter_names = {parameter_names})", "code")
+            if not self.status == "running": self.link()
             
-            (scan_metadata, error) = self.scan_metadata_update(auto_disconnect = False)
+            (scan_metadata, error) = self.scan_metadata_update(unlink = False)
             if error: raise Exception(error)
 
             signal_dict = scan_metadata.get("signal_dict")
@@ -961,18 +944,18 @@ class NanonisAPI(QtCore.QObject):
             error = f"Unable to retrieve the requested parameters. {e}"
         
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
         
         return (parameter_values, error)
 
-    def scan_action(self, parameters: dict, auto_disconnect: bool = False) -> None:
+    def scan_action(self, parameters: dict, unlink: bool = False, verbose: bool = True) -> None:
         error = False
         nhw = self.nanonis_hardware
         direction = parameters.get("direction", "down")
         
         try:
-            self.logprint(f"nanonis.scan_action(parameters = {parameters})", "code")
-            if not self.status == "running": self.connect()
+            if verbose: self.logprint(f"nanonis.scan_action(parameters = {parameters})", "code")
+            if not self.status == "running": self.link()
             
             if "start" in parameters.values(): nhw.start_scan(direction)
             elif "stop" in parameters.values(): nhw.stop_scan()
@@ -983,14 +966,14 @@ class NanonisAPI(QtCore.QObject):
             error = f"Unable to execute the scan action. {e}"
         
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
         
         return error
 
 
 
     # Idling
-    def tip_tracker(self, timeout = 6000, auto_disconnect = False) -> None:
+    def tip_tracker(self, timeout = 6000, unlink = False) -> None:
         error = False
         nhw = self.nanonis_hardware
         
@@ -1005,7 +988,7 @@ class NanonisAPI(QtCore.QObject):
         
         try:
             self.message.emit(f"tip_tracker()", "code")
-            if not self.status == "running": self.connect()
+            if not self.status == "running": self.link()
             
             t0 = time() # Start time            
             
@@ -1024,7 +1007,7 @@ class NanonisAPI(QtCore.QObject):
         
         except Exception as e:
             error = e
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
             return error    
         
         return
@@ -1032,7 +1015,7 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Does not work yet
-    def get_spectrum(self, auto_disconnect: bool = True) -> tuple[dict | str]:
+    def get_spectrum(self, unlink: bool = True) -> tuple[dict | str]:
         # Initalize outputs
         data_dict = {}
         parameters = []
@@ -1041,13 +1024,13 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get the frame
         try:
-            if not self.status == "running": self.connect()
+            if not self.status == "running": self.link()
             spectrum = nhw.get_spectrum()
             #self.parameters.emit(frame)
         
         except Exception as e: error = e
         finally:
-            if auto_disconnect: self.disconnect()
+            if unlink: self.unlink()
 
         return (spectrum, error)
 

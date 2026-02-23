@@ -54,9 +54,9 @@ class NanonisHardware:
         self.conv = Conversions() # Load the conversions
         self.headers = self.prepare_headers() # Make the headers
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Make the socket object
-        connected = self.connect()
+        connected = self.link()
         if not connected == True: raise
-        else: self.disconnect()
+        else: self.unlink()
 
 
 
@@ -271,7 +271,7 @@ class NanonisHardware:
             return
                                # raise the exception
 
-    def connect(self) -> None:
+    def link(self) -> None:
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Re-establish the socket object if it was lost
             self.s.settimeout(2)
@@ -280,12 +280,12 @@ class NanonisHardware:
         except Exception as e:
             return e
 
-    def disconnect(self) -> None:
+    def unlink(self) -> None:
         self.s.close()
         sleep(.05) # Give time to properly close the socket
 
     def __enter__(self) -> None:
-        return self.connect()
+        return self.link()
     
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         return self.disconnect()

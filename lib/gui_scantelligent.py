@@ -38,7 +38,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.layouts = self.make_layouts()
         self.image_view = self.make_image_view()
         (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
-        self.plot_widget = self.make_plot_widget()
+        (self.plot_widget, self.graphs) = self.make_plot_widget()
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
         self.tip_slider = self.make_tip_slider()
@@ -282,9 +282,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "experiment_2": PJLineEdit(tooltip = "Experiment parameter field 2"),
 
             # Coarse
-            "z_steps": PJLineEdit(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", digits = 0),
-            "h_steps": PJLineEdit(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", digits = 0),
-            "minus_z_steps": PJLineEdit(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", digits = 0),
+            "z_steps": PJLineEdit(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0),
+            "h_steps": PJLineEdit(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", limits = [0, 100000], digits = 0),
+            "minus_z_steps": PJLineEdit(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", limits = [0, 100000], digits = 0),
             
             "V_hor": PJLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0),
             "V_ver": PJLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0),
@@ -536,8 +536,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_plot_widget(self) -> pg.PlotWidget:
         plot_widget = pg.PlotWidget()
+
+        graphs = []
+        for i in range(20):
+            pen = pg.mkPen(self.color_list[i])
+            
+            graphs.append(plot_widget.plot(x_data = [], y_data = [], pen = pen))
         
-        return plot_widget
+        return (plot_widget, graphs)
 
     def make_widgets(self) -> dict:
         layouts = self.layouts
