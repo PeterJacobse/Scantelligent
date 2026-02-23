@@ -53,7 +53,7 @@ class NanonisAPI(QtCore.QObject):
         self.connection.emit(self.status)
         return
 
-    def initialize(self, auto_disconnect: bool = False) -> None:
+    def initialize(self, auto_disconnect: bool = True) -> None:
         # Set up the TCP connection and get all relevant parameters
         self.logprint("nanonis.initialize()", message_type = "code")
         try:
@@ -66,6 +66,8 @@ class NanonisAPI(QtCore.QObject):
             (coarse_parameters, error) = self.coarse_parameters_update() # Sends coarse parameter data with "dict_name": "coarse_parameters"
             # if error: raise Exception(error)
             # Not useful to raise this error because the simulator does not have motor control
+            (lockin_parameters, error) = self.lockin_update() # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            # if error: raise Exception(error)
             (tip_status, error) = self.tip_update() # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
             (frame, error) = self.frame_update(update_new_frame = True) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
@@ -779,24 +781,35 @@ class NanonisAPI(QtCore.QObject):
 
             for mod_number, mod in enumerate([mod1_dict, mod2_dict]):
                 mod_on = nhw.get_lockin(mod_number + 1)
-                amplitude_V = nhw.get_lockin_amp(mod_number + 1)
+                amplitude_mV = nhw.get_lockin_amp(mod_number + 1)
                 frequency_Hz = nhw.get_lockin_freq(mod_number + 1)
                 phase_deg = nhw.get_lockin_phase(mod_number + 1)
+                
+                mod_new = {"on": mod_on, "frequency (Hz)": frequency_Hz, "amplitude (mV)": amplitude_mV, "phase (deg)": phase_deg}    
                 
                 if isinstance(mod, dict):
                     mod_on = mod.get("on", None)
                     if isinstance(mod_on, bool):
                         nhw.set_lockin(mod_number + 1, mod_on)
-                        mod.update({"on": mod_on})
+                        mod_new.update({"on": mod_on})
                     
-                    amp = mod.get("amplitude (V)", None)
-                    #if isinstance(amp, float) or isinstance(amp, int):
-                    #    nhw.set_lockin_amp(mod_number + 1, amp)
+                    amp = mod.get("amplitude (mV)", None)
+                    if isinstance(amp, float) or isinstance(amp, int):
+                        nhw.set_lockin_amp(mod_number + 1, amp)
+                        mod_new.update({"amplitude (mV)": amp})
                     
-                else:
-                    mod = {"on": mod_on, "frequency (Hz)": frequency_Hz, "amplitude (V)": amplitude_V, "phase (deg)": phase_deg}
-                
-                lockin_parameters.update({f"modulator_{mod_number + 1}": mod})
+                    freq = mod.get("frequency (Hz)", None)
+                    if isinstance(freq, float) or isinstance(freq, int):
+                        self.logprint(f"nhw.set_lockin_freq({mod_number + 1}, {freq})", "code")
+                        nhw.set_lockin_freq(mod_number + 1, freq)
+                        mod_new.update({"frequency (Hz)": freq})
+                    
+                    phase = mod.get("phase (deg)", None)
+                    if isinstance(phase, float) or isinstance(phase, int):
+                        nhw.set_lockin_phase(mod_number + 1, phase)
+                        mod_new.update({"phase (deg)": phase})
+                    
+                lockin_parameters.update({f"modulator_{mod_number + 1}": mod_new})
         
             self.parameters.emit(lockin_parameters)
         

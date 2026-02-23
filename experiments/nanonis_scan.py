@@ -35,6 +35,7 @@ class Experiment(NanonisAPI):
 
         self.connect()
         self.logprint("Experiment nanonis_scan started", message_type = "success")
+        self.scantelligent.status.update({"view": "nanonis"})
         
         t = time()
         (tip_status, error) = self.tip_update()

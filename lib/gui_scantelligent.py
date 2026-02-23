@@ -334,10 +334,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             # Lockins
             "nanonis_mod1_f": PJLineEdit(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod1_V": PJLineEdit(tooltip = "Nanonis modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "nanonis_mod1_mV": PJLineEdit(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
             "nanonis_mod1_phi": PJLineEdit(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
             "nanonis_mod2_f": PJLineEdit(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod2_V": PJLineEdit(tooltip = "Nanonis modulator 2 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "nanonis_mod2_mV": PJLineEdit(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
             "nanonis_mod2_phi": PJLineEdit(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
             
             "mla_mod1_f": PJLineEdit(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
@@ -377,8 +377,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.frame_widgets = [line_edits[name] for name in ["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"]]
         self.grid_widgets = [line_edits[name] for name in ["grid_lines", "grid_pixels", "grid_aspect"]]
         
-        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_V"], line_edits["nanonis_mod1_phi"],
-                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_V"], line_edits["nanonis_mod2_phi"],
+        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"],
+                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"],
                                   buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_V"], line_edits["mla_mod1_phi"]]
         
         # Aesthetics

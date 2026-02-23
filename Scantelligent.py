@@ -50,6 +50,7 @@ class Parameters(QtCore.QObject):
         nanonis = self.scantelligent.nanonis
         gui = self.scantelligent.gui
         line_edits = gui.line_edits
+        buttons = gui.buttons
 
         match parameter_type:
 
@@ -61,7 +62,7 @@ class Parameters(QtCore.QObject):
                 scan_range = [line_edits["frame_width"].getValue(), line_edits["frame_height"].getValue()]
                 angle = line_edits["frame_angle"].getValue()
                 
-                parameters = {"offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle}
+                parameters = {"dict_name": "frame", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle}
                 nanonis.frame_update(parameters, auto_disconnect = True)
 
             case "grid":                
@@ -74,6 +75,15 @@ class Parameters(QtCore.QObject):
 
             case "gain":
                 nanonis.gains_update(auto_disconnect = True)
+            
+            case "lockin":
+                [mod1_on, mod2_on] = [buttons[f"nanonis_mod{i + 1}"].isChecked() for i in range(2)]
+                [mod1_f, mod1_mV, mod1_phi] = [line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
+                [mod2_f, mod2_mV, mod2_phi] = [line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
+                parameters = {"dict_name": "lockin",
+                              "modulator_1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
+                              "modulator_2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi}}
+                nanonis.lockin_update(parameters, auto_disconnect = True)
             
             case _:
                 pass
@@ -98,26 +108,6 @@ class Parameters(QtCore.QObject):
         self.nanonis.parameters_update(s_p)
         """
 
-        return
-
-    @QtCore.pyqtSlot(dict)
-    def receive(self, parameters: dict) -> None:
-        gui = self.scantelligent.gui
-        line_edits = gui.line_edits
-        
-        if not "dict_name" in parameters.keys(): return
-
-        match parameters["dict_name"]:
-            case "lockin":
-                print("Lockin parameters received")
-            
-            case _:
-                pass
-
-        return
-
-    def echo(self):
-        print("hello")
         return
 
 
@@ -222,16 +212,13 @@ class Scantelligent(QtCore.QObject):
 
                     # Tip prep
                     ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")],
-
-                    # Lockins
-                    ["nanonis_mod1", lambda: self.modulator_control(modulator_number = 1)], ["nanonis_mod2", lambda: self.modulator_control(modulator_number = 2)],
                     
                     # Processing
                     ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
                     ]
 
         [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
-        [connections.append([f"set_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain"]]
+        [connections.append([f"set_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
 
         connections.append([f"scan_parameters_0", lambda: self.load_parameters_from_file("scan_parameters", 0)])
         connections.append([f"scan_parameters_1", lambda: self.load_parameters_from_file("scan_parameters", 1)])
@@ -378,9 +365,7 @@ class Scantelligent(QtCore.QObject):
         self.logprint("Unable to connect to the MLA", "warning")
         
         # Nanonis
-        try:
-            print(self.parameters.receive)
-            
+        try:            
             # Instantiate
             self.nanonis = NanonisAPI(parent = self, hardware = self.hardware)
             
@@ -409,10 +394,11 @@ class Scantelligent(QtCore.QObject):
 
     def dis_reconnect(self) -> None:
         if self.status["nanonis"] == "running":
-            try:
-                self.nanonis.disconnect()
-            except:
-                pass
+            try: self.nanonis.disconnect()
+            except: pass
+        elif self.status["nanonis"] == "idle":
+            try: self.nanonis.connect()
+            except: pass
         else:
             self.connect_hardware()
         return
@@ -633,7 +619,7 @@ class Scantelligent(QtCore.QObject):
             
             case "lockin":
                 for i, mod_dict in enumerate([parameters.get("modulator_1"), parameters.get("modulator_2")]):
-                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "V", "phi"], [mod_dict.get("frequency (Hz)"), mod_dict.get("amplitude (V)"), mod_dict.get("phase (deg)")])]
+                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi"], [mod_dict.get("frequency (Hz)"), mod_dict.get("amplitude (mV)"), mod_dict.get("phase (deg)")])]
 
             case _:
                 pass
@@ -642,16 +628,15 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_image(self, image: np.ndarray) -> None:
+        if self.status["view"] == "none": return
+
         try:
             """
             view_box = self.gui.image_view.getView()
             for item in view_box.allChildItems():
                 if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
             """
-            try:
-                self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)
-            except:
-                pass
+            self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)            
             
             if self.status["view"] == "nanonis":
                 # Use the frame to update the imageitem box
@@ -674,6 +659,14 @@ class Scantelligent(QtCore.QObject):
                 image_item.setTransformOriginPoint(center)
                 image_item.setRotation(90 - angle_deg)
                 image_item.setPos(x, y)
+            
+            if self.status["view"] == "camera":
+                image_item = self.gui.image_view.getImageItem()
+                identity_transform = QtGui.QTransform()
+                image_item.setTransform(identity_transform)
+                
+                view_box = self.gui.image_view.getView()
+                view_box.autoRange()
 
         except Exception as e:
             self.logprint(f"Error: {e}", "error")
@@ -945,8 +938,8 @@ class Scantelligent(QtCore.QObject):
         for item in view_box.allChildItems():
             if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
 
-        if not hasattr(self, "camera"): new_view = "nanonis"
-        if not hasattr(self, "nanonis"): new_view = "none"
+        if new_view == "damera" and not hasattr(self, "camera"): new_view = "nanonis"
+        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
 
 
 
@@ -982,6 +975,12 @@ class Scantelligent(QtCore.QObject):
                 self.status.update({"view": "none"})
                 self.gui.buttons["view"].setIcon(self.icons.get("eye"))
                 self.gui.image_view.setImage(self.splash_screen)
+                
+                image_item = self.gui.image_view.getImageItem()
+                identity_transform = QtGui.QTransform()
+                image_item.setTransform(identity_transform)
+                
+                view_box.autoRange()
 
         return
 
