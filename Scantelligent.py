@@ -198,7 +198,7 @@ class Scantelligent(QtCore.QObject):
         shortcuts = self.gui.shortcuts        
         
         # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.dis_reconnect], ["mla", self.echo_data], ["camera", self.connect_hardware], ["exit", self.exit],
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.dis_reconnect], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
                     ["oscillator", self.toggle_withdraw], ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.info_popup],
                     
                     # Experiment
@@ -403,11 +403,6 @@ class Scantelligent(QtCore.QObject):
             self.connect_hardware()
         return
 
-
-
-    def echo_data(self):
-        self.nanonis.echo_data()
-        return
 
 
     # PyQt slots
@@ -632,9 +627,10 @@ class Scantelligent(QtCore.QObject):
             for item in view_box.allChildItems():
                 if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
             """
-            self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)            
             
             if self.status["view"] == "nanonis":
+                self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)
+
                 # Use the frame to update the imageitem box
                 frame = self.user.frames[0]
                 
@@ -657,6 +653,8 @@ class Scantelligent(QtCore.QObject):
                 image_item.setPos(x, y)
             
             if self.status["view"] == "camera":
+                self.gui.image_view.setImage(np.flipud(image), autoRange = False)
+
                 image_item = self.gui.image_view.getImageItem()
                 identity_transform = QtGui.QTransform()
                 image_item.setTransform(identity_transform)
@@ -670,7 +668,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     @QtCore.pyqtSlot(np.ndarray)
-    def receive_data(self, data_array: np.ndarray, max_length: int = 100) -> None:
+    def receive_data(self, data_array: np.ndarray, max_length: int = 1000) -> None:
 
         for index in range(min(len(data_array[0]), 20)):            
             new_data = data_array[:, index]
@@ -934,11 +932,6 @@ class Scantelligent(QtCore.QObject):
         if hasattr(self, "camera_thread"):
             try: self.camera_thread.requestInterruption()
             except: pass
-        
-        try:
-            self.logprint(f"Thread {self.camera_thread} is running: {self.camera_thread.isRunning()}; is finished: {self.camera_thread.isFinished()}")
-        except:
-            pass
 
         view_box = self.gui.image_view.getView()
         for item in view_box.allChildItems():
@@ -994,7 +987,6 @@ class Scantelligent(QtCore.QObject):
             case _:
                 self.status.update({"view": "none"})
                 self.gui.buttons["view"].setIcon(self.icons.get("eye"))
-                #self.gui.image_view.setImage(self.splash_screen)
                 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(self.splash_screen)                
@@ -1004,8 +996,6 @@ class Scantelligent(QtCore.QObject):
                 view_box.autoRange()
 
         return
-
-
 
     def camera_finished(self):
         self.camera.message.disconnect()
@@ -1418,7 +1408,7 @@ class Scantelligent(QtCore.QObject):
             """
 
             # Toggle the view feed
-            self.toggle_view("camera")
+            if not self.status["view"] == "camera": self.toggle_view("camera")
 
             # Perform simple vertical motions if requested
             match direction:
@@ -1537,6 +1527,7 @@ class Scantelligent(QtCore.QObject):
                     if self.experiment_thread.isRunning(): return
                     else:
                         sp_button.setIcon(self.icons.get("pause"))
+                        for i in range(20): self.gui.graphs[i].setData([])
                         self.experiment_thread.start()
                 else:
                     self.logprint("No experiment loaded", "warning")

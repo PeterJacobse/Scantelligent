@@ -49,6 +49,7 @@ class CameraAPI(QtCore.QObject):
             
             if ret:
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                rgb_frame = cv2.convertScaleAbs(rgb_frame, alpha = 2, beta = -100)
                 self.frame_captured.emit(rgb_frame)
             else:
                 self.message.emit("Warning: Failed to read frame from camera.", "error")

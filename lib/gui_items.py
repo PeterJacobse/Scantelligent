@@ -352,12 +352,10 @@ class PJLineEdit(QtWidgets.QLineEdit):
         self.tooltip = kwargs.pop("tooltip", None)
         self.unit = kwargs.pop("unit", None)
         self.limits = kwargs.pop("limits", None)
-        self.number_type = kwargs.pop("number_type", "float")
         self.max_width = kwargs.pop("max_width", None)
         self.style_sheet = kwargs.pop("style_sheet", None)
         self.digits = kwargs.pop("digits", None)
         self.block = kwargs.pop("block", False)
-        if isinstance(self.digits, int) and self.digits < 1: self.number_type = "int"
         
         super().__init__(parent)
         
@@ -376,6 +374,8 @@ class PJLineEdit(QtWidgets.QLineEdit):
             self.setStyleSheet(self.style_sheet)
         else:
             self.setStyleSheet("QLineEdit{ background-color: #101010 }")
+        
+        return
    
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
@@ -400,6 +400,16 @@ class PJLineEdit(QtWidgets.QLineEdit):
         except:
             pass
 
+        return
+
+    def setDigits(self, digits: int) -> None:
+        self.digits = digits
+        return
+
+    def setLimits(self, limits: list) -> None:
+        self.limits = limits
+        return
+
     def setUnit(self, unit: str = "") -> None:
         self.unit = unit
         self.addUnit()
@@ -412,7 +422,7 @@ class PJLineEdit(QtWidgets.QLineEdit):
         # Extract the numeric part of what was entered
         regex_pattern = r"([-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?)(?:\s*[a-zA-Zμ°%]+)?"
         number_matches = re.findall(regex_pattern, entered_text)
-        if self.number_type == "int": numbers = [int(x) for x in number_matches]
+        if isinstance(self.digits, int) and self.digits < 1: numbers = [int(x) for x in number_matches]
         else: numbers = [float(x) for x in number_matches]
         
         if len(numbers) > 0:
@@ -426,7 +436,7 @@ class PJLineEdit(QtWidgets.QLineEdit):
             # Add the unit to the number
             if isinstance(self.digits, int):
                 number = round(number, self.digits)
-            if self.number_type == "int":
+            if isinstance(self.digits, int) and self.digits < 1:
                 number = int(number)
             
             if isinstance(self.unit, str):
@@ -447,7 +457,7 @@ class PJLineEdit(QtWidgets.QLineEdit):
         regex_pattern = r"([-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?)(?:\s*[a-zA-Zμ°%]+)?"
         number_matches = re.findall(regex_pattern, entered_text)
         
-        if self.number_type == "int": numbers = [int(x) for x in number_matches]
+        if isinstance(self.digits, int) and self.digits < 1: numbers = [int(x) for x in number_matches]
         else: numbers = [float(x) for x in number_matches]
         
         if len(numbers) > 0:
@@ -461,7 +471,7 @@ class PJLineEdit(QtWidgets.QLineEdit):
             # Add the unit to the number
             if isinstance(self.digits, int):
                 number = round(number, self.digits)
-            if self.number_type == "int":
+            if isinstance(self.digits, int) and self.digits < 1 < 1:
                 number = int(number)
             
             return number
@@ -474,7 +484,7 @@ class PJLineEdit(QtWidgets.QLineEdit):
 
             if isinstance(self.digits, int):
                 number = round(number, self.digits)
-            if self.number_type == "int":
+            if isinstance(self.digits, int) and self.digits < 1:
                 number = int(number)
 
             if isinstance(self.unit, str):

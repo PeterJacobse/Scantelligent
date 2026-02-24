@@ -1,71 +1,110 @@
 import sys, os
-from time import sleep
+from time import sleep, time
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from lib import NanonisAPI
 
 
 
 class Experiment(NanonisAPI):
-    def __init__(self, parent, *args, **kwargs):
-        super().__init__(hardware = parent.hardware)
-        self.abort_flag = False
-
-    def run(self):
+    def __init__(self, parent, *args, **kwargs):        
+        # 'parent' is a reference to the Scantelligent app itself. It is passed by default when loading the experiment in Scantelligent
+        super().__init__(parent, parent.hardware)
+        self.line_edits = [parent.gui.line_edits[f"experiment_{i}"] for i in range(3)]
+        self.direction_box = parent.gui.comboboxes["direction"]
         
-        self.connect()
-        self.logprint("Hello from experiment capacitive walk!", message_type = "success")
+        # Correct way to set tooltip hints and units for the parameter fields in the Scantelligent GUI
+        self.direction_box.renewItems(["n", "e", "s", "w"])
 
+        self.line_edits[0].changeToolTip("Coarse steps per iteration")
+        self.line_edits[0].setDigits(0)
+        self.line_edits[0].setLimits([0, 1000])
+        self.line_edits[0].setValue(10)        
+        
+        self.line_edits[1].changeToolTip("Number of iterations")
+        self.line_edits[1].setDigits(0)
+        self.line_edits[1].setLimits([0, 10000])
+        self.line_edits[1].setValue(200)        
+
+        self.line_edits[2].changeToolTip("Modulators (0: off; 1: 1 on; 2: 2 on; 3: both on)")
+        self.line_edits[2].setDigits(0)
+        self.line_edits[2].setLimits([0, 3])
+        self.line_edits[2].setValue(3)
+
+        [self.line_edits[i].setUnit(unit) for i, unit in enumerate(["steps", "", ""])]
+
+
+
+    def run(self) -> None:
+        # Correct way to extract data from the line edits
+        exp_par = [self.line_edits[i].getValue() for i in range(3)]
+        direction = self.direction_box.currentText()
+        move_dict = {"h_steps": exp_par[0], "V_hor (V)": 200, "direction": direction}
         lockin_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)", "LI Demod 2 X (A)", "LI Demod 2 Y (A)"]
-        move_dict = {"h_steps": 1, "V_hor (V)": 200, "z_steps": 0, "V_ver (V)": 120, "direction": "s"}
+        channels_dict = {i: name for i, name in enumerate(lockin_names)}
+        channels_dict.update({"dict_name": "channels"})
+        self.parameters.emit(channels_dict) # This triggers the GUI to start tracking and graphing data
+
+        # Start
+        self.link()
+        self.logprint("Experiment capacitive_walk started", message_type = "success")
+        self.scantelligent.toggle_view("camera")
+
+        # Switch on the modulators
+        (self.old_lockin_parameters, error) = self.lockin_update()
+        match exp_par[2]:
+            case 0: self.lockin_update({"modulator_1": {"on": False}, "modulator_2": {"on": False}})
+            case 1: self.lockin_update({"modulator_1": {"on": True}, "modulator_2": {"on": False}})
+            case 2: self.lockin_update({"modulator_1": {"on": False}, "modulator_2": {"on": True}})
+            case 3: self.lockin_update({"modulator_1": {"on": True}, "modulator_2": {"on": True}})
+            case _:
+                self.logprint("Invalid modulator parameter provided", "error")
+                self.cleanup()
         
-        (parameter_dict, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
+        [mod1_dict, mod2_dict] = [self.old_lockin_parameters.get(f"modulator_{i + 1}") for i in range(2)]
+        [mod1_f, mod1_V] = [mod1_dict.get(quantity) for quantity in ["frequency (Hz)", "amplitude (mV)"]]
+        [mod2_f, mod2_V] = [mod1_dict.get(quantity) for quantity in ["frequency (Hz)", "amplitude (mV)"]]
 
-        lockin_values = [list(parameter_dict.values())]
 
-        for i in range(40):
-            self.check_abort_flag()
-            self.progress.emit(int(.25 * i))
+        
+        # Start the measurement loop
+        for iter in range(exp_par[1]):
+            self.check_abort()
+            if self.abort_flag:
+                break
             
-            (parameter_dict, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
-            (parameter_dict2, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
-            (parameter_dict3, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
-            (parameter_dict4, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
-            (parameter_dict5, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
-            (parameter_dict6, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
-            (parameter_dict7, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
-            (parameter_dict8, error) = self.get_parameter_values(lockin_names, auto_disconnect = False)
-            sleep(.2)
+            cycles = 4
+            lockin_values = []
+            for averaging_cycle in range(cycles):
+                (parameter_dict, error) = self.get_parameter_values(lockin_names)
+                lockin_values.append(list(parameter_dict.values()))
+                sleep(.2)
+            lockin_avgs = np.array([np.sum(lockin_values, axis = 0) / cycles], dtype = float)
 
-            for key in parameter_dict.keys():
-                parameter_dict[key] = (parameter_dict[key] + parameter_dict2[key] + parameter_dict3[key] + parameter_dict4[key] + parameter_dict5[key] + parameter_dict6[key] + parameter_dict7[key] + parameter_dict8[key]) / 8
-            
-            lockin_values.append(list(parameter_dict.values()))
+            # Translate displacement currents into capacitances
+            #for i, I_displ_A in enumerate(lockin_avgs):
+            #    caps_fF = 1E15 * I_displ_A / (2 * np.pi * mod1_f * mod1_V)
+
             self.coarse_move(move_dict)
-            sleep(1)
-
-            self.data_array.emit(np.array(lockin_values, dtype = float))
+            self.progress.emit(int(100 * iter / exp_par[1]))
+            self.data_array.emit(lockin_values_total)
+            sleep(.5)
         
-        self.disconnect()
-        self.progress.emit(100)
-        self.logprint("Capacitive walk finished!", message_type = "success")
+        if not self.abort_flag: self.logprint("Experiment capacitive_walk finished", "success")
+        self.cleanup()
+        return
+
+
+
+    def cleanup(self) -> None:
+        # Reset the lockin modulators to their original state
+        [mod1_dict, mod2_dict] = [self.old_lockin_parameters.get(f"modulator_{i + 1}") for i in range(2)]
+        [mod1_on, mod2_on] = [mod_dict.get("on") for mod_dict in [mod1_dict, mod2_dict]]
+        
+        self.lockin_update({"modulator_1": {"on": mod1_on}, "modulator_2": {"on": mod2_on}})
+
+        self.unlink()
         self.finished.emit()
-
-    def check_abort_flag(self):
-        if self.abort_flag:
-            self.abort_flag = False
-            self.disconnect()
-            self.finished.emit()
-            return True
-        return False
-
+        return
 

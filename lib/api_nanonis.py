@@ -842,7 +842,7 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             
             # 1. Withdraw
-            withdraw = parameters.get("withdraw", True)
+            withdraw = parameters.get("withdraw", False)
             if withdraw: self.tip_update({"withdraw": True}, unlink = False)
 
             # 2. Retract
@@ -923,7 +923,7 @@ class NanonisAPI(QtCore.QObject):
             if verbose: self.logprint(f"nanonis.get_parameter_values(parameter_names = {parameter_names})", "code")
             if not self.status == "running": self.link()
             
-            (scan_metadata, error) = self.scan_metadata_update(unlink = False)
+            (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
             if error: raise Exception(error)
 
             signal_dict = scan_metadata.get("signal_dict")
