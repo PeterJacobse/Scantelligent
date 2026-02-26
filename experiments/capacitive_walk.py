@@ -88,7 +88,7 @@ class Experiment(NanonisAPI):
 
             self.coarse_move(move_dict)
             self.progress.emit(int(100 * iter / exp_par[1]))
-            self.data_array.emit(lockin_values_total)
+            self.data_array.emit(lockin_avgs)
             sleep(.5)
         
         if not self.abort_flag: self.logprint("Experiment capacitive_walk finished", "success")

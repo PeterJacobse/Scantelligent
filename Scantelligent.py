@@ -350,7 +350,7 @@ class Scantelligent(QtCore.QObject):
         # Camera
         try:
             # Instantiate
-            self.camera = CameraAPI({"argument": 0})
+            self.camera = CameraAPI({"argument": "rtsp://admin:CT108743@192.168.236.108"})
             
             # Set up signal-slot connections            
             self.logprint("Found the camera and instantiated CameraHW as camera", "success")
@@ -653,6 +653,7 @@ class Scantelligent(QtCore.QObject):
                 image_item.setPos(x, y)
             
             if self.status["view"] == "camera":
+
                 self.gui.image_view.setImage(np.flipud(image), autoRange = False)
 
                 image_item = self.gui.image_view.getImageItem()
@@ -953,7 +954,7 @@ class Scantelligent(QtCore.QObject):
 
                 try:
                     # Instantiate
-                    self.camera = CameraAPI({"argument": 0})
+                    self.camera = CameraAPI({"argument": "rtsp://admin:CT108743@192.168.236.108"})
                     self.camera_thread = QtCore.QThread()
                     self.camera.moveToThread(self.camera_thread)
                     
