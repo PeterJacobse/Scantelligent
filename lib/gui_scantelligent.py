@@ -43,6 +43,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.consoles = self.make_consoles()
         self.tip_slider = self.make_tip_slider()
         self.shortcuts = self.make_shortcuts()
+        self.dialogs = self.make_dialogs()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
         self.populate_layouts()
@@ -204,6 +205,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             buttons.update({f"gain_parameters_{i}": make_button("", f"Load gain parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
             buttons.update({f"speed_parameters_{i}": make_button("", f"Load speed parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
             buttons.update({f"grid_parameters_{i}": make_button("", f"Load grid parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"parameters_{i}": make_button("", f"Parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
 
         # Increase size of important buttons
         [buttons[name].setStyleSheet("QPushButton{ background-color: #101010; icon-size: 28px 28px; }") for name in ["stop", "start_pause", "view", "exit"]]
@@ -635,6 +637,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [shortcuts.update({direction: QSeq(QMod.CTRL | keystroke)}) for direction, keystroke in direction_keys.items()]
         
         return shortcuts
+
+    def make_dialogs(self) -> dict:
+        dialogs = {"parameters": QtWidgets.QInputDialog(), "info": QtWidgets.QInputDialog()}
+        return dialogs
 
 
 
