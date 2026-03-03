@@ -1,6 +1,6 @@
 from .functions import NanonisFunctions
 from .api_nanonis import NanonisAPI
-from .gui_items import GUIItems, StreamRedirector, PJTargetItem, PJComboBox, PJLineEdit, PJGroupBox
+from .gui_items import GUIItems, StreamRedirector, PJTargetItem, PJComboBox, PhysicalLineEdit, PJGroupBox
 from .gui_scantelligent import ScantelligentGUI
 from .api_camera import CameraAPI
 from .hw_nanonis import NanonisHardware, Conversions

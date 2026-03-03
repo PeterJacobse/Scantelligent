@@ -1,7 +1,7 @@
-import os
+import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from . import GUIItems, PJComboBox, PJLineEdit, PJGroupBox, PJTargetItem
+from . import GUIItems, PJComboBox, PhysicalLineEdit, PJGroupBox, PJTargetItem
 
 
 
@@ -258,13 +258,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return (checkboxes, channel_checkboxes)
 
     def make_comboboxes(self) -> dict:
-        make_combobox = self.gui_items.make_combobox
         
         comboboxes = {
-            "channels": make_combobox("Channels", "Available scan channels"),
-            "projection": make_combobox("Projection", "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": make_combobox("Experiment"),
-            "direction": make_combobox("Direction", "Select a scan direction / pattern (X)", items = ["nearest tip", "down", "up", "random"])
+            "channels": PJComboBox(name = "Channels", tooltip = "Available scan channels"),
+            "projection": PJComboBox(name = "Projection", tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
+            "experiment": PJComboBox(name = "Experiment", tooltip = "Select an experiment"),
+            "direction": PJComboBox(name = "Direction", tooltip = "Select a scan direction / pattern", items = ["nearest tip", "down", "up", "random"]),
+            
+            "voltage_current": PJComboBox(name = "voltage / current", tooltip = "Load voltage / current parameters"),
+            "gains": PJComboBox(name = "gains", tooltip = "Load gains parameters"),
+            "frame": PJComboBox(name = "frame", tooltip = "Load frame parameters"),
+            "grid": PJComboBox(name = "grid", tooltip = "Load grid parameters"),
         }
         
         # Add the button handles to the tooltips
@@ -273,93 +277,92 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return comboboxes
 
     def make_line_edits(self) -> dict:
-        make_line_edit = self.gui_items.make_line_edit
         buttons = self.buttons
         
         line_edits = {
             # Experiment
-            "experiment_filename": PJLineEdit(tooltip = "Base name of the file when saved to png or hdf5"),
-            "experiment_0": PJLineEdit(tooltip = "Experiment parameter field 0"),
-            "experiment_1": PJLineEdit(tooltip = "Experiment parameter field 1"),
-            "experiment_2": PJLineEdit(tooltip = "Experiment parameter field 2"),
+            "experiment_filename": PhysicalLineEdit(tooltip = "Base name of the file when saved to png or hdf5"),
+            "experiment_0": PhysicalLineEdit(tooltip = "Experiment parameter field 0"),
+            "experiment_1": PhysicalLineEdit(tooltip = "Experiment parameter field 1"),
+            "experiment_2": PhysicalLineEdit(tooltip = "Experiment parameter field 2"),
 
             # Coarse
-            "z_steps": PJLineEdit(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0),
-            "h_steps": PJLineEdit(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", limits = [0, 100000], digits = 0),
-            "minus_z_steps": PJLineEdit(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", limits = [0, 100000], digits = 0),
+            "z_steps": PhysicalLineEdit(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0),
+            "h_steps": PhysicalLineEdit(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", limits = [0, 100000], digits = 0),
+            "minus_z_steps": PhysicalLineEdit(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", limits = [0, 100000], digits = 0),
             
-            "V_hor": PJLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0),
-            "V_ver": PJLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0),
-            "f_motor": PJLineEdit(value = 1000, tooltip = "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0),
+            "V_hor": PhysicalLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0),
+            "V_ver": PhysicalLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0),
+            "f_motor": PhysicalLineEdit(value = 1000, tooltip = "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0),
 
             # Parameters
-            "V_nanonis": PJLineEdit(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
-            "V_mla": PJLineEdit(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
-            "V_keithley": PJLineEdit(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3),
+            "V_nanonis": PhysicalLineEdit(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
+            "V_mla": PhysicalLineEdit(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
+            "V_keithley": PhysicalLineEdit(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3),
 
-            "dV": PJLineEdit(tooltip = "Step size dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
-            "dt": PJLineEdit(tooltip = "Step size dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
-            "dz": PJLineEdit(tooltip = "Step size dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
+            "dV": PhysicalLineEdit(tooltip = "Step size dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
+            "dt": PhysicalLineEdit(tooltip = "Step size dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
+            "dz": PhysicalLineEdit(tooltip = "Step size dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
 
-            "dV_keithley": PJLineEdit(tooltip = "Step size dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1),
-            "dt_keithley": PJLineEdit(tooltip = "Step size dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0),
+            "dV_keithley": PhysicalLineEdit(tooltip = "Step size dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1),
+            "dt_keithley": PhysicalLineEdit(tooltip = "Step size dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0),
 
-            "I_fb": PJLineEdit(tooltip = "Feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0),
-            "I_keithley": PJLineEdit(tooltip = "Keithley current", unit = "pA", digits = 0),
-            "I_limit": PJLineEdit(tooltip = "Maximum Keithley current", unit = "pA", digits = 0),
+            "I_fb": PhysicalLineEdit(tooltip = "Feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0),
+            "I_keithley": PhysicalLineEdit(tooltip = "Keithley current", unit = "pA", digits = 0),
+            "I_limit": PhysicalLineEdit(tooltip = "Maximum Keithley current", unit = "pA", digits = 0),
             
-            "p_gain": PJLineEdit(tooltip = "Proportional gain\n(Ctrl + P) to set", unit = "pm", digits = 0),
-            "t_const": PJLineEdit(tooltip = "Time constant\n(Ctrl + P) to set", unit = "us", digits = 0),
-            "i_gain": PJLineEdit(tooltip = "Integral gain\n(Ctrl + P) to set"),
+            "p_gain": PhysicalLineEdit(tooltip = "Proportional gain\n(Ctrl + P) to set", unit = "pm", digits = 0),
+            "t_const": PhysicalLineEdit(tooltip = "Time constant\n(Ctrl + P) to set", unit = "us", digits = 0),
+            "i_gain": PhysicalLineEdit(tooltip = "Integral gain\n(Ctrl + P) to set"),
             
-            "v_fwd": PJLineEdit(tooltip = "Tip forward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
-            "v_bwd": PJLineEdit(tooltip = "Tip backward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
+            "v_fwd": PhysicalLineEdit(tooltip = "Tip forward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
+            "v_bwd": PhysicalLineEdit(tooltip = "Tip backward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
             
             # Frame
-            "frame_height": PJLineEdit(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
-            "frame_width": PJLineEdit(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1),
-            "frame_x": PJLineEdit(tooltip = "frame offset (x)", unit = "nm", limits = [-1000, 1000], digits = 1),
-            "frame_y": PJLineEdit(tooltip = "frame offset (y)", unit = "nm", limits = [-1000, 1000], digits = 1),
-            "frame_angle": PJLineEdit(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1),
-            "frame_aspect": PJLineEdit(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4),
+            "frame_height": PhysicalLineEdit(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
+            "frame_width": PhysicalLineEdit(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1),
+            "frame_x": PhysicalLineEdit(tooltip = "frame offset (x)", unit = "nm", limits = [-1000, 1000], digits = 1),
+            "frame_y": PhysicalLineEdit(tooltip = "frame offset (y)", unit = "nm", limits = [-1000, 1000], digits = 1),
+            "frame_angle": PhysicalLineEdit(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1),
+            "frame_aspect": PhysicalLineEdit(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4),
 
             # Grid
-            "grid_pixels": PJLineEdit(tooltip = "Number of pixels", unit = "px", limits = [1, 10000], digits = 0),
-            "grid_lines": PJLineEdit(tooltip = "Number of lines", unit = "px", limits = [1, 10000], digits = 0),
-            "grid_aspect": PJLineEdit(tooltip = "grid aspect ratio (lines / pixels)", digits = 4),
-            "pixel_width": PJLineEdit(tooltip = "pixel width", unit = "nm", digits = 4),
-            "pixel_height": PJLineEdit(tooltip = "pixel height", unit = "nm", digits = 4),
+            "grid_pixels": PhysicalLineEdit(tooltip = "Number of pixels", unit = "px", limits = [1, 10000], digits = 0),
+            "grid_lines": PhysicalLineEdit(tooltip = "Number of lines", unit = "px", limits = [1, 10000], digits = 0),
+            "grid_aspect": PhysicalLineEdit(tooltip = "grid aspect ratio (lines / pixels)", digits = 4),
+            "pixel_width": PhysicalLineEdit(tooltip = "pixel width", unit = "nm", digits = 4),
+            "pixel_height": PhysicalLineEdit(tooltip = "pixel height", unit = "nm", digits = 4),
             
             # Tip shaper
-            "pulse_voltage": PJLineEdit(tooltip = "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
-            "pulse_duration": PJLineEdit(tooltip = "Duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
+            "pulse_voltage": PhysicalLineEdit(tooltip = "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
+            "pulse_duration": PhysicalLineEdit(tooltip = "Duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
             
             # Lockins
-            "nanonis_mod1_f": PJLineEdit(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod1_mV": PJLineEdit(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
-            "nanonis_mod1_phi": PJLineEdit(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
-            "nanonis_mod2_f": PJLineEdit(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod2_mV": PJLineEdit(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
-            "nanonis_mod2_phi": PJLineEdit(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "nanonis_mod1_f": PhysicalLineEdit(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "nanonis_mod1_mV": PhysicalLineEdit(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
+            "nanonis_mod1_phi": PhysicalLineEdit(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "nanonis_mod2_f": PhysicalLineEdit(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "nanonis_mod2_mV": PhysicalLineEdit(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
+            "nanonis_mod2_phi": PhysicalLineEdit(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
             
-            "mla_mod1_f": PJLineEdit(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "mla_mod1_V": PJLineEdit(tooltip = "MLA modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
-            "mla_mod1_phi": PJLineEdit(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "mla_mod1_f": PhysicalLineEdit(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "mla_mod1_V": PhysicalLineEdit(tooltip = "MLA modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "mla_mod1_phi": PhysicalLineEdit(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
 
             # Image processing
-            "min_full": make_line_edit("", "minimum value of scan data range"),
-            "max_full": make_line_edit("", "maximum value of scan data range"),
-            "min_percentiles": make_line_edit("2", "minimum percentile of data range"),
-            "max_percentiles": make_line_edit("98", "maximum percentile of data range"),
-            "min_deviations": make_line_edit("2", "minimum = mean - n * standard deviation"),
-            "max_deviations": make_line_edit("2", "maximum = mean + n * standard deviation"),
-            "min_absolute": make_line_edit("0", "minimum absolute value"),
-            "max_absolute": make_line_edit("1", "maximum absolute value"),
+            "min_full": PhysicalLineEdit(tooltip = "minimum value of scan data range"),
+            "max_full": PhysicalLineEdit(tooltip = "maximum value of scan data range"),
+            "min_percentiles": PhysicalLineEdit(value = "2", tooltip = "minimum percentile of data range", unit = "%"),
+            "max_percentiles": PhysicalLineEdit(value = "98", tooltip = "maximum percentile of data range", unit = "%"),
+            "min_deviations": PhysicalLineEdit(value = "2", tooltip = "minimum = mean - n * standard deviation", unit = "\u03C3"),
+            "max_deviations": PhysicalLineEdit(value = "2", tooltip = "maximum = mean + n * standard deviation", unit = "\u03C3"),
+            "min_absolute": PhysicalLineEdit(value = "0", tooltip = "minimum absolute value"),
+            "max_absolute": PhysicalLineEdit(value = "1", tooltip = "maximum absolute value"),
 
-            "gaussian_width": PJLineEdit(name = "0", tooltip = "Width in nm for Gaussian blur application", unit = "nm"),
+            "gaussian_width": PhysicalLineEdit(value = "0", tooltip = "Width in nm for Gaussian blur application", unit = "nm"),
             
             # Console            
-            "input": PJLineEdit(tooltip = "Enter a command\n(Enter to evaluate)", block = True)
+            "input": PhysicalLineEdit(tooltip = "Enter a command\n(Enter to evaluate)", block = True)
         }
         
         # Named groups
@@ -467,8 +470,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "scan_parameters": make_layout("g"),
             
-            "gains": make_layout("h"),
-            "gain_parameter_sets": make_layout("h"),
+            "gains_line_edits": make_layout("h"),
+            "gains_set_get": make_layout("h"),
+            "gains": make_layout("v"),
 
             "speeds": make_layout("h"),
             "speeds_parameter_sets": make_layout("h"),
@@ -709,8 +713,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         #[par_layout.addWidget(box, 1, i + 3) for i, box in enumerate(self.parameter_line_1)]
 
         # Gains
-        [layouts["gains"].addWidget(widget) for i, widget in enumerate(self.gain_line_edits)]
-
+        [layouts["gains_line_edits"].addWidget(widget) for widget in self.gain_line_edits]
+        [layouts["gains_set_get"].addWidget(widget) for widget in [buttons["get_gain_parameters"], buttons["set_gain_parameters"], comboboxes["gains"]]]
+        layouts["gains"].addLayout(layouts["gains_line_edits"])
+        layouts["gains"].addLayout(layouts["gains_set_get"])
+        
         # Frame_grid
         [layouts["frame_grid_parameter_sets"].addWidget(buttons[f"grid_parameters_{i}"]) for i in range(6)]
 
@@ -890,6 +897,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.height_width_aspect(name_0)) for name in ["frame_width", "frame_height", "frame_aspect"]]
         [self.line_edits[name].editingFinished.connect(self.update_frame_from_fields) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle", "frame_aspect"]]
+        
+        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]
+        
         return
 
 
@@ -950,8 +960,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [self.line_edits[name].blockSignals(False) for name in ["frame_width", "frame_height", "frame_aspect"]]
         return
 
-
-
     def update_fields_from_frame_change(self) -> None:        
         [self.line_edits[name].blockSignals(True) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
         
@@ -1005,3 +1013,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return
 
+    def gains_changed(self, line_edit_name: str = "p_gain") -> None:
+        match line_edit_name:
+            case "i_gain":
+                i_gain = self.line_edits["i_gain"].getValue()
+                if not isinstance(i_gain, float) and not isinstance(i_gain, int): return
+                
+                p_gain = self.line_edits["p_gain"].getValue()
+                if not isinstance(i_gain, float) and not isinstance(i_gain, int): return
+                
+                print(p_gain, i_gain)
+            case _:
+                pass
+        
+        return
+
+
+
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    logic_app = ScantelligentGUI()
+    sys.exit(app.exec())
