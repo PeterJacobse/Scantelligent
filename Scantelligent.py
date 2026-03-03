@@ -3,130 +3,9 @@ from PIL import Image
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI
+from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI, ParameterManager
 from time import sleep
 from datetime import datetime
-
-
-
-# Parameter management (getting from hardware, setting, loading from file and saving)
-class Parameters(QtCore.QObject):
-    
-    
-    def __init__(self, parent):
-        super().__init__()
-        self.scantelligent = parent # Reference to Scantelligent class
-        self.logprint = self.scantelligent.logprint
-
-
-
-    def get(self, parameter_type: str = "frame") -> None:
-        nanonis = self.scantelligent.nanonis
-        gui = self.scantelligent.gui
-        line_edits = gui.line_edits
-
-        match parameter_type:
-
-            case "feedback":
-                nanonis.parameters_update(unlink = True)
-
-            case "frame":
-                nanonis.frame_update(unlink = True, update_new_frame = True)
-
-            case "grid":
-                nanonis.grid_update(unlink = True)
-
-            case "speeds":
-                nanonis.frame_update(unlink = True)
-
-            case "gain":
-                nanonis.gains_update(unlink = True)
-            
-            case "lockin":
-                nanonis.lockin_update(unlink = True)
-            
-            case _:
-                pass
-
-        return
-
-    def set(self, parameter_type: str = "frame") -> None:
-        # It is noted that the nomenclature 'set' causes shadowing of the built-in 'set' method, but I decided to keep this regardless
-
-        nanonis = self.scantelligent.nanonis
-        gui = self.scantelligent.gui
-        line_edits = gui.line_edits
-        buttons = gui.buttons
-
-        match parameter_type:
-
-            case "feedback":
-                nanonis.parameters_update(unlink = True)
-
-            case "frame":
-                offset = [line_edits["frame_x"].getValue(), line_edits["frame_y"].getValue()]
-                scan_range = [line_edits["frame_width"].getValue(), line_edits["frame_height"].getValue()]
-                angle = line_edits["frame_angle"].getValue()
-                
-                parameters = {"dict_name": "frame", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle}
-                nanonis.frame_update(parameters, unlink = True)
-
-            case "grid":                
-                grid = [line_edits["grid_pixels"].getValue(), line_edits["grid_lines"].getValue()]
-                
-                nanonis.grid_update(unlink = True)
-
-            case "speeds":
-                nanonis.frame_update(unlink = True)
-
-            case "gain":
-                nanonis.gains_update(unlink = True)
-            
-            case "lockin":
-                [mod1_on, mod2_on] = [buttons[f"nanonis_mod{i + 1}"].isChecked() for i in range(2)]
-                [mod1_f, mod1_mV, mod1_phi] = [line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
-                [mod2_f, mod2_mV, mod2_phi] = [line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
-                parameters = {"dict_name": "lockin",
-                              "modulator_1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
-                              "modulator_2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi}}
-                nanonis.lockin_update(parameters, unlink = True)
-            
-            case _:
-                pass
-
-        """
-        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
-            str = self.gui.line_edits[tag].text()
-            numbers = self.data.extract_numbers_from_str(str)
-            if len(numbers) < 1: continue
-            flt = numbers[0]
-            
-            match tag:
-                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
-                case "V_mla": s_p.update({"V_mla (V)": flt})
-                case "I_fb": s_p.update({"I_fb (pA)": flt})
-                case "p_gain": s_p.update({"p_gain (pm)": flt})
-                case "t_const": s_p.update({"t_const (us)": flt})
-                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
-                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
-                case _: pass
-
-        self.nanonis.parameters_update(s_p)
-        """
-
-        return
-
-    @QtCore.pyqtSlot(dict)
-    def receive(self, parameters: dict) -> None:
-        dict_name = parameters.get("dict_name")
-        
-        match dict_name:
-            case "frame":
-                self.logprint("Scantelligent.parameters received a frame")
-            case _:
-                self.logprint("Scantelligent.parameters received something else")
-        
-        return
 
 
 
@@ -184,7 +63,7 @@ class Scantelligent(QtCore.QObject):
         self.timer = QtCore.QTimer()
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
-        self.parameters = Parameters(parent = self) # Intantiate the class Parameters, which implements easy parameter getting, setting, loading and saving
+        self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
         
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -226,7 +105,7 @@ class Scantelligent(QtCore.QObject):
                     ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
 
                     # Parameters                    
-                    ["tip", self.change_tip_status], ["V_swap", self.get_parameters], ["set_scan_parameters", self.set_parameters], ["get_scan_parameters", self.get_parameters],
+                    ["tip", self.change_tip_status],
 
                     # Tip prep
                     ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")],
@@ -393,7 +272,7 @@ class Scantelligent(QtCore.QObject):
             # Nanonis -> Scantelligent
             self.nanonis.progress.connect(self.receive_progress)
             self.nanonis.message.connect(self.receive_message)
-            self.nanonis.parameters.connect(self.receive_parameters)
+            self.nanonis.parameters.connect(self.parameters.receive)
             self.nanonis.image.connect(self.receive_image)
             self.nanonis.data_array.connect(self.receive_data)
             
@@ -433,207 +312,6 @@ class Scantelligent(QtCore.QObject):
     @QtCore.pyqtSlot(str, str)
     def receive_message(self, text: str, mtype: str) -> None:
         self.logprint(text, message_type = mtype)
-        return
-
-    @QtCore.pyqtSlot(dict)
-    def receive_parameters(self, parameters: dict) -> None:
-        line_edits = self.gui.line_edits
-        
-        # Read the name of the dict to determine what type of parameters are in there
-        dict_name = parameters.get("dict_name")
-        
-        match dict_name:
-            case "nanonis_status":
-                status = parameters.get("status")
-                match status:
-                    case "running":
-                        self.status.update({"nanonis": "running"})
-                        self.update_buttons()
-                    case "idle":
-                        self.status.update({"nanonis": "idle"})
-                        self.update_buttons()
-                    case "offline":
-                        self.status.update({"nanonis": "offline"})
-                        self.update_buttons()
-                    case _:
-                        pass
-
-            case "session_path":
-                session_path = parameters.get("path")
-                self.paths.update({"session_path": session_path})
-            
-            case "coarse_parameters":
-                self.user.coarse_parameters[0].update(parameters)
-                
-                line_edits["V_hor"].setText(str(parameters.get("V_motor (V)")))
-                line_edits["V_ver"].setText(str(parameters.get("V_motor (V)")))
-                line_edits["f_motor"].setText(str(parameters.get("f_motor (Hz)")))
-            
-            case "channels":
-                for key, value in parameters.items():
-                    if key == "dict_name": continue
-
-                    channel_index = int(key)
-                    if channel_index < 0 or channel_index > 20: continue
-
-                    self.gui.channel_checkboxes[f"{channel_index}"].setToolTip(f"channel {channel_index}: {value}")
-                    self.gui.channel_checkboxes[f"{channel_index}"].setChecked(True)
-                    line = self.gui.plot_widget.plot()
-                    self.lines.append(line)
-
-            case "tip_status":
-                tip_status = parameters
-                self.status.update({"tip_status": tip_status})
-                
-                # Update the slider
-                z_limits_nm = tip_status.get("z_limits (nm)")
-                z_nm = tip_status.get("z (nm)")
-                self.gui.tip_slider.setMinimum(int(z_limits_nm[0]))
-                self.gui.tip_slider.setMaximum(int(z_limits_nm[1]))
-                self.gui.tip_slider.setValue(int(z_nm))
-                self.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
-                
-                # Update the position visible in the image_view
-                self.gui.image_view.view.removeItem(self.gui.tip_target)
-                x_tip_nm = tip_status.get("x (nm)", 0)
-                y_tip_nm = tip_status.get("y (nm)", 0)
-                z_tip_nm = tip_status.get("z (nm)", 0)
-                self.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
-                self.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
-                if self.status["view"] == "nanonis": self.gui.image_view.view.addItem(self.gui.tip_target)
-                
-                self.update_tip_status()
-            
-            case "scan_parameters":
-                scan_parameters = parameters
-                self.user.scan_parameters[0].update(scan_parameters)
-
-            case "frame":
-                frame = parameters
-                self.user.frames[0].update(frame)
-                
-                # if hasattr(self.gui, "frame_roi"): self.gui.image_view.view.removeItem(self.frame_roi)                
-                [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
-                aspect_ratio = h_nm / w_nm
-
-                # Update the frame 'roi' in the ImageView
-                frame_roi = self.gui.frame_roi
-                try: self.gui.image_view.view.removeItem(frame_roi)
-                except: pass
-                
-                if self.status["view"] == "nanonis":
-                    frame_roi.setSize([w_nm, h_nm])
-                    frame_roi.setPos([0, 0])
-                    frame_roi.setAngle(angle = -angle_deg)
-
-                    self.gui.image_view.addItem(frame_roi)
-                    
-                    bounding_rect = frame_roi.boundingRect()
-                    local_center = bounding_rect.center()
-                    abs_center = frame_roi.mapToParent(local_center)
-                    
-                    frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-
-            case "new_frame":
-                frame = parameters
-                
-                # if hasattr(self.gui, "frame_roi"): self.gui.image_view.view.removeItem(self.frame_roi)                
-                [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
-                aspect_ratio = h_nm / w_nm
-
-                # Update the fields in the GUI
-                [self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
-                
-                # Update the frame 'roi' in the ImageView
-                new_frame_roi = self.gui.new_frame_roi
-                try: self.gui.image_view.view.removeItem(new_frame_roi)
-                except: pass
-                
-                if self.status["view"] == "nanonis":
-                    new_frame_roi.blockSignals(True)
-                    
-                    new_frame_roi.setSize([w_nm, h_nm])
-                    new_frame_roi.setPos([0, 0])
-                    new_frame_roi.setAngle(angle = -angle_deg)
-
-                    self.gui.image_view.addItem(new_frame_roi)
-                    
-                    bounding_rect = new_frame_roi.boundingRect()
-                    local_center = bounding_rect.center()
-                    abs_center = new_frame_roi.mapToParent(local_center)
-                    
-                    new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-                    
-                    new_frame_roi.blockSignals(False)
-
-            case "grid":
-                grid = parameters
-
-                pixels = grid.get("pixels")
-                lines = grid.get("lines")
-                pixel_width = grid.get("pixel_width (nm)")
-                pixel_height = grid.get("pixel_height (nm)")
-                aspect_ratio = lines / pixels
-
-                # Update the fields in the GUI
-                [self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
-
-            case "gains":
-                gains = parameters
-
-                self.logprint(gains)
-
-                #pixels = grid.get("pixels")
-                #lines = grid.get("lines")
-                #pixel_width = grid.get("pixel_width (nm)")
-                #pixel_height = grid.get("pixel_height (nm)")
-                #aspect_ratio = lines / pixels
-
-                # Update the fields in the GUI
-                #[self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
-
-            case "piezo_range":
-                piezo_range = parameters
-                
-                piezo_roi = self.gui.piezo_roi
-                try: self.gui.image_view.view.removeItem(piezo_roi)
-                except: pass
-                
-                piezo_range_nm = [piezo_range.get("x_range (nm)"), piezo_range.get("y_range (nm)")]
-                piezo_lower_left_nm = [piezo_range.get("x_min (nm)"), piezo_range.get("y_min (nm)")]
-                piezo_roi.setSize(piezo_range_nm, [0, 0], [0, 0])
-                piezo_roi.setPos(piezo_lower_left_nm)
-                
-                # Add the frame to the ImageView
-                if self.status["view"] == "nanonis": self.gui.image_view.addItem(piezo_roi)
-            
-            case "scan_metadata":
-                scan_metadata = parameters
-
-                # Refresh the recorded channels
-                if hasattr(self, "channels"): channels_old = self.channels
-                else: channels_old = {}
-                self.channels = scan_metadata.get("channel_dict", {})
-                
-                # Update the channels combobox with the channels that are being recorded if there is a change
-                if self.channels == channels_old:
-                    pass
-                else:
-                    self.gui.comboboxes["channels"].renewItems(list(self.channels.keys()))
-                    self.gui.comboboxes["channels"].selectItem("Z (m)")
-                    self.update_processing_flags()
-            
-            case "lockin":
-                for i, mod_dict in enumerate([parameters.get("modulator_1"), parameters.get("modulator_2")]):
-                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi"], [mod_dict.get("frequency (Hz)"), mod_dict.get("amplitude (mV)"), mod_dict.get("phase (deg)")])]
-
-            case _:
-                pass
-        
         return
 
     @QtCore.pyqtSlot(np.ndarray)
@@ -742,39 +420,6 @@ class Scantelligent(QtCore.QObject):
         # Print HTML text (QTextEdit.append will render it as rich text).
         print(final, flush = True)
         return
-
-    def get_next_indexed_filename(self, folder_path, base_name, extension) -> str:
-        # Pattern to match files with the base name and exactly 3 digits for the index
-        # \d{3} matches exactly three digits
-        pattern = rf"^{re.escape(base_name)}_(\d{{3}}){re.escape(extension)}$"
-        
-        # List all files in the directory
-        try:
-            files = os.listdir(folder_path)
-        except FileNotFoundError:
-            # If the folder doesn't exist, the first file will be index 000
-            return f"{base_name}_000{extension}"
-
-        matching_indices = []
-        for filename in files:
-            match = re.match(pattern, filename)
-            if match:
-                # Extract the index and convert to int (int() handles leading zeros automatically)
-                index = int(match.group(1))
-                matching_indices.append(index)
-
-        if matching_indices:
-            # If files were found, find the highest index
-            max_index = max(matching_indices)
-            next_index = max_index + 1
-        else:
-            # If no matching files were found, start with index 0
-            next_index = 0
-            
-        # Format the next index to be a 3-digit string with leading zeros if necessary
-        formatted_index = f"{next_index:03d}"
-        
-        return f"{base_name}_{formatted_index}{extension}"
 
     def populate_completer(self) -> None:
         # Populate the command input completer with all attributes and methods of self and self.gui
@@ -1095,51 +740,7 @@ class Scantelligent(QtCore.QObject):
 
 
 
-    # Getting, setting, loading parameters. To be deprecated after completion of the Parameters class
-    def get(self, parameter_type: str = "frame") -> None:
-        match parameter_type:
-
-            case "frame":
-                self.nanonis.frame_update()
-
-            case "grid":
-                self.nanonis.grid_update()
-
-            case "speeds":
-                self.nanonis.frame_update()
-
-            case "gains":
-                self.nanonis.frame_update()
-            
-            case _:
-                pass
-
-        return
-
-    def get_parameters(self) -> None:
-        le = self.gui.line_edits
-        # Request a parameter update from Nanonis, and wait to receive
-        # The received parameters are stored in self.user.scan_parameters[0] by default
-        self.nanonis.parameters_update(unlink = False)
-        self.nanonis.frame_update(unlink = False)
-        self.nanonis.tip_update(unlink = True)
-        sleep(.2)
-        scan_parameters = self.user.scan_parameters[0]
-        
-        # Enter the scan parameters into the fields        
-        for key, value in scan_parameters.items():
-            match key:
-                case "V_nanonis (V)": le["V_nanonis"].setText(f"{value:.2f} V")
-                case "V_mla (V)": le["V_mla"].setText(f"{value:.2f} V")
-                case "I_fb (pA)": le["I_fb"].setText(f"{value:.0f} pA")
-                case "p_gain (pm)": le["p_gain"].setText(f"{value:.0f} pm")
-                case "t_const (us)": le["t_const"].setText(f"{value:.0f} us")
-                case "v_fwd (nm/s)": le["v_fwd"].setText(f"{value:.1f} nm/s")
-                case "v_bwd (nm/s)": le["v_bwd"].setText(f"{value:.1f} nm/s")
-                case _: pass
-        
-        return
-
+    # Getting, setting, loading parameters. To be deprecated after completion of the ParameterManager class
     def set_parameters(self) -> None:
         # Update Nanonis according to the parameters that were set in the GUI
         s_p = self.user.scan_parameters[0]
@@ -1506,7 +1107,7 @@ class Scantelligent(QtCore.QObject):
         self.status["experiment"].update({"name": experiment_name})
         
         if "session_path" in self.paths.keys():
-            self.paths.update({"experiment_filename": self.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
+            self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
             self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
         else:
             return

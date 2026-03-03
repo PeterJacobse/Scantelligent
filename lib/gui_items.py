@@ -67,8 +67,12 @@ class PJPushButton(QtWidgets.QPushButton):
     A QPushButton with extra method changeToolTip
     """
     def __init__(self, *args, **kwargs):
+        tooltip = kwargs.pop("tooltip", None)
         super().__init__(*args, **kwargs)
-    
+
+        if isinstance(tooltip, str): self.setToolTip(tooltip)
+
+
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
         Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
@@ -479,28 +483,42 @@ class PhysicalLineEdit(QtWidgets.QLineEdit):
         pos = self.cursorPosition() - 1 # Cursor position
         if pos < 0: return
 
+        old_pos = pos
+        new_pos = pos
+        
+        for iteration in range(10):
+            new_pos = self.update_number_at_pos(old_pos, new_pos, delta)
+            if isinstance(new_pos, bool): break
+            elif new_pos < 0: break
+        
+    def update_number_at_pos(self, old_pos: int = 0, new_pos: int = 0, delta = 1) -> bool | int:
         txt = self.text()
-        text_pos = txt[pos] # Text at the cursor position
-        if not text_pos.isnumeric(): return # Only continue if the character at the cursor position is an integer
+        text_pos = txt[new_pos] # Text at the cursor position
+        if text_pos == ".": return new_pos + 1
+        elif not text_pos.isnumeric(): return False # Only continue if the character at the cursor position is an integer
         number = int(text_pos) # Integer at the cursor position
 
-        if delta > 0: # Scroll down           
+        if delta > 0: # Scroll down
             new_number = number + 1
             if new_number > 9: new_number = 0
-            
-            new_txt = txt[:pos] + str(new_number) + txt[pos + 1:]
-            self.setText(new_txt)
-            self.setCursorPosition(pos + 1)
-            
-        else:
+        else: # Scroll up
             new_number = number - 1
             if new_number < 0: new_number = 9
             
-            new_txt = txt[:pos] + str(new_number) + txt[pos + 1:]
+        new_txt = txt[:new_pos] + str(new_number) + txt[new_pos + 1:]
+        if new_txt[0] == 0: # Delete leading zero if it arises
+            new_txt = new_txt[1:]
+            self.setCursorPosition(old_pos)
+        else:
             self.setText(new_txt)
-            self.setCursorPosition(pos + 1)
+            self.setCursorPosition(old_pos + 1)
 
-        return
+        if delta > 0 and new_number == 0: # Roll over to the next digit
+            return new_pos - 1
+        if delta < 0 and new_number == 9: # Roll over to the next digit
+            return new_pos - 1
+
+        return True
 
 
 
@@ -590,13 +608,14 @@ class PJSlider(QtWidgets.QSlider):
     """
     A QSlider with extra method changeToolTip
     """
-    def __init__(self, parent = None, orientation: str = "h"):
+    def __init__(self, parent = None, orientation: str = "h", tooltip: str = ""):
         super().__init__(parent)
         if orientation == "h":
             self.setOrientation(QtCore.Qt.Orientation.Horizontal)
         else:
             self.setOrientation(QtCore.Qt.Orientation.Vertical)
-    
+        if isinstance(tooltip, str): self.setToolTip(tooltip)
+
     def changeToolTip(self, text: str, line: int = 0) -> None:
         """
         Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
@@ -622,31 +641,41 @@ class PJSlider(QtWidgets.QSlider):
 
 
 
-class PJSliderLineEdit(QtWidgets.QWidget):
+class SliderLineEdit(QtWidgets.QWidget):
     """
     A custom widget combining a QSlider and a QLineEdit, linked together.
     """
     valueChanged = QtCore.pyqtSignal(int)
 
-    def __init__(self, parent = None, min_val = -180, max_val = 180, initial_val = 0, max_width = 150, unit = ""):
+    def __init__(self, parent = None, tooltip: str = "", limits: list = [-180, 180], initial_val: float = 0, digits: int = 0, max_width = 150, unit = None, orientation: str = "h", minmax_buttons: bool = False):
         super().__init__(parent)
-        
+        [self.min_val, self.max_val] = limits
+
         # 1: Create the widgets
-        self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.line_edit = PhysicalLineEdit(max_width = max_width, unit = unit)
+        self.slider = PJSlider(orientation = orientation, tooltip = tooltip)
+        self.line_edit = PhysicalLineEdit(max_width = max_width, unit = unit, limits = limits, digits = digits, tooltip = tooltip)
+
+        if minmax_buttons:
+            self.min_button = PJPushButton(tooltip = "set slider to minimum")
+            self.max_button = PJPushButton(tooltip = "set slider to maximum")
 
         # 2: Configure widgets
-        self.slider.setRange(min_val, max_val)
-        self.slider.setValue(initial_val)
-        
-        # Ensure only integer values within range can be typed in the line edit
-        self.line_edit.setValidator(QtGui.QIntValidator(min_val, max_val))
-        self.line_edit.setText(str(initial_val))
+        self.slider.setRange(self.min_val, self.max_val)
+        [widget.setValue(initial_val) for widget in [self.slider, self.line_edit]]
 
         # 3: Set up the layout
-        self.widget_layout = QtWidgets.QHBoxLayout()
+        if orientation == "h": self.widget_layout = QtWidgets.QHBoxLayout()
+        else: self.widget_layout = QtWidgets.QVBoxLayout()
+        
+        if minmax_buttons:
+            if orientation == "v": self.widget_layout.addWidget(self.max_button)
+            else: self.widget_layout.addWidget(self.min_button)
         self.widget_layout.addWidget(self.slider)
         self.widget_layout.addWidget(self.line_edit)
+        if minmax_buttons:
+            if orientation == "v": self.widget_layout.addWidget(self.min_button)
+            else: self.widget_layout.addWidget(self.max_button)
+        
         # Remove extra margins from the layout
         self.widget_layout.setContentsMargins(0, 0, 0, 0) 
         self.setLayout(self.widget_layout)
@@ -654,14 +683,20 @@ class PJSliderLineEdit(QtWidgets.QWidget):
         # 4: Connect signals and slots
         self.slider.valueChanged.connect(self._update_line_edit)
         self.line_edit.editingFinished.connect(self._update_slider)
-        
+
+        if minmax_buttons:
+            self.min_button.clicked.connect(lambda: self.setValue(self.min_val))
+            self.max_button.clicked.connect(lambda: self.setValue(self.max_val))
+
         # Connect to the custom signal
-        self.slider.valueChanged.connect(lambda: self.valueChanged.emit(self.value()))
-        self.line_edit.editingFinished.connect(lambda: self.valueChanged.emit(self.value()))
+        self.slider.valueChanged.connect(lambda: self.valueChanged.emit(self.getValue()))
+        self.line_edit.editingFinished.connect(lambda: self.valueChanged.emit(self.getValue()))
+
+
 
     def _update_line_edit(self, value):
         self.line_edit.blockSignals(True) 
-        self.line_edit.setText(f"{value} deg")
+        self.line_edit.setValue(value)
         self.line_edit.blockSignals(False)
 
     def _update_slider(self):
@@ -678,18 +713,20 @@ class PJSliderLineEdit(QtWidgets.QWidget):
             self.slider.blockSignals(False)
 
             self.line_edit.blockSignals(True) 
-            self.line_edit.setText(f"{value} deg")
+            self.line_edit.setValue(value)
             self.line_edit.blockSignals(False)
         except ValueError:
             # Handle empty or invalid input by resetting to the current slider value
             self.line_edit.setText(str(self.slider.value()))
 
-    def value(self):
+    def getValue(self):
         """Returns the current integer value of the combined widget."""
         return self.slider.value()
     
     def setValue(self, value):
         """Sets the value of the combined widget programmatically."""
+        if value < self.min_val: value = self.min_val
+        elif value > self.max_val: value = self.max_val
         self.slider.setValue(value)
 
     def changeToolTip(self, text: str, line: int = 0) -> None:
@@ -739,7 +776,7 @@ class PJImageView(pg.ImageView):
 
 
 
-class PhaseSlider(PJSliderLineEdit):
+class PhaseSlider(SliderLineEdit):
     """
     A slider line edit with buttons for controlling a phase
     """
@@ -924,23 +961,6 @@ class GUIItems:
         console.setToolTip(tooltip)
         
         return console
-
-    def make_slider_line_edit(self, name: str = "", tooltip: str = "") -> PJSliderLineEdit:
-        slider_line_edit = PJSliderLineEdit()
-        slider_line_edit.setObjectName(name)
-        slider_line_edit.setToolTip(tooltip)
-        
-        return slider_line_edit
-
-    def make_slider(self, name: str = "", tooltip: str = "", orientation: str = "h") -> PJSlider:
-        slider = PJSlider(orientation = orientation)
-        slider.setObjectName(name)
-        slider.setToolTip(tooltip)
-        slider.setMinimum(-10)
-        slider.setMaximum(10)
-        slider.setValue(10)
-        
-        return slider
 
     def make_phase_slider(self, name: str = "", tooltip: str = "", unit: str = "deg", phase_0_icon = None, phase_180_icon = None) -> PhaseSlider:
         phase_slider = PhaseSlider(unit = unit, phase_0_icon = phase_0_icon, phase_180_icon = phase_180_icon)

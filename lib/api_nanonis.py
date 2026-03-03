@@ -71,6 +71,8 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             (frame, error) = self.frame_update(update_new_frame = True) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
             if error: raise Exception(error)
+            (gains, error) = self.gains_update() # Sends gain parameters with "dict_name": "gains"
+            if error: raise Exception(error)
             (parameters, error) = self.parameters_update() # Sends scan parameters like voltage, current, feedback and scan speed with "dict_name": "scan_parameters"
             if error: raise Exception(error)
             (grid, error) = self.grid_update() # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid"
@@ -120,12 +122,6 @@ class NanonisAPI(QtCore.QObject):
         self.message.emit(message, message_type)
         return
 
-
-
-    def echo_data(self) -> None:
-
-        self.data_array.emit(np.array(np.random.random((15, 4))))
-        return
 
 
     # 'update' methods that can only read and not write
@@ -515,7 +511,6 @@ class NanonisAPI(QtCore.QObject):
         gains = {}
         error = False
         nhw = self.nanonis_hardware
-        new_parameters = {}
 
         # Set up the TCP connection and get the frame
         try:
@@ -533,7 +528,7 @@ class NanonisAPI(QtCore.QObject):
             if p_gain_pm: gains_dict.update({"p_gain (pm)": p_gain_pm})
             if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
             if p_gain_pm or t_const_us: nhw.set_gains(gains_dict)
-        
+
             gains.update({"dict_name": "gains"})
             self.parameters.emit(gains)
         

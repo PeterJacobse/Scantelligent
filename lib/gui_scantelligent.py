@@ -1,7 +1,7 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from . import GUIItems, PJComboBox, PhysicalLineEdit, PJGroupBox, PJTargetItem
+from . import GUIItems, PJComboBox, PhysicalLineEdit, PJGroupBox, PJTargetItem, SliderLineEdit, PJSlider
 
 
 
@@ -42,6 +42,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
         self.tip_slider = self.make_tip_slider()
+        self.demod_audio_sliders = self.make_demod_audio_sliders()
         self.shortcuts = self.make_shortcuts()
         self.dialogs = self.make_dialogs()
                 
@@ -313,7 +314,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "p_gain": PhysicalLineEdit(tooltip = "Proportional gain\n(Ctrl + P) to set", unit = "pm", digits = 0),
             "t_const": PhysicalLineEdit(tooltip = "Time constant\n(Ctrl + P) to set", unit = "us", digits = 0),
-            "i_gain": PhysicalLineEdit(tooltip = "Integral gain\n(Ctrl + P) to set"),
+            "i_gain": PhysicalLineEdit(tooltip = "Integral gain\n(Ctrl + P) to set", unit = "nm/s", digits = 0),
             
             "v_fwd": PhysicalLineEdit(tooltip = "Tip forward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
             "v_bwd": PhysicalLineEdit(tooltip = "Tip backward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
@@ -494,7 +495,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "modulators": make_layout("g"),
             "mod_set_get": make_layout("h"),
-            "demodulators": make_layout("g"),
+            "demodulators": make_layout("h"),
+            "demod_sliders": make_layout("h"),
 
             "background_buttons": make_layout("h"),
             "matrix_processing": make_layout("g"),
@@ -552,8 +554,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return (plot_widget, graphs)
 
     def make_widgets(self) -> dict:
-        layouts = self.layouts
-        make_sle = self.gui_items.make_slider_line_edit
         QWgt = QtWidgets.QWidget
         
         widgets = {
@@ -572,9 +572,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "experiment": QWgt(),
             "lockins": QWgt(),
         }
+
         
-        self.coarse_control_widgets = [widgets[name] for name in ["coarse_actions", "arrows"]]     
-        self.phase_slider = make_sle("", "Set complex phase phi in deg\n(= multiplication by exp(i * pi * phi rad / (180 deg)))")
+        self.phase_slider = SliderLineEdit(tooltip = "Set complex phase phi in deg\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", orientation = "h")
         
         return widgets
 
@@ -596,13 +596,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return consoles
 
-    def make_tip_slider(self) -> QtWidgets.QSlider:
-        make_slider = self.gui_items.make_slider
-        
-        tip_slider = make_slider("", "Tip height (nm)", orientation = "v")
-        tip_slider.setEnabled(False)
-        
+    def make_tip_slider(self) -> PJSlider:
+        tip_slider = PJSlider(tooltip = "Tip height (nm)", orientation = "v")        
         return tip_slider
+
+    def make_demod_audio_sliders(self) -> dict:
+        demod_audio_sliders = {}
+        
+        for harmonic in range(1, 20):
+            sle = SliderLineEdit(tooltip = "relative volume of harmonic {i}", orientation = "v", limits = [0, 100], initial_val = 100, digits = 0, unit = "%", minmax_buttons = True)
+            sle.min_button.setIcon(self.icons.get("0"))
+            sle.max_button.setIcon(self.icons.get("1"))
+            demod_audio_sliders.update({f"f{harmonic}": sle})
+
+        return demod_audio_sliders
 
     def make_shortcuts(self) -> dict:
         QKey = QtCore.Qt.Key
@@ -756,6 +763,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
         [layouts["modulators"].addWidget(widget, int(i / 4), i % 4) for i, widget in enumerate(self.modulator_widgets)]
         layouts["modulators"].addLayout(layouts["mod_set_get"], 3, 0, 1, 4)
+        [layouts["demod_sliders"].addWidget(self.demod_audio_sliders[f"f{i}"]) for i in range(1, 8)]
+        layouts["demodulators"].addLayout(layouts["demod_sliders"])
         
         # Image processing                
         cn_layout = layouts["channel_navigation"]

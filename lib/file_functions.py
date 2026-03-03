@@ -149,6 +149,39 @@ class FileFunctions():
 
         return numbers
 
+    def get_next_indexed_filename(self, folder_path, base_name, extension) -> str:
+        # Pattern to match files with the base name and exactly 3 digits for the index
+        # \d{3} matches exactly three digits
+        pattern = rf"^{re.escape(base_name)}_(\d{{3}}){re.escape(extension)}$"
+        
+        # List all files in the directory
+        try:
+            files = os.listdir(folder_path)
+        except FileNotFoundError:
+            # If the folder doesn't exist, the first file will be index 000
+            return f"{base_name}_000{extension}"
+
+        matching_indices = []
+        for filename in files:
+            match = re.match(pattern, filename)
+            if match:
+                # Extract the index and convert to int (int() handles leading zeros automatically)
+                index = int(match.group(1))
+                matching_indices.append(index)
+
+        if matching_indices:
+            # If files were found, find the highest index
+            max_index = max(matching_indices)
+            next_index = max_index + 1
+        else:
+            # If no matching files were found, start with index 0
+            next_index = 0
+            
+        # Format the next index to be a 3-digit string with leading zeros if necessary
+        formatted_index = f"{next_index:03d}"
+        
+        return f"{base_name}_{formatted_index}{extension}"
+
 
 
     # To be deprecated
@@ -706,8 +739,6 @@ class FileFunctions():
             error = e
         
         return (new_files_dict, error)
-
-
 
     def read_files(self, directory: str) -> tuple:
         error = False
