@@ -343,9 +343,9 @@ class PJRadioButton(QtWidgets.QRadioButton):
 
 
 
-class PJLineEdit(QtWidgets.QLineEdit):
+class PhysicalLineEdit(QtWidgets.QLineEdit):
     """
-    A QLineEdit with extra method changeToolTip, and which adds a unit after editing is finished
+    A QLineEdit with capabilities to efficiently add units, extract and set values
     """
     def __init__(self, parent = None, **kwargs):
         self.value = kwargs.pop("value", None)
@@ -403,51 +403,26 @@ class PJLineEdit(QtWidgets.QLineEdit):
         return
 
     def setDigits(self, digits: int) -> None:
-        self.digits = digits
+        if isinstance(digits, int): self.digits = digits
         return
 
     def setLimits(self, limits: list) -> None:
-        self.limits = limits
+        if isinstance(limits, list): self.limits = limits
         return
 
     def setUnit(self, unit: str = "") -> None:
-        self.unit = unit
-        self.addUnit()
+        if isinstance(unit, str):
+            self.unit = unit
+            self.addUnit()
         return
 
     def addUnit(self) -> None:
+        number = self.getValue()
+        
         self.blockSignals(True)
-        entered_text = self.text()
-        
-        # Extract the numeric part of what was entered
-        regex_pattern = r"([-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?)(?:\s*[a-zA-Zμ°%]+)?"
-        number_matches = re.findall(regex_pattern, entered_text)
-        if isinstance(self.digits, int) and self.digits < 1: numbers = [int(x) for x in number_matches]
-        else: numbers = [float(x) for x in number_matches]
-        
-        if len(numbers) > 0:
-            number = numbers[0]
-            
-            # Apply limits in case the number is too big or small
-            if isinstance(self.limits, list):
-                if number < self.limits[0]: number = self.limits[0]
-                if number > self.limits[1]: number = self.limits[1]
-
-            # Add the unit to the number
-            if isinstance(self.digits, int):
-                number = round(number, self.digits)
-            if isinstance(self.digits, int) and self.digits < 1:
-                number = int(number)
-            
-            if isinstance(self.unit, str):
-                self.setText(f"{number} {self.unit}")
-            else:
-                self.setText(f"{number}")
-        else:
-            self.setText("")
-        
+        if isinstance(self.unit, str): self.setText(f"{number} {self.unit}")
+        else: self.setText(f"{number}")
         self.blockSignals(False)
-        
         return
 
     def getValue(self) -> float | str:
@@ -479,13 +454,13 @@ class PJLineEdit(QtWidgets.QLineEdit):
         return entered_text
 
     def setValue(self, value) -> None:
+        # Method for programatically setting a value or str
         if isinstance(value, int) or isinstance(value, float):
             number = value
 
             if isinstance(self.digits, int):
                 number = round(number, self.digits)
-            if isinstance(self.digits, int) and self.digits < 1:
-                number = int(number)
+                if self.digits < 1: number = int(number)
 
             if isinstance(self.unit, str):
                 self.setText(f"{number} {self.unit}")
@@ -494,23 +469,22 @@ class PJLineEdit(QtWidgets.QLineEdit):
         
         else:
             self.setText(f"{value}")
-
         return
 
     def wheelEvent(self, event) -> None:
-        delta = event.angleDelta().y()
-        
+        delta = event.angleDelta().y() # Scroll direction
+
         if not self.hasFocus(): return
-        
-        if delta > 0:
-            pos = self.cursorPosition() - 1
-            if pos < 0: return
 
-            txt = self.text()
-            text_pos = txt[pos]
-            if not text_pos.isnumeric(): return
+        pos = self.cursorPosition() - 1 # Cursor position
+        if pos < 0: return
 
-            number = int(text_pos)
+        txt = self.text()
+        text_pos = txt[pos] # Text at the cursor position
+        if not text_pos.isnumeric(): return # Only continue if the character at the cursor position is an integer
+        number = int(text_pos) # Integer at the cursor position
+
+        if delta > 0: # Scroll down           
             new_number = number + 1
             if new_number > 9: new_number = 0
             
@@ -519,14 +493,6 @@ class PJLineEdit(QtWidgets.QLineEdit):
             self.setCursorPosition(pos + 1)
             
         else:
-            pos = self.cursorPosition() - 1
-            if pos < 0: return
-
-            txt = self.text()
-            text_pos = txt[pos]
-            if not text_pos.isnumeric(): return
-
-            number = int(text_pos)
             new_number = number - 1
             if new_number < 0: new_number = 9
             
@@ -667,7 +633,7 @@ class PJSliderLineEdit(QtWidgets.QWidget):
         
         # 1: Create the widgets
         self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.line_edit = PJLineEdit(max_width = max_width, unit = unit)
+        self.line_edit = PhysicalLineEdit(max_width = max_width, unit = unit)
 
         # 2: Configure widgets
         self.slider.setRange(min_val, max_val)
@@ -811,6 +777,8 @@ class PhaseSlider(PJSliderLineEdit):
 
 
 
+
+
 class StreamRedirector(QtCore.QObject):
     output_written = QtCore.pyqtSignal(str)
 
@@ -841,6 +809,8 @@ class StreamRedirector(QtCore.QObject):
 
 
 
+# Class for making the above widgets and setting their defaults simultaneously.
+# May be deprecated by simply setting the defaults in the widgets themselves
 class GUIItems:
     def __init__(self):
         pass
@@ -924,15 +894,6 @@ class GUIItems:
         if len(items) > 0: box.addItems(items)
         
         return box
-
-    def make_line_edit(self, value: str = "", tooltip: str = "", unit = None, limits = None, number_type: str = "float") -> PJLineEdit:
-        line_edit = PJLineEdit(unit = unit, limits = limits, number_type = number_type)
-        line_edit.setObjectName(value)
-        line_edit.setToolTip(tooltip)
-        line_edit.setText(value)
-        line_edit.setStyleSheet("QLineEdit{ background-color: #101010 }")
-
-        return line_edit
 
     def make_progress_bar(self, name: str = "", tooltip: str = "") -> PJProgressBar:
         bar = PJProgressBar()

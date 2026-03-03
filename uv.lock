@@ -758,6 +758,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pysoundio"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/23/414701a4677fddc62b05334b40ae0df5647a76346fdcee4876e499a5450b/pysoundio-2.0.0.tar.gz", hash = "sha256:58fa798d141b6a4e43b2b4cc35d3d9335ad2eda79706f9a9e4bac73418b029d6", size = 617853, upload-time = "2021-02-26T18:39:35.629Z" }
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -874,6 +883,7 @@ dependencies = [
     { name = "pymeasure" },
     { name = "pyqt6" },
     { name = "pyqtgraph" },
+    { name = "pysoundio" },
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "scopefoundry" },
@@ -891,6 +901,7 @@ requires-dist = [
     { name = "pymeasure", specifier = ">=0.15.0" },
     { name = "pyqt6", specifier = ">=6.10.0" },
     { name = "pyqtgraph", specifier = ">=0.14.0" },
+    { name = "pysoundio", specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "scopefoundry", specifier = ">=2.2.1" },

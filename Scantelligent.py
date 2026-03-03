@@ -11,8 +11,12 @@ from datetime import datetime
 
 # Parameter management (getting from hardware, setting, loading from file and saving)
 class Parameters(QtCore.QObject):
+    
+    
     def __init__(self, parent):
+        super().__init__()
         self.scantelligent = parent # Reference to Scantelligent class
+        self.logprint = self.scantelligent.logprint
 
 
 
@@ -45,8 +49,10 @@ class Parameters(QtCore.QObject):
                 pass
 
         return
-    
+
     def set(self, parameter_type: str = "frame") -> None:
+        # It is noted that the nomenclature 'set' causes shadowing of the built-in 'set' method, but I decided to keep this regardless
+
         nanonis = self.scantelligent.nanonis
         gui = self.scantelligent.gui
         line_edits = gui.line_edits
@@ -108,6 +114,18 @@ class Parameters(QtCore.QObject):
         self.nanonis.parameters_update(s_p)
         """
 
+        return
+
+    @QtCore.pyqtSlot(dict)
+    def receive(self, parameters: dict) -> None:
+        dict_name = parameters.get("dict_name")
+        
+        match dict_name:
+            case "frame":
+                self.logprint("Scantelligent.parameters received a frame")
+            case _:
+                self.logprint("Scantelligent.parameters received something else")
+        
         return
 
 
@@ -330,7 +348,7 @@ class Scantelligent(QtCore.QObject):
         """
 
         self.logprint("Attempting to connect to hardware", message_type = "message")
-        
+        """
         # Keithley
         try:
             # Instantiate
@@ -357,6 +375,7 @@ class Scantelligent(QtCore.QObject):
         
         except Exception as e:
             self.logprint(f"Unable to connect to camera", "warning")
+        """
 
         # MLA
         self.status["mla"] = "offline"            
