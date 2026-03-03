@@ -8,7 +8,7 @@ from lib import NanonisAPI
 
 
 class Experiment(NanonisAPI):
-    def __init__(self, parent, *args, **kwargs):        
+    def __init__(self, parent, *args, **kwargs):
         # 'parent' is a reference to the Scantelligent app itself. It is passed by default when loading the experiment in Scantelligent
         super().__init__(parent, parent.hardware)
         self.line_edits = [parent.gui.line_edits[f"experiment_{i}"] for i in range(3)]
@@ -20,12 +20,12 @@ class Experiment(NanonisAPI):
         self.line_edits[0].changeToolTip("Coarse steps per iteration")
         self.line_edits[0].setDigits(0)
         self.line_edits[0].setLimits([0, 1000])
-        self.line_edits[0].setValue(10)        
+        self.line_edits[0].setValue(10)
         
         self.line_edits[1].changeToolTip("Number of iterations")
         self.line_edits[1].setDigits(0)
         self.line_edits[1].setLimits([0, 10000])
-        self.line_edits[1].setValue(200)        
+        self.line_edits[1].setValue(200)
 
         self.line_edits[2].changeToolTip("Modulators (0: off; 1: 1 on; 2: 2 on; 3: both on)")
         self.line_edits[2].setDigits(0)
@@ -67,7 +67,7 @@ class Experiment(NanonisAPI):
         [mod2_f, mod2_V] = [mod1_dict.get(quantity) for quantity in ["frequency (Hz)", "amplitude (mV)"]]
 
 
-        
+
         # Start the measurement loop
         for iter in range(exp_par[1]):
             self.check_abort()
