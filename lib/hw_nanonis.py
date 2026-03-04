@@ -48,9 +48,8 @@ class Conversions:
 
 
 class NanonisHardware:
-    def __init__(self, hardware: dict):
-        self.hardware = hardware
-        self.get_TCP_parameters() # Extract the TCP parameters from the provided hardware dict
+    def __init__(self, hw_config: dict):
+        self.configure(hw_config) # Extract the TCP parameters from the provided hardware dict
         self.conv = Conversions() # Load the conversions
         self.headers = self.prepare_headers() # Make the headers
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Make the socket object
@@ -60,7 +59,7 @@ class NanonisHardware:
 
 
 
-    def get_TCP_parameters(self) -> None:
+    def configure(self, hw_config) -> None:
         """
         Extract the IP, port and version from the provided hardware dict
         """
@@ -70,10 +69,13 @@ class NanonisHardware:
         self.version = False
         self.max_buf_size = 200
 
+        if "nanonis" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["nanonis"], dict): nn_config = hw_config.get("nanonis")
+        else: nn_config = hw_config
+
         ip_tags = ["tcp_ip", "ip", "ip_address", "nanonis_ip"]
         port_tags = ["tcp_port", "port", "nanonis_port"]
         version_tags = ["version", "nanonis_version", "version_number"]
-        for key, value in self.hardware.items():
+        for key, value in nn_config.items():
             if key.lower() in ip_tags: self.ip = value
             if key.lower() in port_tags: self.port = value
             if key.lower() in version_tags: self.version = value

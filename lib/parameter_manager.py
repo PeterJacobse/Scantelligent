@@ -14,10 +14,8 @@ class ParameterManager(QtCore.QObject):
     def get(self, parameter_type: str = "frame") -> None:
         nanonis = self.scantelligent.nanonis
         gui = self.scantelligent.gui
-        line_edits = gui.line_edits
 
         match parameter_type:
-
             case "feedback":
                 nanonis.parameters_update(unlink = True)
 
@@ -117,17 +115,38 @@ class ParameterManager(QtCore.QObject):
             case "nanonis_status":
                 status = parameters.get("status")
                 match status:
-                    case "running":
-                        sct.status.update({"nanonis": "running"})
-                        sct.update_buttons()
-                    case "idle":
-                        sct.status.update({"nanonis": "idle"})
-                        sct.update_buttons()
-                    case "offline":
-                        sct.status.update({"nanonis": "offline"})
-                        sct.update_buttons()
-                    case _:
-                        pass
+                    case "running": sct.status.update({"nanonis": "running"})
+                    case "online" | "idle": sct.status.update({"nanonis": "idle"})
+                    case "offline": sct.status.update({"nanonis": "offline"})
+                    case _: pass
+                sct.update_buttons()
+
+            case "keithley_status":
+                status = parameters.get("status")
+                match status:
+                    case "running": sct.status.update({"keithley": "running"})
+                    case "online" | "idle": sct.status.update({"keithley": "idle"})
+                    case "offline": sct.status.update({"keithley": "offline"})
+                    case _: pass
+                sct.update_buttons()
+
+            case "camera_status":
+                status = parameters.get("status")
+                match status:
+                    case "running": sct.status.update({"camera": "running"})
+                    case "online" | "idle": sct.status.update({"camera": "idle"})
+                    case "offline": sct.status.update({"camera": "offline"})
+                    case _: pass
+                sct.update_buttons()
+
+            case "mla_status":
+                status = parameters.get("status")
+                match status:
+                    case "running": sct.status.update({"mla": "running"})
+                    case "idle": sct.status.update({"mla": "idle"})
+                    case "offline": sct.status.update({"mla": "offline"})
+                    case _: pass
+                sct.update_buttons()
 
             case "session_path":
                 session_path = parameters.get("path")
@@ -259,7 +278,7 @@ class ParameterManager(QtCore.QObject):
                 i_gain_nm_per_s = p_gain_ms / (1000 * t_const_us)
 
                 # Update the fields in the GUI
-                [self.gui.line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "t_const", "i_gain"], [p_gain_ms, t_const_us, i_gain_nm_per_s])]
+                [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "t_const", "i_gain"], [p_gain_ms, t_const_us, i_gain_nm_per_s])]
 
             case "piezo_range":
                 piezo_range = parameters

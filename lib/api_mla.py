@@ -1,7 +1,9 @@
+import os, sys, time
 from PyQt6 import QtCore, QtWidgets
 import array as ar
 import numpy as np
-from pysoundio import PySoundIo, SoundIoFormatFloat32LE
+import importlib
+#from pysoundio import PySoundIo, SoundIoFormatFloat32LE
 
 
 
@@ -58,4 +60,70 @@ class AudioGenerator(QtCore.QObject):
         self.pysoundio.close()
         self.finished.emit()
         return
+
+
+
+class MLAAPI:
+    def __init__(self, mla_path):
+        self.mla_path = mla_path
+
+        sys.path.insert(0, mla_path)
+
+        from mlaapi import mla_globals # These packages should become available if the MLA path is correct
+        settings = mla_globals.read_config()
+
+        from mlaapi import mla_api
+        self.mla = mla_api.MLA(settings)
+        # self.mla.connect()
+        # self.set_defaults()
+        # self.mla.disconnect()
+
+
+
+    def set_defaults(self) -> None:
+        mla = self.mla
+
+        f1 = 400 # The base frequency is set to 400 Hz
+        mla.osc.set_downsampling(250) # Typical sample rate is far too high; we do not need to measure in the MHz range
+
+        # Set all analog inputs to the correct configuration (range = +-20 V)
+        mla.hardware.set_input_relay(1, se = True, nodamp = False, term = False, dc = True, gain = False, bypass = False, gain2 = False, event = True)
+        mla.hardware.set_input_relay(2, se = True, nodamp = False, term = False, dc = True, gain = False, bypass = False, gain2 = False, event = True)
+        mla.hardware.set_input_relay(3, se = True, nodamp = False, term = False, dc = True, gain = False, bypass = False, gain2 = False, event = True)
+        mla.hardware.set_input_relay(4, se = True, nodamp = False, term = False, dc = True, gain = False, bypass = False, gain2 = False, event = True)
+
+        # Set +-12 V range for all analog outputs
+        mla.hardware.set_output_relay(1, bypass = False, event = True)
+        mla.hardware.set_output_relay(2, bypass = False, event = True)
+
+        # Configure output ports
+        mask_1 = np.zeros(mla.lockin.nr_output_freq)
+        mla.lockin.set_output_mask(mask_1, port = 1)
+        mask_1[0] = 1
+
+        mask_2 = np.zeros(mla.lockin.nr_output_freq)
+        mla.lockin.set_output_mask(mask_2, port = 2)
+
+        # Use port 2 for drive waveform (not feedback)
+        mla.lockin.set_output_mode_lockin(two_channels = True)
+
+        # Configure lockin
+        phases = np.random.rand(mla.lockin.nr_output_freq)
+        mla.lockin.set_phases(phases, 'degree')
+
+        ampls = np.zeros(mla.lockin.nr_output_freq)
+        mla.lockin.set_amplitudes(ampls)
+
+        freqs_hz = np.arange(mla.lockin.nr_output_freq - 1) * f1 + f1
+        mla.lockin.set_frequencies(np.insert(freqs_hz, 0, f1))
+
+        input_ports= np.ones(mla.lockin.nr_output_freq - 1) + 1
+        mla.lockin.set_input_multiplexer(np.insert(input_ports, 0, 1))
+
+        mla.lockin.set_df(100)  # set df in Hz
+        return
+
+    def unwrap(self) -> object:
+        return self.mla
+
 

@@ -8,32 +8,37 @@ class CameraAPI(QtCore.QObject):
     frame_captured = QtCore.pyqtSignal(np.ndarray)
     finished = QtCore.pyqtSignal()
     message = QtCore.pyqtSignal(str, str)
+    parameters = QtCore.pyqtSignal(dict)
 
-    def __init__(self, config: dict = {}):
+    def __init__(self, hw_config: dict = {}):
         super().__init__()
         self.running = False
-        self.configure(config)
+        self.configure(hw_config)
         success = self.cap.isOpened()
         if not success: raise
         else: pass
 
-            
-    
-    def configure(self, config):
-        if "camera" in config.keys() and isinstance(config["camera"], dict):
-            config_data = config["camera"]
-        else:
-            config_data = config
-        
+
+
+    def configure(self, hw_config):
+        if "camera" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["camera"], dict): camera_config = hw_config.get("camera")
+        else: camera_config = hw_config
+
         tags = ["index", "argument", "camera_index", "camera_argument"]
-        for entry in config_data.keys():
+        for entry in camera_config.keys():
             if entry in tags:
-                index = config_data[entry]
+                index = camera_config[entry]
 
         try:
             self.cap = cv2.VideoCapture(index)
+            self.parameters.emit({"dict_name": "camera_status", "status": "running"})
         except:
-            pass
+            self.parameters.emit({"dict_name": "camera_status", "status": "offline"})
+            raise
+
+    def initialize(self):
+        self.parameters.emit({"dict_name": "camera_status", "status": "online"})
+        return
 
     def run(self):
         self.running = True
@@ -42,8 +47,10 @@ class CameraAPI(QtCore.QObject):
             self.message.emit(f"Error. Could not open camera.", "error")
             self.running = False
             self.finished.emit()
+            self.parameters.emit({"dict_name": "camera_status", "status": "offline"})
             return
         
+        self.parameters.emit({"dict_name": "camera_status", "status": "running"})        
         while self.running:
             (ret, frame) = self.cap.read()
             
@@ -64,6 +71,7 @@ class CameraAPI(QtCore.QObject):
         self.running = False
         
         self.finished.emit() # Notify the main thread that the work is done
+        self.parameters.emit({"dict_name": "camera_status", "status": "idle"})
         self.message.emit("Camera thread ended", "message")
         return
 

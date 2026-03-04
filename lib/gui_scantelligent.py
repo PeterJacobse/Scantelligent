@@ -1039,6 +1039,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
 
 
+    # Helper function to read parameters from the gui
+    def read(self, parameter_type: str = "frame") -> dict:
+        
+        return
+
+
+
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     logic_app = ScantelligentGUI()

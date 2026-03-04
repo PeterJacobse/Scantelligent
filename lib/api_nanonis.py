@@ -15,10 +15,11 @@ class NanonisAPI(QtCore.QObject):
     finished = QtCore.pyqtSignal() # Signal to indicate an experiment is finished
     data_array = QtCore.pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, parent, hardware: dict):
+    def __init__(self, parent, hw_config: dict):
         super().__init__()
         self.ureg = pint.UnitRegistry() # For dealing with quantities
-        self.nanonis_hardware = NanonisHardware(hardware = hardware)
+        self.nanonis_hardware = NanonisHardware(hw_config = hw_config)
+        # Note:
         # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
         # The exception is caught in Scantelligent rather than here
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
@@ -508,7 +509,7 @@ class NanonisAPI(QtCore.QObject):
         Function to get and set gains
         """
         # Initalize outputs
-        gains = {}
+        gains_dict = {}
         error = False
         nhw = self.nanonis_hardware
 
@@ -529,14 +530,14 @@ class NanonisAPI(QtCore.QObject):
             if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
             if p_gain_pm or t_const_us: nhw.set_gains(gains_dict)
 
-            gains.update({"dict_name": "gains"})
-            self.parameters.emit(gains)
+            gains_dict.update({"dict_name": "gains"})
+            self.parameters.emit(gains_dict)
         
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
 
-        return (gains, error)
+        return (gains_dict, error)
 
     def frame_update(self, parameters: dict = {}, unlink: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """

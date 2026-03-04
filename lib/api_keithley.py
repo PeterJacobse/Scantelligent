@@ -5,31 +5,32 @@ import numpy as np
 
 
 class KeithleyAPI(QtCore.QObject):
-    connection = QtCore.pyqtSignal(str, str)
+    parameters = QtCore.pyqtSignal(dict)
 
-    def __init__(self, hardware: dict = {}):
-        self.hardware = hardware
-        self.GPIB = self.get_GPIB_parameters()
+    def __init__(self, hw_config: dict = {}):
+        super().__init__()
+        self.GPIB = self.configure(hw_config)
         self.V_max = 200
         self.I_max = 1E-9
         self.buffer = 10
         try:
             self.keithleyhw = Keithley2400(self.GPIB)
             self.mode = self.keithleyhw.source_mode
-            print(self.mode)
-        except Exception as e: raise
+        except Exception as e:
+            raise
 
 
 
-    def get_GPIB_parameters(self) -> str:
+    def configure(self, hw_config) -> str:
         self.visa_no = False
         self.address = False
 
-        print(self.hardware)
+        if "keithley" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["keithley"], dict): keithley_config = hw_config.get("keithley")
+        else: keithley_config = hw_config
 
         visa_no_tags = ["keithley_visa_no", "visa_no", "visa_number", "board", "board_no", "board_number"]
         address_tags = ["keithley_address", "address", "device_address", "device_no", "device_number"]
-        for key, value in self.hardware.items():
+        for key, value in keithley_config.items():
             if key.lower() in visa_no_tags: self.visa_no = value
             if key.lower() in address_tags: self.address = value
                 
@@ -42,20 +43,25 @@ class KeithleyAPI(QtCore.QObject):
 
     def connect(self, terminal_side: str = "front") -> None:
         khw = self.keithleyhw
-        khw.reset()
         
-        match terminal_side:
-            case "front":
-                khw.use_front_terminals()
-            case "rear":
-                khw.use_rear_terminals()
-            case _:
-                pass
+        try:
+            khw.reset()
+            
+            match terminal_side:
+                case "front":
+                    khw.use_front_terminals()
+                case "rear":
+                    khw.use_rear_terminals()
+                case _:
+                    pass
 
-        khw.source_voltage = 0
-        khw.source_current = 0
+            khw.source_voltage = 0
+            khw.source_current = 0
 
-        khw.enable_source()
+            khw.enable_source()
+            self.parameters.emit({"dict_name": "keithley_status", "status": "running"})
+        except:
+            pass
 
         return
 
@@ -63,11 +69,12 @@ class KeithleyAPI(QtCore.QObject):
         khw = self.keithleyhw
 
         khw.shutdown()
+        self.parameters.emit({"dict_name": "keithley_status", "status": "offline"})
 
         return
 
     def initialize(self) -> None:
-        self.connection.emit("keithley", "online")
+        self.parameters.emit({"dict_name": "keithley_status", "status": "online"})
         return
 
     def set_I_max(self, I_max: float = 0) -> None:

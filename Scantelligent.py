@@ -1,9 +1,9 @@
-import os, sys, re, html, yaml, pint, atexit
+import os, sys, html, pint, atexit, importlib
 from PIL import Image
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI, ParameterManager
+from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI, ParameterManager, MLAAPI
 from time import sleep
 from datetime import datetime
 
@@ -22,7 +22,6 @@ class Scantelligent(QtCore.QObject):
         self.connect_console() # Initialize the console, the button-slot, and keystroke-slot connections
         self.connect_buttons()
     
-        self.hardware = self.config_init() # Read the hardware configuration and parameters from the configuration files in the sys folder
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
         self.gui.show()
         self.toggle_view("none")
@@ -95,7 +94,7 @@ class Scantelligent(QtCore.QObject):
         shortcuts = self.gui.shortcuts        
         
         # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", self.dis_reconnect], ["mla", self.connect_hardware], ["camera", self.connect_hardware], ["exit", self.exit],
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")], ["camera", self.connect_hardware], ["exit", self.exit],
                     ["oscillator", self.toggle_withdraw], ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.info_popup],
                     
                     # Experiment
@@ -156,70 +155,6 @@ class Scantelligent(QtCore.QObject):
         [self.gui.checkboxes[operation].clicked.connect(self.update_processing_flags) for operation in ["sobel", "gaussian", "normal", "fft", "laplace", "rot_trans"]]
 
         return
-  
-    def config_init(self) -> None:
-        hardware = {}
-        
-        # Read the config file to get the hardware configuration parameters
-        try:
-            with open(self.paths.get("config_file"), "r") as file:
-                config = yaml.safe_load(file)
-                try:
-                    scanalyzer_path = config["scanalyzer_path"]
-                    scanalyzer_exists = os.path.exists(scanalyzer_path)
-                    if scanalyzer_exists:
-                        self.paths["scanalyzer_path"] = scanalyzer_path
-                        self.logprint("Scanalyzer found and linked", message_type = "success")
-                    else:
-                        self.logprint("Warning: config file has a scanalyzer_path entry, but it doesn't point to an existing file.", message_type = "error")
-                except Exception as e:
-                    self.logprint("Warning: scanalyzer path could not be read. {e}", message_type = "error")
-                
-                try:
-                    nanonis_settings = config.get("nanonis")
-                    tcp_ip = nanonis_settings.get("tcp_ip", "127.0.0.1")
-                    tcp_port = nanonis_settings.get("tcp_port", 6501)
-                    version_number = nanonis_settings.get("version_number", 13520)
-
-                    camera_settings = config.get("camera")
-                    camera_argument = camera_settings.get("argument", 0)
-
-                    keithley_settings = config.get("keithley")
-                    keithley_visa_no = keithley_settings.get("visa_no", 0)
-                    keithley_address = keithley_settings.get("address", 0)
-
-                    hardware = {
-                        "nanonis_ip": tcp_ip,
-                        "nanonis_port": tcp_port,
-                        "nanonis_version": version_number,
-                        "camera_argument": camera_argument,
-                        "keithley_visa_no": keithley_visa_no,
-                        "keithley_address": keithley_address
-                    }
-                    self.logprint("I found the config.yml file and was able to set up a dictionary called 'hardware'", message_type = "success")
-                    self.logprint(f"[dict] hardware = {hardware}", message_type = "result")
-                    
-                except Exception as e:
-                    self.logprint("Error: could not retrieve the Nanonis TCP settings.", message_type = "error")
-        except Exception as e:
-            self.logprint(f"Error: problem loading config.yml: {e}", message_type = "error")
-        
-        # Read the scan parameters from the parameters file
-        try:
-            with open(self.paths.get("parameters_file"), "r") as file:
-                parameters = yaml.safe_load(file)
-        except Exception as e:
-            self.logprint(f"Error reading the parameters from the parameters.yml file. {e}")
-      
-        [self.gui.buttons[f"scan_parameters_{i}"].changeToolTip(f"Load scan parameter set {i} ({self.user.scan_parameters[i].get("name")})") for i in range(len(self.user.scan_parameters))]
-        
-        
-        
-        # Initialize the scan parameters in the gui as parameter set 0, until a connection to Nanonis is made
-        self.load_parameters_from_file("scan_parameters", index = 0)
-        self.load_parameters_from_file("tip_prep_parameters", index = 0)
-        
-        return hardware
 
     def connect_hardware(self) -> None:
         """
@@ -227,43 +162,79 @@ class Scantelligent(QtCore.QObject):
         """
 
         self.logprint("Attempting to connect to hardware", message_type = "message")
-        """
+
+        (hw_config, error) = self.file_functions.load_yaml(self.paths.get("config_file"))
+        if error:
+            self.logprint("Problem loading the hardware configurations from file")
+            return
+        self.hw_config = hw_config
+        
+        # Scanalyzer
+        scanalyzer_path = hw_config.get("scanalyzer_path")
+        if os.path.isfile(scanalyzer_path):
+            self.paths.update({"scanalyzer": scanalyzer_path})
+            self.logprint("Scanalyzer found and linked", message_type = "success")
+        else:
+            self.logprint("Warning: Scanalyzer path could not be read", message_type = "error")
+        
+        # MLA library
+        mla_config = hw_config.get("mla")
+        mla_path = mla_config.get("library_path")
+        if os.path.isdir(mla_path):
+            self.paths.update({"mla": mla_path})
+            sys.path.insert(0, self.paths.get("mla"))
+
+
+
         # Keithley
         try:
             # Instantiate
-            self.keithley = KeithleyAPI(hardware = self.hardware)
+            self.keithley = KeithleyAPI(hw_config = self.hw_config)
             
             # Set up signal-slot connections
             # Keithley -> Scantelligent
-            self.keithley.connection.connect(self.receive_connection_status)
+            self.keithley.parameters.connect(self.parameters.receive)
             
             # Get parameters from Keithley
-            self.keithley.initialize()
-            
-            self.logprint("Found the Keithley source meter and instantiated KeithleyHW as keithley", "success")        
+            self.keithley.initialize()            
+            self.logprint("Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
         except Exception as e:
-            self.logprint("Unable to connect to the Keithley source meter", "warning")
-        
+            self.logprint(f"Unable to connect to the Keithley source meter: {e}", "warning")
+
+
+
         # Camera
         try:
             # Instantiate
-            self.camera = CameraAPI({"argument": "rtsp://admin:CT108743@192.168.236.108"})
+            self.camera = CameraAPI(hw_config = self.hw_config)
             
-            # Set up signal-slot connections            
-            self.logprint("Found the camera and instantiated CameraHW as camera", "success")
-        
+            # Set up signal-slot connections
+            self.camera.parameters.connect(self.parameters.receive)
+            
+            # Initialize
+            self.camera.initialize()
+            self.logprint("Found the camera and instantiated CameraAPI as camera", "success")
         except Exception as e:
-            self.logprint(f"Unable to connect to camera", "warning")
-        """
+            self.logprint(f"Unable to connect to camera: {e}", "warning")
+
+
 
         # MLA
-        self.status["mla"] = "offline"            
-        self.logprint("Unable to connect to the MLA", "warning")
-        
-        # Nanonis
-        try:            
+        try:
             # Instantiate
-            self.nanonis = NanonisAPI(parent = self, hardware = self.hardware)
+            self.mla = MLAAPI(mla_path = mla_path).unwrap()
+
+            self.logprint("Found the MLA", "success")
+            self.status.update({"mla": "online"})
+        except Exception as e:
+            self.logprint(f"Unable to connect to the MLA: {e}", "warning")
+
+
+
+        # Nanonis
+        try:
+            # Instantiate
+            self.nanonis = NanonisAPI(parent = self, hw_config = self.hw_config)
             
             # Set up signal-slot connections
             # Scantelligent -> Nanonis
@@ -281,24 +252,51 @@ class Scantelligent(QtCore.QObject):
             
             self.logprint(f"Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")        
         except Exception as e:
-            self.logprint(f"Unable to connect to Nanonis", "error")
+            self.logprint(f"Unable to connect to Nanonis: {e}", "error")
         
         # Update the buttons in the gui and populate the autocomplete suggestions in the command input
-        self.update_buttons()
         self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
         self.populate_completer()
 
         return
 
-    def dis_reconnect(self) -> None:
-        if self.status["nanonis"] == "running":
-            try: self.nanonis.unlink()
-            except: pass
-        elif self.status["nanonis"] == "idle":
-            try: self.nanonis.link()
-            except: pass
-        else:
-            self.connect_hardware()
+    def dis_reconnect(self, target: str = "nanonis") -> None:
+        match target:
+            case "nanonis":
+                if self.status["nanonis"] == "running":
+                    try: self.nanonis.unlink()
+                    except: pass
+                elif self.status["nanonis"] == "idle" or self.status["nanonis"] == "online":
+                    try: self.nanonis.link()
+                    except: pass
+                else:
+                    self.connect_hardware()
+                return
+            
+            case "mla":
+                if self.status["mla"] == "running":
+                    try:
+                        self.mla.disconnect()
+                        self.status.update({"mla": "idle"})
+                        self.update_buttons()
+                    except:
+                        self.status.update({"mla": "offline"})
+                        self.update_buttons()
+                elif self.status["mla"] == "idle" or self.status["mla"] == "online":
+                    try:
+                        self.mla.connect()
+                        self.status.update({"mla": "running"})
+                        self.update_buttons()
+                    except:
+                        pass
+                else:
+                    self.connect_hardware()
+                return
+
+            
+            case _:
+                pass
+        
         return
 
 
@@ -428,12 +426,37 @@ class Scantelligent(QtCore.QObject):
         
         nanonis_attributes = []
         nanonis_hw_attributes = []
+        keithley_attributes = []
+        camera_attributes = []
+        mla_attributes = []
+        mla_analog_attributes = []
+        mla_osc_attributes = []
+        mla_lockin_attributes = []
+        user_attributes = []
+        parameters_attributes = []
+
         if hasattr(self, "nanonis"):
             nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
-            nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith("_")]
-        data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith("_")]
+            try:
+                nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith("_")]
+            except:
+                pass
+        if hasattr(self, "mla"):
+            mla_attributes = ["mla." + attr for attr in self.mla.__dict__ if not attr.startswith("_")]
+            try:
+                mla_lockin_attributes = ["mla.lockin." + attr for attr in self.mla.lockin.__dict__ if not attr.startswith("_")]
+                mla_osc_attributes = ["mla.osc." + attr for attr in self.mla.osc.__dict__ if not attr.startswith("_")]
+                mla_analog_attributes = ["mla.analog." + attr for attr in self.mla.analog.__dict__ if not attr.startswith("_")]
+            except:
+                pass
+        if hasattr(self, "parameters"): parameters_attributes = ["parameters." + attr for attr in self.parameters.__dict__ if not attr.startswith("_")]
+        if hasattr(self, "user"): user_attributes = ["user." + attr for attr in self.user.__dict__ if not attr.startswith("_")]
+        if hasattr(self, "data"): data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith("_")]
+        if hasattr(self, "file_functions"): file_function_attributes = ["file_functions." + attr for attr in self.file_functions.__dict__ if not attr.startswith("_")]
+        if hasattr(self, "keithley"): keithley_attributes = ["keithley." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
+        if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
         
-        [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes]]
+        [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes, file_function_attributes, parameters_attributes, user_attributes, mla_analog_attributes, mla_lockin_attributes, mla_osc_attributes, mla_attributes, keithley_attributes, camera_attributes]]
         completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
         completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
@@ -458,17 +481,18 @@ class Scantelligent(QtCore.QObject):
         return
 
     def update_buttons(self) -> None:
-        buttons = self.gui.buttons
         style_sheets = self.gui.style_sheets
         
-        keithley_button = buttons["keithley"]
-        cam_button = buttons["camera"]
-        mla_button = buttons["mla"]
-        nn_button = buttons["nanonis"]
+        keithley_button = self.gui.buttons["keithley"]
+        cam_button = self.gui.buttons["camera"]
+        mla_button = self.gui.buttons["mla"]
+        nn_button = self.gui.buttons["nanonis"]
+        scanalyzer_button = self.gui.buttons["scanalyzer"]
+        session_folder_button = self.gui.buttons["session_folder"]
         
         # Activate/deactivate and color buttons according to hardware status
         match self.status["keithley"]:
-            case "online":
+            case "online" | "idle":
                 keithley_button.changeToolTip("Keithley: idle")
                 keithley_button.setStyleSheet(style_sheets["connected"])
             case "running":
@@ -479,7 +503,7 @@ class Scantelligent(QtCore.QObject):
                 keithley_button.setStyleSheet(style_sheets["disconnected"])
         
         match self.status["camera"]:
-            case "online":
+            case "online" | "idle":
                 cam_button.changeToolTip("Camera: idle")
                 cam_button.setStyleSheet(style_sheets["connected"])
             case "running":
@@ -514,6 +538,14 @@ class Scantelligent(QtCore.QObject):
                 self.timer.blockSignals(True)
                 nn_button.setStyleSheet(style_sheets["disconnected"])
                 nn_button.changeToolTip("Nanonis: offline")
+
+        [button.setStyleSheet(style_sheets["disconnected"]) for button in [scanalyzer_button, session_folder_button]]
+        try:
+            if os.path.isfile(self.paths.get("scanalyzer")): scanalyzer_button.setStyleSheet(style_sheets["connected"])
+        except: pass
+        try:
+            if os.path.isdir(self.paths.get("session")): session_folder_button.setStyleSheet(style_sheets["connected"])
+        except: pass
 
         [button.update() for button in [keithley_button, cam_button, mla_button, nn_button]]
         return
@@ -720,6 +752,9 @@ class Scantelligent(QtCore.QObject):
             self.experiment.deleteLater()
         except: pass
         try:
+            self.mla.disconnect()
+        except: pass
+        try:
             if hasattr(self, "nanonis"): delattr(self, "nanonis")
         except: pass
         try:
@@ -851,7 +886,7 @@ class Scantelligent(QtCore.QObject):
         # Operations
         try: [flags.update({operation: checkboxes[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
         except: pass
-        phase = self.gui.phase_slider.value()
+        phase = self.gui.phase_slider.getValue()
         flags.update({"phase": phase})
 
         self.data.processing_flags.update(flags)
