@@ -548,11 +548,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return layouts
 
-    def make_image_view(self) -> pg.ImageView:
+    def make_image_view(self) -> STWidgets.ImageView:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
         plot_item = pg.PlotItem()
-        im_view = pg.ImageView(view = plot_item)
+        im_view = STWidgets.ImageView(view = plot_item)
         im_view.view.invertY(False)
         
         # Make a tip target item in the image_view
