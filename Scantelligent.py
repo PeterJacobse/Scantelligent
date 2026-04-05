@@ -4,7 +4,6 @@ import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
 from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI, ParameterManager, MLAAPI
-from time import sleep
 from datetime import datetime
 
 
@@ -1165,7 +1164,7 @@ class Scantelligent(QtCore.QObject):
             
             self.experiment.progress.connect(self.receive_progress)
             self.experiment.message.connect(self.receive_message)
-            self.experiment.parameters.connect(self.receive_parameters)
+            self.experiment.parameters.connect(self.parameters.receive)
             self.experiment.image.connect(self.receive_image)
             self.experiment.data_array.connect(self.receive_data)            
             

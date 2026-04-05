@@ -10,7 +10,7 @@ from lib import NanonisAPI
 class Experiment(NanonisAPI):
     def __init__(self, parent, *args, **kwargs):
         # 'parent' is a reference to the Scantelligent app itself. It is passed by default when loading the experiment in Scantelligent
-        super().__init__(parent, parent.hardware)
+        super().__init__(parent, parent.hw_config)
         self.line_edits = [parent.gui.line_edits[f"experiment_{i}"] for i in range(3)]
         self.direction_box = parent.gui.comboboxes["direction"]
         
