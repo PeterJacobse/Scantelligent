@@ -1,13 +1,12 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from . import GUIItems, PJComboBox, PhysicalLineEdit, PJGroupBox, PJTargetItem, SliderLineEdit, PJSlider
-from .st_widgets import STWidgets, rotate_icon, make_layout
+from . import STWidgets, rotate_icon, make_layout, make_line
 
 
 
 class ScantelligentGUI(QtWidgets.QMainWindow):
-    def __init__(self, icons_path):
+    def __init__(self):
         super().__init__()
         
         self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
@@ -24,11 +23,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             }
 
         # 1: Read icons from file.
-        self.icons_path = icons_path
-        self.get_icons()
+        self.icons = self.get_icons()
         
         # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
-        self.gui_items = GUIItems()
         self.labels = self.make_labels()
         self.buttons = self.make_buttons()
         (self.checkboxes, self.channel_checkboxes) = self.make_checkboxes()
@@ -46,6 +43,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.demod_audio_sliders = self.make_demod_audio_sliders()
         self.shortcuts = self.make_shortcuts()
         self.dialogs = self.make_dialogs()
+        (self.info_box, self.message_box) = self.make_boxes()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
         self.populate_layouts()
@@ -65,46 +63,60 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
 
     # 1: Read icons from file.
-    def get_icons(self):
-        icons_path = self.icons_path
-        icon_files = os.listdir(icons_path)
+    def get_icons(self) -> dict:
+        lib_folder = os.path.dirname(os.path.abspath(__file__))
+        project_folder = os.path.dirname(lib_folder)
+        sys_folder = os.path.join(project_folder, "sys")
+        splash_screen_path = os.path.join(sys_folder, "splash_screen.png")
+        icon_folder = os.path.join(project_folder, "icons")
+        icon_files = os.listdir(icon_folder)
         
-        self.icons = {}
+        self.paths = {
+            "scantelligent_folder": project_folder,
+            "lib_folder": lib_folder,
+            "sys_folder": sys_folder,
+            "icon_folder": icon_folder,
+            "splash_screen": splash_screen_path
+        }
+        
+        icons = {}
         for icon_file in icon_files:
             [icon_name, extension] = os.path.splitext(os.path.basename(icon_file))
             try:
-                if extension == ".png": self.icons.update({icon_name: QtGui.QIcon(os.path.join(icons_path, icon_file))})
+                if extension == ".png": icons.update({icon_name: QtGui.QIcon(os.path.join(icon_folder, icon_file))})
             except:
                 pass
+        
+        return icons
 
 
 
     # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
     def make_labels(self) -> dict:
-        make_label = self.gui_items.make_label
+        LB = STWidgets.Label
         
         labels = {
-            "session_folder": make_label("Session folder"),
-            "statistics": make_label("Statistics"),
-            "load_file": make_label("Load file:"),
-            "in_folder": make_label("in folder:"),
-            "number_of_files": make_label("which contains 1 sxm file"),
-            "channel_selected": make_label("Channel selected:"),
+            "session_folder": LB("Session folder"),
+            "statistics": LB("Statistics"),
+            "load_file": LB("Load file:"),
+            "in_folder": LB("in folder:"),
+            "number_of_files": LB("which contains 1 sxm file"),
+            "channel_selected": LB("Channel selected:"),
 
-            "frame": make_label("frame"),
-            "grid": make_label("grid"),
+            "frame": LB("frame"),
+            "grid": LB("grid"),
 
-            "scan_control": make_label("Scan channel / direction"),
-            "background_subtraction": make_label("Background subtraction"),
-            "width": make_label("Width (nm):"),
-            "show": make_label("Show", "Select a projection or toggle with (H)"),
-            "limits": make_label("Set limits", "Toggle the min and max limits with (-) and (=), respectively"),
-            "matrix_operations": make_label("Matrix operations"),
+            "scan_control": LB("Scan channel / direction"),
+            "background_subtraction": LB("Background subtraction"),
+            "width": LB("Width (nm):"),
+            "show": LB("Show", "Select a projection or toggle with (H)"),
+            "limits": LB("Set limits", "Toggle the min and max limits with (-) and (=), respectively"),
+            "matrix_operations": LB("Matrix operations"),
 
-            "z_steps": make_label("steps"),
-            "move_horizontally": make_label("< horizontal motion >", "In composite motion, horizontal motion\nis carried out between retract and advance\nSee 'horizontal'"),
-            "h_steps": make_label("steps in direction"),
-            "steps_and": make_label("steps, and")
+            "z_steps": LB("steps"),
+            "move_horizontally": LB("< horizontal motion >", "In composite motion, horizontal motion\nis carried out between retract and advance\nSee 'horizontal'"),
+            "h_steps": LB("steps in direction"),
+            "steps_and": LB("steps, and")
         }
         
         # Named groups
@@ -259,18 +271,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return buttons
 
     def make_checkboxes(self) -> tuple[dict, dict]:
-        make_checkbox = self.gui_items.make_checkbox
+        CB = STWidgets.CheckBox
         
         checkboxes = {
-            "withdraw": make_checkbox("", "Include withdrawing of the tip during a tip move"),
-            "retract": make_checkbox("", "Include retracting the tip during a tip move"),
-            "advance": make_checkbox("", "Include advancing the tip during a move"),
-            "approach": make_checkbox("", "End the tip move with an auto approach"),
+            "withdraw": CB(tooltip = "Include withdrawing of the tip during a tip move"),
+            "retract": CB(tooltip = "Include retracting the tip during a tip move"),
+            "advance": CB(tooltip = "Include advancing the tip during a move"),
+            "approach": CB(tooltip = "End the tip move with an auto approach"),
 
-            "composite_motion": make_checkbox("", "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
+            "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }
         
-        channel_checkboxes = {f"{index}": make_checkbox(f"{index}", f"channel {index}") for index in range(20)}
+        channel_checkboxes = {f"{index}": CB(tooltip = f"channel {index}") for index in range(20)}
         
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
@@ -412,10 +424,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"],
                                   buttons["nanonis_mod2"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"],
-                                  buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_V"], line_edits["mla_mod1_phi"]]
-        
-        # Aesthetics
-        [line_edits[name].setStyleSheet("QLineEdit{ background-color: #101010; }") for name in line_edits.keys()]
+                                  buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_V"], line_edits["mla_mod1_phi"]]        
         
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
@@ -540,15 +549,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return layouts
 
     def make_image_view(self) -> pg.ImageView:
-        make_image_view = self.gui_items.make_image_view
+        pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
-        image_view = make_image_view()
+        plot_item = pg.PlotItem()
+        im_view = pg.ImageView(view = plot_item)
+        im_view.view.invertY(False)
         
         # Make a tip target item in the image_view
-        self.tip_target = PJTargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = True)
-        image_view.view.addItem(self.tip_target)
+        self.tip_target = STWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = True)
+        im_view.view.addItem(self.tip_target)        
         
-        return image_view
+        return im_view
 
     def make_rois(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
         piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
@@ -591,17 +602,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "lockins": QWgt(),
         }
 
-        
-        self.phase_slider = SliderLineEdit(tooltip = "Set complex phase phi in deg\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", orientation = "h")
+        self.phase_slider = STWidgets.SliderLineEdit(tooltip = "Set complex phase phi in deg\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", orientation = "h")
         
         return widgets
 
-    def make_consoles(self) -> dict:
-        make_console = self.gui_items.make_console
-        
+    def make_consoles(self) -> dict:        
         consoles = {
-            "output": make_console("", "Output console"),
-            "input": make_console("", "Input console")
+            "output": STWidgets.Console(tooltip = "Output console"),
+            "input": STWidgets.Console(tooltip = "Input console")
         }
         
         consoles["output"].setReadOnly(True)
@@ -614,8 +622,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return consoles
 
-    def make_tip_slider(self) -> PJSlider:
-        tip_slider = PJSlider(tooltip = "Tip height (nm)", orientation = "v")        
+    def make_tip_slider(self) -> STWidgets.Slider:
+        tip_slider = STWidgets.Slider(tooltip = "Tip height (nm)", orientation = "v")        
         return tip_slider
 
     def make_demod_audio_sliders(self) -> dict:
@@ -671,6 +679,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_dialogs(self) -> dict:
         dialogs = {"parameters": QtWidgets.QInputDialog(), "info": QtWidgets.QInputDialog()}
         return dialogs
+
+    def make_boxes(self) -> tuple[QtWidgets.QMessageBox, QtWidgets.QMessageBox]:
+        info_box = QtWidgets.QMessageBox(self)
+        info_box.setWindowTitle("Info")
+        info_box.setText("Scanalyzer (2026)\nby Peter H. Jacobse\nRice University; Lawrence Berkeley National Lab")
+        info_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+        info_box.setWindowIcon(self.icons.get("i"))
+        
+        message_box = QtWidgets.QMessageBox(self)
+        message_box.setWindowTitle("Success")
+        message_box.setText("png file saved")
+        return (info_box, message_box)
 
 
 
@@ -744,7 +764,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         fg_layout = layouts["frame_grid"]
         fg_layout.addWidget(labels["frame"], 0, 0, 1, 2)
-        fg_layout.addWidget(self.gui_items.line_widget("h"), 1, 0, 1, 2)
+        fg_layout.addWidget(make_line("h", 1), 1, 0, 1, 2)
         fg_layout.addWidget(buttons["frame_aspect"], 2, 0)
         fg_layout.addWidget(line_edits["frame_height"], 2, 1)
         fg_layout.addWidget(line_edits["frame_width"], 3, 0)
@@ -757,7 +777,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         fg_layout.addWidget(buttons["set_frame_parameters"], 6, 1)
 
         fg_layout.addWidget(labels["grid"], 0, 2, 1, 2)
-        fg_layout.addWidget(self.gui_items.line_widget("h"), 1, 2, 1, 2)
+        fg_layout.addWidget(make_line("h", 1), 1, 2, 1, 2)
         fg_layout.addWidget(buttons["grid_aspect"], 2, 2)
         fg_layout.addWidget(line_edits["grid_lines"], 2, 3)
         fg_layout.addWidget(line_edits["grid_pixels"], 3, 2)
@@ -804,10 +824,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         ip_layout.addLayout(layouts["channel_navigation"])
         ip_layout.addWidget(labels["background_subtraction"])
         ip_layout.addLayout(layouts["background_buttons"])
-        ip_layout.addWidget(self.gui_items.line_widget("h", 1))
+        ip_layout.addWidget(make_line("h", 1))
         ip_layout.addWidget(labels["matrix_operations"])
         ip_layout.addLayout(p_layout)
-        ip_layout.addWidget(self.gui_items.line_widget("h", 1))
+        ip_layout.addWidget(make_line("h", 1))
         ip_layout.addWidget(labels["limits"])         
         ip_layout.addLayout(l_layout)
         
@@ -820,29 +840,29 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     # 4: Make widgets and groupboxes and set their layouts. Requires layouts.
     def make_groupboxes(self) -> dict:
-        make_groupbox = self.gui_items.make_groupbox
+        SGB = STWidgets.GroupBox
         layouts = self.layouts
         
         groupboxes = {
             # Connections
-            "connections": make_groupbox("Connections", "Connections to hardware (push to check/refresh)"),
+            "connections": SGB(title = "Connections", tooltip = "Connections to hardware (push to check/refresh)"),
             
             # Coarse
-            "coarse_control": make_groupbox("Coarse control", "Control the tip (use ctrl key to access these functions)"),
-            "coarse_vertical": make_groupbox("Vertical", "Vertical coarse motion"),
-            "coarse_horizontal": make_groupbox("Horizontal", "Vertical coarse motion"),
+            "coarse_control": SGB(title = "Coarse control", tooltip = "Control the tip (use ctrl key to access these functions)"),
+            "coarse_vertical": SGB(title = "Vertical", tooltip = "Vertical coarse motion"),
+            "coarse_horizontal": SGB(title = "Horizontal", tooltip = "Vertical coarse motion"),
 
-            "frame_grid": make_groupbox("Frame / grid", "Frame and grid parameters"),
-            "gains": make_groupbox("Feedback gains", "Feedback gains"),
-            "modulators": make_groupbox("Modulators", "Modulators"),
-            "demodulators": make_groupbox("Demodulators", "Demodulators"),
+            "frame_grid": SGB(title = "Frame / grid", tooltip = "Frame and grid parameters"),
+            "gains": SGB(title = "Feedback gains", tooltip = "Feedback gains"),
+            "modulators": SGB(title = "Modulators", tooltip = "Modulators"),
+            "demodulators": SGB(title = "Demodulators", tooltip = "Demodulators"),
 
-            "tip_prep": make_groupbox("Tip prep", "Tip preparation actions"),
-            "parameters": make_groupbox("Scan parameters", "Scan parameters"),
-            "image_processing": make_groupbox("Image processing", "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
-            "experiment": make_groupbox("Experiment", "Perform experiment"),
+            "tip_prep": SGB(title = "Tip prep", tooltip = "Tip preparation actions"),
+            "parameters": SGB(title = "Scan parameters", tooltip = "Scan parameters"),
+            "image_processing": SGB(title = "Image processing", tooltip = "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
+            "experiment": SGB(title = "Experiment", tooltip = "Perform experiment"),
             
-            "dummy": make_groupbox("Dummy", "Invisible groupbox to swap out layouts to make other groupboxes collapse")
+            "dummy": SGB(title = "Dummy", tooltip = "Invisible groupbox to swap out layouts to make other groupboxes collapse")
         }
 
         # Set layouts for the groupboxes

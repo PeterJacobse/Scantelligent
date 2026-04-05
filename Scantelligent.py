@@ -3,7 +3,9 @@ from PIL import Image
 import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
-from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI, ParameterManager, MLAAPI
+from lib import STWidgets, ScantelligentGUI
+from lib import DataProcessing, UserData, FileFunctions, ParameterManager
+from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
 
 
@@ -12,12 +14,12 @@ from datetime import datetime
 class Scantelligent(QtCore.QObject):
     abort = QtCore.pyqtSignal()
     parameter_dict = QtCore.pyqtSignal(dict)
-    image_request = QtCore.pyqtSignal(int, bool) #, name='image_request'
+    image_request = QtCore.pyqtSignal(int, bool)
 
     def __init__(self):
         super().__init__()
-        icon_folder = self.parameters_init()
-        self.gui = ScantelligentGUI(icon_folder)
+        self.parameters_init()
+        self.gui = ScantelligentGUI()
         self.connect_console() # Initialize the console, the button-slot, and keystroke-slot connections
         self.connect_buttons()
     
@@ -75,11 +77,11 @@ class Scantelligent(QtCore.QObject):
             "view": "none"
         }
         
-        return self.paths["icon_folder"]
+        return
 
     def connect_console(self) -> None:
         # Redirect output to the console
-        self.stdout_redirector = StreamRedirector()
+        self.stdout_redirector = STWidgets.StreamRedirector()
         self.stdout_redirector.output_written.connect(lambda text: self.gui.consoles["output"].append(text))
         sys.stdout = self.stdout_redirector
         #sys.stderr = self.stdout_redirector
@@ -94,7 +96,7 @@ class Scantelligent(QtCore.QObject):
         
         # Connect the buttons to their respective functions
         connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")], ["camera", self.connect_hardware], ["exit", self.exit],
-                    ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.info_popup],
+                    ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.gui.info_box.exec],
                     
                     # Experiment
                     ["start_pause", lambda checked: self.control_experiment(action = "start_pause")], ["stop", lambda checked: self.control_experiment(action = "stop")],
@@ -469,9 +471,9 @@ class Scantelligent(QtCore.QObject):
         if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
         
         [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes, file_function_attributes, parameters_attributes, user_attributes, mla_analog_attributes, mla_lockin_attributes, mla_osc_attributes, mla_attributes, keithley_attributes, camera_attributes]]
-        completer = QtWidgets.QCompleter(self.all_attributes, self.gui)
+        completer = STWidgets.Completer(self.all_attributes, self.gui)
         completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+        completer.setCompletionMode(STWidgets.Completer.CompletionMode.PopupCompletion)
         self.gui.line_edits["input"].setCompleter(completer)
         return
 
@@ -677,19 +679,6 @@ class Scantelligent(QtCore.QObject):
             self.gui.buttons["session_folder"].setState("disconnected")
         return
 
-    def info_popup(self) -> None:
-        msg_box = QtWidgets.QMessageBox(self.gui)
-        
-        msg_box.setWindowTitle("Info")
-        msg_box.setText("Scantelligent (2026)\nby Peter H. Jacobse\nRice University; Lawrence Berkeley National Lab")
-        msg_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
-        msg_box.setIcon(QtWidgets.QMessageBox.Icon.Information)
-
-        #QtCore.QTimer.singleShot(5000, msg_box.close)
-        return_value = msg_box.exec()
-        
-        return
-
     def cleanup(self) -> None:
         self.user.save_parameter_sets()
         try:
@@ -790,15 +779,13 @@ class Scantelligent(QtCore.QObject):
         comboboxes = self.gui.comboboxes
         radio_buttons = self.gui.radio_buttons
         line_edits = self.gui.line_edits
-                
+
         # Background
         bg_methods = ["none", "plane", "linewise"]
         for method in bg_methods:
-            if radio_buttons[f"bg_{method}"].isChecked():
-                flags.update({"background": f"{method}"})
-                break
+            if buttons[f"bg_{method}"].state_index == 1: flags.update({"background": f"{method}"})
         
-        if checkboxes["rot_trans"].isChecked(): flags.update({"rotation": True, "offset": True})
+        if buttons["rot_trans"].state_index == 1: flags.update({"rotation": True, "offset": True})
         else: flags.update({"rotation": False, "offset": False})
         
         # Limits

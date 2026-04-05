@@ -854,11 +854,18 @@ class STWidgets:
 
     class GroupBox(QtWidgets.QGroupBox):
         def __init__(self, *args, **kwargs):
+            title = kwargs.pop("title", None)
             tooltip = kwargs.pop("tooltip", None)
             
             super().__init__(*args, **kwargs)
-
+            
+            if isinstance(title, str): self.setTitle(title)
             if isinstance(tooltip, str): self.setToolTip(tooltip)
+
+    class Completer(QtWidgets.QCompleter):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
 
 
 
