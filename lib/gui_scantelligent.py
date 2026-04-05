@@ -2,6 +2,7 @@ import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 from . import GUIItems, PJComboBox, PhysicalLineEdit, PJGroupBox, PJTargetItem, SliderLineEdit, PJSlider
+from .st_widgets import STWidgets, rotate_icon, make_layout
 
 
 
@@ -112,8 +113,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return labels
     
     def make_buttons(self) -> dict:
-        make_button = self.gui_items.make_button
-        make_toggle_button = self.gui_items.make_toggle_button
+        MSB = STWidgets.MultiStateButton
         icons = self.icons
         arrow = icons.get("single_arrow")
         arrow45 = icons.get("single_arrow_45")
@@ -122,91 +122,123 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         buttons = {
             # Connections
-            "scanalyzer": make_button("", "Launch Scanalyzer", icon = icons.get("scanalyzer")),
-            "nanonis": make_button("", "Nanonis: offline\n(Ctrl + C)", icon = icons.get("nanonis")),
-            "mla": make_button("", "Multifrequency Lockin Amplifier: offline\n(Ctrl + C)", icon = icons.get("imp")),
-            "keithley": make_button("", "Keithley: offline\n(Ctrl + C)", icon = icons.get("keithley")),
-            "camera": make_button("", "Camera: offline\n(Ctrl + C)", icon = icons.get("camera")),
-            "exit": make_button("", "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape")),
-            "oscillator": make_button("", "Oscillator on/off\n(O)", icon = icons.get("osc")),
-            "view": make_button("", "Toggle the active view\n(V)", icon = icons.get("eye")),
-            "session_folder": make_button("", "Open the session folder\n(1)", icon = icons.get("folder_yellow")),
-            "info": make_button("", "Info", self.icons.get("i")),
+            "scanalyzer": MSB(icon = icons.get("scanalyzer"), click_to_toggle = False,
+                              states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Scanalyzer: not found"},
+                                        {"name": "online", "color": self.colors["dark_green"], "tooltip": "Launch Scanalyzer"}]),
+            "nanonis": MSB(icon = icons.get("nanonis"), click_to_toggle = False,
+                           states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Nanonis: offline"},
+                                     {"name": "online", "color": self.colors["dark_green"], "tooltip": "Nanonis: online (idle)"},
+                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Nanonis: online (idle)"},
+                                     {"name": "running", "color": self.colors["blue"], "tooltip": "Nanonis: running"}]),
+            "mla": MSB(icon = icons.get("imp"), click_to_toggle = False,
+                       states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Multifrequency Lockin Amplifier: offline"},
+                                 {"name": "online", "color": self.colors["dark_green"], "tooltip": "Multifrequency Lockin Amplifier: online (idle)"},
+                                 {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Multifrequency Lockin Amplifier: online (idle)"},
+                                 {"name": "running", "color": self.colors["blue"], "tooltip": "Multifrequency Lockin Amplifier: running"}]),
+            "keithley": MSB(icon = icons.get("keithley"), click_to_toggle = False,
+                            states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Keithley source meter: offline"},
+                                      {"name": "online", "color": self.colors["dark_green"], "tooltip": "Keithley source meter: online (idle)"},
+                                      {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Keithley source meter: online (idle)"},
+                                      {"name": "running", "color": self.colors["blue"], "tooltip": "Keithley source meter: running"}]),
+            "camera": MSB(icon = icons.get("camera"), click_to_toggle = False,
+                          states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Camera: offline"},
+                                    {"name": "online", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
+                                    {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
+                                    {"name": "running", "color": self.colors["blue"], "tooltip": "Camera: running"}]),
+            "view": MSB(click_to_toggle = True,
+                        states = [{"name": "None", "tooltip": "Toggle the active view", "icon": icons.get("eye")},
+                                  {"name": "Camera", "tooltip": "Active view: Camera", "icon": icons.get("camera")},
+                                  {"name": "Nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("nanonis")}]),
+            "exit": MSB(tooltip = "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape")),
+            "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
+                                  states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
+                                            {"name": "online", "color": self.colors["dark_green"], "tooltip": "Open the session folder"}]),
+            "info": MSB(tooltip = "Info", icon = self.icons.get("i")),
             
             # Experiment
-            "save": make_button("", "Save the experiment results to file", icon = icons.get("floppy")),
-            "start_pause": make_button("", "Start experiment", icon = icons.get("start")),
-            "stop": make_button("", "Stop experiment", icon = icons.get("stop")),
+            "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy")),
+            "start_pause": MSB(tooltip = "Start experiment", icon = icons.get("start")),
+            "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop")),
             
             # Parameters
-            "frame_aspect": make_toggle_button("", "Lock the frame aspect ratio", icon = icons.get("lock_aspect")),
-            "grid_aspect": make_toggle_button("", "Lock the grid aspect ratio", icon = icons.get("lock_aspect")),
+            "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
             
-            "tip": make_button("", "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
-            "V_swap": make_button("", "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
+            "tip": MSB(tooltip = "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
+            "V_swap": MSB(tooltip = "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
             
             # Parameters: getters and setters
-            "set_scan_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_scan_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "set_coarse_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_coarse_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "set_gain_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_gain_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "set_speed_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_speed_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "set_frame_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_frame_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "set_grid_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_grid_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
-            "set_lockin_parameters": make_button("", "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_lockin_parameters": make_button("", "Get parameters\n(P)", icon = icons.get("get")),
+            "set_scan_parameters": MSB(tooltip = "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_scan_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
+            "set_coarse_parameters": MSB(tooltip = "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_coarse_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
+            "set_gain_parameters": MSB(tooltip = "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_gain_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
+            "set_speed_parameters": MSB(tooltip = "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_speed_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
+            "set_frame_parameters": MSB(tooltip = "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_frame_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
+            "set_grid_parameters": MSB(tooltip = "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_grid_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
+            "set_lockin_parameters": MSB(tooltip = "Set the new parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_lockin_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
             
             # Coarse vertical
-            "withdraw": make_button("", "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
-            "retract": make_button("", "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
-            "advance": make_button("", "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
-            "approach": make_button("", "Initiate auto approach\n(Ctrl + A)", icon = icons.get("approach")),
-            "set_coarse": make_button("", "Set the new coarse parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_coarse": make_button("", "Get the coarse parameters\n(P)", icon = icons.get("get")),
+            "withdraw": MSB(tooltip = "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
+            "retract": MSB(tooltip = "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
+            "advance": MSB(tooltip = "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
+            "approach": MSB(tooltip = "Initiate auto approach\n(Ctrl + A)", icon = icons.get("approach")),
+            "set_coarse": MSB(tooltip = "Set the new coarse parameters\n(Ctrl + P)", icon = icons.get("set")),
+            "get_coarse": MSB(tooltip = "Get the coarse parameters\n(P)", icon = icons.get("get")),
 
             # Coarse horizontal
-            "n": make_button("", mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = arrow, rotate_icon = 270),
-            "ne": make_button("", mtt + "northeast\n(Ctrl + 9)", icon = arrow45, rotate_icon = 0),
-            "e": make_button("", mtt + "east\n(Ctrl + → / Ctrl + 6)", icon = arrow, rotate_icon = 0),
-            "se": make_button("", mtt + "southeast\n(Ctrl + 3)", icon = arrow45, rotate_icon = 90),
-            "s": make_button("", mtt + "south\n(Ctrl + ↓ / Ctrl + 2)", icon = arrow, rotate_icon = 90),
-            "sw": make_button("", mtt + "southwest\n(Ctrl + 1)", icon = arrow45, rotate_icon = 180),
-            "w": make_button("", mtt + "west\n(Ctrl + ← / Ctrl + 4)", icon = arrow, rotate_icon = 180),
-            "nw": make_button("", mtt + "northwest\n(Ctrl + 7)", icon = arrow45, rotate_icon = 270),
+            "n": MSB(tooltip = mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = rotate_icon(arrow, angle = 270)),
+            "ne": MSB(tooltip = mtt + "northeast\n(Ctrl + 9)", icon = rotate_icon(arrow45, angle = 0)),
+            "e": MSB(tooltip = mtt + "east\n(Ctrl + → / Ctrl + 6)", icon = rotate_icon(arrow, angle = 0)),
+            "se": MSB(tooltip = mtt + "southeast\n(Ctrl + 3)", icon = rotate_icon(arrow45, angle = 90)),
+            "s": MSB(tooltip = mtt + "south\n(Ctrl + ↓ / Ctrl + 2)", icon = rotate_icon(arrow, angle = 90)),
+            "sw": MSB(tooltip = mtt + "southwest\n(Ctrl + 1)", icon = rotate_icon(arrow45, angle = 270)),
+            "w": MSB(tooltip = mtt + "west\n(Ctrl + ← / Ctrl + 4)", icon = rotate_icon(arrow, angle = 180)),
+            "nw": MSB(tooltip = mtt + "northwest\n(Ctrl + 7)", icon = rotate_icon(arrow45, angle = 270)),
             
             # Tip prep
-            "bias_pulse": make_button("", "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse")),
-            "tip_shape": make_button("", "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
+            "bias_pulse": MSB(tooltip = "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse")),
+            "tip_shape": MSB(tooltip = "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
             
             # Lockins
-            "nanonis_mod1": make_toggle_button("", "Nanonis modulator 1 On/Off", icon = icons.get("nanonis_mod1")),
-            "nanonis_mod2": make_toggle_button("", "Nanonis modulator 2 On/Off", icon = icons.get("nanonis_mod2")),
-            "mla_mod1": make_toggle_button("", "MLA modulator 1 On/Off", icon = icons.get("mla_oscillator")),
+            "nanonis_mod1": MSB(icon = icons.get("nanonis_mod1"), states = [{"tooltip": "Nanonis modulator 1 OFF", "color": "#101010"}, {"tooltip": "Nanonis modulator 1 ON", "color": "#2020C0"}]),
+            "nanonis_mod2": MSB(icon = icons.get("nanonis_mod2"), states = [{"tooltip": "Nanonis modulator 2 OFF", "color": "#101010"}, {"tooltip": "Nanonis modulator 2 ON", "color": "#2020C0"}]),
+            "mla_mod1": MSB(icon = icons.get("mla_oscillator"), states = [{"tooltip": "MLA modulator 1 OFF", "color": "#101010"}, {"tooltip": "MLA modulator 1 ON", "color": "#2020C0"}]),
 
             # Processing
-            "direction": make_toggle_button("", "Change scan direction\n(X)", icon = icons.get("triple_arrow"), flip_icon = True),
-            "fit_to_frame": make_button("", "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
-            "fit_to_range": make_button("", "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
-            "full_data_range": make_button("", sivr + "to the full data range\n(U)", icons.get("100")),
-            "percentiles": make_button("", sivr + "by percentiles\n(R)", icons.get("percentiles")),
-            "standard_deviation": make_button("", sivr + "by standard deviations\n(D)", icons.get("deviation")),
-            "absolute_values": make_button("", sivr + "by absolute values\n(A)", icons.get("numbers")),
+            "direction": MSB(tooltip = "Change scan direction\n(X)", states = [{"icon": icons.get("triple_arrow"), "color": "#101010"}, {"icon": rotate_icon(icons.get("triple_arrow"), angle = 180), "color": "#2020C0"}]),
+            "fit_to_frame": MSB(tooltip = "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
+            "fit_to_range": MSB(tooltip = "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
+            "full_data_range": MSB(tooltip = sivr + "to the full data range\n(U)", icon = icons.get("100")),
+            "percentiles": MSB(tooltip = sivr + "by percentiles\n(R)", icon = icons.get("percentiles")),
+            "standard_deviation": MSB(tooltip = sivr + "by standard deviations\n(D)", icon = icons.get("deviation")),
+            "absolute_values": MSB(tooltip = sivr + "by absolute values\n(A)", icon = icons.get("numbers")),
             
-            "input": make_button(">>", "Enter command\n(Ctrl + Enter)")
+            "bg_none": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": "#101010"}, {"color": "#2020C0"}]),
+            "bg_plane": MSB(states = [{"tooltip": "Plane\n(0)", "icon": self.icons.get("plane_subtract"), "color": "#101010"}, {"color": "#2020C0"}]),
+            "bg_linewise": MSB(states = [{"tooltip": "Linewise\n(0)", "icon": self.icons.get("lines"), "color": "#101010"}, {"color": "#2020C0"}]),
+            "bg_inferred": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": "#101010"}, {"color": "#2020C0"}]),
+            
+            "sobel": MSB(text = "Sobel", tooltip = "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", icon = self.icons.get("sobel"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "laplace": MSB(text = "Laplace", tooltip = "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + L)", icon = self.icons.get("laplacian"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "fft": MSB(text = "Fft", tooltip = "Compute the 2D Fourier transform\n(Shift + F)", icon = self.icons.get("fourier"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "normal": MSB(text = "Normal", tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "gaussian": MSB(text = "Gauss", tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "rot_trans": MSB(tooltip = "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", icon = self.icons.get("rot_trans"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
         }
 
         for i in range(6):
-            buttons.update({f"scan_parameters_{i}": make_button("", f"Load scan parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"coarse_parameters_{i}": make_button("", f"Load coarse parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"gain_parameters_{i}": make_button("", f"Load gain parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"speed_parameters_{i}": make_button("", f"Load speed parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"grid_parameters_{i}": make_button("", f"Load grid parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"parameters_{i}": make_button("", f"Parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"scan_parameters_{i}": MSB(tooltip = f"Load scan parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"coarse_parameters_{i}": MSB(tooltip = f"Load coarse parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"gain_parameters_{i}": MSB(tooltip = f"Load gain parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"speed_parameters_{i}": MSB(tooltip = f"Load speed parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"grid_parameters_{i}": MSB(tooltip = f"Load grid parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
+            buttons.update({f"parameters_{i}": MSB(tooltip = f"Parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
 
         # Increase size of important buttons
         [buttons[name].setStyleSheet("QPushButton{ background-color: #101010; icon-size: 28px 28px; }") for name in ["stop", "start_pause", "view", "exit"]]
@@ -215,11 +247,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
-        self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
-        
+        self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]        
         self.scan_parameter_sets = [buttons[f"scan_parameters_{i + 1}"] for i in range(4)]
-        
         self.scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
+        
+        self.background_buttons = [buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise"]]
 
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
@@ -234,14 +266,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "retract": make_checkbox("", "Include retracting the tip during a tip move"),
             "advance": make_checkbox("", "Include advancing the tip during a move"),
             "approach": make_checkbox("", "End the tip move with an auto approach"),
-
-            "sobel": make_checkbox("Sobel", "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", self.icons.get("sobel")),
-            "laplace": make_checkbox("Laplace", "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + C)", self.icons.get("laplacian")),
-            "fft": make_checkbox("Fft", "Compute the 2D Fourier transform\n(Shift + F)", self.icons.get("fourier")),
-            "normal": make_checkbox("Normal", "Compute the z component of the surface normal\n(Shift + N)", self.icons.get("surface_normal")),
-            "gaussian": make_checkbox("Gauss", "Apply a Gaussian blur\n(Shift + G)", self.icons.get("gaussian")),
-            
-            "rot_trans": make_checkbox("", "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", self.icons.get("rot_trans")),
 
             "composite_motion": make_checkbox("", "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }
@@ -259,17 +283,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return (checkboxes, channel_checkboxes)
 
     def make_comboboxes(self) -> dict:
+        CB = STWidgets.ComboBox
         
         comboboxes = {
-            "channels": PJComboBox(name = "Channels", tooltip = "Available scan channels"),
-            "projection": PJComboBox(name = "Projection", tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": PJComboBox(name = "Experiment", tooltip = "Select an experiment"),
-            "direction": PJComboBox(name = "Direction", tooltip = "Select a scan direction / pattern", items = ["nearest tip", "down", "up", "random"]),
+            "channels": CB(name = "Channels", tooltip = "Available scan channels"),
+            "projection": CB(name = "Projection", tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
+            "experiment": CB(name = "Experiment", tooltip = "Select an experiment"),
+            "direction": CB(name = "Direction", tooltip = "Select a scan direction / pattern", items = ["nearest tip", "down", "up", "random"]),
             
-            "voltage_current": PJComboBox(name = "voltage / current", tooltip = "Load voltage / current parameters"),
-            "gains": PJComboBox(name = "gains", tooltip = "Load gains parameters"),
-            "frame": PJComboBox(name = "frame", tooltip = "Load frame parameters"),
-            "grid": PJComboBox(name = "grid", tooltip = "Load grid parameters"),
+            "voltage_current": CB(name = "voltage / current", tooltip = "Load voltage / current parameters"),
+            "gains": CB(name = "gains", tooltip = "Load gains parameters"),
+            "frame": CB(name = "frame", tooltip = "Load frame parameters"),
+            "grid": CB(name = "grid", tooltip = "Load grid parameters"),
         }
         
         # Add the button handles to the tooltips
@@ -279,91 +304,93 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_line_edits(self) -> dict:
         buttons = self.buttons
+        LE = STWidgets.PhysicsLineEdit
         
         line_edits = {
             # Experiment
-            "experiment_filename": PhysicalLineEdit(tooltip = "Base name of the file when saved to png or hdf5"),
-            "experiment_0": PhysicalLineEdit(tooltip = "Experiment parameter field 0"),
-            "experiment_1": PhysicalLineEdit(tooltip = "Experiment parameter field 1"),
-            "experiment_2": PhysicalLineEdit(tooltip = "Experiment parameter field 2"),
+            "experiment_filename": LE(tooltip = "Base name of the file when saved to png or hdf5"),
+            "experiment_0": LE(tooltip = "Experiment parameter field 0"),
+            "experiment_1": LE(tooltip = "Experiment parameter field 1"),
+            "experiment_2": LE(tooltip = "Experiment parameter field 2"),
 
             # Coarse
-            "z_steps": PhysicalLineEdit(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0),
-            "h_steps": PhysicalLineEdit(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", limits = [0, 100000], digits = 0),
-            "minus_z_steps": PhysicalLineEdit(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", limits = [0, 100000], digits = 0),
+            "z_steps": LE(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0),
+            "h_steps": LE(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", limits = [0, 100000], digits = 0),
+            "minus_z_steps": LE(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", limits = [0, 100000], digits = 0),
             
-            "V_hor": PhysicalLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0),
-            "V_ver": PhysicalLineEdit(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0),
-            "f_motor": PhysicalLineEdit(value = 1000, tooltip = "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0),
+            "V_hor": LE(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0),
+            "V_ver": LE(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0),
+            "f_motor": LE(value = 1000, tooltip = "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0),
 
             # Parameters
-            "V_nanonis": PhysicalLineEdit(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
-            "V_mla": PhysicalLineEdit(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
-            "V_keithley": PhysicalLineEdit(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3),
+            "V_nanonis": LE(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
+            "V_mla": LE(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
+            "V_keithley": LE(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3),
 
-            "dV": PhysicalLineEdit(tooltip = "Step size dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
-            "dt": PhysicalLineEdit(tooltip = "Step size dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
-            "dz": PhysicalLineEdit(tooltip = "Step size dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
+            "dV": LE(tooltip = "Step size dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
+            "dt": LE(tooltip = "Step size dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
+            "dz": LE(tooltip = "Step size dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
 
-            "dV_keithley": PhysicalLineEdit(tooltip = "Step size dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1),
-            "dt_keithley": PhysicalLineEdit(tooltip = "Step size dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0),
+            "dV_keithley": LE(tooltip = "Step size dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1),
+            "dt_keithley": LE(tooltip = "Step size dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0),
 
-            "I_fb": PhysicalLineEdit(tooltip = "Feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0),
-            "I_keithley": PhysicalLineEdit(tooltip = "Keithley current", unit = "pA", digits = 0),
-            "I_limit": PhysicalLineEdit(tooltip = "Maximum Keithley current", unit = "pA", digits = 0),
+            "I_fb": LE(tooltip = "Feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0),
+            "I_keithley": LE(tooltip = "Keithley current", unit = "pA", digits = 0),
+            "I_limit": LE(tooltip = "Maximum Keithley current", unit = "pA", digits = 0),
             
-            "p_gain": PhysicalLineEdit(tooltip = "Proportional gain\n(Ctrl + P) to set", unit = "pm", digits = 0),
-            "t_const": PhysicalLineEdit(tooltip = "Time constant\n(Ctrl + P) to set", unit = "us", digits = 0),
-            "i_gain": PhysicalLineEdit(tooltip = "Integral gain\n(Ctrl + P) to set", unit = "nm/s", digits = 0),
+            "p_gain": LE(tooltip = "Proportional gain", unit = "pm", digits = 0),
+            "t_const": LE(tooltip = "Time constant", unit = "us", digits = 0),
+            "i_gain": LE(tooltip = "Integral gain", unit = "nm/s", digits = 0),
             
-            "v_fwd": PhysicalLineEdit(tooltip = "Tip forward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
-            "v_bwd": PhysicalLineEdit(tooltip = "Tip backward speed\n(Ctrl + P) to set", unit = "nm/s", digits = 2),
+            "v_fwd": LE(tooltip = "Tip forward speed", unit = "nm/s", digits = 2),
+            "v_bwd": LE(tooltip = "Tip backward speed", unit = "nm/s", digits = 2),
             
             # Frame
-            "frame_height": PhysicalLineEdit(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
-            "frame_width": PhysicalLineEdit(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1),
-            "frame_x": PhysicalLineEdit(tooltip = "frame offset (x)", unit = "nm", limits = [-1000, 1000], digits = 1),
-            "frame_y": PhysicalLineEdit(tooltip = "frame offset (y)", unit = "nm", limits = [-1000, 1000], digits = 1),
-            "frame_angle": PhysicalLineEdit(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1),
-            "frame_aspect": PhysicalLineEdit(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4),
+            "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
+            "frame_width": LE(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1),
+            "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-1000, 1000], digits = 1),
+            "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-1000, 1000], digits = 1),
+            "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1),
+            "frame_aspect": LE(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4),
 
             # Grid
-            "grid_pixels": PhysicalLineEdit(tooltip = "Number of pixels", unit = "px", limits = [1, 10000], digits = 0),
-            "grid_lines": PhysicalLineEdit(tooltip = "Number of lines", unit = "px", limits = [1, 10000], digits = 0),
-            "grid_aspect": PhysicalLineEdit(tooltip = "grid aspect ratio (lines / pixels)", digits = 4),
-            "pixel_width": PhysicalLineEdit(tooltip = "pixel width", unit = "nm", digits = 4),
-            "pixel_height": PhysicalLineEdit(tooltip = "pixel height", unit = "nm", digits = 4),
+            "grid_pixels": LE(tooltip = "Number of pixels", unit = "px", limits = [1, 10000], digits = 0),
+            "grid_lines": LE(tooltip = "Number of lines", unit = "px", limits = [1, 10000], digits = 0),
+            "grid_aspect": LE(tooltip = "grid aspect ratio (lines / pixels)", digits = 4),
+            "pixel_width": LE(tooltip = "pixel width", unit = "nm", digits = 4),
+            "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4),
             
             # Tip shaper
-            "pulse_voltage": PhysicalLineEdit(tooltip = "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
-            "pulse_duration": PhysicalLineEdit(tooltip = "Duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
+            "pulse_voltage": LE(tooltip = "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
+            "pulse_duration": LE(tooltip = "Duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
             
             # Lockins
-            "nanonis_mod1_f": PhysicalLineEdit(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod1_mV": PhysicalLineEdit(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
-            "nanonis_mod1_phi": PhysicalLineEdit(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
-            "nanonis_mod2_f": PhysicalLineEdit(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod2_mV": PhysicalLineEdit(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
-            "nanonis_mod2_phi": PhysicalLineEdit(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
+            "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
+            "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
             
-            "mla_mod1_f": PhysicalLineEdit(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "mla_mod1_V": PhysicalLineEdit(tooltip = "MLA modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
-            "mla_mod1_phi": PhysicalLineEdit(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
+            "mla_mod1_V": LE(tooltip = "MLA modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
 
             # Image processing
-            "min_full": PhysicalLineEdit(tooltip = "minimum value of scan data range"),
-            "max_full": PhysicalLineEdit(tooltip = "maximum value of scan data range"),
-            "min_percentiles": PhysicalLineEdit(value = "2", tooltip = "minimum percentile of data range", unit = "%"),
-            "max_percentiles": PhysicalLineEdit(value = "98", tooltip = "maximum percentile of data range", unit = "%"),
-            "min_deviations": PhysicalLineEdit(value = "2", tooltip = "minimum = mean - n * standard deviation", unit = "\u03C3"),
-            "max_deviations": PhysicalLineEdit(value = "2", tooltip = "maximum = mean + n * standard deviation", unit = "\u03C3"),
-            "min_absolute": PhysicalLineEdit(value = "0", tooltip = "minimum absolute value"),
-            "max_absolute": PhysicalLineEdit(value = "1", tooltip = "maximum absolute value"),
+            "min_full": LE(tooltip = "minimum value of scan data range", digits = 3),
+            "max_full": LE(tooltip = "maximum value of scan data range", digits = 3),
+            "min_percentiles": LE(value = 1.0, tooltip = "minimum percentile of data range", unit = "%", digits = 1),
+            "max_percentiles": LE(value = 99.0, tooltip = "maximum percentile of data range", unit = "%", digits = 1),
+            "min_deviations": LE(value = 2.0, tooltip = "minimum = mean - n * standard deviation", unit = "\u03C3", digits = 1),
+            "max_deviations": LE(value = 2.0, tooltip = "maximum = mean + n * standard deviation", unit = "\u03C3", digits = 1),
+            "min_absolute": LE(value = 0, tooltip = "minimum absolute value", digits = 3),
+            "max_absolute": LE(value = 1, tooltip = "maximum absolute value", digits = 3),
 
-            "gaussian_width": PhysicalLineEdit(value = "0", tooltip = "Width in nm for Gaussian blur application", unit = "nm"),
+            "gaussian_width": LE(value = 0.000, tooltip = "Width for Gaussian blur application", unit = "nm", digits = 3),
+            "file_name": LE(tooltip = "Base name of the file when saved to png or hdf5"),
             
             # Console            
-            "input": PhysicalLineEdit(tooltip = "Enter a command\n(Enter to evaluate)", block = True)
+            "input": LE(tooltip = "Enter a command\n(Enter to evaluate)", block = True)
         }
         
         # Named groups
@@ -399,54 +426,46 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return line_edits
 
     def make_radio_buttons(self) -> dict:
-        make_radio_button = self.gui_items.make_radio_button
+        RBN = STWidgets.RadioButton
         QGroup = QtWidgets.QButtonGroup
         
         radio_buttons = {
-            "bg_none": make_radio_button("", "None\n(0)", self.icons.get("0")),
-            "bg_plane": make_radio_button("", "Plane\n(P)", self.icons.get("plane_subtract")),
-            "bg_linewise": make_radio_button("", "Linewise\n(W)", self.icons.get("lines")),
-            "bg_inferred": make_radio_button("", "None\n(0)", self.icons.get("0")),
-
-            "min_full": make_radio_button("", "set to minimum value of scan data range\n(-) to toggle"),
-            "max_full": make_radio_button("", "set to maximum value of scan data range\n(=) to toggle"),
-            "min_percentiles": make_radio_button("", "set to minimum percentile of data range\n(-) to toggle"),
-            "max_percentiles": make_radio_button("", "set to maximum percentile of data range\n(=) to toggle"),
-            "min_deviations": make_radio_button("", "set to minimum = mean - n * standard deviation\n(-) to toggle"),
-            "max_deviations": make_radio_button("", "set to maximum = mean + n * standard deviation\n(=) to toggle"),
-            "min_absolute": make_radio_button("", "set minimum to an absolute value\n(-) to toggle"),
-            "max_absolute": make_radio_button("", "set maximum to an absolute value\n(=) to toggle"),
+            "min_full": RBN(tooltip = "set to minimum value of scan data range\n(-) to toggle"),
+            "max_full": RBN(tooltip = "set to maximum value of scan data range\n(=) to toggle"),
+            "min_percentiles": RBN(tooltip = "set to minimum percentile of data range\n(-) to toggle"),
+            "max_percentiles": RBN(tooltip = "set to maximum percentile of data range\n(=) to toggle"),
+            "min_deviations": RBN(tooltip = "set to minimum = mean - n * standard deviation\n(-) to toggle"),
+            "max_deviations": RBN(tooltip = "set to maximum = mean + n * standard deviation\n(=) to toggle"),
+            "min_absolute": RBN(tooltip = "set minimum to an absolute value\n(-) to toggle"),
+            "max_absolute": RBN(tooltip = "set maximum to an absolute value\n(=) to toggle"),
         }
-        
-        # Named groups
-        self.background_buttons = [radio_buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise"]]
-        self.min_radio_buttons = [radio_buttons[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
-        self.max_radio_buttons = [radio_buttons[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
         # Add the button handles to the tooltips
         [radio_buttons[name].changeToolTip(f"gui.radio_buttons[\"{name}\"]", line = 10) for name in radio_buttons.keys()]
         
-        # Add buttons to QButtonGroups for exclusive selection and check the defaults
-        QGroup = QtWidgets.QButtonGroup
-        self.background_button_group = QGroup()
-        [self.background_button_group.addButton(button) for button in self.background_buttons]
-        
+        # Named groups
+        min_names = ["min_full", "min_percentiles", "min_deviations", "min_absolute"]
+        max_names = ["max_full", "max_percentiles", "max_deviations", "max_absolute"]
+        self.min_radio_buttons = [radio_buttons[name] for name in min_names]
+        self.max_radio_buttons = [radio_buttons[name] for name in max_names]
+                
+        # Add buttons to QButtonGroups for exclusive selection and check the defaults        
         self.min_button_group = QGroup()
         self.max_button_group = QGroup()
         [self.min_button_group.addButton(button) for button in self.min_radio_buttons]
         [self.max_button_group.addButton(button) for button in self.max_radio_buttons]
         
         # Initialize
-        checked_buttons = [radio_buttons[name] for name in ["min_full", "max_full", "bg_none"]]
+        checked_buttons = [radio_buttons[name] for name in ["min_full", "max_full"]]
         [button.setChecked(True) for button in checked_buttons]
         
         return radio_buttons
 
     def make_progress_bars(self) -> dict:
-        make_progress_bar = self.gui_items.make_progress_bar
+        PB = STWidgets.ProgressBar
         
         progress_bars = {
-            "experiment": make_progress_bar("", "Experiment progress")
+            "experiment": PB(tooltip = "Experiment progress")
         }
         
         # Named groups
@@ -459,7 +478,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return progress_bars
 
     def make_layouts(self) -> dict:
-        make_layout = self.gui_items.make_layout
         
         layouts = {
             "main": make_layout("h"),
@@ -601,10 +619,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return tip_slider
 
     def make_demod_audio_sliders(self) -> dict:
+        SLE = STWidgets.SliderLineEdit
         demod_audio_sliders = {}
         
         for harmonic in range(1, 20):
-            sle = SliderLineEdit(tooltip = "relative volume of harmonic {i}", orientation = "v", limits = [0, 100], initial_val = 100, digits = 0, unit = "%", minmax_buttons = True)
+            sle = SLE(tooltip = "relative volume of harmonic {i}", orientation = "v", limits = [0, 100], initial_val = 100, digits = 0, unit = "%", minmax_buttons = True)
             sle.min_button.setIcon(self.icons.get("0"))
             sle.max_button.setIcon(self.icons.get("1"))
             demod_audio_sliders.update({f"f{harmonic}": sle})
@@ -713,11 +732,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Parameters
         [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
-        #par_layout = layouts["parameters"]
-        #par_layout.addWidget(self.tip_slider, 0, 0, 2, 1)
-        #[par_layout.addWidget(box, 0, i) for i, box in enumerate(self.parameter_line_0)]
-        #par_layout.addLayout(layouts["scan_parameter_sets"], 0, 1, 1, 3)        
-        #[par_layout.addWidget(box, 1, i + 3) for i, box in enumerate(self.parameter_line_1)]
 
         # Gains
         [layouts["gains_line_edits"].addWidget(widget) for widget in self.gain_line_edits]
@@ -773,12 +787,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
         
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
-        [layouts["background_buttons"].addWidget(checkboxes[name]) for name in ["rot_trans"]]
+        layouts["background_buttons"].addWidget(buttons["rot_trans"])
         p_layout = layouts["matrix_processing"]
-        [p_layout.addWidget(checkboxes[checkbox_name], 0, index) for index, checkbox_name in enumerate(["sobel", "normal", "laplace"])]
-        p_layout.addWidget(checkboxes["gaussian"], 1, 1)
+        [p_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace"])]
+        p_layout.addWidget(buttons["gaussian"], 1, 1)
         p_layout.addWidget(line_edits["gaussian_width"], 1, 2)
-        p_layout.addWidget(checkboxes["fft"], 1, 0)
+        p_layout.addWidget(buttons["fft"], 1, 0)
         p_layout.addWidget(comboboxes["projection"], 2, 0)
         p_layout.addWidget(self.phase_slider, 2, 1, 1, 2)
         
@@ -909,6 +923,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]
         
+        self.buttons["bg_none"].clicked.connect(lambda: self.background_mutex("none"))
+        self.buttons["bg_plane"].clicked.connect(lambda: self.background_mutex("plane"))
+        self.buttons["bg_linewise"].clicked.connect(lambda: self.background_mutex("linewise"))
+        
+        return
+
+    def background_mutex(self, method: str = "none") -> None:
+        [none, plane, linewise] = [self.buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise"]]
+        match method:
+            case "none":
+                [button.setState(0) for button in [plane, linewise]]
+                none.setState(1)
+            case "plane":
+                [button.setState(0) for button in [none, linewise]]
+                plane.setState(1)
+            case _:
+                [button.setState(0) for button in [none, plane]]
+                linewise.setState(1)
         return
 
 

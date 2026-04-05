@@ -7,32 +7,35 @@ class ParameterManager(QtCore.QObject):
     
     def __init__(self, parent):
         super().__init__()
-        self.scantelligent = parent # Reference to Scantelligent class
+        self.scantelligent = parent # Reference to Scantelligent (parent)
 
 
 
     def get(self, parameter_type: str = "frame") -> None:
-        nanonis = self.scantelligent.nanonis
-        gui = self.scantelligent.gui
+        sct = self.scantelligent
+        
+        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"]:
+            if not hasattr(sct, "nanonis"): return
 
         match parameter_type:
+
             case "feedback":
-                nanonis.parameters_update(unlink = True)
+                sct.nanonis.parameters_update(unlink = True)
 
             case "frame":
-                nanonis.frame_update(unlink = True, update_new_frame = True)
+                sct.nanonis.frame_update(unlink = True, update_new_frame = True)
 
             case "grid":
-                nanonis.grid_update(unlink = True)
+                sct.nanonis.grid_update(unlink = True)
 
             case "speeds":
-                nanonis.frame_update(unlink = True)
+                sct.nanonis.frame_update(unlink = True)
 
             case "gain":
-                nanonis.gains_update(unlink = True)
+                sct.nanonis.gains_update(unlink = True)
             
             case "lockin":
-                nanonis.lockin_update(unlink = True)
+                sct.nanonis.lockin_update(unlink = True)
             
             case _:
                 pass
@@ -42,15 +45,17 @@ class ParameterManager(QtCore.QObject):
     def set(self, parameter_type: str = "frame") -> None:
         # It is noted that the nomenclature 'set' causes shadowing of the built-in 'set' method, but I decided to keep this regardless
 
-        nanonis = self.scantelligent.nanonis
-        gui = self.scantelligent.gui
-        line_edits = gui.line_edits
-        buttons = gui.buttons
+        sct = self.scantelligent
+        line_edits = sct.gui.line_edits
+        buttons = sct.gui.buttons
+        
+        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"]:
+            if not hasattr(sct, "nanonis"): return
 
         match parameter_type:
 
             case "feedback":
-                nanonis.parameters_update(unlink = True)
+                sct.nanonis.parameters_update(unlink = True)
 
             case "frame":
                 offset = [line_edits["frame_x"].getValue(), line_edits["frame_y"].getValue()]
@@ -58,18 +63,18 @@ class ParameterManager(QtCore.QObject):
                 angle = line_edits["frame_angle"].getValue()
                 
                 parameters = {"dict_name": "frame", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle}
-                nanonis.frame_update(parameters, unlink = True)
+                sct.nanonis.frame_update(parameters, unlink = True)
 
-            case "grid":                
+            case "grid":
                 grid = [line_edits["grid_pixels"].getValue(), line_edits["grid_lines"].getValue()]
                 
-                nanonis.grid_update(unlink = True)
+                sct.nanonis.grid_update(unlink = True)
 
             case "speeds":
-                nanonis.frame_update(unlink = True)
+                sct.nanonis.frame_update(unlink = True)
 
             case "gain":
-                nanonis.gains_update(unlink = True)
+                sct.nanonis.gains_update(unlink = True)
             
             case "lockin":
                 [mod1_on, mod2_on] = [buttons[f"nanonis_mod{i + 1}"].isChecked() for i in range(2)]
@@ -78,7 +83,7 @@ class ParameterManager(QtCore.QObject):
                 parameters = {"dict_name": "lockin",
                               "modulator_1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
                               "modulator_2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi}}
-                nanonis.lockin_update(parameters, unlink = True)
+                sct.nanonis.lockin_update(parameters, unlink = True)
             
             case _:
                 pass
@@ -108,10 +113,12 @@ class ParameterManager(QtCore.QObject):
     @QtCore.pyqtSlot(dict)
     def receive(self, parameters: dict) -> None:
         sct = self.scantelligent
-        line_edits = sct.gui.line_edits
+        gui = sct.gui
+        line_edits = gui.line_edits
         dict_name = parameters.get("dict_name")
 
         match dict_name:
+
             case "nanonis_status":
                 status = parameters.get("status")
                 match status:
@@ -119,7 +126,8 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"nanonis": "idle"})
                     case "offline": sct.status.update({"nanonis": "offline"})
                     case _: pass
-                sct.update_buttons()
+                try: gui.buttons["nanonis"].setState(status)
+                except: pass
 
             case "keithley_status":
                 status = parameters.get("status")
@@ -128,7 +136,8 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"keithley": "idle"})
                     case "offline": sct.status.update({"keithley": "offline"})
                     case _: pass
-                sct.update_buttons()
+                try: gui.buttons["keithley"].setState(status)
+                except: pass
 
             case "camera_status":
                 status = parameters.get("status")
@@ -137,7 +146,8 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"camera": "idle"})
                     case "offline": sct.status.update({"camera": "offline"})
                     case _: pass
-                sct.update_buttons()
+                try: gui.buttons["camera"].setState(status)
+                except: pass
 
             case "mla_status":
                 status = parameters.get("status")
@@ -146,11 +156,16 @@ class ParameterManager(QtCore.QObject):
                     case "idle": sct.status.update({"mla": "idle"})
                     case "offline": sct.status.update({"mla": "offline"})
                     case _: pass
-                sct.update_buttons()
+                try: gui.buttons["mla"].setState(status)
+                except: pass
 
             case "session_path":
                 session_path = parameters.get("path")
                 sct.paths.update({"session_path": session_path})
+                try: gui.buttons["session_folder"].setState("online")
+                except: pass
+
+
 
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)
@@ -317,3 +332,4 @@ class ParameterManager(QtCore.QObject):
 
             case _:
                 pass
+

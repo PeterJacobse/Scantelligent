@@ -4,7 +4,6 @@ import numpy as np
 from PyQt6 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
 from lib import ScantelligentGUI, StreamRedirector, NanonisAPI, KeithleyAPI, DataProcessing, UserData, FileFunctions, CameraAPI, ParameterManager, MLAAPI
-from time import sleep
 from datetime import datetime
 
 
@@ -95,7 +94,7 @@ class Scantelligent(QtCore.QObject):
         
         # Connect the buttons to their respective functions
         connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")], ["camera", self.connect_hardware], ["exit", self.exit],
-                    ["oscillator", self.toggle_withdraw], ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.info_popup],
+                    ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.info_popup],
                     
                     # Experiment
                     ["start_pause", lambda checked: self.control_experiment(action = "start_pause")], ["stop", lambda checked: self.control_experiment(action = "stop")],
@@ -111,6 +110,7 @@ class Scantelligent(QtCore.QObject):
                     
                     # Processing
                     ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
+                    ["bg_none", self.update_processing_flags], ["bg_plane", self.update_processing_flags], ["bg_linewise", self.update_processing_flags]
                     ]
 
         [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
@@ -151,110 +151,122 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.change_experiment)
         
         # Checkboxes and radio buttons
-        [self.gui.radio_buttons[name].clicked.connect(self.update_processing_flags) for name in ["bg_none", "bg_plane", "bg_linewise", "min_absolute", "min_deviations", "min_percentiles", "min_full", "max_absolute", "max_deviations", "max_percentiles", "max_full"]]
-        [self.gui.checkboxes[operation].clicked.connect(self.update_processing_flags) for operation in ["sobel", "gaussian", "normal", "fft", "laplace", "rot_trans"]]
+        [self.gui.radio_buttons[name].clicked.connect(self.update_processing_flags) for name in ["min_absolute", "min_deviations", "min_percentiles", "min_full", "max_absolute", "max_deviations", "max_percentiles", "max_full"]]
 
         return
 
-    def connect_hardware(self) -> None:
+    def connect_hardware(self, target: str = "all") -> None:
         """
-        Test and set up all connections, and request parameters from the hardware components
+        Set up and test hardware connections, and request parameters from the hardware components
         """
 
-        self.logprint("Attempting to connect to hardware", message_type = "message")
+        self.logprint(f"Attempting to connect to the following hardware: {target}", message_type = "message")
 
+        # Read hardware configurations from file
         (hw_config, error) = self.file_functions.load_yaml(self.paths.get("config_file"))
         if error:
-            self.logprint("Problem loading the hardware configurations from file")
+            self.logprint("Problem loading the hardware configurations from file", message_type = "error")
             return
         self.hw_config = hw_config
-        
-        # Scanalyzer
-        scanalyzer_path = hw_config.get("scanalyzer_path")
-        if os.path.isfile(scanalyzer_path):
-            self.paths.update({"scanalyzer": scanalyzer_path})
-            self.logprint("Scanalyzer found and linked", message_type = "success")
-        else:
-            self.logprint("Warning: Scanalyzer path could not be read", message_type = "error")
-        
-        # MLA library
+
+        # MLA (library)
         mla_config = hw_config.get("mla")
-        mla_path = mla_config.get("library_path")
-        if os.path.isdir(mla_path):
-            self.paths.update({"mla": mla_path})
-            sys.path.insert(0, self.paths.get("mla"))
+        if isinstance(mla_config, dict):
+            mla_path = mla_config.get("library_path")
+            if os.path.isdir(mla_path):
+                self.paths.update({"mla": mla_path})
+                sys.path.insert(0, self.paths.get("mla"))
 
 
+
+        # Scanalyzer
+        if target.lower() == "scanalyzer" or target.lower() == "all":
+            scanalyzer_path = hw_config.get("scanalyzer_path")
+            if os.path.isfile(scanalyzer_path):
+                self.paths.update({"scanalyzer": scanalyzer_path})
+                self.logprint("Scanalyzer found and linked", message_type = "success")
+                self.gui.buttons["scanalyzer"].setState("online")
+            else:
+                self.logprint("Warning: Scanalyzer path could not be read", message_type = "error")
+                self.gui.buttons["scanalyzer"].setState("offline")
 
         # Keithley
-        try:
-            # Instantiate
-            self.keithley = KeithleyAPI(hw_config = self.hw_config)
-            
-            # Set up signal-slot connections
-            # Keithley -> Scantelligent
-            self.keithley.parameters.connect(self.parameters.receive)
-            
-            # Get parameters from Keithley
-            self.keithley.initialize()            
-            self.logprint("Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
-        except Exception as e:
-            self.logprint(f"Unable to connect to the Keithley source meter: {e}", "warning")
-
-
+        if target.lower() == "keithley" or target.lower() == "all":
+            try:
+                # Instantiate
+                self.keithley = KeithleyAPI(hw_config = self.hw_config)
+                
+                # Set up signal-slot connections
+                # Keithley -> Scantelligent
+                self.keithley.parameters.connect(self.parameters.receive)
+                
+                # Get parameters from Keithley
+                self.keithley.initialize()            
+                self.logprint("Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
+                self.gui.buttons["keithley"].setState("online")
+            except Exception as e:
+                self.logprint(f"Unable to connect to the Keithley source meter: {e}", "warning")
+                self.gui.buttons["keithley"].setState("offline")
 
         # Camera
-        try:
-            # Instantiate
-            self.camera = CameraAPI(hw_config = self.hw_config)
-            
-            # Set up signal-slot connections
-            self.camera.parameters.connect(self.parameters.receive)
-            
-            # Initialize
-            self.camera.initialize()
-            self.logprint("Found the camera and instantiated CameraAPI as camera", "success")
-        except Exception as e:
-            self.logprint(f"Unable to connect to camera: {e}", "warning")
-
-
+        if target.lower() == "camera" or target.lower() == "all":
+            try:
+                # Instantiate
+                self.camera = CameraAPI(hw_config = self.hw_config)
+                
+                # Set up signal-slot connections
+                self.camera.parameters.connect(self.parameters.receive)
+                
+                # Initialize
+                self.camera.initialize()
+                self.logprint("Found the camera and instantiated CameraAPI as camera", "success")
+                self.gui.buttons["camera"].setState("online")
+            except Exception as e:
+                self.logprint(f"Unable to connect to camera: {e}", "warning")
+                self.gui.buttons["keithley"].setState("offline")
 
         # MLA
-        try:
-            # Instantiate
-            self.mla = MLAAPI(mla_path = mla_path).unwrap()
+        if target.lower() == "mla" or target.lower() == "all":
+            try:
+                # Instantiate
+                self.mla = MLAAPI(mla_path = mla_path).unwrap()
 
-            self.logprint("Found the MLA", "success")
-            self.status.update({"mla": "online"})
-        except Exception as e:
-            self.logprint(f"Unable to connect to the MLA: {e}", "warning")
-
-
+                self.logprint("Found the MLA", "success")
+                self.status.update({"mla": "online"})
+                self.gui.buttons["mla"].setState("online")
+            except Exception as e:
+                self.logprint(f"Unable to connect to the MLA: {e}", "warning")
+                self.gui.buttons["mla"].setState("offline")
 
         # Nanonis
-        try:
-            # Instantiate
-            self.nanonis = NanonisAPI(parent = self, hw_config = self.hw_config)
-            
-            # Set up signal-slot connections
-            # Scantelligent -> Nanonis
-            self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, unlink = True))
+        if target.lower() == "nanonis" or target.lower() == "all":
+            try:
+                # Instantiate
+                self.nanonis = NanonisAPI(parent = self, hw_config = self.hw_config)
+                
+                # Set up signal-slot connections
+                # Scantelligent -> Nanonis
+                self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, unlink = True))
 
-            # Nanonis -> Scantelligent
-            self.nanonis.progress.connect(self.receive_progress)
-            self.nanonis.message.connect(self.receive_message)
-            self.nanonis.parameters.connect(self.parameters.receive)
-            self.nanonis.image.connect(self.receive_image)
-            self.nanonis.data_array.connect(self.receive_data)
-            
-            # Get parameters from Nanonis
-            self.nanonis.initialize()
-            
-            self.logprint(f"Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")        
-        except Exception as e:
-            self.logprint(f"Unable to connect to Nanonis: {e}", "error")
+                # Nanonis -> Scantelligent
+                self.nanonis.progress.connect(self.receive_progress)
+                self.nanonis.message.connect(self.receive_message)
+                self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
+                self.nanonis.image.connect(self.receive_image)
+                self.nanonis.data_array.connect(self.receive_data)
+                
+                # Get parameters from Nanonis
+                self.nanonis.initialize()
+                
+                self.logprint(f"Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
+                self.gui.buttons["nanonis"].setState("online")
+            except Exception as e:
+                self.logprint(f"Unable to connect to Nanonis: {e}", "error")
+                self.gui.buttons["camera"].setState("offline")
+
+
         
-        # Update the buttons in the gui and populate the autocomplete suggestions in the command input
+        # Populate the autocomplete suggestions in the command input
         self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
         self.populate_completer()
 
@@ -278,15 +290,15 @@ class Scantelligent(QtCore.QObject):
                     try:
                         self.mla.disconnect()
                         self.status.update({"mla": "idle"})
-                        self.update_buttons()
+                        self.gui.buttons["mla"].setState("online")
                     except:
                         self.status.update({"mla": "offline"})
-                        self.update_buttons()
+                        self.gui.buttons["mla"].setState("offline")
                 elif self.status["mla"] == "idle" or self.status["mla"] == "online":
                     try:
                         self.mla.connect()
                         self.status.update({"mla": "running"})
-                        self.update_buttons()
+                        self.gui.buttons["mla"].setState("running")
                     except:
                         pass
                 else:
@@ -461,6 +473,7 @@ class Scantelligent(QtCore.QObject):
         completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
         self.gui.line_edits["input"].setCompleter(completer)
+        return
 
     def set_view_range(self, obj: str) -> None:
         imv = self.gui.image_view
@@ -478,76 +491,6 @@ class Scantelligent(QtCore.QObject):
             case _:
                 pass
         
-        return
-
-    def update_buttons(self) -> None:
-        style_sheets = self.gui.style_sheets
-        
-        keithley_button = self.gui.buttons["keithley"]
-        cam_button = self.gui.buttons["camera"]
-        mla_button = self.gui.buttons["mla"]
-        nn_button = self.gui.buttons["nanonis"]
-        scanalyzer_button = self.gui.buttons["scanalyzer"]
-        session_folder_button = self.gui.buttons["session_folder"]
-        
-        # Activate/deactivate and color buttons according to hardware status
-        match self.status["keithley"]:
-            case "online" | "idle":
-                keithley_button.changeToolTip("Keithley: idle")
-                keithley_button.setStyleSheet(style_sheets["connected"])
-            case "running":
-                keithley_button.changeToolTip("Keithley: active GPIB connection")
-                keithley_button.setStyleSheet(style_sheets["running"])
-            case _:
-                keithley_button.changeToolTip("Keithley: offline")
-                keithley_button.setStyleSheet(style_sheets["disconnected"])
-        
-        match self.status["camera"]:
-            case "online" | "idle":
-                cam_button.changeToolTip("Camera: idle")
-                cam_button.setStyleSheet(style_sheets["connected"])
-            case "running":
-                cam_button.changeToolTip("Camera: active USB connection")
-                cam_button.setStyleSheet(style_sheets["running"])
-            case _:
-                cam_button.changeToolTip("Camera: offline")
-                cam_button.setStyleSheet(style_sheets["disconnected"])
-
-        match self.status["mla"]:
-            case "online":
-                mla_button.changeToolTip("Multifrequency Lockin Amplifier: idle")
-                mla_button.setStyleSheet(style_sheets["connected"])            
-            case "running":
-                mla_button.changeToolTip("Multifrequency Lockin Amplifier: active TCP connection")
-                mla_button.setStyleSheet(style_sheets["running"])            
-            case _:
-                mla_button.changeToolTip("Multifrequency Lockin Amplifier: offline")
-                mla_button.setStyleSheet(style_sheets["disconnected"])
-
-        match self.status["nanonis"]:
-            case "idle":
-                self.timer.blockSignals(False)
-                nn_button.setStyleSheet(style_sheets["connected"])
-                nn_button.changeToolTip("Nanonis: idle")
-                            
-            case "running":
-                nn_button.setStyleSheet(style_sheets["running"])
-                nn_button.changeToolTip("Nanonis: active TCP connection")
-                    
-            case _:
-                self.timer.blockSignals(True)
-                nn_button.setStyleSheet(style_sheets["disconnected"])
-                nn_button.changeToolTip("Nanonis: offline")
-
-        [button.setStyleSheet(style_sheets["disconnected"]) for button in [scanalyzer_button, session_folder_button]]
-        try:
-            if os.path.isfile(self.paths.get("scanalyzer")): scanalyzer_button.setStyleSheet(style_sheets["connected"])
-        except: pass
-        try:
-            if os.path.isdir(self.paths.get("session")): session_folder_button.setStyleSheet(style_sheets["connected"])
-        except: pass
-
-        [button.update() for button in [keithley_button, cam_button, mla_button, nn_button]]
         return
 
     def update_tip_status(self) -> None:
@@ -614,6 +557,9 @@ class Scantelligent(QtCore.QObject):
     def toggle_view(self, view: str = None):
         new_view = "none"
         
+        self.logprint(f"The current view is {self.gui.buttons["view"].state_name}")
+        if 3 == 3: return
+        
         # Determine the new view mode
         if isinstance(view, str) and view in ["nanonis", "camera", "none"]:
             new_view = view
@@ -641,7 +587,7 @@ class Scantelligent(QtCore.QObject):
         match new_view:
             case "camera":
                 self.status.update({"view": "camera"})
-                self.gui.buttons["view"].setIcon(self.icons.get("view_camera"))
+                self.gui.buttons["view"].setState("camera")
 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(np.zeros((2, 2)))
@@ -704,7 +650,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     def launch_scanalyzer(self) -> None:
-        if hasattr(self, "paths") and "scanalyzer_path" in list(self.paths.keys()):
+        if "scanalyzer_path" in list(self.paths.keys()):
             try:
                 scanalyzer_path = self.paths["scanalyzer_path"]
                 self.logprint("Attempting to launch scanalyzer by executing CLI command:", message_type = "message")
@@ -717,15 +663,18 @@ class Scantelligent(QtCore.QObject):
         return
 
     def open_session_folder(self) -> None:
-        if hasattr(self, "paths") and "session_path" in list(self.paths.keys()):
+        if "session_path" in list(self.paths.keys()):
             try:
                 session_path = self.paths["session_path"]
                 self.logprint("Opening the session folder", message_type = "message")
                 os.startfile(session_path)
+                self.gui.buttons["session_folder"].setState("connected")
             except Exception as e:
                 self.logprint(f"Failed to open session folder: {e}", message_type = "error")
+                self.gui.buttons["session_folder"].setState("disconnected")
         else:
             self.logprint("Error. Session folder unknown.", message_type = "error")
+            self.gui.buttons["session_folder"].setState("disconnected")
         return
 
     def info_popup(self) -> None:
@@ -737,7 +686,7 @@ class Scantelligent(QtCore.QObject):
         msg_box.setIcon(QtWidgets.QMessageBox.Icon.Information)
 
         #QtCore.QTimer.singleShot(5000, msg_box.close)
-        retval = msg_box.exec()
+        return_value = msg_box.exec()
         
         return
 
@@ -877,7 +826,7 @@ class Scantelligent(QtCore.QObject):
         # Channel, direction, projection
         try:
             channel = comboboxes["channels"].currentText()
-            direction = "backward" if buttons["direction"].isChecked() else "forward"
+            direction = "backward" if bool(buttons["direction"].state_index) else "forward"
             projection = comboboxes["projection"].currentText()
             flags.update({"channel": channel, "direction": direction, "projection": projection})
         except:
@@ -971,7 +920,6 @@ class Scantelligent(QtCore.QObject):
             if error: self.logprint(f"Error toggling the tip status: {error}", message_type = "error")
             else: self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
 
-        self.update_buttons()
         self.update_tip_status()
 
         return True
@@ -1006,7 +954,6 @@ class Scantelligent(QtCore.QObject):
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
             return False
 
-        self.update_buttons()
         self.update_tip_status()
 
         return True
