@@ -2,7 +2,6 @@ import numpy as np
 from PyQt6 import QtCore
 from .hw_nanonis import NanonisHardware
 from time import sleep, time
-import pint
 
 
 
@@ -17,11 +16,13 @@ class NanonisAPI(QtCore.QObject):
     
     def __init__(self, parent, hw_config: dict):
         super().__init__()
-        self.ureg = pint.UnitRegistry() # For dealing with quantities
         self.nanonis_hardware = NanonisHardware(hw_config = hw_config)
+        # nanonis_hardware methods are low-level methods performing direct communication to the Nanonis FPGA over TCP-IP
+        # nanonisAPI methods are higher-level methods that incorporate these methods, but provide a friendlier interface
+        # The alias nhw = self.nanonis_hardware is typically used within the methods of this API
         # Note:
         # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
-        # The exception is caught in Scantelligent rather than here
+        # The exception should be caught in the code where the NanonisAPI object is instantiated
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.timer = QtCore.QTimer()
         self.abort_flag = False
@@ -1029,7 +1030,5 @@ class NanonisAPI(QtCore.QObject):
             if unlink: self.unlink()
 
         return (spectrum, error)
-
-
 
 

@@ -1,10 +1,10 @@
+import os, yaml
 from PyQt6 import QtCore
 
 
 
 # Parameter management (getting from hardware, setting, loading from file and saving)
-class ParameterManager(QtCore.QObject):
-    
+class ParameterManager(QtCore.QObject):    
     def __init__(self, parent):
         super().__init__()
         self.scantelligent = parent # Reference to Scantelligent (parent)
@@ -44,30 +44,38 @@ class ParameterManager(QtCore.QObject):
 
     def set(self, parameter_type: str = "frame") -> None:
         # It is noted that the nomenclature 'set' causes shadowing of the built-in 'set' method, but I decided to keep this regardless
-
         sct = self.scantelligent
-        line_edits = sct.gui.line_edits
-        buttons = sct.gui.buttons
         
+        # Abort if the relevant hardware objects are missing
         if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"]:
+            sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
             if not hasattr(sct, "nanonis"): return
+
+
 
         match parameter_type:
 
             case "feedback":
-                sct.nanonis.parameters_update(unlink = True)
+                parameters = {"dict_name": "feedback"}
+                
+                for tag, parameter in zip(["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"],
+                                          ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "p_gain (pm)", "t_const (us)", "v_fwd (nm/s)", "v_bwd (nm/s)"]):
+                    val = sct.gui.line_edits[tag].getValue()
+                    if isinstance(val, int | float): parameters.update({parameter: val})
+                    
+                sct.logprint(parameters)
+                sct.nanonis.parameters_update(parameters, unlink = True)
 
             case "frame":
-                offset = [line_edits["frame_x"].getValue(), line_edits["frame_y"].getValue()]
-                scan_range = [line_edits["frame_width"].getValue(), line_edits["frame_height"].getValue()]
-                angle = line_edits["frame_angle"].getValue()
+                offset = [sct.gui.line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
+                scan_range = [sct.gui.line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
+                angle = sct.gui.line_edits["frame_angle"].getValue()
                 
                 parameters = {"dict_name": "frame", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle}
                 sct.nanonis.frame_update(parameters, unlink = True)
 
             case "grid":
-                grid = [line_edits["grid_pixels"].getValue(), line_edits["grid_lines"].getValue()]
-                
+                grid = [sct.gui.line_edits[tag].getValue() for tag in ["grid_pixels", "grid_lines"]]                
                 sct.nanonis.grid_update(unlink = True)
 
             case "speeds":
@@ -88,27 +96,42 @@ class ParameterManager(QtCore.QObject):
             case _:
                 pass
 
-        """
-        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
-            str = self.gui.line_edits[tag].text()
-            numbers = self.data.extract_numbers_from_str(str)
-            if len(numbers) < 1: continue
-            flt = numbers[0]
-            
-            match tag:
-                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
-                case "V_mla": s_p.update({"V_mla (V)": flt})
-                case "I_fb": s_p.update({"I_fb (pA)": flt})
-                case "p_gain": s_p.update({"p_gain (pm)": flt})
-                case "t_const": s_p.update({"t_const (us)": flt})
-                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
-                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
-                case _: pass
+    def load_from_file(self, parameter_type: str = "scan_parameters", index: int = 0) -> None:
+        sct = self.scantelligent
 
-        self.nanonis.parameters_update(s_p)
-        """
+        try:
+            match parameter_type:
+                case "scan_parameters":
+                    params = self.user.scan_parameters[index]
+                    
+                    parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
+                    line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
+                    units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
+                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
+                    
+                    for name, le, unit in zip(parameter_names, line_edits, units):
+                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+                
+                case "tip_prep_parameters":
+                    params = self.user.tip_prep_parameters[index]
+                    
+                    parameter_names = ["pulse_voltage (V)", "pulse_duration (ms)"]
+                    line_edit_names = ["pulse_voltage", "pulse_duration"]
+                    units = ["V", "ms"]
+                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
+                    
+                    for name, le, unit in zip(parameter_names, line_edits, units):
+                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
+                    
+                case _:
+                    pass
 
+        except Exception as e:
+            sct.logprint(f"Error loading parameters. {e}", message_type = "error")
+        
         return
+
+
 
     @QtCore.pyqtSlot(dict)
     def receive(self, parameters: dict) -> None:
@@ -170,9 +193,9 @@ class ParameterManager(QtCore.QObject):
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)
                 
-                line_edits["V_hor"].setValue(parameters.get("V_motor (V)"))
-                line_edits["V_ver"].setValue(parameters.get("V_motor (V)"))
-                line_edits["f_motor"].setValue(parameters.get("f_motor (Hz)"))
+                sct.gui.line_edits["V_hor"].setValue(parameters.get("V_motor (V)"))
+                sct.gui.line_edits["V_ver"].setValue(parameters.get("V_motor (V)"))
+                sct.gui.line_edits["f_motor"].setValue(parameters.get("f_motor (Hz)"))
 
             case "channels":
                 for key, value in parameters.items():
@@ -332,4 +355,86 @@ class ParameterManager(QtCore.QObject):
 
             case _:
                 pass
+
+
+
+class UserData:
+    def __init__(self):
+        script_path = os.path.abspath(__file__)
+        lib_folder = os.path.dirname(script_path)
+        scantelligent_folder = os.path.dirname(lib_folder)
+        sys_folder = os.path.join(scantelligent_folder, "sys")
+        self.parameters_file = os.path.join(sys_folder, "user_parameters.yml")
+
+        self.frames = [
+            {}, {}, {}
+        ]
+        (self.scan_parameters, self.tip_prep_parameters, self.coarse_parameters) = self.load_parameter_sets()
+        self.windows = [{}, {}, {}]
+        self.coarse_parameters = [{}, {}, {}]
+
+
+
+    def save_yaml(self, data, path: str) -> bool | str:
+        error = False
+
+        try: # Save the currently opened scan folder to the config yaml file so it opens automatically on startup next time
+            with open(path, "w") as file:
+                yaml.safe_dump(data, file)
+        except Exception as e:
+            error = f"Failed to save to yaml: {e}"
+        
+        return error
+
+    def load_yaml(self, path: str) -> tuple[object, bool | str]:
+        yaml_data = {}
+        error = False
+        
+        try: # Read the last scan file from the config yaml file
+            with open(path, "r") as file:
+                yaml_data = yaml.safe_load(file)
+        except Exception as e:
+            error = e
+
+        return (yaml_data, error)
+    
+    def load_parameter_sets(self):
+        (yaml_data, error) = self.load_yaml(self.parameters_file)
+        
+        scan_parameters = []
+        tip_prep_parameters = []
+        coarse_parameters = []
+        
+        for parameter_set_type, dicts_set in yaml_data.items():
+            
+            match parameter_set_type:
+                case "scan_parameters":
+                    for key, parameters_dict in dicts_set.items():
+                        scan_parameters.append(parameters_dict)
+                
+                case "tip_prep_parameters":
+                    for key, parameters_dict in dicts_set.items():
+                        tip_prep_parameters.append(parameters_dict)
+                
+                case "coarse_parameters":
+                    for key, parameters_dict in dicts_set.items():
+                        coarse_parameters.append(parameters_dict)
+                
+                case _:
+                    pass
+
+        return (scan_parameters, tip_prep_parameters, coarse_parameters)
+    
+    def save_parameter_sets(self):
+        output_dict = {"scan_parameters": {}, "other_parameters": {}, "tip_prep_parameters": {}}
+        
+        for index, set in enumerate(self.scan_parameters):
+            output_dict["scan_parameters"].update({index: set})
+        
+        for index, set in enumerate(self.tip_prep_parameters):
+            output_dict["tip_prep_parameters"].update({index: set})
+
+        self.save_yaml(output_dict, self.parameters_file)
+        return
+
 

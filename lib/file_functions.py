@@ -26,6 +26,7 @@ class FileFunctions():
 
     def load_yaml(self, path: str) -> tuple[object, bool | str]:
         error = False
+        yaml_data = {}
         
         try: # Read the last scan file from the config yaml file
             with open(path, "r") as file:

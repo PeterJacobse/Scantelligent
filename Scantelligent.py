@@ -1,7 +1,8 @@
-import os, sys, html, pint, atexit, importlib
+import os, sys, html, pint, atexit
 from PIL import Image
 import numpy as np
-from PyQt6 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtGui, QtCore
+from PyQt6.QtWidgets import QApplication
 import pyqtgraph as pg
 from lib import STWidgets, ScantelligentGUI
 from lib import DataProcessing, UserData, FileFunctions, ParameterManager
@@ -95,7 +96,7 @@ class Scantelligent(QtCore.QObject):
         shortcuts = self.gui.shortcuts        
         
         # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")], ["camera", self.connect_hardware], ["exit", self.exit],
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")], ["camera", lambda: self.dis_reconnect(target = "camera")], ["exit", self.exit],
                     ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.gui.info_box.exec],
                     
                     # Experiment
@@ -117,11 +118,6 @@ class Scantelligent(QtCore.QObject):
 
         [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
         [connections.append([f"set_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
-
-        connections.append([f"scan_parameters_0", lambda: self.load_parameters_from_file("scan_parameters", 0)])
-        connections.append([f"scan_parameters_1", lambda: self.load_parameters_from_file("scan_parameters", 1)])
-        connections.append([f"scan_parameters_2", lambda: self.load_parameters_from_file("scan_parameters", 2)])
-        connections.append([f"scan_parameters_3", lambda: self.load_parameters_from_file("scan_parameters", 3)])
 
         for connection in connections:
             name = connection[0]
@@ -167,8 +163,10 @@ class Scantelligent(QtCore.QObject):
         # Read hardware configurations from file
         (hw_config, error) = self.file_functions.load_yaml(self.paths.get("config_file"))
         if error:
-            self.logprint("Problem loading the hardware configurations from file", message_type = "error")
+            self.logprint("./sys/config.yml: Problem loading the hardware configurations from file", message_type = "error")
             return
+        else:
+            self.logprint("./sys/config.yml: Loaded hardware configurations from file as (dict) hw_config", message_type = "success")
         self.hw_config = hw_config
 
         # MLA (library)
@@ -177,7 +175,7 @@ class Scantelligent(QtCore.QObject):
             mla_path = mla_config.get("library_path")
             if os.path.isdir(mla_path):
                 self.paths.update({"mla": mla_path})
-                sys.path.insert(0, self.paths.get("mla"))
+                sys.path.insert(0, self.paths.get("mla")) # Path to the MLA library
 
 
 
@@ -186,10 +184,10 @@ class Scantelligent(QtCore.QObject):
             scanalyzer_path = hw_config.get("scanalyzer_path")
             if os.path.isfile(scanalyzer_path):
                 self.paths.update({"scanalyzer": scanalyzer_path})
-                self.logprint("Scanalyzer found and linked", message_type = "success")
+                self.logprint(f"Scanalyzer: Scanalyzer found at {self.paths["scanalyzer"]} and linked", message_type = "success")
                 self.gui.buttons["scanalyzer"].setState("online")
             else:
-                self.logprint("Warning: Scanalyzer path could not be read", message_type = "error")
+                self.logprint("Scanalyzer: Scanalyzer path could not be read", message_type = "warning")
                 self.gui.buttons["scanalyzer"].setState("offline")
 
         # Keithley
@@ -204,10 +202,10 @@ class Scantelligent(QtCore.QObject):
                 
                 # Get parameters from Keithley
                 self.keithley.initialize()            
-                self.logprint("Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
+                self.logprint("Keithley: Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
                 self.gui.buttons["keithley"].setState("online")
             except Exception as e:
-                self.logprint(f"Unable to connect to the Keithley source meter: {e}", "warning")
+                self.logprint(f"Keithley: Unable to connect to the Keithley source meter: {e}", "warning")
                 self.gui.buttons["keithley"].setState("offline")
 
         # Camera
@@ -221,10 +219,10 @@ class Scantelligent(QtCore.QObject):
                 
                 # Initialize
                 self.camera.initialize()
-                self.logprint("Found the camera and instantiated CameraAPI as camera", "success")
+                self.logprint("Camera: Found the camera and instantiated CameraAPI as camera", "success")
                 self.gui.buttons["camera"].setState("online")
             except Exception as e:
-                self.logprint(f"Unable to connect to camera: {e}", "warning")
+                self.logprint(f"Camera: Unable to connect to camera: {e}", "warning")
                 self.gui.buttons["keithley"].setState("offline")
 
         # MLA
@@ -233,11 +231,11 @@ class Scantelligent(QtCore.QObject):
                 # Instantiate
                 self.mla = MLAAPI(mla_path = mla_path).unwrap()
 
-                self.logprint("Found the MLA", "success")
+                self.logprint("MLA: Found the MLA", "success")
                 self.status.update({"mla": "online"})
                 self.gui.buttons["mla"].setState("online")
             except Exception as e:
-                self.logprint(f"Unable to connect to the MLA: {e}", "warning")
+                self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
                 self.gui.buttons["mla"].setState("offline")
 
         # Nanonis
@@ -260,18 +258,17 @@ class Scantelligent(QtCore.QObject):
                 # Get parameters from Nanonis
                 self.nanonis.initialize()
                 
-                self.logprint(f"Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
+                self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
                 self.gui.buttons["nanonis"].setState("online")
             except Exception as e:
-                self.logprint(f"Unable to connect to Nanonis: {e}", "error")
-                self.gui.buttons["camera"].setState("offline")
+                self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
+                self.gui.buttons["nanonis"].setState("offline")
 
 
         
         # Populate the autocomplete suggestions in the command input
         self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
         self.populate_completer()
-
         return
 
     def dis_reconnect(self, target: str = "nanonis") -> None:
@@ -284,7 +281,7 @@ class Scantelligent(QtCore.QObject):
                     try: self.nanonis.link()
                     except: pass
                 else:
-                    self.connect_hardware()
+                    self.connect_hardware(target = "nanonis")
                 return
             
             case "mla":
@@ -468,7 +465,7 @@ class Scantelligent(QtCore.QObject):
         if hasattr(self, "data"): data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith("_")]
         if hasattr(self, "file_functions"): file_function_attributes = ["file_functions." + attr for attr in self.file_functions.__dict__ if not attr.startswith("_")]
         if hasattr(self, "keithley"): keithley_attributes = ["keithley." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
+        if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.camera.__dict__ if not attr.startswith("_")]
         
         [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes, file_function_attributes, parameters_attributes, user_attributes, mla_analog_attributes, mla_lockin_attributes, mla_osc_attributes, mla_attributes, keithley_attributes, camera_attributes]]
         completer = STWidgets.Completer(self.all_attributes, self.gui)
@@ -652,12 +649,12 @@ class Scantelligent(QtCore.QObject):
         return
 
     def launch_scanalyzer(self) -> None:
-        if "scanalyzer_path" in list(self.paths.keys()):
+        if "scanalyzer" in list(self.paths.keys()):
             try:
-                scanalyzer_path = self.paths["scanalyzer_path"]
-                self.logprint("Attempting to launch scanalyzer by executing CLI command:", message_type = "message")
+                scanalyzer_path = self.paths["scanalyzer"]
+                self.logprint("Launching Scanalyzer:", message_type = "message")
                 self.logprint(f"{sys.executable} {scanalyzer_path}", message_type = "code")
-                self.process.start(sys.executable, [self.paths["scanalyzer_path"]])
+                self.process.start(sys.executable, [self.paths["scanalyzer"]])
             except Exception as e:
                 self.logprint(f"Failed to launch Scanalyzer: {e}", message_type = "error")
         else:
@@ -706,70 +703,12 @@ class Scantelligent(QtCore.QObject):
     def exit(self) -> None:
         self.cleanup()
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
-        QtWidgets.QApplication.instance().quit()
+        QApplication.instance().quit()
 
     def closeEvent(self, event) -> None:
         self.exit()
 
 
-
-    # Getting, setting, loading parameters. To be deprecated after completion of the ParameterManager class
-    def set_parameters(self) -> None:
-        # Update Nanonis according to the parameters that were set in the GUI
-        s_p = self.user.scan_parameters[0]
-        
-        for tag in ["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"]:
-            str = self.gui.line_edits[tag].text()
-            numbers = self.data.extract_numbers_from_str(str)
-            if len(numbers) < 1: continue
-            flt = numbers[0]
-            
-            match tag:
-                case "V_nanonis": s_p.update({"V_nanonis (V)": flt})
-                case "V_mla": s_p.update({"V_mla (V)": flt})
-                case "I_fb": s_p.update({"I_fb (pA)": flt})
-                case "p_gain": s_p.update({"p_gain (pm)": flt})
-                case "t_const": s_p.update({"t_const (us)": flt})
-                case "v_fwd": s_p.update({"v_fwd (nm/s)": flt})
-                case "v_bwd": s_p.update({"v_bwd (nm/s)": flt})
-                case _: pass
-
-        self.nanonis.parameters_update(s_p)
-        
-        return
-
-    def load_parameters_from_file(self, parameters_type: str = "scan_parameters", index: int = 0) -> None:
-        try:
-            match parameters_type:
-                case "scan_parameters":
-                    params = self.user.scan_parameters[index]
-                    
-                    parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
-                    line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
-                    units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
-                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
-                    
-                    for name, le, unit in zip(parameter_names, line_edits, units):
-                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
-                
-                case "tip_prep_parameters":
-                    params = self.user.tip_prep_parameters[index]
-                    
-                    parameter_names = ["pulse_voltage (V)", "pulse_duration (ms)"]
-                    line_edit_names = ["pulse_voltage", "pulse_duration"]
-                    units = ["V", "ms"]
-                    line_edits = [self.gui.line_edits[name] for name in line_edit_names]
-                    
-                    for name, le, unit in zip(parameter_names, line_edits, units):
-                        if name in params.keys(): le.setText(f"{params[name]:.2f} {unit}")
-                    
-                case _:
-                    pass
-
-        except Exception as e:
-            self.logprint(f"Error loading parameters. {e}", message_type = "error")
-        
-        return
 
     def update_processing_flags(self) -> None:
         flags = {"dict_name": "processing_flags"}
@@ -830,7 +769,7 @@ class Scantelligent(QtCore.QObject):
 
 
 
-    # Nanonis functions 
+    # Nanonis functions
     # Simple data requests over TCP-IP
     def tip_prep(self, action: str):
         if not hasattr(self, "nanonis"): return
@@ -1074,11 +1013,12 @@ class Scantelligent(QtCore.QObject):
         self.gui.progress_bars["experiment"].setValue(0)
         experiment_name = self.gui.comboboxes["experiment"].currentText()
         self.status["experiment"].update({"name": experiment_name})
-        
+
         if "session_path" in self.paths.keys():
             self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
             self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
         else:
+            self.logprint("No session path known. I don't know where to save the experiment data to", message_type = "error")
             return
         
         file_path = os.path.join(self.paths["experiments_folder"], experiment_name + ".py")
@@ -1156,6 +1096,6 @@ class Scantelligent(QtCore.QObject):
 
 # Main program
 if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     logic_app = Scantelligent()
     sys.exit(app.exec())

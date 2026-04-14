@@ -4,8 +4,7 @@ from scipy.ndimage import gaussian_filter
 from scipy.fft import fft2, fftshift
 from matplotlib import colors
 from scipy.linalg import lstsq
-import pint, re, yaml, os
-from dataclasses import dataclass
+import pint, re
 
 
 
@@ -784,84 +783,3 @@ class DataProcessing():
             return (image_statistics, error)
 
         return (image_statistics, error)
-
-
-
-class UserData:
-    def __init__(self):
-        script_path = os.path.abspath(__file__)
-        lib_folder = os.path.dirname(script_path)
-        scantelligent_folder = os.path.dirname(lib_folder)
-        sys_folder = os.path.join(scantelligent_folder, "sys")
-        self.parameters_file = os.path.join(sys_folder, "user_parameters.yml")
-
-        self.frames = [
-            {}, {}, {}
-        ]
-        (self.scan_parameters, self.tip_prep_parameters, self.coarse_parameters) = self.load_parameter_sets()
-        self.windows = [{}, {}, {}]
-        self.coarse_parameters = [{}, {}, {}]
-
-
-    
-    def save_yaml(self, data, path: str) -> bool | str:
-        error = False
-
-        try: # Save the currently opened scan folder to the config yaml file so it opens automatically on startup next time
-            with open(path, "w") as file:
-                yaml.safe_dump(data, file)
-        except Exception as e:
-            error = f"Failed to save to yaml: {e}"
-        
-        return error
-
-    def load_yaml(self, path: str) -> tuple[object, bool | str]:
-        error = False
-        
-        try: # Read the last scan file from the config yaml file
-            with open(path, "r") as file:
-                yaml_data = yaml.safe_load(file)
-        except Exception as e:
-            error = e
-
-        return (yaml_data, error)
-    
-    def load_parameter_sets(self):
-        (yaml_data, error) = self.load_yaml(self.parameters_file)
-        
-        scan_parameters = []
-        tip_prep_parameters = []
-        coarse_parameters = []
-        
-        for parameter_set_type, dicts_set in yaml_data.items():
-            
-            match parameter_set_type:
-                case "scan_parameters":
-                    for key, parameters_dict in dicts_set.items():
-                        scan_parameters.append(parameters_dict)
-                
-                case "tip_prep_parameters":
-                    for key, parameters_dict in dicts_set.items():
-                        tip_prep_parameters.append(parameters_dict)
-                
-                case "coarse_parameters":
-                    for key, parameters_dict in dicts_set.items():
-                        coarse_parameters.append(parameters_dict)
-                
-                case _:
-                    pass
-
-        return (scan_parameters, tip_prep_parameters, coarse_parameters)
-    
-    def save_parameter_sets(self):
-        output_dict = {"scan_parameters": {}, "other_parameters": {}, "tip_prep_parameters": {}}
-        
-        for index, set in enumerate(self.scan_parameters):
-            output_dict["scan_parameters"].update({index: set})
-        
-        for index, set in enumerate(self.tip_prep_parameters):
-            output_dict["tip_prep_parameters"].update({index: set})
-
-        self.save_yaml(output_dict, self.parameters_file)
-        return
-
