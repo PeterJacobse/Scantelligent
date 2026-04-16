@@ -100,7 +100,7 @@ class FileFunctions():
                 
         return found_files
 
-    def load_experiment_from_file(self, file_path: str, parent):
+    def load_experiment_from_file(self, file_path: str, parent, hw_config: dict = {}):
         """
         Finds and instantiates the 'Experiment' class from a specific file.
         """
@@ -114,7 +114,7 @@ class FileFunctions():
 
         # 2. Get the 'Experiment' class and instantiate it
         experiment = getattr(module, "Experiment")
-        return experiment(parent)
+        return experiment(parent = parent, hw_config = hw_config)
 
 
 

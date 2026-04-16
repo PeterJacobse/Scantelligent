@@ -14,19 +14,35 @@ class BaseExperiment(QObject):
     finished = pyqtSignal() # Signal to indicate an experiment is finished. Emission of this signal is connected to cleanup
     data_array = pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, parent, hw_config: dict):
+    def __init__(self, hw_config: dict):
         super().__init__()
         self.abort_requested = False
         self.hw_config = hw_config
+        self.logprint(f"Class BaseExperiment instantiated with hw_config {self.hw_config}", message_type = "message")
         # Note:
         # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
         # The exception is caught in Scantelligent rather than here
         self.abort_flag = False
-        self.scantelligent = parent
-        if hasattr(self.scantelligent, "data"): self.data = self.scantelligent.data
 
     def logprint(self, message: str = "", message_type: str = "error"):
         return self.message.emit(message, message_type)
+
+    def setup_line_edits(self, gui, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:
+        self.line_edits = [gui.line_edits[f"experiment_{i}"] for i in range(3)]
+        for list_object in [tooltips, digits, limits, units]:
+            if len(list_object) > 2: list_object = list_object[:2]
+        
+        [self.line_edits[index].changeToolTip(tooltip) for index, tooltip in enumerate(tooltips)]
+        [self.line_edits[index].setDigits(digits) for index, digits in enumerate(digits)]
+        [self.line_edits[index].setLimits(limits) for index, limits in enumerate(limits)]
+        [self.line_edits[index].setValue(value) for index, value in enumerate(values)]
+        [self.line_edits[index].setUnit(unit) for index, unit in enumerate(units)]
+        return
+
+    def setup_combobox(self, gui, tooltip: str = "", items: list = []) -> None:
+        gui.comboboxes["direction"].renewItems(items)
+        gui.comboboxes["direction"].changeTooltip(tooltip)
+        return
 
     def connect_hardware(self, target: str = "nanonis") -> None:
         match target:
@@ -50,6 +66,14 @@ class BaseExperiment(QObject):
         return
 
     def experiment_finished(self):
-        self.logprint("Experiment finished", message_type = "success")
+        if not self.abort_requested:
+            self.logprint("Experiment finished", message_type = "success")
+            self.task_progress.emit(100)
+            self.exp_progress.emit(100)
+        
         self.finished.emit()
+        return
+    
+    def gui_not_found_error(self):
+        self.logprint("This experiment reads parameters from the Scantelligent GUI, but the GUI could not be found or initialized properly", message_type = "error")
         return

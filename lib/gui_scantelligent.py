@@ -169,10 +169,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             # Experiment
             "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy")),
-            "start_pause": MSB(icon = icons.get("start"), click_to_toggle = False, size = 28,
-                               states = [{"name": "load", "color": self.colors["dark_red"], "tooltip": "Load experiment"},
-                                         {"name": "ready", "color": self.colors["dark_green"], "tooltip": "Start experiment"},
-                                         {"name": "running", "color": self.colors["blue"], "tooltip": "Experiment running"}]),
+            "start_stop": MSB(click_to_toggle = False, size = 28,
+                              states = [{"name": "load", "color": self.colors["dark_red"], "tooltip": "Load/reset experiment", "icon": icons.get("start")},
+                                        {"name": "ready", "color": self.colors["dark_green"], "tooltip": "Start experiment", "icon": icons.get("start")},
+                                        {"name": "running", "color": self.colors["blue"], "tooltip": "Experiment running", "icon": icons.get("stop")}]),
             "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop"), size = 28),
             
             # Parameters
@@ -212,7 +212,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "e": MSB(tooltip = mtt + "east\n(Ctrl + → / Ctrl + 6)", icon = rotate_icon(arrow, angle = 0)),
             "se": MSB(tooltip = mtt + "southeast\n(Ctrl + 3)", icon = rotate_icon(arrow45, angle = 90)),
             "s": MSB(tooltip = mtt + "south\n(Ctrl + ↓ / Ctrl + 2)", icon = rotate_icon(arrow, angle = 90)),
-            "sw": MSB(tooltip = mtt + "southwest\n(Ctrl + 1)", icon = rotate_icon(arrow45, angle = 270)),
+            "sw": MSB(tooltip = mtt + "southwest\n(Ctrl + 1)", icon = rotate_icon(arrow45, angle = 180)),
             "w": MSB(tooltip = mtt + "west\n(Ctrl + ← / Ctrl + 4)", icon = rotate_icon(arrow, angle = 180)),
             "nw": MSB(tooltip = mtt + "northwest\n(Ctrl + 7)", icon = rotate_icon(arrow45, angle = 270)),
             
@@ -309,6 +309,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "gains": CB(name = "gains", tooltip = "Load gains parameters"),
             "frame": CB(name = "frame", tooltip = "Load frame parameters"),
             "grid": CB(name = "grid", tooltip = "Load grid parameters"),
+            
+            "approach_fb_parameters": CB(name = "approach_fb_parameters", tooltip = "What feedback parameter set to use transiently during tip approach")
         }
         
         # Add the button handles to the tooltips
@@ -328,13 +330,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "experiment_2": LE(tooltip = "Experiment parameter field 2"),
 
             # Coarse
-            "z_steps": LE(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0),
-            "h_steps": LE(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", limits = [0, 100000], digits = 0),
-            "minus_z_steps": LE(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", limits = [0, 100000], digits = 0),
+            "z_steps": LE(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0, max_width = 100),
+            "h_steps": LE(value = 100, tooltip = "Steps in the horizontal direction", unit = "steps", limits = [0, 100000], digits = 0, max_width = 100),
+            "minus_z_steps": LE(value = 0, tooltip = "Steps in the -Z (advance) direction", unit = "steps down", limits = [0, 100000], digits = 0, max_width = 100),
             
-            "V_hor": LE(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0),
-            "V_ver": LE(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0),
-            "f_motor": LE(value = 1000, tooltip = "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0),
+            "V_hor": LE(value = 150, tooltip = "Voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0, max_width = 100),
+            "V_ver": LE(value = 150, tooltip = "Voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0, max_width = 100),
+            "f_motor": LE(value = 1000, tooltip = "Sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0, max_width = 100),
+            
+            "approach_min_percentile": LE(value = 40, tooltip = "Minimum percentile of the piezo range\nWithdraw and coarse adjust if the tip lands below this value", unit = "%", digits = 0),
+            "approach_max_percentile": LE(value = 60, tooltip = "Maximum percentile of the piezo range\nWithdraw and coarse adjust if the tip lands above this value", unit = "%", digits = 0),
 
             # Parameters
             "V_nanonis": LE(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
@@ -481,7 +486,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Named groups
         self.experiment_controls = [progress_bars["experiment"]]
-        [self.experiment_controls.append(self.buttons[name]) for name in ["start_pause", "stop", "save"]]
+        [self.experiment_controls.append(self.buttons[name]) for name in ["start_stop", "save"]]
         
         # Add the progress_bar handles to the tooltips
         [progress_bars[name].changeToolTip(f"gui.progress_bars[\"{name}\"]", line = 10) for name in progress_bars.keys()]
@@ -521,6 +526,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "coarse_vertical": make_layout("g"),
             "coarse_horizontal": make_layout("g"),
+            "approach_percentiles": make_layout("h"),
             
             "modulators": make_layout("g"),
             "mod_set_get": make_layout("h"),
@@ -679,7 +685,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return shortcuts
 
     def make_dialogs(self) -> dict:
-        dialogs = {"parameters": QtWidgets.QInputDialog(), "info": QtWidgets.QInputDialog()}
+        dialogs = {
+            "parameters": QtWidgets.QInputDialog(),
+            "info": QtWidgets.QInputDialog(),
+            "open_file": QtWidgets.QFileDialog()
+                   }
         return dialogs
 
     def make_boxes(self) -> tuple[QtWidgets.QMessageBox, QtWidgets.QMessageBox]:
@@ -720,7 +730,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["connections"].addWidget(buttons["exit"], 0, 5, 2, 1)
 
         # Experiment
-        [layouts["experiment_controls_0"].addWidget(buttons[name]) for name in ["stop", "start_pause"]]
+        layouts["experiment_controls_0"].addWidget(buttons["start_stop"])
         [layouts["experiment_controls_1"].addWidget(widget) for widget in [self.progress_bars["experiment"], buttons["save"], line_edits["experiment_filename"]]]
         [layouts["experiment_fields"].addWidget(widget) for widget in self.experiment_parameter_fields]
         e_layout = layouts["experiment"]
@@ -734,23 +744,27 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         e_layout.addLayout(layouts["experiment_fields"], 2, 2, 1, 3)
         
         # Coarse
-        cv_layout = layouts["coarse_vertical"]
-        cv_layout.addWidget(line_edits["V_ver"], 0, 0, 1, 3)
-        cv_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3)
-        [cv_layout.addWidget(checkbox, 2 + i + int(i / 2), 0) for i, checkbox in enumerate(self.action_checkboxes)]
-        [cv_layout.addWidget(button, 2 + i + int(i / 2), 1) for i, button in enumerate(self.action_buttons)]
-        cv_layout.addWidget(line_edits["z_steps"], 3, 2)
-        cv_layout.addWidget(labels["move_horizontally"], 4, 0, 1, 3)
-        cv_layout.addWidget(line_edits["minus_z_steps"], 5, 2)
-        cv_layout.setRowStretch(cv_layout.rowCount(), 1)
+        [layouts["approach_percentiles"].addWidget(line_edits[f"approach_{name}_percentile"]) for name in ["min", "max"]]
         
         ch_layout = layouts["coarse_horizontal"]
-        ch_layout.addWidget(line_edits["V_hor"], 0, 0, 1, 3)
-        ch_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3)
-        ch_layout.addWidget(line_edits["h_steps"], 2, 0, 1, 3)
+        ch_layout.addWidget(line_edits["V_hor"], 0, 0, 1, 3, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+        ch_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+        ch_layout.addWidget(line_edits["h_steps"], 2, 0, 1, 3, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
         [ch_layout.addWidget(button, 3 + int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
-        ch_layout.addWidget(checkboxes["composite_motion"], 6, 0, 1, 3)
+        ch_layout.addWidget(checkboxes["composite_motion"], 6, 0, 1, 3, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
         ch_layout.setRowStretch(ch_layout.rowCount(), 1)
+        
+        cv_layout = layouts["coarse_vertical"]
+        cv_layout.addWidget(line_edits["V_ver"], 0, 0, 1, 3, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+        cv_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+        [cv_layout.addWidget(checkbox, 2 + i + int(i / 2), 0) for i, checkbox in enumerate(self.action_checkboxes)]
+        [cv_layout.addWidget(button, 2 + i + int(i / 2), 2) for i, button in enumerate(self.action_buttons)]
+        cv_layout.addWidget(line_edits["z_steps"], 3, 1)
+        cv_layout.addWidget(labels["move_horizontally"], 4, 0, 1, 3)
+        cv_layout.addWidget(line_edits["minus_z_steps"], 5, 1)
+        cv_layout.addWidget(comboboxes["approach_fb_parameters"], 7, 0, 1, 3)
+        cv_layout.addLayout(layouts["approach_percentiles"], 8, 0, 1, 3, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+        cv_layout.setRowStretch(cv_layout.rowCount(), 1)
         
         # Parameters
         [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
@@ -872,7 +886,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
         # Make layouts of several groupboxes
-        [layouts["coarse_control"].addWidget(groupboxes[name]) for name in ["coarse_horizontal", "coarse_vertical"]]
+        [layouts["coarse_control"].addWidget(groupboxes[name], 1) for name in ["coarse_horizontal", "coarse_vertical"]]
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["gains", "frame_grid"]]
         [layouts["lockins"].addWidget(groupboxes[name]) for name in ["modulators", "demodulators"]]
 

@@ -98,7 +98,8 @@ class Scantelligent(QtCore.QObject):
                        ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.gui.info_box.exec],
                        
                        # Experiment
-                       ["start_pause", self.start_experiment], ["stop", lambda checked: self.control_experiment(action = "stop")],
+                       ["start_stop", self.control_experiment],
+                       
                        # Coarse motion
                        ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
                        # Parameters
@@ -142,7 +143,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
         self.experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
         self.gui.comboboxes["experiment"].addItems(self.experiments)
-        self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_pause"].setState("load"))
+        self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
         
         # Checkboxes and radio buttons
         [self.gui.radio_buttons[name].clicked.connect(self.update_processing_flags) for name in ["min_absolute", "min_deviations", "min_percentiles", "min_full", "max_absolute", "max_deviations", "max_percentiles", "max_full"]]
@@ -159,10 +160,10 @@ class Scantelligent(QtCore.QObject):
         # Read hardware configurations from file
         (hw_config, error) = self.file_functions.load_yaml(self.paths.get("config_file"))
         if error:
-            self.logprint("./sys/config.yml: Problem loading the hardware configurations from file", message_type = "error")
+            self.logprint(".\\sys\\config.yml: Problem loading the hardware configurations from file", message_type = "error")
             return
         else:
-            self.logprint("./sys/config.yml: Loaded hardware configurations from file as (dict) hw_config", message_type = "success")
+            self.logprint(".\\sys\\config.yml: Loaded hardware configurations from file as (dict) hw_config", message_type = "success")
         self.hw_config = hw_config
 
         # MLA (library)
@@ -238,7 +239,7 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "nanonis" or target.lower() == "all":
             try:
                 # Instantiate
-                self.nanonis = NanonisAPI(parent = self, hw_config = self.hw_config)
+                self.nanonis = NanonisAPI(hw_config = self.hw_config)
                 
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
@@ -297,7 +298,7 @@ class Scantelligent(QtCore.QObject):
                     except:
                         pass
                 else:
-                    self.connect_hardware()
+                    self.connect_hardware(target = "mla")
                 return
 
             
@@ -663,13 +664,23 @@ class Scantelligent(QtCore.QObject):
                 session_path = self.paths["session_path"]
                 self.logprint("Opening the session folder", message_type = "message")
                 os.startfile(session_path)
-                self.gui.buttons["session_folder"].setState("connected")
+                self.gui.buttons["session_folder"].setState("online")
             except Exception as e:
                 self.logprint(f"Failed to open session folder: {e}", message_type = "error")
-                self.gui.buttons["session_folder"].setState("disconnected")
+                self.gui.buttons["session_folder"].setState("offline")
         else:
-            self.logprint("Error. Session folder unknown.", message_type = "error")
-            self.gui.buttons["session_folder"].setState("disconnected")
+            self.gui.buttons["session_folder"].setState("offline")
+            
+            # Open a file dialog to select a session folder
+            try:
+                folder_path = self.gui.dialogs["open_file"].getExistingDirectory(self.gui, "Select session folder")
+                if isinstance(folder_path, str):
+                    self.paths.update({"session_path": folder_path})
+                    self.logprint(f"Session folder manually set to {self.paths["session_path"]}", message_type = "message")
+                    self.gui.buttons["session_folder"].setState("online")
+            except:
+                pass
+            
         return
 
     def cleanup(self) -> None:
@@ -774,18 +785,10 @@ class Scantelligent(QtCore.QObject):
             match action:
             
                 case "pulse":
-                    str = self.gui.line_edits["pulse_voltage"].text()
-                    numbers = self.data.extract_numbers_from_str(str)
-                    if len(numbers) < 1: return
-                    else: V_pulse_V = numbers[0]
+                    V_pulse_V = self.gui.line_edits["pulse_voltage"].getValue()
+                    t_pulse_ms = self.gui.line_edits["pulse_duration"].getValue()
                     
-                    str = self.gui.line_edits["pulse_duration"].text()
-                    numbers = self.data.extract_numbers_from_str(str)
-                    if len(numbers) < 1: return
-                    else: t_pulse_ms = numbers[0]
-                    
-                    self.user.tip_prep_parameters[0].update({"V_pulse (V)": V_pulse_V, "t_pulse (ms)": t_pulse_ms})
-                    
+                    self.user.tip_prep_parameters[0].update({"V_pulse (V)": V_pulse_V, "t_pulse (ms)": t_pulse_ms})                    
                     action_dict = {"action": "pulse", "V_pulse (V)": V_pulse_V, "t_pulse (ms)": t_pulse_ms}
                     self.nanonis.tip_prep(action_dict)
                 
@@ -994,96 +997,65 @@ class Scantelligent(QtCore.QObject):
 
 
 
-    # Experiments and thread management
-    def start_experiment(self) -> None:
-        match self.gui.buttons["start_pause"].state_name:
-            case "load":
-                self.logprint("Loading experiment", message_type = "message")
+    # Experiments
+    def control_experiment(self) -> None:
+        if not "session_path" in list(self.paths.keys()) or not os.path.isdir(self.paths["session_path"]):
+            self.logprint(f"Error. No session folder loaded. Either select one manually or get it from a Nanonis connection", message_type = "error")
+            return
+        
+        start_button = self.gui.buttons["start_stop"]
+        
+        match start_button.state_name:            
+            case "load": # Load the experiment
+                experiment_name = self.gui.comboboxes["experiment"].currentText()
+                experiment_path = os.path.join(self.paths["experiments_folder"], experiment_name + ".py")
+                if not os.path.isfile(experiment_path):
+                    self.logprint(f"The selected experiment was not found in {self.paths["experiments_folder"]}", "error")
+                    return                
+
+                self.logprint(f"Loading/resetting experiment {experiment_name}", message_type = "message")
+                self.gui.progress_bars["experiment"].setValue(0)
+                self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
+                self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
-                self.gui.buttons["start_pause"].setState("ready")
-            case "ready":
-                self.logprint("Let's go!", message_type = "message")
-        return
-
-    def change_experiment(self) -> None:
-        if hasattr(self, "experiment_thread"):
-            if self.experiment_thread.isRunning(): return # Return if an experiment is active
-            else: # Delete the experiment and experiment_thread if the experiment has stopped
                 try:
-                    delattr(self, "experiment")
-                    delattr(self, "experiment_thread")
-                except:
-                    pass
+                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, parent = self, hw_config = self.hw_config)                    
+                    self.experiment_thread = QtCore.QThread()
+                    self.experiment.moveToThread(self.experiment_thread)
 
-        self.gui.progress_bars["experiment"].setValue(0)
-        experiment_name = self.gui.comboboxes["experiment"].currentText()
-        self.status["experiment"].update({"name": experiment_name})
+                    self.experiment_thread.started.connect(self.experiment.run)
+                    self.experiment.finished.connect(self.experiment_thread.quit)
+                    self.experiment_thread.finished.connect(self.experiment.deleteLater)
+                    self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
+                    self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
 
-        if "session_path" in self.paths.keys():
-            self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
-            self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
-        else:
-            self.logprint("No session path known. I don't know where to save the experiment data to", message_type = "error")
-            return
-        
-        file_path = os.path.join(self.paths["experiments_folder"], experiment_name + ".py")
-        if not os.path.isfile(file_path):
-            self.logprint("The selected experiment was not found", "error")
-            return
-
-        try:
-            self.experiment = self.file_functions.load_experiment_from_file(file_path, parent = self)
-            self.experiment_thread = QtCore.QThread()
-            self.experiment.moveToThread(self.experiment_thread)
-                        
-            self.experiment_thread.started.connect(self.experiment.run)            
-            self.experiment.finished.connect(self.experiment_thread.quit)
-            self.experiment_thread.finished.connect(self.experiment.deleteLater)
-            self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
-            self.experiment_thread.finished.connect(self.change_experiment)
+                    self.experiment.exp_progress.connect(self.receive_progress)
+                    self.experiment.message.connect(self.receive_message)
+                    self.experiment.parameters.connect(self.parameters.receive)
+                    self.experiment.image.connect(self.receive_image)
+                    self.experiment.data_array.connect(self.receive_data)
+                except Exception as e:
+                    self.logprint(f"Unable to load the experiment. {e}", message_type = "error")
+                    return
+                
+                self.status["experiment"].update({"name": experiment_name})                
+                start_button.setState("ready")
             
-            self.experiment.progress.connect(self.receive_progress)
-            self.experiment.message.connect(self.receive_message)
-            self.experiment.parameters.connect(self.parameters.receive)
-            self.experiment.image.connect(self.receive_image)
-            self.experiment.data_array.connect(self.receive_data)            
+            case "ready":
+                if not hasattr(self, "experiment") or not hasattr(self, "experiment_thread"):
+                    self.logprint("Error. No experiment object or thread initialized", message_type = "error")
+                    start_button.setState("load")
+                    return
+                
+                start_button.setState("running")
+                self.experiment_thread.start()
             
-        except Exception as e:
-            self.logprint(f"Error loading the experiment: {e}", "error")
-        
-        return
-
-    def load_experiment(self) -> None:
-        self.logprint("Loading experiment", message_type = "message")
-        self.gui.buttons["start_pause"].setState("ready")
-        return
-
-    def control_experiment(self, action: str = "start_pause") -> None:
-        sp_button = self.gui.buttons["start_pause"]
-        
-        match action:
-            case "start_pause":
-                if hasattr(self, "experiment_thread"):
-                    if self.experiment_thread.isRunning(): return
-                    else:
-                        sp_button.setIcon(self.icons.get("pause"))
-                        for i in range(20): self.gui.graphs[i].setData([])
-                        self.experiment_thread.start()
-                else:
-                    self.logprint("No experiment loaded", "warning")
-                    
-            case "stop":
-                sp_button.setIcon(self.icons.get("start"))
+            case "running":
                 if hasattr(self, "experiment_thread"):
                     if not self.experiment_thread.isRunning(): return
                     else:
                         self.experiment_thread.requestInterruption()
-                else:
-                    self.logprint("No experiment loaded", "warning")
-
-            case _:
-                pass
-
+                
         return
 
     def modulator_control(self, modulator_number: int = 1) -> None:

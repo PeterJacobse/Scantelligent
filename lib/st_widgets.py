@@ -111,21 +111,25 @@ class STWidgets:
             Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
             """
             try:
-                old_tooltip = self.toolTip()
-                tooltip_list = old_tooltip.split("\n")
+                for state in self.states:
+                    old_tooltip = state.get("tooltip")
+                    tooltip_list = old_tooltip.split("\n")
+                    
+                    if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                        tooltip_list.append(text)
+                        new_tooltip = "\n".join(tooltip_list)
+                    elif line < 0: # Add a line to the front if the line number is negative
+                        new_tooltip_list = [text]
+                        [new_tooltip_list.append(item) for item in tooltip_list]
+                        new_tooltip = "\n".join(new_tooltip_list)
+                    else: # Replace a line
+                        tooltip_list[line] = text
+                        new_tooltip = "\n".join(tooltip_list)
+                    
+                    state.update({"tooltip": new_tooltip})
                 
-                if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
-                    tooltip_list.append(text)
-                    new_tooltip = "\n".join(tooltip_list)
-                elif line < 0: # Add a line to the front if the line number is negative
-                    new_tooltip_list = [text]
-                    [new_tooltip_list.append(item) for item in tooltip_list]
-                    new_tooltip = "\n".join(new_tooltip_list)
-                else: # Replace a line
-                    tooltip_list[line] = text
-                    new_tooltip = "\n".join(tooltip_list)
-
-                self.setToolTip(new_tooltip)
+                # Set the new tooltip
+                self.setToolTip(self.state.get("tooltip"))
             except:
                 pass
 
@@ -274,6 +278,8 @@ class STWidgets:
             if isinstance(tooltip, str): self.setToolTip(tooltip)
             if isinstance(icon, QtGui.QIcon): self.setIcon(icon)
             if isinstance(value, str): self.setText(value)
+            
+            self.setStyleSheet("QCheckBox{ icon-size: 22px 22px; }")
         
         def changeToolTip(self, text: str, line: int = 0) -> None:
             """
@@ -359,6 +365,7 @@ class STWidgets:
             self.tooltip = kwargs.pop("tooltip", None)
             self.unit = kwargs.pop("unit", None)
             self.limits = kwargs.pop("limits", None)
+            self.min_width = kwargs.pop("min_width", None)
             self.max_width = kwargs.pop("max_width", None)
             self.style_sheet = kwargs.pop("style_sheet", None)
             self.digits = kwargs.pop("digits", None)
@@ -372,11 +379,8 @@ class STWidgets:
         def set_defaults(self) -> None:
             if isinstance(self.value, str) or isinstance(self.value, int) or isinstance(self.value, float): self.setValue(self.value)
             if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
-            if isinstance(self.max_width, int):
-                self.setMaximumWidth(self.max_width)
-            else:
-                pass
-                # self.setMaximumWidth(150)
+            if isinstance(self.min_width, int): self.setMinimumWidth(self.min_width)
+            if isinstance(self.max_width, int): self.setMaximumWidth(self.max_width)            
             if isinstance(self.style_sheet, str):
                 self.setStyleSheet(self.style_sheet)
             else:

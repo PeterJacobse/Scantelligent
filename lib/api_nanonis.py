@@ -1,6 +1,7 @@
 import numpy as np
 from PyQt6 import QtCore
-from .hw_nanonis import NanonisHardware
+from . import NanonisHardware
+from .data_processing import DataProcessing
 from time import sleep, time
 
 
@@ -14,7 +15,7 @@ class NanonisAPI(QtCore.QObject):
     finished = QtCore.pyqtSignal() # Signal to indicate an experiment is finished
     data_array = QtCore.pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, parent, hw_config: dict):
+    def __init__(self, hw_config: dict):
         super().__init__()
         self.nanonis_hardware = NanonisHardware(hw_config = hw_config)
         # nanonis_hardware methods are low-level methods performing direct communication to the Nanonis FPGA over TCP-IP
@@ -26,8 +27,7 @@ class NanonisAPI(QtCore.QObject):
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.timer = QtCore.QTimer()
         self.abort_flag = False
-        self.scantelligent = parent
-        self.data = self.scantelligent.data
+        self.data = DataProcessing()
 
 
 

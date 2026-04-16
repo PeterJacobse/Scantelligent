@@ -54,7 +54,7 @@ class NanonisHardware:
         self.headers = self.prepare_headers() # Make the headers
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Make the socket object
         connected = self.link()
-        if not connected == True: raise
+        if not connected == True: raise Exception("Unable to connect to Nanonis")
         else: self.unlink()
 
 
