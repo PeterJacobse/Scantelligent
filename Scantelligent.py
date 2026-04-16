@@ -2,10 +2,9 @@ import os, sys, html, pint, atexit
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
-from PyQt6.QtWidgets import QApplication
 import pyqtgraph as pg
 from lib import STWidgets, ScantelligentGUI
-from lib import DataProcessing, UserData, FileFunctions, ParameterManager
+from lib import DataProcessing, FileFunctions, ParameterManager, UserData
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
 
@@ -22,11 +21,9 @@ class Scantelligent(QtCore.QObject):
         self.parameters_init()
         self.gui = ScantelligentGUI()
         self.connect_console() # Initialize the console, the button-slot, and keystroke-slot connections
-        self.connect_buttons()
-    
+        self.connect_buttons()    
         self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
         self.gui.show()
-        self.toggle_view("none")
 
 
 
@@ -96,25 +93,24 @@ class Scantelligent(QtCore.QObject):
         shortcuts = self.gui.shortcuts        
         
         # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")], ["camera", lambda: self.dis_reconnect(target = "camera")], ["exit", self.exit],
-                    ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.gui.info_box.exec],
-                    
-                    # Experiment
-                    ["start_pause", lambda checked: self.control_experiment(action = "start_pause")], ["stop", lambda checked: self.control_experiment(action = "stop")],
-                    
-                    # Coarse motion
-                    ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
-
-                    # Parameters                    
-                    ["tip", self.change_tip_status],
-
-                    # Tip prep
-                    ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")],
-                    
-                    # Processing
-                    ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
-                    ["bg_none", self.update_processing_flags], ["bg_plane", self.update_processing_flags], ["bg_linewise", self.update_processing_flags]
-                    ]
+        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")],
+                       ["camera", lambda: self.dis_reconnect(target = "camera")], ["camera", lambda: self.dis_reconnect(target = "camera")], ["exit", self.exit],
+                       ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.gui.info_box.exec],
+                       
+                       # Experiment
+                       ["start_pause", self.start_experiment], ["stop", lambda checked: self.control_experiment(action = "stop")],
+                       # Coarse motion
+                       ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
+                       # Parameters
+                       ["tip", self.change_tip_status],
+                       
+                       # Tip prep
+                       ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")],
+                       
+                       # Processing
+                       ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
+                       ["bg_none", self.update_processing_flags], ["bg_plane", self.update_processing_flags], ["bg_linewise", self.update_processing_flags]
+                       ]
 
         [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
         [connections.append([f"set_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
@@ -146,7 +142,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
         self.experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
         self.gui.comboboxes["experiment"].addItems(self.experiments)
-        self.gui.comboboxes["experiment"].currentIndexChanged.connect(self.change_experiment)
+        self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_pause"].setState("load"))
         
         # Checkboxes and radio buttons
         [self.gui.radio_buttons[name].clicked.connect(self.update_processing_flags) for name in ["min_absolute", "min_deviations", "min_percentiles", "min_full", "max_absolute", "max_deviations", "max_percentiles", "max_full"]]
@@ -586,7 +582,7 @@ class Scantelligent(QtCore.QObject):
         match new_view:
             case "camera":
                 self.status.update({"view": "camera"})
-                self.gui.buttons["view"].setState("camera")
+                self.gui.buttons["view"].setState("Camera")
 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(np.zeros((2, 2)))
@@ -615,7 +611,7 @@ class Scantelligent(QtCore.QObject):
 
             case "nanonis":
                 self.status.update({"view": "nanonis"})
-                self.gui.buttons["view"].setIcon(self.icons.get("view_nanonis"))
+                self.gui.buttons["view"].setState("Nanonis")
 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(np.zeros((2, 2)))
@@ -628,7 +624,7 @@ class Scantelligent(QtCore.QObject):
 
             case _:
                 self.status.update({"view": "none"})
-                self.gui.buttons["view"].setIcon(self.icons.get("eye"))
+                self.gui.buttons["view"].setState("None")
                 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(self.splash_screen)                
@@ -703,7 +699,7 @@ class Scantelligent(QtCore.QObject):
     def exit(self) -> None:
         self.cleanup()
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
-        QApplication.instance().quit()
+        STWidgets.Application.instance().quit()
 
     def closeEvent(self, event) -> None:
         self.exit()
@@ -999,6 +995,16 @@ class Scantelligent(QtCore.QObject):
 
 
     # Experiments and thread management
+    def start_experiment(self) -> None:
+        match self.gui.buttons["start_pause"].state_name:
+            case "load":
+                self.logprint("Loading experiment", message_type = "message")
+                
+                self.gui.buttons["start_pause"].setState("ready")
+            case "ready":
+                self.logprint("Let's go!", message_type = "message")
+        return
+
     def change_experiment(self) -> None:
         if hasattr(self, "experiment_thread"):
             if self.experiment_thread.isRunning(): return # Return if an experiment is active
@@ -1009,7 +1015,6 @@ class Scantelligent(QtCore.QObject):
                 except:
                     pass
 
-        self.gui.buttons["start_pause"].setIcon(self.icons.get("start"))
         self.gui.progress_bars["experiment"].setValue(0)
         experiment_name = self.gui.comboboxes["experiment"].currentText()
         self.status["experiment"].update({"name": experiment_name})
@@ -1046,6 +1051,11 @@ class Scantelligent(QtCore.QObject):
         except Exception as e:
             self.logprint(f"Error loading the experiment: {e}", "error")
         
+        return
+
+    def load_experiment(self) -> None:
+        self.logprint("Loading experiment", message_type = "message")
+        self.gui.buttons["start_pause"].setState("ready")
         return
 
     def control_experiment(self, action: str = "start_pause") -> None:
@@ -1096,6 +1106,6 @@ class Scantelligent(QtCore.QObject):
 
 # Main program
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    app = STWidgets.Application(sys.argv)
     logic_app = Scantelligent()
     sys.exit(app.exec())

@@ -157,11 +157,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                     {"name": "online", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "running", "color": self.colors["blue"], "tooltip": "Camera: running"}]),
-            "view": MSB(click_to_toggle = True,
+            "view": MSB(click_to_toggle = True, size = 28,
                         states = [{"name": "None", "tooltip": "Toggle the active view", "icon": icons.get("eye")},
                                   {"name": "Camera", "tooltip": "Active view: Camera", "icon": icons.get("camera")},
                                   {"name": "Nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("nanonis")}]),
-            "exit": MSB(tooltip = "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape")),
+            "exit": MSB(tooltip = "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape"), size = 28),
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
                                             {"name": "online", "color": self.colors["dark_green"], "tooltip": "Open the session folder"}]),
@@ -169,8 +169,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             # Experiment
             "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy")),
-            "start_pause": MSB(tooltip = "Start experiment", icon = icons.get("start")),
-            "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop")),
+            "start_pause": MSB(icon = icons.get("start"), click_to_toggle = False, size = 28,
+                               states = [{"name": "load", "color": self.colors["dark_red"], "tooltip": "Load experiment"},
+                                         {"name": "ready", "color": self.colors["dark_green"], "tooltip": "Start experiment"},
+                                         {"name": "running", "color": self.colors["blue"], "tooltip": "Experiment running"}]),
+            "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop"), size = 28),
             
             # Parameters
             "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
@@ -252,8 +255,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             buttons.update({f"grid_parameters_{i}": MSB(tooltip = f"Load grid parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
             buttons.update({f"parameters_{i}": MSB(tooltip = f"Parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
 
-        # Increase size of important buttons
-        [buttons[name].setStyleSheet("QPushButton{ background-color: #101010; icon-size: 28px 28px; }") for name in ["stop", "start_pause", "view", "exit"]]
+        # Increase size of important buttons        
         buttons["frame_aspect"].setChecked(True)
 
         # Named groups
@@ -354,8 +356,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "t_const": LE(tooltip = "Time constant", unit = "us", digits = 0),
             "i_gain": LE(tooltip = "Integral gain", unit = "nm/s", digits = 0),
             
-            "v_fwd": LE(tooltip = "Tip forward speed", unit = "nm/s", digits = 2),
-            "v_bwd": LE(tooltip = "Tip backward speed", unit = "nm/s", digits = 2),
+            "v_fwd (nm/s)": LE(tooltip = "Tip forward speed", unit = "nm/s", digits = 2),
+            "v_bwd (nm/s)": LE(tooltip = "Tip backward speed", unit = "nm/s", digits = 2),
             
             # Frame
             "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
@@ -407,7 +409,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Named groups
         self.parameter_line_0 = [buttons["tip"], line_edits["V_nanonis"], buttons["V_swap"], line_edits["V_mla"], line_edits["I_fb"], buttons["set_scan_parameters"], buttons["get_scan_parameters"]]
-        self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd", "v_bwd"]]
+        self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd (nm/s)", "v_bwd (nm/s)"]]
 
         self.experiment_parameter_fields = [line_edits[f"experiment_{i}"] for i in range(3)]
 

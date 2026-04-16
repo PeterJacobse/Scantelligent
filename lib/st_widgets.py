@@ -83,6 +83,7 @@ class STWidgets:
             icon = kwargs.pop("icons", None)
             states = kwargs.pop("states", None)
             click_to_toggle = kwargs.pop("click_to_toggle", True)
+            size = kwargs.pop("size", None)
             self.state_index = 0
                     
             super().__init__(*args, **kwargs)
@@ -94,6 +95,8 @@ class STWidgets:
                 # Default for when no different states are provided
                 self.states = [{"name": "unchecked", "color": "#101010"}]
             
+            self.button_size = 22
+            if isinstance(size, int): self.button_size = size
             if isinstance(tooltip, str): self.states[0].update({"tooltip": tooltip}) # If a global tooltip is provided, it is assigned to be the tooltip of state 0
             if isinstance(icon, QtGui.QIcon): self.states[0].update({"icon": icon}) # If a global icon is provided, it is assigned to be the icon of state 0
             if not isinstance(click_to_toggle, bool): click_to_toggle = True # click_to_toggle = True means that clicking the button automatically toggles its state
@@ -147,7 +150,7 @@ class STWidgets:
             
             if isinstance(self.state_tooltip, str): self.setToolTip(self.state_tooltip)
             if isinstance(self.state_icon, QtGui.QIcon): self.setIcon(self.state_icon)
-            if isinstance(self.state_color, str): self.setStyleSheet("QPushButton{ background-color: " + self.state_color + "; icon-size: 22px 22px; }")
+            if isinstance(self.state_color, str): self.setStyleSheet("QPushButton{ background-color: " + self.state_color + f"; icon-size: {self.button_size}px {self.button_size}px" + "; }")
             return
 
         def toggleState(self) -> None:
@@ -863,6 +866,10 @@ class STWidgets:
             if isinstance(tooltip, str): self.setToolTip(tooltip)
 
     class Completer(QtWidgets.QCompleter):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+    class Application(QtWidgets.QApplication):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
 

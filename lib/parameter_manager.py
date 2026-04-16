@@ -58,7 +58,7 @@ class ParameterManager(QtCore.QObject):
             case "feedback":
                 parameters = {"dict_name": "feedback"}
                 
-                for tag, parameter in zip(["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd", "v_bwd"],
+                for tag, parameter in zip(["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd (nm/s)", "v_bwd"],
                                           ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "p_gain (pm)", "t_const (us)", "v_fwd (nm/s)", "v_bwd (nm/s)"]):
                     val = sct.gui.line_edits[tag].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
@@ -85,9 +85,9 @@ class ParameterManager(QtCore.QObject):
                 sct.nanonis.gains_update(unlink = True)
             
             case "lockin":
-                [mod1_on, mod2_on] = [buttons[f"nanonis_mod{i + 1}"].isChecked() for i in range(2)]
-                [mod1_f, mod1_mV, mod1_phi] = [line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
-                [mod2_f, mod2_mV, mod2_phi] = [line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
+                [mod1_on, mod2_on] = [sct.gui.buttons[f"nanonis_mod{i + 1}"].isChecked() for i in range(2)]
+                [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
+                [mod2_f, mod2_mV, mod2_phi] = [sct.gui.line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
                 parameters = {"dict_name": "lockin",
                               "modulator_1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
                               "modulator_2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi}}
@@ -105,7 +105,7 @@ class ParameterManager(QtCore.QObject):
                     params = self.user.scan_parameters[index]
                     
                     parameter_names = ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_const (us)", "p_gain (pm)"]
-                    line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd", "v_bwd", "t_const", "p_gain"]
+                    line_edit_names = ["V_nanonis", "V_mla", "I_fb", "v_fwd (nm/s)", "v_bwd", "t_const", "p_gain"]
                     units = ["V", "V", "pA", "nm/s", "nm/s", "us", "pm"]
                     line_edits = [self.gui.line_edits[name] for name in line_edit_names]
                     
