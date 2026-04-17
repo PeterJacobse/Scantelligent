@@ -1,7 +1,7 @@
 nanonis:
- tcp_ip: "227.0.0.1"
+ tcp_ip: "127.0.0.1"
  tcp_port: 6501
- version_number: 13718
+ version_number: 12820
 camera:
  argument: 0
 keithley:

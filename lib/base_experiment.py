@@ -14,7 +14,8 @@ class BaseExperiment(QObject):
     finished = pyqtSignal() # Signal to indicate an experiment is finished. Emission of this signal is connected to cleanup
     data_array = pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, hw_config: dict):
+    def __init__(self, *args, **kwargs):
+        hw_config = kwargs.pop("hw_config", None)        
         super().__init__()
         self.abort_requested = False
         self.hw_config = hw_config
@@ -28,6 +29,7 @@ class BaseExperiment(QObject):
         return self.message.emit(message, message_type)
 
     def setup_line_edits(self, gui, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:
+        self.logprint("Setting up line edits")
         self.line_edits = [gui.line_edits[f"experiment_{i}"] for i in range(3)]
         for list_object in [tooltips, digits, limits, units]:
             if len(list_object) > 2: list_object = list_object[:2]
@@ -40,9 +42,19 @@ class BaseExperiment(QObject):
         return
 
     def setup_combobox(self, gui, tooltip: str = "", items: list = []) -> None:
-        gui.comboboxes["direction"].renewItems(items)
-        gui.comboboxes["direction"].changeTooltip(tooltip)
+        self.direction_combobox = gui.comboboxes["direction"]
+        self.direction_combobox.renewItems(items)
         return
+
+    def toggle_view(self, target: str = "nanonis") -> None:
+
+        return
+
+    def read_parameters_from_gui(self) -> dict:
+        parameters = {"dict_name": "gui_parameters"}
+        if hasattr(self, "line_edits"): parameters.update({"line_edits": [self.line_edits[i].getValue() for i in range(3)]})
+        if hasattr(self, "direction_combobox"): parameters.update({"direction_combobox": self.direction_combobox.currentText()})
+        return parameters        
 
     def connect_hardware(self, target: str = "nanonis") -> None:
         match target:
@@ -57,6 +69,10 @@ class BaseExperiment(QObject):
             case _:
                 pass
         
+        return
+
+    def disconnect_hardware(self) -> False:
+        if hasattr(self, "nanonis"): self.nanonis.unlink()
         return
 
     def check_abort_request(self):

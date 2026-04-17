@@ -126,6 +126,37 @@ class NanonisAPI(QtCore.QObject):
 
 
 
+    # Misc
+    def grids_to_lists(self, grid_object, direction: str = "up") -> tuple[dict, bool | str]:
+        error = False
+        lists = {"dict_name": "coordinate_lists"}
+        conv = self.nanonis_hardware.conv
+
+        for tag in ["x_grid (nm)", "y_grid (nm)"]:
+            if not tag in grid_object.keys():
+                error = "grids_to_lists: Input is missing valid grids"
+                return (lists, error)
+
+        [x_grid, y_grid] = [grid_object.get(attribute) for attribute in ["x_grid (nm)", "y_grid (nm)"]]
+        match direction:
+            case "down":
+                x_grid = np.flipud(x_grid)
+                y_grid = np.flipud(x_grid)
+            case _:
+                pass
+
+        x_list = x_grid.flatten()
+        y_list = y_grid.flatten()
+        
+        lists.update({"x_list (nm)": x_list, "y_list (nm)": y_list})
+        
+        xy_list = [conv.float64_to_hex(x * 1E-9) + conv.float64_to_hex(y * 1E-9) for x, y in zip(x_list, y_list)] # X and y merged in hexadecimal format for efficient use with nanonis_hardware.set_xy
+        lists.update({"xy_list": xy_list})
+
+        return (lists, error)
+
+
+
     # 'update' methods that can only read and not write
     def session_path_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         session_path = {"dict_name": "session_path"}
@@ -659,16 +690,16 @@ class NanonisAPI(QtCore.QObject):
             y_grid += grid["y (nm)"]
 
             # Add the meshgrids to the grid dictionary
-            grid["x_grid"] = x_grid
-            grid["y_grid"] = y_grid
+            grid["x_grid (nm)"] = x_grid
+            grid["y_grid (nm)"] = y_grid
 
             # Add vertex information
             frame_vertices = np.asarray([[x_grid[0, 0], y_grid[0, 0]], [x_grid[-1, 0], y_grid[-1, 0]], [x_grid[-1, -1], y_grid[-1, -1]], [x_grid[0, -1], y_grid[0, -1]]])
             bottom_left_corner = frame_vertices[0]
             top_left_corner = frame_vertices[1]
-            grid["vertices"] = frame_vertices
-            grid["bottom_left_corner"] = bottom_left_corner
-            grid["top_left_corner"] = top_left_corner
+            grid["vertices (nm)"] = frame_vertices
+            grid["bottom_left_corner (nm)"] = bottom_left_corner
+            grid["top_left_corner (nm)"] = top_left_corner
             
             self.parameters.emit(grid)
         

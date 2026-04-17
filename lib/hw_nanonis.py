@@ -13,6 +13,9 @@ class Conversions:
         if(conv >= 0): return hex(conv)[2:].zfill(2 * num_bytes)
         if(conv < 0):  return hex((conv + (1 << 8 * num_bytes)) % (1 << 8 * num_bytes))[2:]
 
+    def hex_to_int16(self,h16):
+        return struct.unpack("<h", struct.pack("H", int("0x" + h16.hex(), 16)))[0]
+
     def hex_to_uint16(self, h16):
         return struct.unpack("<H",struct.pack("H",int("0x" + h16.hex(),16)))[0]
 
@@ -54,7 +57,7 @@ class NanonisHardware:
         self.headers = self.prepare_headers() # Make the headers
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Make the socket object
         connected = self.link()
-        if not connected == True: raise Exception("Unable to connect to Nanonis")
+        if not connected == True: raise Exception(connected)
         else: self.unlink()
 
 
@@ -103,6 +106,8 @@ class NanonisHardware:
             # BiasSpectr
             "open_spectroscopy": make_header('BiasSpectr.Open', body_size = 0),
             "get_spectrum": make_header('BiasSpectr.Start', body_size = 8),
+            "get_STS_properties": make_header('BiasSpectr.PropsGet', body_size = 0),
+            "get_STS_advanced_properties": make_header('BiasSpectr.AdvPropsGet', body_size = 0),
             
             # Folme
             "get_xy": make_header('FolMe.XYPosGet', body_size = 4),
@@ -273,7 +278,7 @@ class NanonisHardware:
             return
                                # raise the exception
 
-    def link(self) -> None:
+    def link(self) -> bool | Exception:
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Re-establish the socket object if it was lost
             self.s.settimeout(2)
@@ -348,7 +353,6 @@ class NanonisHardware:
         command = self.headers["open_spectroscopy"]
         self.send_command(command)
         self.receive_response(0)
-        
         return
     
     def get_spectrum(self) -> dict:
@@ -419,6 +423,101 @@ class NanonisHardware:
         
         return {"data_dict" : data_dict, "parameters" : parameters}
 
+
+
+    def get_STS_properties(self) -> dict:
+        command = self.headers["get_STS_properties"]        
+        self.send_command(command)        
+        response = self.receive_response()
+        
+        save_all = self.conv.hex_to_int16(response[0 : 2])
+        num_sweeps = self.conv.hex_to_int32(response[2 : 6])
+        back_sweep = self.conv.hex_to_int16(response[6 : 8])
+        num_points = self.conv.hex_to_int32(response[8 : 12])
+        
+        parameters = {"save_all": save_all, "num_sweeps": num_sweeps, "back_sweep": back_sweep, "num_points": num_points}
+        
+        if(self.version < 11798): parameters.update(self.append_STS_properties_old(response))
+        if(self.version >= 11798): parameters.update(self.append_STS_properties_new(response))
+        
+        command = self.headers["get_STS_advanced_properties"]
+        self.send_command(command)
+        response = self.receive_response()
+        
+        reset_bias = self.conv.hex_to_int16(response[0 : 2])
+        z_controller_hold = self.conv.hex_to_int16(response[2 : 4])
+        record_final_z = self.conv.hex_to_int16(response[4 : 6])
+        lockin_run = self.conv.hex_to_int16(response[6 : 8])
+        
+        parameters.update({"reset_bias": reset_bias, "z_controller_hold": z_controller_hold, "record_final_z": record_final_z, "lockin_run": lockin_run})
+        return parameters
+        
+    def append_STS_properties_old(self, response: str) -> dict:
+        idx = 20
+        channels = []
+        num_channels = self.conv.hex_to_int32(response[16 : 20])
+        for channel in range(num_channels):
+            channel_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            channels.append(response[idx : idx + channel_size].decode())
+            idx += channel_size
+        
+        idx += 4
+        parameters = []
+        num_parameters  = self.conv.hex_to_int32(response[idx : idx + 4])
+        idx += 4
+        for parameter in range(num_parameters):
+            parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            parameters.append(response[idx:idx+parameter_size].decode())
+            idx += parameter_size
+
+        idx += 4
+        fixed_parameters = []
+        num_fixed_parameters  = self.conv.hex_to_int32(response[idx : idx + 4])
+        idx += 4
+        for fixed_parameter in range(num_fixed_parameters):
+            fixed_parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            fixed_parameters.append(response[idx : idx + fixed_parameter_size].decode())
+            idx += fixed_parameter_size
+        
+        return {"channels": channels, "parameters": parameters, "fixed_parameters": fixed_parameters}
+    
+    def append_STS_properties_new(self, response):
+        idx = 16
+        parameters = []
+        num_parameters = self.conv.hex_to_int32(response[idx : idx + 4])
+        idx += 4
+        for parameter in range(num_parameters):
+            parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            parameters.append(response[idx : idx + parameter_size].decode())
+            idx += parameter_size
+
+        idx += 4
+        fixed_parameters = []
+        num_fixed_parameters  = self.conv.hex_to_int32(response[idx : idx + 4])
+        idx += 4
+        for fixed_parameter in range(num_fixed_parameters):
+            fixed_parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            fixed_parameters.append(response[idx : idx + fixed_parameter_size].decode())
+            idx += fixed_parameter_size
+        
+        autosave = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
+        save_dialog = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
+
+        return {"parameters": parameters, "fixed_parameters": fixed_parameters, "autosave": autosave, "save_dialog": save_dialog}
+
+
+
+
+
+
+
+
+
     # Folme
     def get_xy(self, wait: bool = True) -> str:
         command = self.headers["get_xy"] + self.headers[str(wait)]
@@ -435,7 +534,7 @@ class NanonisHardware:
     
     def set_xy(self, xy_hex: str, wait: bool = False) -> None:
         command = self.headers["set_xy"] + xy_hex + self.headers[str(wait)]
-        
+
         self.send_command(command)
         self.receive_response(0)
         

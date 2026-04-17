@@ -21,7 +21,7 @@ class Experiment(BaseExperiment):
         #self.connect_hardware("nanonis")
 
     def prepare_gui(self, gui) -> None:
-        self.setup_combobox(gui = gui, items = ["n", "e", "s", "w"])
+        self.setup_combobox(gui = gui, items = ["upward", "downward"])
         self.setup_line_edits(gui = gui, tooltips = ["Time per iteration", "Number of iterations"],
                               values = [100, 4, 3], digits = [0, 0, 0], limits = [[0, 1000], [0, 200], [0, 3]], units = ["ms", "steps", ""])
 
@@ -29,7 +29,7 @@ class Experiment(BaseExperiment):
         gui_parameters = self.read_parameters_from_gui()
         # self.read_parameters_from_gui() # The following parameters can be accessed: self.direction, self.line_value_0, self.line_value_1, self.line_value_2
         
-        self.logprint("Hello from this demo experiment!", message_type = "message")
+        self.logprint("Hello from the MLA mapping experiment!", message_type = "message")
         self.logprint(f"I read the following parameters from the GUI: {gui_parameters}", message_type = "message")
         
         max_iter = gui_parameters.get("line_edits")[1]
