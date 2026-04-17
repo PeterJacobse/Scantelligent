@@ -209,7 +209,9 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "camera" or target.lower() == "all":
             try:
                 # Instantiate
+                self.logprint("Loading camera")
                 self.camera = CameraAPI(hw_config = self.hw_config)
+                self.logprint(f"{self.camera}")
                 
                 # Set up signal-slot connections
                 self.camera.parameters.connect(self.parameters.receive)
@@ -245,8 +247,7 @@ class Scantelligent(QtCore.QObject):
                 # Scantelligent -> Nanonis
                 self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, unlink = True))
 
-                # Nanonis -> Scantelligent
-                self.nanonis.progress.connect(self.receive_progress)
+                # Nanonis -> Scantelligent                
                 self.nanonis.message.connect(self.receive_message)
                 self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
                 self.nanonis.image.connect(self.receive_image)
@@ -310,11 +311,6 @@ class Scantelligent(QtCore.QObject):
 
 
     # PyQt slots
-    @QtCore.pyqtSlot(int)
-    def receive_progress(self, progress: int) -> None:
-        self.gui.progress_bars["experiment"].setValue(progress)
-        return
-
     @QtCore.pyqtSlot(str, str)
     def receive_message(self, text: str, mtype: str) -> None:
         self.logprint(text, message_type = mtype)
@@ -489,33 +485,6 @@ class Scantelligent(QtCore.QObject):
         
         return
 
-    def update_tip_status(self) -> None:
-        style_sheets = self.gui.style_sheets
-        buttons = self.gui.buttons
-        tip_button = buttons["tip"]
-        
-        if self.status["nanonis"] in ["idle", "running"]:
-            if self.status["tip"].get("withdrawn"):
-                tip_button.changeToolTip("Tip withdrawn; click to land")
-                tip_button.setIcon(self.icons.get("withdrawn"))
-                tip_button.setStyleSheet(style_sheets["idle"])
-                buttons["withdraw"].setIcon(self.icons.get("approach"))
-                buttons["withdraw"].changeToolTip("Land")
-
-            else:
-                tip_button.setIcon(self.icons.get("contact"))
-                buttons["withdraw"].setIcon(self.icons.get("withdraw"))
-                buttons["withdraw"].changeToolTip("Withdraw")
-            
-                if self.status["tip"].get("feedback"):
-                    tip_button.changeToolTip("Tip in feedback; click to toggle feedback off")
-                    tip_button.setStyleSheet(style_sheets["connected"])                
-                else:
-                    tip_button.changeToolTip("Tip in constant height: click to toggle feedback on")
-                    tip_button.setStyleSheet(style_sheets["hold"])
-        
-        return
-
     def execute_command(self) -> None:
         input_le = self.gui.line_edits["input"]
         input_le.blockSignals(True)
@@ -553,8 +522,7 @@ class Scantelligent(QtCore.QObject):
     def toggle_view(self, view: str = None):
         new_view = "none"
         
-        self.logprint(f"The current view is {self.gui.buttons["view"].state_name}")
-        if 3 == 3: return
+        self.logprint(f"The current view is {self.gui.buttons["view"].state_name}", message_type = "message")
         
         # Determine the new view mode
         if isinstance(view, str) and view in ["nanonis", "camera", "none"]:
@@ -577,6 +545,7 @@ class Scantelligent(QtCore.QObject):
             if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
 
         if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
+        if new_view == "camera": new_view = "nanonis"
 
 
 
@@ -829,13 +798,13 @@ class Scantelligent(QtCore.QObject):
             tip_withdrawn = tip_status.get("withdrawn")
             
             if tip_withdrawn:
-                (tip_status, error) = self.nanonis.tip_update({"feedback": True})
+                (tip_status, error) = self.nanonis.tip_update({"feedback": True}, unlink = True)
                 if error: raise
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
                     self.logprint("nanonis.tip_update({\"feedback\": True})", message_type = "code")
             else:
-                (tip_status, error) = self.nanonis.tip_update({"withdraw": True})
+                (tip_status, error) = self.nanonis.tip_update({"withdraw": True}, unlink = True)
                 if error: raise
                 elif type(tip_status) == dict:
                     self.status["tip"] = tip_status
@@ -844,8 +813,6 @@ class Scantelligent(QtCore.QObject):
         except Exception as e:
             if error: self.logprint(f"Error toggling the tip status: {error}", message_type = "error")
             else: self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
-
-        self.update_tip_status()
 
         return True
 
@@ -858,7 +825,7 @@ class Scantelligent(QtCore.QObject):
             tip_in_feedback = tip_status.get("feedback")
             
             if tip_withdrawn: # Tip is withdrawn: land it
-                (tip_status, error) = self.nanonis.tip_update({"feedback": True})
+                (tip_status, error) = self.nanonis.tip_update({"feedback": True}, unlink = True)
                 if error:
                     self.logprint(f"Error: {e}")
                 elif type(tip_status) == dict:
@@ -868,7 +835,7 @@ class Scantelligent(QtCore.QObject):
             else: # Toggle the feedback
                 self.logprint(f"status[\"tip\"].get(\"feedback\"] = {tip_in_feedback}", message_type = "result")
                 
-                (tip_status, error) = self.nanonis.tip_update({"feedback": not tip_in_feedback})
+                (tip_status, error) = self.nanonis.tip_update({"feedback": not tip_in_feedback}, unlink = True)
                 if error:
                     self.logprint(f"Error. {e}")
                 if type(tip_status) == dict:
@@ -878,8 +845,6 @@ class Scantelligent(QtCore.QObject):
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
             return False
-
-        self.update_tip_status()
 
         return True
 
@@ -1014,7 +979,7 @@ class Scantelligent(QtCore.QObject):
                     return                
 
                 self.logprint(f"Loading/resetting experiment {experiment_name}", message_type = "message")
-                self.gui.progress_bars["experiment"].setValue(0)
+                [self.gui.progress_bars[name].setValue(0) for name in ["task", "experiment"]]
                 self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
@@ -1022,18 +987,24 @@ class Scantelligent(QtCore.QObject):
                     self.experiment = self.file_functions.load_experiment_from_file(experiment_path, parent = self, hw_config = self.hw_config)                    
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
-
+                    
+                    # Worker-thread connections
                     self.experiment_thread.started.connect(self.experiment.run)
                     self.experiment.finished.connect(self.experiment_thread.quit)
                     self.experiment_thread.finished.connect(self.experiment.deleteLater)
                     self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
                     self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
-
-                    self.experiment.exp_progress.connect(self.receive_progress)
+                    
+                    # Progress
+                    self.experiment.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
+                    self.experiment.exp_progress.connect(lambda val: self.gui.progress_bars["experiment"].setValue(val))
+                    
+                    # Other data
                     self.experiment.message.connect(self.receive_message)
                     self.experiment.parameters.connect(self.parameters.receive)
                     self.experiment.image.connect(self.receive_image)
                     self.experiment.data_array.connect(self.receive_data)
+                
                 except Exception as e:
                     self.logprint(f"Unable to load the experiment. {e}", message_type = "error")
                     return

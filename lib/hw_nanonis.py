@@ -4,7 +4,7 @@ import numpy as np
 
 
 
-# Taken from Julian Cedda's nanonisTCP, used for creating headers upon init instead of on each TCP command
+# Converted from Julian Cedda's nanonisTCP, used for creating headers upon init instead of on each TCP command
 class Conversions:
     def __init__(self):
         pass
@@ -39,6 +39,9 @@ class Conversions:
         if(f64 == 0): return "0000000000000000"
         return hex(struct.unpack('<Q', struct.pack('<d', f64))[0])[2:]
 
+    def string_to_hex(self, string):
+        return string.encode('utf-8').hex()
+
     def make_header(self, command_name, body_size, resp = True):
         hex_rep = command_name.encode('utf-8').hex()                            # command name
         hex_rep += "{0:#0{1}}".format(0,(64 - len(hex_rep)))                    # command name (fixed 32)
@@ -55,7 +58,6 @@ class NanonisHardware:
         self.configure(hw_config) # Extract the TCP parameters from the provided hardware dict
         self.conv = Conversions() # Load the conversions
         self.headers = self.prepare_headers() # Make the headers
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Make the socket object
         connected = self.link()
         if not connected == True: raise Exception(connected)
         else: self.unlink()
@@ -108,6 +110,8 @@ class NanonisHardware:
             "get_spectrum": make_header('BiasSpectr.Start', body_size = 8),
             "get_STS_properties": make_header('BiasSpectr.PropsGet', body_size = 0),
             "get_STS_advanced_properties": make_header('BiasSpectr.AdvPropsGet', body_size = 0),
+            "get_STS_limits": make_header('BiasSpectr.LimitsGet', body_size = 0),
+            "get_STS_timing": make_header('BiasSpectr.TimingGet', body_size = 0),
             
             # Folme
             "get_xy": make_header('FolMe.XYPosGet', body_size = 4),
@@ -210,22 +214,14 @@ class NanonisHardware:
         self.s.send(bytes.fromhex(message))
 
     def receive_response(self, error_index: int = -1, keep_header: bool = False) -> str:
-        """
-        Parameters
-        error_index : index of 'error status' within the body. -1 skip check
-        keep_header : if true: return entire response. if false: return body
-        
-        Returns
-        response    : either header + body or body only (keep_header)
-        
-        """
-        response = self.s.recv(self.max_buf_size)                               # Read the response
+        response = self.s.recv(self.max_buf_size)
+                
         body_size = self.conv.hex_to_int32(response[32 : 36])
         while(True): 
             if(len(response) == body_size + 40): break                          # body_size + header size (40)
             response += self.s.recv(self.max_buf_size)
-        
-        if(error_index > -1): self.check_error(response[40:],error_index)       # error_index < 0 skips error check
+
+        if(error_index > -1): self.check_error(response[40:], error_index)      # error_index < 0 skips error check
         
         if(not keep_header):
             return response[40:]                                                # Header is fixed to 40 bytes - drop it
@@ -349,13 +345,7 @@ class NanonisHardware:
         return
 
     # BiasSpectr
-    def open_spectroscopy(self) -> None:
-        command = self.headers["open_spectroscopy"]
-        self.send_command(command)
-        self.receive_response(0)
-        return
-    
-    def get_spectrum(self) -> dict:
+    def get_spectrum(self, timeout_s: int = 20) -> dict:
         """
         Starts a bias spectroscopy in the Bias Spectroscopy module.
         
@@ -386,12 +376,21 @@ class NanonisHardware:
 
         """
                 
-        command = self.headers["get_spectrum"] + self.headers["True"] + "0000" #self.conv.to_hex("", 4)        
+        command = self.headers["get_spectrum"] + self.headers["True"] + "0000"
+        print(command)
         
+        timeout_old = self.s.timeout
+        self.s.settimeout(timeout_s)
         self.send_command(command)
-        response = self.receive_response()
+        try:
+            response = self.receive_response()
+            self.s.settimeout(timeout_old)
+        except TimeoutError:
+            print(f"Spectroscopy timed out after waiting {timeout_s} seconds")
+            self.s.settimeout(timeout_old)
+            return
         
-        number_of_channels  = self.conv.hex_to_int32(response[4 : 8])
+        number_of_channels = self.conv.hex_to_int32(response[4 : 8])
         
         idx = 8
         channel_names = []
@@ -421,11 +420,14 @@ class NanonisHardware:
             parameter = self.conv.hex_to_float32(response[idx : idx + 4])
             parameters.append(parameter)
         
-        return {"data_dict" : data_dict, "parameters" : parameters}
+        return {"data_dict": data_dict, "parameters": parameters}
 
-
-
-    def get_STS_properties(self) -> dict:
+    def get_STS_parameters(self) -> dict:
+        command = self.headers["open_spectroscopy"]
+        self.send_command(command)
+        self.receive_response(0)
+        
+        # 'Basic' properties
         command = self.headers["get_STS_properties"]        
         self.send_command(command)        
         response = self.receive_response()
@@ -440,6 +442,7 @@ class NanonisHardware:
         if(self.version < 11798): parameters.update(self.append_STS_properties_old(response))
         if(self.version >= 11798): parameters.update(self.append_STS_properties_new(response))
         
+        # 'Advanced' properties
         command = self.headers["get_STS_advanced_properties"]
         self.send_command(command)
         response = self.receive_response()
@@ -449,7 +452,35 @@ class NanonisHardware:
         record_final_z = self.conv.hex_to_int16(response[4 : 6])
         lockin_run = self.conv.hex_to_int16(response[6 : 8])
         
-        parameters.update({"reset_bias": reset_bias, "z_controller_hold": z_controller_hold, "record_final_z": record_final_z, "lockin_run": lockin_run})
+        parameters.update({"reset_bias": reset_bias, "z_controller_hold": z_controller_hold, "record_final_z": record_final_z, "run_lockin": lockin_run})
+        
+        # Limits
+        command = self.headers["get_STS_limits"]
+        self.send_command(command)
+        response = self.receive_response()
+        
+        start_value = self.conv.hex_to_float32(response[0 : 4])
+        end_value = self.conv.hex_to_float32(response[4 : 8])
+        
+        parameters.update({"limits (V)": [start_value, end_value]})
+        
+        # Timing
+        command = self.headers["get_STS_timing"]
+        self.send_command(command)
+        response = self.receive_response()
+        
+        z_averaging_time = self.conv.hex_to_float32(response[0:4])
+        z_offset = self.conv.hex_to_float32(response[4:8])
+        initial_settling_time = self.conv.hex_to_float32(response[8:12])
+        maximum_slew_rate = self.conv.hex_to_float32(response[12:16])
+        settling_time = self.conv.hex_to_float32(response[16:20])
+        integration_time = self.conv.hex_to_float32(response[20:24])
+        end_settling_time = self.conv.hex_to_float32(response[24:28])
+        z_control_time = self.conv.hex_to_float32(response[28:32]) * 1E9
+        
+        parameters.update({"t_avg_z (s)": z_averaging_time, "z_offset (nm)": z_offset, "t_settle_begin (s)": initial_settling_time, "slew_rate (V/s)": maximum_slew_rate,
+                           "t_settle (s)": settling_time, "t_integration (s)": integration_time, "t_settle_end (s)": end_settling_time, "t_z_control (s)": z_control_time})
+        
         return parameters
         
     def append_STS_properties_old(self, response: str) -> dict:
@@ -509,11 +540,6 @@ class NanonisHardware:
         save_dialog = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
 
         return {"parameters": parameters, "fixed_parameters": fixed_parameters, "autosave": autosave, "save_dialog": save_dialog}
-
-
-
-
-
 
 
 

@@ -58,11 +58,11 @@ class ParameterManager(QtCore.QObject):
             case "feedback":
                 parameters = {"dict_name": "feedback"}
                 
-                for tag, parameter in zip(["V_nanonis", "V_mla", "I_fb", "p_gain", "t_const", "v_fwd (nm/s)", "v_bwd"],
-                                          ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "p_gain (pm)", "t_const (us)", "v_fwd (nm/s)", "v_bwd (nm/s)"]):
-                    val = sct.gui.line_edits[tag].getValue()
+                for parameter in ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "p_gain (pm)", "t_const (us)", "v_fwd (nm/s)", "v_bwd (nm/s)"]:
+                    quantity = parameter.split()[0]
+                    val = sct.gui.line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
-                    
+
                 sct.logprint(parameters)
                 sct.nanonis.parameters_update(parameters, unlink = True)
 
@@ -85,12 +85,18 @@ class ParameterManager(QtCore.QObject):
                 sct.nanonis.gains_update(unlink = True)
             
             case "lockin":
-                [mod1_on, mod2_on] = [sct.gui.buttons[f"nanonis_mod{i + 1}"].isChecked() for i in range(2)]
+                sct.logprint("Setting mod")
+                [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{i + 1}"].state_index) for i in range(2)]
+                mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
                 [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
                 [mod2_f, mod2_mV, mod2_phi] = [sct.gui.line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
+                [mla1_f, mla1_mV, mla1_phi] = [sct.gui.line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
+                
                 parameters = {"dict_name": "lockin",
                               "modulator_1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
-                              "modulator_2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi}}
+                              "modulator_2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi},
+                              "mla_mod1": {"on": mla_mod1_on, "frequency (Hz)": mla1_f, "amplitude (mV)": mla1_mV, "phase (deg)": mla1_phi}
+                              }
                 sct.nanonis.lockin_update(parameters, unlink = True)
             
             case _:
@@ -211,7 +217,7 @@ class ParameterManager(QtCore.QObject):
 
             case "tip_status":
                 tip_status = parameters
-                sct.status.update({"tip_status": tip_status})
+                sct.status.update({"tip": tip_status})
                 
                 # Update the slider
                 z_limits_nm = tip_status.get("z_limits (nm)")
@@ -230,7 +236,17 @@ class ParameterManager(QtCore.QObject):
                 sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
                 if sct.status["view"] == "nanonis": sct.gui.image_view.view.addItem(sct.gui.tip_target)
                 
-                sct.update_tip_status()
+                # Update the tip status button
+                withdrawn = tip_status.get("withdrawn")
+                feedback = tip_status.get("feedback")
+                
+                if withdrawn:
+                    sct.gui.buttons["tip"].setState("unknown")
+                    sct.gui.buttons["withdraw"].setState("withdrawn")
+                else:
+                    sct.gui.buttons["withdraw"].setState("landed")
+                    if feedback: sct.gui.buttons["tip"].setState("feedback")
+                    else: sct.gui.buttons["tip"].setState("constant_height")
             
             case "scan_parameters":
                 scan_parameters = parameters
@@ -352,6 +368,10 @@ class ParameterManager(QtCore.QObject):
             case "lockin":
                 for i, mod_dict in enumerate([parameters.get("modulator_1"), parameters.get("modulator_2")]):
                     [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi"], [mod_dict.get("frequency (Hz)"), mod_dict.get("amplitude (mV)"), mod_dict.get("phase (deg)")])]
+                    
+                    state = "off"
+                    if mod_dict.get("on"): state = "on"
+                    sct.gui.buttons[f"nanonis_mod{i + 1}"].setState(state)
 
             case _:
                 pass

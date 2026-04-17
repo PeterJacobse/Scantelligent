@@ -11,8 +11,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
                            "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#c00000", "#905020", "#707000", "#2020ff"]
-        self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff",
-                  "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+        self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff", "off-black": "#101010",
+                       "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
         self.style_sheets = {
             "neutral": f"background-color: {self.colors["black"]};",
             "connected": f"background-color: {self.colors["dark_green"]};",
@@ -96,31 +96,22 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         LB = STWidgets.Label
         
         labels = {
-            "session_folder": LB("Session folder"),
-            "statistics": LB("Statistics"),
-            "load_file": LB("Load file:"),
-            "in_folder": LB("in folder:"),
-            "number_of_files": LB("which contains 1 sxm file"),
-            "channel_selected": LB("Channel selected:"),
+            "session_folder": LB(text = "Session folder"),
+            "statistics": LB(text = "Statistics"),
+            "load_file": LB(text = "Load file:"),
+            "in_folder": LB(text = "in folder:"),
+            "number_of_files": LB(text = "which contains 1 sxm file"),
 
-            "frame": LB("frame"),
-            "grid": LB("grid"),
+            "frame": LB(text = "frame"),
+            "grid": LB(text = "grid"),
 
-            "scan_control": LB("Scan channel / direction"),
-            "background_subtraction": LB("Background subtraction"),
-            "width": LB("Width (nm):"),
-            "show": LB("Show", "Select a projection or toggle with (H)"),
-            "limits": LB("Set limits", "Toggle the min and max limits with (-) and (=), respectively"),
-            "matrix_operations": LB("Matrix operations"),
+            "scan_control": LB(text = "Navigation"),
+            "limits": LB(text = "Limits"),
+            "background_subtraction": LB(text = "Background subtraction"),
+            "matrix_operations": LB(text = "Matrix operations"),
 
-            "z_steps": LB("steps"),
-            "move_horizontally": LB("< horizontal motion >", "In composite motion, horizontal motion\nis carried out between retract and advance\nSee 'horizontal'"),
-            "h_steps": LB("steps in direction"),
-            "steps_and": LB("steps, and")
+            "move_horizontally": LB(text = "< horizontal motion >", tooltip = "In composite motion, horizontal motion\nis carried out between retract and advance\nSee 'horizontal'"),
         }
-        
-        # Named groups
-        self.steps_labels = [labels[name] for name in ["z_steps", "h_steps", "steps_and"]]
         
         return labels
     
@@ -158,9 +149,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "running", "color": self.colors["blue"], "tooltip": "Camera: running"}]),
             "view": MSB(click_to_toggle = True, size = 28,
-                        states = [{"name": "None", "tooltip": "Toggle the active view", "icon": icons.get("eye"), "color": "#101010"},
-                                  {"name": "Camera", "tooltip": "Active view: Camera", "icon": icons.get("camera"), "color": "#101010"},
-                                  {"name": "Nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("nanonis"), "color": "#101010"}]),
+                        states = [{"name": "None", "tooltip": "Toggle the active view", "icon": icons.get("eye"), "color": self.colors["off-black"]},
+                                  {"name": "Camera", "tooltip": "Active view: Camera", "icon": icons.get("camera"), "color": self.colors["off-black"]},
+                                  {"name": "Nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("nanonis"), "color": self.colors["off-black"]}]),
             "exit": MSB(tooltip = "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape"), size = 28),
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
@@ -176,10 +167,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop"), size = 28),
             
             # Parameters
-            "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
-            "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
             
-            "tip": MSB(tooltip = "Tip status\n(Ctrl + Space to toggle feedback)", icon = icons.get("withdrawn")),
+            "tip": MSB(click_to_toggle = False, size = 28,
+                       states = [{"name": "unknown", "tooltip": "Tip status\nUnknown / withdrawn", "icon": icons.get("tip_unknown"), "color": self.colors["off-black"]},
+                                 {"name": "feedback", "tooltip": "Tip status\nIn feedback", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]},
+                                 {"name": "constant_height", "tooltip": "Tip status\nConstant height", "icon": icons.get("constant_height"), "color": self.colors["orange"]}]),
             "V_swap": MSB(tooltip = "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
             
             # Parameters: getters and setters
@@ -199,7 +193,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "get_lockin_parameters": MSB(tooltip = "Get parameters\n(P)", icon = icons.get("get")),
             
             # Coarse vertical
-            "withdraw": MSB(tooltip = "Withdraw the tip\n(Ctrl + W)", icon = icons.get("withdraw")),
+            "withdraw": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": self.colors["blue"]},
+                                                               {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": self.colors["off-black"]}]),
             "retract": MSB(tooltip = "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
             "advance": MSB(tooltip = "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
             "approach": MSB(tooltip = "Initiate auto approach\n(Ctrl + A)", icon = icons.get("approach")),
@@ -221,12 +216,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "tip_shape": MSB(tooltip = "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
             
             # Lockins
-            "nanonis_mod1": MSB(icon = icons.get("nanonis_mod1"), states = [{"tooltip": "Nanonis modulator 1 OFF", "color": "#101010"}, {"tooltip": "Nanonis modulator 1 ON", "color": "#2020C0"}]),
-            "nanonis_mod2": MSB(icon = icons.get("nanonis_mod2"), states = [{"tooltip": "Nanonis modulator 2 OFF", "color": "#101010"}, {"tooltip": "Nanonis modulator 2 ON", "color": "#2020C0"}]),
-            "mla_mod1": MSB(icon = icons.get("mla_oscillator"), states = [{"tooltip": "MLA modulator 1 OFF", "color": "#101010"}, {"tooltip": "MLA modulator 1 ON", "color": "#2020C0"}]),
+            "nanonis_mod1": MSB(icon = icons.get("nanonis_mod1"),
+                                states = [{"name": "off", "tooltip": "Nanonis modulator 1 OFF", "color": self.colors["off-black"]},
+                                          {"name": "on", "tooltip": "Nanonis modulator 1 ON", "color": self.colors["blue"]}]),
+            "nanonis_mod2": MSB(icon = icons.get("nanonis_mod2"),
+                                states = [{"name": "off", "tooltip": "Nanonis modulator 2 OFF", "color": self.colors["off-black"]},
+                                          {"name": "on", "tooltip": "Nanonis modulator 2 ON", "color": self.colors["blue"]}]),
+            "mla_mod1": MSB(icon = icons.get("mla_oscillator"),
+                            states = [{"name": "off", "tooltip": "MLA modulator 1 OFF", "color": self.colors["off-black"]},
+                                      {"name": "on", "tooltip": "MLA modulator 1 ON", "color": self.colors["blue"]}]),
 
             # Processing
-            "direction": MSB(tooltip = "Change scan direction\n(X)", states = [{"icon": icons.get("triple_arrow"), "color": "#101010"}, {"icon": rotate_icon(icons.get("triple_arrow"), angle = 180), "color": "#2020C0"}]),
+            "direction": MSB(tooltip = "Change scan direction\n(X)",
+                             states = [{"name": "forward", "icon": icons.get("triple_arrow"), "color": self.colors["off-black"]},
+                                       {"name": "backward", "icon": rotate_icon(icons.get("triple_arrow"), angle = 180), "color": self.colors["blue"]}]),
             "fit_to_frame": MSB(tooltip = "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
             "fit_to_range": MSB(tooltip = "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
             "full_data_range": MSB(tooltip = sivr + "to the full data range\n(U)", icon = icons.get("100")),
@@ -234,17 +237,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "standard_deviation": MSB(tooltip = sivr + "by standard deviations\n(D)", icon = icons.get("deviation")),
             "absolute_values": MSB(tooltip = sivr + "by absolute values\n(A)", icon = icons.get("numbers")),
             
-            "bg_none": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": "#101010"}, {"color": "#2020C0"}]),
-            "bg_plane": MSB(states = [{"tooltip": "Plane\n(0)", "icon": self.icons.get("plane_subtract"), "color": "#101010"}, {"color": "#2020C0"}]),
-            "bg_linewise": MSB(states = [{"tooltip": "Linewise\n(0)", "icon": self.icons.get("lines"), "color": "#101010"}, {"color": "#2020C0"}]),
-            "bg_inferred": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": "#101010"}, {"color": "#2020C0"}]),
+            "bg_none": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "bg_plane": MSB(states = [{"tooltip": "Plane\n(0)", "icon": self.icons.get("plane_subtract"), "color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "bg_linewise": MSB(states = [{"tooltip": "Linewise\n(0)", "icon": self.icons.get("lines"), "color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "bg_inferred": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
             
-            "sobel": MSB(text = "Sobel", tooltip = "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", icon = self.icons.get("sobel"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
-            "laplace": MSB(text = "Laplace", tooltip = "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + L)", icon = self.icons.get("laplacian"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
-            "fft": MSB(text = "Fft", tooltip = "Compute the 2D Fourier transform\n(Shift + F)", icon = self.icons.get("fourier"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
-            "normal": MSB(text = "Normal", tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
-            "gaussian": MSB(text = "Gauss", tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
-            "rot_trans": MSB(tooltip = "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", icon = self.icons.get("rot_trans"), states = [{"color": "#101010"}, {"color": "#2020C0"}]),
+            "sobel": MSB(text = "Sobel", tooltip = "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", icon = self.icons.get("sobel"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "laplace": MSB(text = "Laplace", tooltip = "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + L)", icon = self.icons.get("laplacian"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "fft": MSB(text = "Fft", tooltip = "Compute the 2D Fourier transform\n(Shift + F)", icon = self.icons.get("fourier"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "normal": MSB(text = "Normal", tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "gaussian": MSB(text = "Gauss", tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
+            "rot_trans": MSB(tooltip = "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", icon = self.icons.get("rot_trans"), states = [{"color": self.colors["off-black"]}, {"color": self.colors["blue"]}]),
         }
 
         for i in range(6):
@@ -256,7 +259,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             buttons.update({f"parameters_{i}": MSB(tooltip = f"Parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
 
         # Increase size of important buttons        
-        buttons["frame_aspect"].setChecked(True)
+        buttons["frame_aspect"].setState(1)
 
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
@@ -328,6 +331,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "experiment_0": LE(tooltip = "Experiment parameter field 0"),
             "experiment_1": LE(tooltip = "Experiment parameter field 1"),
             "experiment_2": LE(tooltip = "Experiment parameter field 2"),
+            "experiment_3": LE(tooltip = "Experiment parameter field 0"),
+            "experiment_4": LE(tooltip = "Experiment parameter field 1"),
+            "experiment_5": LE(tooltip = "Experiment parameter field 2"),
+            "experiment_6": LE(tooltip = "Experiment parameter field 0"),
+            "experiment_7": LE(tooltip = "Experiment parameter field 1"),
+            "experiment_8": LE(tooltip = "Experiment parameter field 2"),
 
             # Coarse
             "z_steps": LE(value = 20, tooltip = "Steps in the +Z (retract) direction", unit = "steps up", limits = [0, 100000], digits = 0, max_width = 100),
@@ -361,8 +370,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "t_const": LE(tooltip = "Time constant", unit = "us", digits = 0),
             "i_gain": LE(tooltip = "Integral gain", unit = "nm/s", digits = 0),
             
-            "v_fwd (nm/s)": LE(tooltip = "Tip forward speed", unit = "nm/s", digits = 2),
-            "v_bwd (nm/s)": LE(tooltip = "Tip backward speed", unit = "nm/s", digits = 2),
+            "v_fwd": LE(tooltip = "Tip forward speed", unit = "nm/s", digits = 2),
+            "v_bwd": LE(tooltip = "Tip backward speed", unit = "nm/s", digits = 2),
             
             # Frame
             "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
@@ -383,6 +392,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "pulse_voltage": LE(tooltip = "Voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
             "pulse_duration": LE(tooltip = "Duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
             
+            # STS
+            "V_min_STS": LE(tooltip = "Starting bias", unit = "V", limits = [-10, 10], digits = 3),
+            "V_max_STS": LE(tooltip = "End bias", unit = "V", limits = [-10, 10], digits = 3),
+            "dV_STS": LE(tooltip = "Bias step value", unit = "mV", limits = [0, 10000], digits = 1),
+            "points_STS": LE(tooltip = "Number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            "t_integration": LE(tooltip = "Integration time per data point", unit = "ms", limits = [0, 10000], digits = 0),
+            "t_settle": LE(tooltip = "Settling time per data point", unit = "ms", limits = [0, 10000], digits = 0),
+            
             # Lockins
             "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
             "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
@@ -392,20 +409,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
             
             "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "mla_mod1_V": LE(tooltip = "MLA modulator 1 amplitude", unit = "V", limits = [0, 10], digits = 1),
+            "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
             "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
 
             # Image processing
-            "min_full": LE(tooltip = "minimum value of scan data range", digits = 3),
-            "max_full": LE(tooltip = "maximum value of scan data range", digits = 3),
-            "min_percentiles": LE(value = 1.0, tooltip = "minimum percentile of data range", unit = "%", digits = 1),
-            "max_percentiles": LE(value = 99.0, tooltip = "maximum percentile of data range", unit = "%", digits = 1),
-            "min_deviations": LE(value = 2.0, tooltip = "minimum = mean - n * standard deviation", unit = "\u03C3", digits = 1),
-            "max_deviations": LE(value = 2.0, tooltip = "maximum = mean + n * standard deviation", unit = "\u03C3", digits = 1),
-            "min_absolute": LE(value = 0, tooltip = "minimum absolute value", digits = 3),
-            "max_absolute": LE(value = 1, tooltip = "maximum absolute value", digits = 3),
+            "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 100),
+            "max_full": LE(tooltip = "maximum value of scan data range", digits = 3, max_width = 100),
+            "min_percentiles": LE(value = 1.0, tooltip = "minimum percentile of data range", unit = "%", digits = 1, max_width = 100),
+            "max_percentiles": LE(value = 99.0, tooltip = "maximum percentile of data range", unit = "%", digits = 1, max_width = 100),
+            "min_deviations": LE(value = 2.0, tooltip = "minimum = mean - n * standard deviation", unit = "\u03C3", digits = 1, max_width = 100),
+            "max_deviations": LE(value = 2.0, tooltip = "maximum = mean + n * standard deviation", unit = "\u03C3", digits = 1, max_width = 100),
+            "min_absolute": LE(value = 0, tooltip = "minimum absolute value", digits = 3, max_width = 100),
+            "max_absolute": LE(value = 1, tooltip = "maximum absolute value", digits = 3, max_width = 100),
 
-            "gaussian_width": LE(value = 0.000, tooltip = "Width for Gaussian blur application", unit = "nm", digits = 3),
+            "gaussian_width": LE(value = 0.000, tooltip = "Width for Gaussian blur application", unit = "nm", digits = 3, max_width = 100),
             "file_name": LE(tooltip = "Base name of the file when saved to png or hdf5"),
             
             # Console            
@@ -414,9 +431,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Named groups
         self.parameter_line_0 = [buttons["tip"], line_edits["V_nanonis"], buttons["V_swap"], line_edits["V_mla"], line_edits["I_fb"], buttons["set_scan_parameters"], buttons["get_scan_parameters"]]
-        self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd (nm/s)", "v_bwd (nm/s)"]]
+        self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd", "v_bwd"]]
 
-        self.experiment_parameter_fields = [line_edits[f"experiment_{i}"] for i in range(3)]
+        self.experiment_parameter_fields = [line_edits[f"experiment_{i}"] for i in range(9)]
 
         self.gain_line_edits = [line_edits[name] for name in ["p_gain", "t_const", "i_gain"]]
         
@@ -431,7 +448,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"],
                                   buttons["nanonis_mod2"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"],
-                                  buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_V"], line_edits["mla_mod1_phi"]]        
+                                  buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_mV"], line_edits["mla_mod1_phi"]]        
         
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
@@ -481,12 +498,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         PB = STWidgets.ProgressBar
         
         progress_bars = {
+            "task": PB(tooltip = "Task progress"),
             "experiment": PB(tooltip = "Experiment progress")
         }
         
-        # Named groups
-        self.experiment_controls = [progress_bars["experiment"]]
-        [self.experiment_controls.append(self.buttons[name]) for name in ["start_stop", "save"]]
+        [progress_bars[name].setMinimumWidth(60) for name in progress_bars.keys()]
+        [progress_bars[name].setMaximumWidth(60) for name in progress_bars.keys()]
         
         # Add the progress_bar handles to the tooltips
         [progress_bars[name].changeToolTip(f"gui.progress_bars[\"{name}\"]", line = 10) for name in progress_bars.keys()]
@@ -503,7 +520,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "parameters_0": make_layout("v"),
             "scan_parameter_sets": make_layout("h"),
             
-            "scan_parameters": make_layout("g"),
+            "bias_current": make_layout("g"),
             
             "gains_line_edits": make_layout("h"),
             "gains_set_get": make_layout("h"),
@@ -541,13 +558,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "input": make_layout("h"),
             "experiment_controls_0": make_layout("v"),
             "experiment_controls_1": make_layout("h"),
-            "experiment_fields": make_layout("h"),
+            "experiment_fields": make_layout("g"),
             
             "graph": make_layout("h"),
             "channels": make_layout("g"),
 
             "connections": make_layout("g"),
             "coarse_control": make_layout("h"),
+            "coarse_prep": make_layout("v"),
             "tip_prep": make_layout("h"),
             "parameters": make_layout("g"),            
             "image_processing": make_layout("v"),
@@ -602,6 +620,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "connections": QWgt(),
             "coarse_control": QWgt(),
+            "coarse_prep": QWgt(),
             "frame_grid": QWgt(),
             "tip_prep": QWgt(),
             "parameters": QWgt(),
@@ -609,8 +628,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "experiment": QWgt(),
             "lockins": QWgt(),
         }
-
-        self.phase_slider = STWidgets.SliderLineEdit(tooltip = "Set complex phase phi in deg\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", orientation = "h")
+        
+        self.phase_slider = STWidgets.PhaseSlider(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))
         
         return widgets
 
@@ -731,16 +750,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         # Experiment
         layouts["experiment_controls_0"].addWidget(buttons["start_stop"])
-        [layouts["experiment_controls_1"].addWidget(widget) for widget in [self.progress_bars["experiment"], buttons["save"], line_edits["experiment_filename"]]]
-        [layouts["experiment_fields"].addWidget(widget) for widget in self.experiment_parameter_fields]
+        [layouts["experiment_controls_0"].addWidget(self.progress_bars[name]) for name in ["task", "experiment"]]
+        
+        [layouts["experiment_controls_1"].addWidget(widget) for widget in [buttons["save"], line_edits["experiment_filename"]]]
+        [layouts["experiment_fields"].addWidget(widget, int(index / 3), index % 3) for index, widget in enumerate(self.experiment_parameter_fields)] # Grid of experiment fields
         e_layout = layouts["experiment"]
         e_layout.addLayout(layouts["experiment_controls_0"], 0, 0, 3, 1)
         e_layout.addWidget(self.tip_slider, 0, 1, 3, 1)
-        e_layout.addWidget(self.comboboxes["experiment"], 0, 2, 1, 2)
-        e_layout.addWidget(self.comboboxes["direction"], 0, 4)
-        # [e_layout.addWidget(self.comboboxes[name], 0, i + 1) for i, name in enumerate(["experiment", "direction"])]
-        e_layout.addLayout(layouts["experiment_controls_1"], 1, 2, 1, 3)
+        e_layout.addWidget(self.comboboxes["experiment"], 0, 2)
+        e_layout.addWidget(self.comboboxes["direction"], 0, 3)
+        e_layout.addLayout(layouts["experiment_controls_1"], 1, 2, 1, 2)
         e_layout.addWidget(self.line_edits["experiment_filename"], 2, 3)
+        e_layout.addWidget(buttons["tip"], 0, 4, 2, 1)
         e_layout.addLayout(layouts["experiment_fields"], 2, 2, 1, 3)
         
         # Coarse
@@ -768,6 +789,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Parameters
         [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
+        layouts["bias_current"].addWidget(line_edits["V_nanonis"])
 
         # Gains
         [layouts["gains_line_edits"].addWidget(widget) for widget in self.gain_line_edits]
@@ -820,7 +842,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         cn_layout = layouts["channel_navigation"]
         cn_layout.addWidget(comboboxes["channels"], 4)
         cn_layout.addWidget(self.buttons["direction"], 1)
-        [cn_layout.addWidget(self.buttons[name]) for name in ["fit_to_frame", "fit_to_range"]]
+        [cn_layout.addWidget(self.buttons[name], 1) for name in ["fit_to_frame", "fit_to_range"]]
         
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         layouts["background_buttons"].addWidget(buttons["rot_trans"])
@@ -833,10 +855,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         p_layout.addWidget(self.phase_slider, 2, 1, 1, 2)
         
         l_layout = layouts["limits"]
+        l_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.limits_columns = [self.min_line_edits, self.min_radio_buttons, self.scale_buttons, self.max_radio_buttons, self.max_line_edits]
         for j, group in enumerate(self.limits_columns): [l_layout.addWidget(item, i, j) for i, item in enumerate(group)]
 
         ip_layout = layouts["image_processing"]
+        ip_layout.addWidget(labels["scan_control"])
         ip_layout.addLayout(layouts["channel_navigation"])
         ip_layout.addWidget(labels["background_subtraction"])
         ip_layout.addLayout(layouts["background_buttons"])
@@ -864,11 +888,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "connections": SGB(title = "Connections", tooltip = "Connections to hardware (push to check/refresh)"),
             
             # Coarse
-            "coarse_control": SGB(title = "Coarse control", tooltip = "Control the tip (use ctrl key to access these functions)"),
             "coarse_vertical": SGB(title = "Vertical", tooltip = "Vertical coarse motion"),
-            "coarse_horizontal": SGB(title = "Horizontal", tooltip = "Vertical coarse motion"),
+            "coarse_horizontal": SGB(title = "Horizontal", tooltip = "Horizontal coarse motion"),
+            
+            "tip_prep": SGB(title = "Tip prep", tooltip = "Tip preparation tools"),
 
             "frame_grid": SGB(title = "Frame / grid", tooltip = "Frame and grid parameters"),
+            "bias_current": SGB(title = "Bias / current", tooltip = "Bias and current"),
             "gains": SGB(title = "Feedback gains", tooltip = "Feedback gains"),
             "modulators": SGB(title = "Modulators", tooltip = "Modulators"),
             "demodulators": SGB(title = "Demodulators", tooltip = "Demodulators"),
@@ -882,12 +908,15 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
 
         # Set layouts for the groupboxes
-        groupbox_names = ["connections", "coarse_control", "coarse_horizontal", "coarse_vertical", "gains", "frame_grid", "tip_prep", "parameters", "modulators", "demodulators", "experiment", "image_processing"]
+        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "tip_prep", "gains", "frame_grid", "tip_prep", "parameters", "modulators", "demodulators", "experiment", "image_processing"]
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
         # Make layouts of several groupboxes
         [layouts["coarse_control"].addWidget(groupboxes[name], 1) for name in ["coarse_horizontal", "coarse_vertical"]]
-        [layouts["parameters"].addWidget(groupboxes[name]) for name in ["gains", "frame_grid"]]
+        layouts["coarse_prep"].addLayout(layouts["coarse_control"])
+        layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])
+        
+        [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias_current", "gains", "frame_grid"]]
         [layouts["lockins"].addWidget(groupboxes[name]) for name in ["modulators", "demodulators"]]
 
         return groupboxes
@@ -898,8 +927,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_tab_widget(self) -> QtWidgets.QTabWidget:
         tab_widget = QtWidgets.QTabWidget()
         
-        tabs = ["coarse_control", "tip_prep", "parameters", "image_processing", "lockins"]
-        tab_names = ["Coarse", "Prep", "Parameters", "Processing", "Lock-ins"]
+        tabs = ["coarse_prep", "parameters", "image_processing", "lockins"]
+        tab_names = ["Coarse/Prep", "Parameters", "Processing", "Lock-ins"]
         [self.widgets[name0].setLayout(self.layouts[name0]) for name0 in tabs]
         [tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
 
@@ -990,7 +1019,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                 frame_width = self.line_edits["frame_width"].getValue()
                 if not isinstance(frame_width, float) and not isinstance(frame_width, int): return
 
-                if self.buttons["frame_aspect"].isChecked():
+                if bool(self.buttons["frame_aspect"].state_index):
                     frame_aspect = self.line_edits["frame_aspect"].getValue()
 
                     if isinstance(frame_aspect, float) or isinstance(frame_aspect, int):
@@ -1043,7 +1072,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         new_width = self.new_frame_roi.size().x()
         self.line_edits["frame_width"].setValue(new_width)
         
-        if self.buttons["frame_aspect"].isChecked():
+        if bool(self.buttons["frame_aspect"].state_index):
             new_height = new_width * self.line_edits["frame_aspect"].getValue()
             
             self.new_frame_roi.blockSignals(True)

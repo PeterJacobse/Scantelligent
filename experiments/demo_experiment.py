@@ -36,7 +36,7 @@ class Experiment(BaseExperiment):
         t_ms = gui_parameters.get("line_edits")[0]
 
         for iteration in range(max_iter):
-            experiment_progress = 100 * (iteration / max_iter)
+            experiment_progress = int(100 * (iteration / max_iter))
             self.exp_progress.emit(experiment_progress)
             self.check_abort_request()
             self.logprint(f"Iteration {iter}\nIs an abort requested? {self.abort_requested}", message_type = "message")

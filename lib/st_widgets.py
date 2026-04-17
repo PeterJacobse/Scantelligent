@@ -547,12 +547,13 @@ class STWidgets:
         """
         A QProgressBar with extra method changeToolTip
         """
-        def __init__(self, **kwargs):            
-            tooltip = kwargs.pop("ttoltip", None)
+        def __init__(self, *args, **kwargs):            
+            tooltip = kwargs.pop("tooltip", None)
             
-            super().__init__()
+            super().__init__(*args, **kwargs)
             
             if isinstance(tooltip, str): self.setToolTip(tooltip)
+            self.setValue(0)
         
         def changeToolTip(self, text: str, line: int = 0) -> None:
             """
