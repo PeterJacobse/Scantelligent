@@ -366,7 +366,9 @@ class ParameterManager(QtCore.QObject):
 
             case "lockin":
                 for i, mod_dict in enumerate([parameters.get("modulator_1"), parameters.get("modulator_2")]):
-                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi"], [mod_dict.get("frequency (Hz)"), mod_dict.get("amplitude (mV)"), mod_dict.get("phase (deg)")])]
+                    
+                    mod_values = [mod_dict.get(key) for key in ["frequency (Hz)", "amplitude (mV)", "phase (deg)", "time_constant (ms)"]]                    
+                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi", "t"], mod_values)]
                     
                     state = "off"
                     if mod_dict.get("on"): state = "on"

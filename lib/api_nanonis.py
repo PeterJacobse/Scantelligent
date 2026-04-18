@@ -25,8 +25,6 @@ class NanonisAPI(QtCore.QObject):
         # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
         # The exception should be caught in the code where the NanonisAPI object is instantiated
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
-        self.timer = QtCore.QTimer()
-        self.abort_flag = False
         self.data = DataProcessing()
 
 
@@ -201,7 +199,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (piezo_range_dict, error)
 
-    def scan_metadata_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
+    def scan_metadata_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
@@ -243,7 +241,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (scan_metadata, error)
 
-    def scan_update(self, channel: int | str, backward: bool = False, unlink: bool = False, verbose: bool = True) -> np.ndarray:
+    def scan_update(self, channel: int | str, backward: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, bool | str]:
         # Initalize outputs
         scan_data = None
         error = False
@@ -296,10 +294,8 @@ class NanonisAPI(QtCore.QObject):
         nhw = self.nanonis_hardware
                 
         # Extract parameters from the dictionary
-        withdraw = parameters.get("withdraw", False)
-        feedback = parameters.get("feedback", None)
-        x_nm = parameters.get("x (nm)", None)
-        y_nm = parameters.get("y (nm)", None)
+        [withdraw, feedback, x_nm, y_nm, z_nm, z_rel_nm] = [parameters.get(key, None) for key in ["withdraw", "feedback", "x (nm)", "y (nm)", "z (nm)", "z_rel (nm)"]]
+        if withdraw == None: withdraw = False
         if x_nm and y_nm: xy_nm = [x_nm, y_nm]
         else: xy_nm = None
 
@@ -313,8 +309,16 @@ class NanonisAPI(QtCore.QObject):
             if xy_nm: nhw.set_xy_nm(xy_nm) # Set the tip position
             xy_nm = nhw.get_xy_nm() # Get the tip position
             [x_nm, y_nm] = xy_nm
+            if z_nm:
+                nhw.set_fb(False)
+                sleep(.2)
+                nhw.set_z_nm(z_nm)
             z_nm = nhw.get_z_nm()
-            z_bs = nhw.get_z()
+            if z_rel_nm:
+                z_nm += z_rel_nm
+                nhw.set_fb(False)
+                sleep(.2)
+                nhw.set_z_nm(z_nm)
             [z_min, z_max] = nhw.get_z_limits_nm()
 
             I_pA = nhw.get_I_pA() # get the current
@@ -341,7 +345,6 @@ class NanonisAPI(QtCore.QObject):
                 "z (nm)": z_nm,
                 "I (pA)": I_pA,
                 "location (nm)": [x_nm, y_nm, z_nm],
-                "z (bytestring)": z_bs,
                 "z_limits (nm)": [z_min, z_max],
                 "feedback": feedback_new,
                 "withdrawn": withdrawn
@@ -719,13 +722,6 @@ class NanonisAPI(QtCore.QObject):
         dt = parameters.get("dt", .005)
         dV = parameters.get("dV", .01)
         dz_nm = parameters.get("dz_nm", 1)
-        V_limits = parameters.get("V_limits", 10)
-
-        if type(V) != float and type(V) != int:
-            return False
-        if type(V_limits) == float or type(V_limits) == int:
-            if np.abs(V) > np.abs(V_limits): # Bias outside of limits
-                return False
 
         try:
             if verbose:
@@ -733,8 +729,9 @@ class NanonisAPI(QtCore.QObject):
                 else: self.logprint(f"nanonis.bias_update()", "code")
             if not self.status == "running": self.link()                            
             V_old = nhw.get_V() # Read data from Nanonis
+            if not V: V = V_old # V not provided; substitute the old bias
             if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
-            
+
             feedback = nhw.get_fb()
             tip_height = nhw.get_z_nm()
             polarity_difference = np.sign(V) * np.sign(V_old) < 0 # True if the sign changes
@@ -784,8 +781,10 @@ class NanonisAPI(QtCore.QObject):
                 amplitude_mV = nhw.get_lockin_amp(mod_number + 1)
                 frequency_Hz = nhw.get_lockin_freq(mod_number + 1)
                 phase_deg = nhw.get_lockin_phase(mod_number + 1)
+                if frequency_Hz > .01: time_ms = 1000 / frequency_Hz
+                else: time_ms = None
                 
-                mod_new = {"on": mod_on, "frequency (Hz)": frequency_Hz, "amplitude (mV)": amplitude_mV, "phase (deg)": phase_deg}    
+                mod_new = {"on": mod_on, "frequency (Hz)": frequency_Hz, "amplitude (mV)": amplitude_mV, "phase (deg)": phase_deg, "time_constant (ms)": time_ms}
     
                 if isinstance(mod, dict):
                     mod_on = mod.get("on", None)
@@ -804,11 +803,13 @@ class NanonisAPI(QtCore.QObject):
                         except:
                             pass
                     
-                    freq = mod.get("frequency (Hz)", None)
+                    freq = float(mod.get("frequency (Hz)", None))
                     if isinstance(freq, float) or isinstance(freq, int):
                         try:
                             nhw.set_lockin_freq(mod_number + 1, freq)
                             mod_new.update({"frequency (Hz)": freq})
+                            
+                            mod_new.update({"time_constant (ms)": 1000 / freq})
                         except:
                             pass
                     

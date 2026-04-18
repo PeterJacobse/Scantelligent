@@ -1164,7 +1164,7 @@ class NanonisHardware:
         return response
 
     def get_xy_range_nm(self) -> list:
-        range_str = self.get_range()
+        range_str = self.get_xy_range()
 
         xyz_nm = [self.conv.hex_to_float32(range_str[i : i + 4]) * 1E9 for i in range(0, 12, 4)]
 

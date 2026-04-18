@@ -404,13 +404,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
             "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
             "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "nanonis_mod1_t": LE(tooltip = "Nanonis modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2),
             "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
             "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
             "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "nanonis_mod2_t": LE(tooltip = "Nanonis modulator 2 time constant", unit = "ms", limits = [0, 10000], digits = 2),
             
             "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
             "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
             "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
+            "mla_mod1_t": LE(tooltip = "MLA modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2),
 
             # Image processing
             "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 100),
@@ -446,9 +449,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.frame_widgets = [line_edits[name] for name in ["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"]]
         self.grid_widgets = [line_edits[name] for name in ["grid_lines", "grid_pixels", "grid_aspect"]]
         
-        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"],
-                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"],
-                                  buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_mV"], line_edits["mla_mod1_phi"]]        
+        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"], line_edits["nanonis_mod1_t"],
+                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"], line_edits["nanonis_mod2_t"],
+                                  buttons["mla_mod1"], line_edits["mla_mod1_f"], line_edits["mla_mod1_mV"], line_edits["mla_mod1_phi"], line_edits["mla_mod1_t"]]
         
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
@@ -833,7 +836,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # Lockins
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
-        [layouts["modulators"].addWidget(widget, int(i / 4), i % 4) for i, widget in enumerate(self.modulator_widgets)]
+        [layouts["modulators"].addWidget(widget, int(i / 5), i % 5) for i, widget in enumerate(self.modulator_widgets)]
         layouts["modulators"].addLayout(layouts["mod_set_get"], 3, 0, 1, 4)
         [layouts["demod_sliders"].addWidget(self.demod_audio_sliders[f"f{i}"]) for i in range(1, 8)]
         layouts["demodulators"].addLayout(layouts["demod_sliders"])
@@ -992,6 +995,37 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.buttons["bg_plane"].clicked.connect(lambda: self.background_mutex("plane"))
         self.buttons["bg_linewise"].clicked.connect(lambda: self.background_mutex("linewise"))
         
+        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.update_reciprocals(name_0)) for name in ["nanonis_mod1_f", "nanonis_mod2_f", "mla_mod1_f", "nanonis_mod1_t", "nanonis_mod2_t", "mla_mod1_t"]]
+        
+        return
+
+    def update_reciprocals(self, target: str = "mla_mod1_f"):
+        match target:
+            case "nanonis_mod1_f":
+                f_Hz = self.line_edits["nanonis_mod1_f"].getValue()
+                t_ms = 1000 / f_Hz
+                self.line_edits["nanonis_mod1_t"].setValue(t_ms)
+            case "nanonis_mod2_f":
+                f_Hz = self.line_edits["nanonis_mod2_f"].getValue()
+                t_ms = 1000 / f_Hz
+                self.line_edits["nanonis_mod2_t"].setValue(t_ms)
+            case "mla_mod1_f":
+                f_Hz = self.line_edits["mla_mod1_f"].getValue()
+                t_ms = 1000 / f_Hz
+                self.line_edits["mla_mod1_t"].setValue(t_ms)
+
+            case "nanonis_mod1_t":
+                t_ms = self.line_edits["nanonis_mod1_t"].getValue()
+                f_Hz = 1000 / t_ms
+                self.line_edits["nanonis_mod1_f"].setValue(f_Hz)
+            case "nanonis_mod2_t":
+                t_ms = self.line_edits["nanonis_mod2_t"].getValue()
+                f_Hz = 1000 / t_ms
+                self.line_edits["nanonis_mod2_f"].setValue(f_Hz)
+            case "mla_mod1_f":
+                t_ms = self.line_edits["mla_mod1_t"].getValue()
+                f_Hz = 1000 / t_ms
+                self.line_edits["mla_mod1_f"].setValue(f_Hz)
         return
 
     def background_mutex(self, method: str = "none") -> None:
