@@ -170,6 +170,7 @@ class NanonisHardware:
             "get_scan_frame": make_header('Scan.FrameGet', body_size = 0),
             "set_scan_frame": make_header('Scan.FrameSet', body_size = 20),
             "get_scan_buffer": make_header('Scan.BufferGet', body_size = 0),
+            
             "get_scan_props": make_header('Scan.PropsGet', body_size = 0),
             "scan_wait_line": make_header('Scan.WaitEndOfLine', body_size = 4),
             "scan_wait_scan": make_header('Scan.WaitEndOfScan', body_size = 4),
@@ -866,16 +867,51 @@ class NanonisHardware:
         index += 4
         lines = self.conv.hex_to_int32(response[index : index + 4])
         pixel_ratio = lines / pixels
+        size = lines * pixels
         
-        parameters = {
-            "num_channels": num_channels,
-            "channel_indices": channel_indices,
-            "pixels": pixels,
-            "lines": lines,
-            "pixel_ratio": pixel_ratio
-        }
+        parameters = {"num_channels": num_channels, "channel_indices": channel_indices, "pixels": pixels, "lines": lines, "pixel_ratio": pixel_ratio, "size": size}
         
         return parameters
+
+    def set_scan_buffer(self, channel_indices = None, pixels = None, lines = None) -> None:
+        """
+        Configures the scan buffer parameters
+
+        Parameters
+        num_channels    : number of recorded channels.
+        channel_indexes : Nanonis v < R11798, use slot number:
+                          Indexes of recorded channels (see signals manager or
+                          use Signals.InSlotsGet function)
+
+                          Nanonis v >= R11798, use RT Index:
+                          Indexes of recorded channels. The index is comprised between 0
+                          and 127, and it corresponds to the full list of signals available in the system.
+                          To get the signal name and its corresponding index in the list of the 128 available signals in the Nanonis
+                          Controller, use the Signal.NamesGet function, or check the RT Idx value in the Signals Manager module.
+        pixels          : number of pixels per line. forced to a multiple of 16
+        lines           : number of scan lines
+
+        """
+        old_parameters = self.get_scan_buffer()
+        [old_channel_indices, old_pixels, old_lines] = [old_parameters.get(key) for key in ["channel_indices", "pixels", "lines"]]
+        
+        if not channel_indices: channel_indices = old_channel_indices
+        if not pixels: pixels = old_pixels
+        if not lines: lines = old_lines
+
+        num_channels = len(channel_indices)
+        body_size = 12 + 4 * num_channels
+
+        command = self.conv.make_header('Scan.BufferSet', body_size = body_size)
+        command += self.conv.to_hex(num_channels, 4)
+        
+        for channel_index in channel_indices: command += self.conv.to_hex(channel_index, 4)
+        
+        command += self.conv.to_hex(pixels, 4) + self.conv.to_hex(lines, 4)
+        self.send_command(command)
+
+        self.receive_response(0)
+        return
 
     def get_scan_props(self) -> dict:
         command = self.headers["get_scan_props"]        
@@ -1119,7 +1155,7 @@ class NanonisHardware:
         return
 
     # Piezo
-    def get_range(self) -> str:
+    def get_xy_range(self) -> str:
         command = self.headers["get_range"]
         
         self.send_command(command)
@@ -1127,7 +1163,7 @@ class NanonisHardware:
         
         return response
 
-    def get_range_nm(self) -> list:
+    def get_xy_range_nm(self) -> list:
         range_str = self.get_range()
 
         xyz_nm = [self.conv.hex_to_float32(range_str[i : i + 4]) * 1E9 for i in range(0, 12, 4)]

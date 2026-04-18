@@ -30,7 +30,7 @@ class BaseExperiment(QObject):
 
     def setup_line_edits(self, gui, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:
         self.logprint("Setting up line edits")
-        self.line_edits = [gui.line_edits[f"experiment_{i}"] for i in range(3)]
+        self.line_edits = [gui.line_edits[f"experiment_{i}"] for i in range(9)]
         for list_object in [tooltips, digits, limits, units]:
             if len(list_object) > 2: list_object = list_object[:2]
         

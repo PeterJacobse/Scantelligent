@@ -185,7 +185,7 @@ class NanonisAPI(QtCore.QObject):
         try:
             if verbose: self.logprint(f"nanonis.piezo_range_update()", "code")
             if not self.status == "running": self.link()
-            piezo_range = nhw.get_range_nm()
+            piezo_range = nhw.get_xy_range_nm()
             
             piezo_range_dict = {"dict_name": "piezo_range",
                 "x_min (nm)": -0.5 * piezo_range[0], "x_max (nm)": 0.5 * piezo_range[0],
@@ -647,16 +647,14 @@ class NanonisAPI(QtCore.QObject):
                 if len(parameters) > 0: self.logprint(f"nanonis.grid_update(parameters = {parameters})", "code")
                 else: self.logprint(f"nanonis.grid_update()", "code")
             if not self.status == "running": self.link()
+            
             # Get the frame and buffer
             frame = nhw.get_scan_frame_nm()
             buffer = nhw.get_scan_buffer()
 
             # Save the data to a dictionary
-            width = frame.get("width (nm)")
-            height = frame.get("height (nm)")
-            angle = frame.get("angle (deg)")
-            pixels = buffer.get("pixels")
-            lines = buffer.get("lines")
+            [width, height, angle] = [frame.get(key) for key in ["width (nm)", "height (nm)", "angle (deg)"]]
+            [pixels, lines] = [buffer.get(key) for key in ["pixels", "lines"]]            
             grid = frame | buffer | {
                 "pixel_width (nm)": width / pixels,
                 "pixel_height (nm)": height / lines,

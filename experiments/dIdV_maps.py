@@ -18,33 +18,54 @@ class Experiment(BaseExperiment):
         except: self.gui_not_found_error()
         
         # Set up the required hardware connections
-        #self.connect_hardware("nanonis")
+        self.connect_hardware("nanonis")
 
     def prepare_gui(self, gui) -> None:
-        self.setup_combobox(gui = gui, items = ["upward", "downward"])
-        self.setup_line_edits(gui = gui, tooltips = ["Time per iteration", "Number of iterations"],
-                              values = [100, 4, 3], digits = [0, 0, 0], limits = [[0, 1000], [0, 200], [0, 3]], units = ["ms", "steps", ""])
+        self.setup_combobox(gui = gui, items = ["map up / scan down", "map down / scan up"])
+        self.setup_line_edits(gui = gui, tooltips = ["V_start", "V_step", "V_end", "t_per_pixel"],
+                              values = [-2, 100, 2, 1], digits = [2, 0, 2, 2], limits = [[-10, 10], [0, 10000], [-10, 10], [0, 1000]], units = ["V", "mV", "V", "ms"])
 
     def run(self):
+        nn = self.nanonis
+        nhw = nn.nanonis_hardware
         gui_parameters = self.read_parameters_from_gui()
-        # self.read_parameters_from_gui() # The following parameters can be accessed: self.direction, self.line_value_0, self.line_value_1, self.line_value_2
-        
-        self.logprint("Hello from the MLA mapping experiment!", message_type = "message")
-        self.logprint(f"I read the following parameters from the GUI: {gui_parameters}", message_type = "message")
-        
-        max_iter = gui_parameters.get("line_edits")[1]
-        t_ms = gui_parameters.get("line_edits")[0]
+        # self.read_parameters_from_gui() # The following parameters can be accessed: self.direction, self.line_value_0, self.line_value_1, self.line_value_2, etc.
+        direction = gui_parameters["direction_combobox"]
+        [V_begin, V_step, V_end] = [gui_parameters["line_edits"][index] for index in range(3)]
 
-        for iteration in range(max_iter):
-            experiment_progress = 100 * (iteration / max_iter)
-            self.exp_progress.emit(experiment_progress)
+        self.logprint(f"Starting a dI/dV mapping series from V = {V_begin} V to V = {V_end} V in steps of dV = {V_step} mV.", message_type = "success")
+        
+
+
+        (scan_metadata, error) = nn.scan_metadata_update()
+        signal_dict = scan_metadata["signal_dict"]
+        feedback_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]]
+        feedback_channel_indices = [index for index in feedback_channel_indices if index is not None]
+        constant_height_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Lockin Demod 1 X (A)", "Lockin Demod 1 Y (A)", "Current (A)"]]
+        constant_height_channel_indices = [index for index in constant_height_channel_indices if index is not None]
+
+        self.logprint("Switching to current feedback (topographic STM) mode", message_type = "message")
+        nhw.set_scan_buffer(channel_indices = constant_height_channel_indices)
+        sleep(2)
+        self.logprint("Switching to constant height (mapping) mode")
+        nhw.set_scan_buffer(channel_indices = feedback_channel_indices)
+
+        self.nanonis.scan_action({"action": "start", "direction": direction})
+        
+        iteration = 0
+        while iteration < 100000:
+            iteration += 1
+            scan_image = nn.scan_update(channel = constant_height_channel_indices[0])
+            nan_percentage = np.mean(np.isnan(scan_image)) * 100
+            nn.tip_update(verbose = False)
+
             self.check_abort_request()
-            self.logprint(f"Iteration {iter}\nIs an abort requested? {self.abort_requested}", message_type = "message")
             if self.abort_requested: break
-            sleep(t_ms / 1000)
+            sleep(.1)
 
+        self.cleanup()
         self.experiment_finished()
 
     def cleanup(self):
-        self.disconnect_hardware()
+        self.nanonis.scan_action({"action": "stop"})
 
