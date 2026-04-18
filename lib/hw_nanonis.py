@@ -543,7 +543,6 @@ class NanonisHardware:
 
 
 
-
     # Folme
     def get_xy(self, wait: bool = True) -> str:
         command = self.headers["get_xy"] + self.headers[str(wait)]
@@ -1030,10 +1029,7 @@ class NanonisHardware:
             signal_index = self.conv.hex_to_int32(response[index : index + 4])
             signal_indices.append(signal_index)
         
-        parameters = {
-            "names": signal_names,
-            "indices": signal_indices
-        }
+        parameters = {"names": signal_names, "indices": signal_indices}
             
         return parameters
 

@@ -247,7 +247,8 @@ class Scantelligent(QtCore.QObject):
                 # Scantelligent -> Nanonis
                 self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, unlink = True))
 
-                # Nanonis -> Scantelligent                
+                # Nanonis -> Scantelligent
+                self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
                 self.nanonis.message.connect(self.receive_message)
                 self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
                 self.nanonis.image.connect(self.receive_image)
@@ -811,8 +812,7 @@ class Scantelligent(QtCore.QObject):
                     self.logprint("nanonis.tip_update({\"withdraw\": True})", message_type = "code")
 
         except Exception as e:
-            if error: self.logprint(f"Error toggling the tip status: {error}", message_type = "error")
-            else: self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
+            self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
 
         return True
 
@@ -998,12 +998,20 @@ class Scantelligent(QtCore.QObject):
                     # Progress
                     self.experiment.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
                     self.experiment.exp_progress.connect(lambda val: self.gui.progress_bars["experiment"].setValue(val))
-                    
+
                     # Other data
                     self.experiment.message.connect(self.receive_message)
                     self.experiment.parameters.connect(self.parameters.receive)
                     self.experiment.image.connect(self.receive_image)
                     self.experiment.data_array.connect(self.receive_data)
+                    
+                    # Establish connections to the hardware components instantiated within the experiment object
+                    if hasattr(self.experiment, "nanonis"):
+                        self.experiment.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
+                        self.experiment.nanonis.message.connect(self.receive_message)
+                        self.experiment.nanonis.parameters.connect(self.parameters.receive)
+                        self.experiment.nanonis.image.connect(self.receive_image)
+                        self.experiment.nanonis.data_array.connect(self.receive_data)
                 
                 except Exception as e:
                     self.logprint(f"Unable to load the experiment. {e}", message_type = "error")

@@ -1,103 +1,65 @@
 import sys, os
-from time import sleep, time
+from time import sleep
 import numpy as np
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib import NanonisAPI
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
+from lib import BaseExperiment
 
 
 
-class Experiment(NanonisAPI):
-    def __init__(self, parent, *args, **kwargs):
+class Experiment(BaseExperiment):
+    def __init__(self, *args, **kwargs):
+        scantelligent = kwargs.pop("parent", None)
+        if scantelligent == None: scantelligent = kwargs.pop("scantelligent", None)
+        super().__init__(*args, **kwargs)
         
-        # 'parent' is a reference to the Scantelligent app itself. It is passed by default when loading the experiment in Scantelligent
-        super().__init__(parent, parent.hardware)
-        self.line_edits = [parent.gui.line_edits[f"experiment_{i}"] for i in range(3)]
-        self.direction_box = parent.gui.comboboxes["direction"]
+        # Set up the GUI. See below
+        try: self.prepare_gui(scantelligent.gui)
+        except: self.gui_not_found_error()
         
-        # Correct way to set tooltip hints and units for the parameter fields in the Scantelligent GUI
-        self.line_edits[0].changeToolTip("Timeout")
-        self.line_edits[0].setValue(1000)
+        # Set up the required hardware connections
+        self.connect_hardware("nanonis")
+
+    def prepare_gui(self, gui) -> None:
+        self.setup_combobox(gui = gui, items = ["up", "down"])
+        self.setup_line_edits(gui = gui, tooltips = ["Time per iteration", "Number of iterations"],
+                              values = [100, 4, 3], digits = [0, 0, 0], limits = [[0, 1000], [0, 200], [0, 3]], units = ["ms", "steps", ""])
+
+    def run(self):
+        nn = self.nanonis
+        gui_parameters = self.read_parameters_from_gui()
+        # self.read_parameters_from_gui() # The following parameters can be accessed: self.direction, self.line_value_0, self.line_value_1, self.line_value_2, etc.
+        direction = gui_parameters["direction_combobox"]
         
-        self.line_edits[1].changeToolTip("From")
-        self.line_edits[2].changeToolTip("Experiment")
-        [self.line_edits[i].setUnit(unit) for i, unit in enumerate(["s", "nm", "pA"])]
-        [self.line_edits[i].setValue(0) for i in range(1, 3)]
+        (frame, error) = nn.frame_update()
+        (grid, error) = nn.grid_update()
+        (scan_metadata, error) = nn.scan_metadata_update()
+        scan_channels = scan_metadata["channel_dict"]
+        chan_index = list(scan_channels.values())[0]
+        [pixels, lines] = [grid.get(attribute) for attribute in ["pixels", "lines"]]
+        n_grid = pixels * lines
+
+        self.logprint(f"Starting a Nanonis scan in direction {direction}. Recording channels: {list(scan_channels.keys())}", message_type = "success")
 
 
 
-    def run(self) -> None:
-        # Correct way to extract data from the line edits
-        experiment_parameters = [self.line_edits[i].getValue() for i in range(3)]
-        timeout = experiment_parameters[0]
-        direction = self.direction_box.currentText()
-        flags = self.data.processing_flags
+        self.nanonis.scan_action({"action": "start", "direction": direction})
+        
+        iteration = 0
+        while iteration < 100000:
+            iteration += 1
+            (scan_image, error) = nn.scan_update(chan_index, verbose = False)
+            nan_percentage = np.mean(np.isnan(scan_image)) * 100
+            self.task_progress.emit(100 - nan_percentage)
+            nn.tip_update(verbose = False)
 
-        # Start
-        self.link()
-        self.logprint("Experiment nanonis_scan started", message_type = "success")
-        self.scantelligent.toggle_view("nanonis")
-        
-        # Retrieve initial data
-        t = time()
-        (tip_status, error) = self.tip_update()
-        [x, y, z] = [tip_status.get(f"{dim} (nm)") for dim in ["x", "y", "z"]]
-        curr = tip_status.get("I (pA)")
-        [t0, x0, y0, z0, curr0] = [t, x, y, z, curr]
-        self.parameters.emit({"dict_name": "channels", 0: "time (s)", 1: "x (nm)", 2: "y (nm)", 3: "z (nm)", 4: "I (pA)"}) # Emitting a dict with dict_name 'parameters' sets up the graph in the GUI to accept data for the channels given in the dict
-        
-        # Start the scan in Nanonis
-        match direction:
-            case "up":
-                self.data.processing_flags.update({"up_or_down": "up"})
-                self.scan_action({"action": "start", "direction": "up"})                
-            
-            case "down":
-                self.data.processing_flags.update({"up_or_down": "down"})
-                self.scan_action({"action": "start", "direction": "down"})
-            
-            case _:
-                pass
-        
-        # Measurement loop
-        for iteration in range(100000):
-            self.check_abort()
-            if self.abort_flag:
-                break
-            
-            t = time() - t0
-            (tip_status, error) = self.tip_update(verbose = False)
-            [x, y, z] = [tip_status.get(f"{dim} (nm)") for dim in ["x", "y", "z"]]
-            curr = tip_status.get("I (pA)")
-    
-            if t > timeout:
-                self.logprint("Timeout encountered", "warning")
-                break
-            
-            # Update frame, scan metadata and scan image
-            self.frame_update(verbose = False)
-            (scan_metadata, error) = self.scan_metadata_update(verbose = False)
-            channel_dict = scan_metadata.get("channel_dict")
-            
-            requested_channel = flags.get("channel")
-            backward = flags.get("direction") == "backward"
-            for channel_name, index in channel_dict.items():
-                if channel_name == requested_channel: break
-            (scan_image, error) = self.scan_update(index, backward = backward, verbose = False)
-            
-            if not np.isnan(scan_image).any():
-                self.logprint("Scan completed", "success")
-                break
+            self.check_abort_request()
+            if self.abort_requested: break
+            sleep(.1)
 
-        if not self.abort_flag: self.logprint("Experiment nanonis_scan finished", "success")
         self.cleanup()
-        return
+        self.experiment_finished()
 
-
-
-    def cleanup(self) -> None:        
-        self.scan_action({"action": "stop"})
-        self.unlink()
-        self.finished.emit()
-        return
+    def cleanup(self):
+        self.nanonis.scan_action({"action": "stop"})
 

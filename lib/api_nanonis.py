@@ -8,7 +8,7 @@ from time import sleep, time
 
 class NanonisAPI(QtCore.QObject):
     connection = QtCore.pyqtSignal(str) # This signal emits 'running' on connect, 'idle' after disconnect and 'offline' after an error to indicate the TCP connection status to the gui/program
-    progress = QtCore.pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of an experiment
+    task_progress = QtCore.pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of an experiment
     message = QtCore.pyqtSignal(str, str) # First argument is the message string, sedond argument is the message type, like 'warning', 'code', 'result', 'message', or 'error'
     parameters = QtCore.pyqtSignal(dict) # Any parameters dictionary sent through this signal should include a self-reference 'dict_name' such that the receiver can read it and understand what kind of parameters they are
     image = QtCore.pyqtSignal(np.ndarray) # A two-dimensional np.ndarray that is plotted in the gui when sent
@@ -217,21 +217,17 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             props = nhw.get_scan_props()
             buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
-            channel_indices = buffer["channel_indices"]
+            channel_indices = buffer.get("channel_indices")
 
-            if nhw.version > 14000: #Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
+            if nhw.version > 14000: # Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
                 sig_in_slots = nhw.get_signals_in_slots()
                 signal_names = sig_in_slots["names"]
                 signal_indices = sig_in_slots["indices"]
-            
-                # Find out the names of the channels being recorded and their corresponding indices
-                channel_dict = {signal_names[index]: index for index in channel_indices}
-
             else:
                 signal_names = nhw.get_signal_names()
             
-            signal_dict = {signal_names[index]: index for index in range(len(signal_names))} # Signal_dict is a dict of all signals and their corresponding indices
-            channel_dict = {signal_names[index]: index for index in buffer.get("channel_indices")} # Channel_dict is the subset of signals that are actively recorded in the scan
+            signal_dict = {signal_name: index for index, signal_name in enumerate(signal_names)} # Signal_dict is a dict of all signals and their corresponding indices
+            channel_dict = {signal_names[index]: index for index in channel_indices} # Channel_dict is the subset of signals that are actively recorded in the scan
 
             scan_metadata = props | {
                 "channel_dict": channel_dict,
@@ -247,32 +243,38 @@ class NanonisAPI(QtCore.QObject):
 
         return (scan_metadata, error)
 
-    def scan_update(self, channel_index: int, backward: bool = False, unlink: bool = False, verbose: bool = True) -> np.ndarray:
+    def scan_update(self, channel: int | str, backward: bool = False, unlink: bool = False, verbose: bool = True) -> np.ndarray:
         # Initalize outputs
         scan_data = None
         error = False
         nhw = self.nanonis_hardware
         scan_image = None
 
-        # Set up the TCP connection and get grid dat
+        # Set up the TCP connection and get grid data
         try:
-            if verbose: self.logprint(f"nanonis.scan_update(channel_index = {channel_index}, backward = {backward})", "code")
-            if not self.status == "running": self.link()
+            if verbose: self.logprint(f"nanonis.scan_update(channel_index = {channel}, backward = {backward})", "code")
             
+            if isinstance(channel, str):
+                (metadata, _) = self.scan_metadata_update()
+                channel_dict = metadata.get("channel_dict")
+                channel_index = channel_dict.get(channel)
+            else:
+                channel_index = channel
+            
+            if not isinstance(channel_index, int):
+                error = "Requested channel not found"
+                return (scan_image, error)
+            
+            if not self.status == "running": self.link()
             scan_data = nhw.get_scan_data(channel_index, backward)
             scan_image = scan_data.get("scan_data")
-            
+
             n_scan_image = np.size(scan_image)
             n_nans = np.count_nonzero(np.isnan(scan_image))
 
             completed_percentage = int(100 * (1 - n_nans / n_scan_image))
-            self.progress.emit(completed_percentage)
+            self.task_progress.emit(completed_percentage)
             
-            (processed_scan, error) = self.data.subtract_background(scan_image)
-            scan_image = processed_scan
-            
-            #(processed_scan, statistics, limits, error) = self.data.process_scan(scan_image)
-            #self.logprint(f"{error}", "error")
             self.image.emit(scan_image)
 
         except Exception as e: error = e

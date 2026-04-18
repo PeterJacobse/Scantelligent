@@ -24,7 +24,6 @@ class DataProcessing():
             "offset": False,
             "sobel": False,
             "gaussian": False,
-            "gaussian_width_nm": 0,
             "gaussian_width (nm)": 0,
             "laplace": False,
             "fft": False,
@@ -38,7 +37,6 @@ class DataProcessing():
             "max_method_value": 1,
             "max_limit": 1,
             "spec_locations": False, # Flag whether or not to display spectroscopy locations in the scan
-            "scan_range_nm": [0, 0], # Will be deprecated
             "file_name": "",
             "frame": { # A frame dict is embedded in processing flags so that the location, rotation and scan range parameters can be accessed immediately
                 "dict_name": "frame",

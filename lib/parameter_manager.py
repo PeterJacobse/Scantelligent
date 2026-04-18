@@ -142,8 +142,7 @@ class ParameterManager(QtCore.QObject):
     @QtCore.pyqtSlot(dict)
     def receive(self, parameters: dict) -> None:
         sct = self.scantelligent
-        gui = sct.gui
-        line_edits = gui.line_edits
+        line_edits = sct.gui.line_edits
         dict_name = parameters.get("dict_name")
 
         match dict_name:
@@ -155,7 +154,7 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"nanonis": "idle"})
                     case "offline": sct.status.update({"nanonis": "offline"})
                     case _: pass
-                try: gui.buttons["nanonis"].setState(status)
+                try: sct.gui.buttons["nanonis"].setState(status)
                 except: pass
 
             case "keithley_status":
@@ -165,7 +164,7 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"keithley": "idle"})
                     case "offline": sct.status.update({"keithley": "offline"})
                     case _: pass
-                try: gui.buttons["keithley"].setState(status)
+                try: sct.gui.buttons["keithley"].setState(status)
                 except: pass
 
             case "camera_status":
@@ -175,7 +174,7 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"camera": "idle"})
                     case "offline": sct.status.update({"camera": "offline"})
                     case _: pass
-                try: gui.buttons["camera"].setState(status)
+                try: sct.gui.buttons["camera"].setState(status)
                 except: pass
 
             case "mla_status":
@@ -185,13 +184,13 @@ class ParameterManager(QtCore.QObject):
                     case "idle": sct.status.update({"mla": "idle"})
                     case "offline": sct.status.update({"mla": "offline"})
                     case _: pass
-                try: gui.buttons["mla"].setState(status)
+                try: sct.gui.buttons["mla"].setState(status)
                 except: pass
 
             case "session_path":
                 session_path = parameters.get("path")
                 sct.paths.update({"session_path": session_path})
-                try: gui.buttons["session_folder"].setState("online")
+                try: sct.gui.buttons["session_folder"].setState("online")
                 except: pass
 
 
@@ -199,9 +198,9 @@ class ParameterManager(QtCore.QObject):
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)
                 
-                sct.gui.line_edits["V_hor"].setValue(parameters.get("V_motor (V)"))
-                sct.gui.line_edits["V_ver"].setValue(parameters.get("V_motor (V)"))
-                sct.gui.line_edits["f_motor"].setValue(parameters.get("f_motor (Hz)"))
+                line_edits["V_hor"].setValue(parameters.get("V_motor (V)"))
+                line_edits["V_ver"].setValue(parameters.get("V_motor (V)"))
+                line_edits["f_motor"].setValue(parameters.get("f_motor (Hz)"))
 
             case "channels":
                 for key, value in parameters.items():
@@ -327,8 +326,8 @@ class ParameterManager(QtCore.QObject):
             case "gains":
                 gains = parameters
                 
-                p_gain_ms = parameters.get("p_gain (pm)")
-                t_const_us = parameters.get("t_const (us)")
+                p_gain_ms = gains.get("p_gain (pm)")
+                t_const_us = gains.get("t_const (us)")
                 i_gain_nm_per_s = p_gain_ms / (1000 * t_const_us)
 
                 # Update the fields in the GUI
@@ -362,9 +361,9 @@ class ParameterManager(QtCore.QObject):
                     pass
                 else:
                     sct.gui.comboboxes["channels"].renewItems(list(sct.channels.keys()))
-                    sct.gui.comboboxes["channels"].selectItem("Z (m)")
+                    [sct.gui.comboboxes["channels"].selectItem(preferred_channel) for preferred_channel in ["LI Demod 1X (A)", "Current (A)", "Z (m)"]]
                     sct.update_processing_flags()
-            
+
             case "lockin":
                 for i, mod_dict in enumerate([parameters.get("modulator_1"), parameters.get("modulator_2")]):
                     [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi"], [mod_dict.get("frequency (Hz)"), mod_dict.get("amplitude (mV)"), mod_dict.get("phase (deg)")])]

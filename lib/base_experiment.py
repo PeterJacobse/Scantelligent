@@ -87,6 +87,8 @@ class BaseExperiment(QObject):
             self.task_progress.emit(100)
             self.exp_progress.emit(100)
         
+        self.disconnect_hardware()
+        
         self.finished.emit()
         return
     
