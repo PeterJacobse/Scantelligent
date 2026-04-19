@@ -32,6 +32,7 @@ class Experiment(BaseExperiment):
         gui_parameters = self.read_parameters_from_gui()
         direction_str = gui_parameters["direction_combobox"]
         [V_begin, V_step, V_end] = [gui_parameters["line_edits"][index] for index in range(3)]
+        V_step /= 1000
         timeout_s = 36000 # 10 hours
         
         map_direction = "up" if direction_str == "scan down / map up" else "down"
@@ -51,9 +52,8 @@ class Experiment(BaseExperiment):
         constant_height_channel_indices = [index for index in constant_height_channel_indices if index is not None]
 
         self.logprint(f"Starting a dI/dV mapping series from V = {V_begin} V to V = {V_end} V in steps of dV = {V_step} mV.", message_type = "success")
-        [self.logprint(f"Value {index}: {volt}", message_type = "success") for index, volt in enumerate(V_list)]
         self.sct.toggle_view("nanonis")
-        
+
 
 
         for scan_number, voltage in enumerate(V_list):
@@ -66,7 +66,7 @@ class Experiment(BaseExperiment):
             nn.bias_update({"V_nanonis (V)": self.V_feedback})
             
             self.logprint(f"Switching to feedback (topographic STM) mode and starting a scan in the {scan_direction} direction", message_type = "message")
-            nhw.set_scan_buffer(channel_indices = feedback_channel_indices)
+            nn.scan_metadata_update({"channel_indices": feedback_channel_indices})
             nn.tip_update({"feedback": True})
             time.sleep(1)
             
@@ -74,16 +74,12 @@ class Experiment(BaseExperiment):
             
             # Loop to check scan progress
             t_start = time.time()
-            t_elapsed = 0            
+            t_elapsed = 0
+            
             while t_elapsed < timeout_s:
-                t_elapsed = time.time() - t_start
-                (scan_image, error) = nn.scan_update(channel = feedback_channel_indices[0], verbose = False)
-                nan_mask = np.isnan(scan_image)
-                
-                self.check_abort_request()
-                if not np.any(nan_mask) or self.abort_requested: break # Break when scan finished (no NaN values in the scan image) or an abort is requested
-                
-                nn.tip_update(verbose = False)
+                t_elapsed = time.time()
+                scan_finished = self.get_scan_updates(channel = feedback_channel_indices[0])
+                if scan_finished or self.abort_requested: break
                 time.sleep(.5)
             
             if self.abort_requested: break
@@ -92,26 +88,26 @@ class Experiment(BaseExperiment):
             
             self.logprint(f"Switching to constant height mode and switching the lockin on. Setting the bias to V = {voltage} V", message_type = "message")
             nn.tip_update({"feedback": False})
+            nn.bias_update({"V_nanonis (V)": voltage})
             nn.lockin_update({"mod1": {"on": True}})
-            nhw.set_scan_buffer(channel_indices = constant_height_channel_indices) # Use NanonisAPI in the future
+            nn.scan_metadata_update({"channel_indices": constant_height_channel_indices})
             
             nn.scan_action({"action": "start", "direction": map_direction})
             
             # Loop to check scan progress
             t_start = time.time()
-            t_elapsed = 0            
+            t_elapsed = 0
+            
             while t_elapsed < timeout_s:
-                t_elapsed = time.time() - t_start
-                (scan_image, error) = nn.scan_update(channel = constant_height_channel_indices[0], verbose = False)
-                nan_mask = np.isnan(scan_image)
-                
-                self.check_abort_request()
-                if not np.any(nan_mask) or self.abort_requested: break # Break when scan finished (no NaN values in the scan image) or an abort is requested
-                
-                nn.tip_update(verbose = False)
+                t_elapsed = time.time()
+                scan_finished = self.get_scan_updates(channel = constant_height_channel_indices[0])
+                if scan_finished or self.abort_requested: break
                 time.sleep(.5)
             
             self.exp_progress.emit(int(100 * scan_number / n_steps)) # Emit experiment progress
+            if self.abort_requested: break
+            time.sleep(1)
+            self.logprint("Constant height scan completed", message_type = "message")
 
 
 
@@ -125,3 +121,13 @@ class Experiment(BaseExperiment):
         nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}}) # Switch lockin off for feedback scan
         nn.bias_update({"V_nanonis (V)": self.V_feedback})
         nn.tip_update({"feedback": True})
+
+    def get_scan_updates(self, channel) -> bool | bool:
+        (frame, error) = self.nanonis.frame_update(verbose = False)
+        (tip_status, error) = self.nanonis.tip_update(verbose = False)
+        (scan_image, error) = self.nanonis.scan_update(channel = channel, verbose = False)
+        nan_mask = np.isnan(scan_image)
+        scan_finished = not np.any(nan_mask)
+        self.check_abort_request()
+        return scan_finished
+

@@ -787,6 +787,9 @@ class NanonisHardware:
         
         return speeds
 
+    def set_v_scan(self) -> None:
+        return
+
     def get_scan_frame(self) -> str:
         command = self.headers["get_scan_frame"]
         

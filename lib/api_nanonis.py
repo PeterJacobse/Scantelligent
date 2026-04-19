@@ -199,7 +199,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (piezo_range_dict, error)
 
-    def scan_metadata_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def scan_metadata_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
@@ -210,13 +210,21 @@ class NanonisAPI(QtCore.QObject):
 
         # Set up the TCP connection and get grid dat
         try:
-            if verbose: self.logprint(f"nanonis.scan_metadata_update()", "code")
-            
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.scan_metadata_update(parameters = {parameters})", "code")
+                else: self.logprint(f"nanonis.scan_metadata_update()", "code")
             if not self.status == "running": self.link()
+            
             props = nhw.get_scan_props()
             buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
+            
+            if "channel_indices" in parameters.keys():
+                indices = parameters["channel_indices"]
+                if isinstance(indices, list) and len(indices) > 0 and isinstance(indices[0], int):
+                    nhw.set_scan_buffer(channel_indices = indices)
+            
             channel_indices = buffer.get("channel_indices")
-
+            
             if nhw.version > 14000: # Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
                 sig_in_slots = nhw.get_signals_in_slots()
                 signal_names = sig_in_slots["names"]
@@ -227,11 +235,7 @@ class NanonisAPI(QtCore.QObject):
             signal_dict = {signal_name: index for index, signal_name in enumerate(signal_names)} # Signal_dict is a dict of all signals and their corresponding indices
             channel_dict = {signal_names[index]: index for index in channel_indices} # Channel_dict is the subset of signals that are actively recorded in the scan
 
-            scan_metadata = props | {
-                "channel_dict": channel_dict,
-                "signal_dict": signal_dict,
-                "dict_name": "scan_metadata"
-                }
+            scan_metadata = props | {"channel_dict": channel_dict, "signal_dict": signal_dict, "dict_name": "scan_metadata"}
             
             self.parameters.emit(scan_metadata)
 
@@ -399,15 +403,7 @@ class NanonisAPI(QtCore.QObject):
         nhw = self.nanonis_hardware
         
         # Extract numbers from parameters input
-        I_fb_pA = parameters.get("I_fb (pA)", None)
-        v_fwd_nm_per_s = parameters.get("v_fwd (nm/s)", None)
-        v_bwd_nm_per_s = parameters.get("v_bwd (nm/s)", None)
-        t_fwd_s = parameters.get("t_fwd (s)", None)
-        t_bwd_s = parameters.get("t_bwd (s)", None)
-        const_param = parameters.get("const_param", None)
-        V_nanonis = parameters.get("V_nanonis (V)", None)
-        p_gain_pm = parameters.get("p_gain (pm)", None)
-        t_const_us = parameters.get("t_const (us)", None)
+        [v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, const_param] = [parameters.get(key, None) for key in ["v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "const_param"]]
 
         # Set up the TCP connection and get
         try:
@@ -416,20 +412,6 @@ class NanonisAPI(QtCore.QObject):
                 else: self.logprint(f"nanonis.scan_speeds_update()", "code")
             if not self.status == "running": self.link()
             
-            # Bias voltage
-            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, unlink = False)
-            else: V = nhw.get_V()
-            
-            # Feedback current
-            if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
-            else: I_fb_pA = nhw.get_I_fb_pA()
-
-            # Feedback gains
-            gains_dict = nhw.get_gains()
-            if p_gain_pm: gains_dict.update({"p_gain (pm)": p_gain_pm})
-            if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
-            if p_gain_pm or t_const_us: nhw.set_gains(gains_dict)
-
             # Scan speeds
             speed_dict = nhw.get_v_scan_nm_per_s()
             new_speed_dict = {}
@@ -754,7 +736,7 @@ class NanonisAPI(QtCore.QObject):
                 nhw.set_fb(True) # Turn the feedback back on
             
             if unlink: self.unlink()
-            return V
+            return round(V, 4)
 
         except Exception as e:
             error = e
@@ -773,8 +755,8 @@ class NanonisAPI(QtCore.QObject):
                 else: self.logprint(f"nanonis.lockin_update()", "code")
                     
             if not self.status == "running": self.link()
-            mod1_dict = parameters.get("modulator_1", None)
-            mod2_dict = parameters.get("modulator_2", None)
+            mod1_dict = parameters.get("mod1", None)
+            mod2_dict = parameters.get("mod2", None)
 
             for mod_number, mod in enumerate([mod1_dict, mod2_dict]):
                 mod_on = nhw.get_lockin(mod_number + 1)
@@ -803,7 +785,7 @@ class NanonisAPI(QtCore.QObject):
                         except:
                             pass
                     
-                    freq = float(mod.get("frequency (Hz)", None))
+                    freq = mod.get("frequency (Hz)", None)
                     if isinstance(freq, float) or isinstance(freq, int):
                         try:
                             nhw.set_lockin_freq(mod_number + 1, freq)
@@ -821,7 +803,7 @@ class NanonisAPI(QtCore.QObject):
                         except:
                             pass
                     
-                lockin_parameters.update({f"modulator_{mod_number + 1}": mod_new})
+                lockin_parameters.update({f"mod{mod_number + 1}": mod_new})
         
             self.parameters.emit(lockin_parameters)
         

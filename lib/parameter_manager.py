@@ -93,8 +93,8 @@ class ParameterManager(QtCore.QObject):
                 [mla1_f, mla1_mV, mla1_phi] = [sct.gui.line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
                 
                 parameters = {"dict_name": "lockin",
-                              "modulator_1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
-                              "modulator_2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi},
+                              "mod1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
+                              "mod2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi},
                               "mla_mod1": {"on": mla_mod1_on, "frequency (Hz)": mla1_f, "amplitude (mV)": mla1_mV, "phase (deg)": mla1_phi}
                               }
                 sct.nanonis.lockin_update(parameters, unlink = True)
@@ -361,11 +361,11 @@ class ParameterManager(QtCore.QObject):
                     pass
                 else:
                     sct.gui.comboboxes["channels"].renewItems(list(sct.channels.keys()))
-                    [sct.gui.comboboxes["channels"].selectItem(preferred_channel) for preferred_channel in ["LI Demod 1X (A)", "Current (A)", "Z (m)"]]
+                    [sct.gui.comboboxes["channels"].selectItem(preferred_channel) for preferred_channel in ["LI Demod 1 X (A)", "Current (A)", "Z (m)"]]
                     sct.update_processing_flags()
 
             case "lockin":
-                for i, mod_dict in enumerate([parameters.get("modulator_1"), parameters.get("modulator_2")]):
+                for i, mod_dict in enumerate([parameters.get("mod1"), parameters.get("mod2")]):
                     
                     mod_values = [mod_dict.get(key) for key in ["frequency (Hz)", "amplitude (mV)", "phase (deg)", "time_constant (ms)"]]                    
                     [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi", "t"], mod_values)]
