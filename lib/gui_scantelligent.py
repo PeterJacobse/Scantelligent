@@ -148,7 +148,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                     {"name": "online", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "running", "color": self.colors["blue"], "tooltip": "Camera: running"}]),
-            "view": MSB(click_to_toggle = True, size = 28,
+            "view": MSB(click_to_toggle = False, size = 28,
                         states = [{"name": "None", "tooltip": "Toggle the active view", "icon": icons.get("eye"), "color": self.colors["off-black"]},
                                   {"name": "Camera", "tooltip": "Active view: Camera", "icon": icons.get("camera"), "color": self.colors["off-black"]},
                                   {"name": "Nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("nanonis"), "color": self.colors["off-black"]}]),
@@ -542,8 +542,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "channel_navigation": make_layout("h"),
 
-            "bias_buttons": make_layout("h"),
-
             "coarse_vertical": make_layout("g"),
             "coarse_horizontal": make_layout("g"),
             "approach_percentiles": make_layout("h"),
@@ -793,6 +791,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Parameters
         [layouts["scan_parameter_sets"].addWidget(button) for button in self.scan_parameter_sets]
         layouts["bias_current"].addWidget(line_edits["V_nanonis"])
+        
+        
 
         # Gains
         [layouts["gains_line_edits"].addWidget(widget) for widget in self.gain_line_edits]
@@ -911,7 +911,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
 
         # Set layouts for the groupboxes
-        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "tip_prep", "gains", "frame_grid", "tip_prep", "parameters", "modulators", "demodulators", "experiment", "image_processing"]
+        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias_current", "gains", "frame_grid", "tip_prep", "parameters", "modulators", "demodulators", "experiment", "image_processing"]
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
         # Make layouts of several groupboxes

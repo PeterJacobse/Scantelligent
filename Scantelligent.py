@@ -20,10 +20,11 @@ class Scantelligent(QtCore.QObject):
         super().__init__()
         self.parameters_init()
         self.gui = ScantelligentGUI()
-        self.connect_console() # Initialize the console, the button-slot, and keystroke-slot connections
-        self.connect_buttons()    
-        self.connect_hardware() # Test and set up all connections, and request parameters from the hardware components
         self.gui.show()
+        self.toggle_view("none")
+        # self.connect_console()
+        self.connect_buttons()
+        # self.connect_hardware()
 
 
 
@@ -209,9 +210,7 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "camera" or target.lower() == "all":
             try:
                 # Instantiate
-                self.logprint("Loading camera")
                 self.camera = CameraAPI(hw_config = self.hw_config)
-                self.logprint(f"{self.camera}")
                 
                 # Set up signal-slot connections
                 self.camera.parameters.connect(self.parameters.receive)
