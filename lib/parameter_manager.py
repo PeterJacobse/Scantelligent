@@ -314,14 +314,20 @@ class ParameterManager(QtCore.QObject):
             case "grid":
                 grid = parameters
 
-                pixels = grid.get("pixels")
-                lines = grid.get("lines")
-                pixel_width = grid.get("pixel_width (nm)")
-                pixel_height = grid.get("pixel_height (nm)")
+                [pixels, lines, pixel_width, pixel_height] = [grid.get(parameter, None) for parameter in ["pixels", "lines", "pixel_width (nm)", "pixel_height (nm)"]]
                 aspect_ratio = lines / pixels
 
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
+                
+                # Frame is embedded in grid. Update the frame parameters as well
+                [x_0_nm, y_0_nm] = grid.get("offset (nm)", [0, 0])
+                [w_nm, h_nm] = grid.get("scan_range (nm)", [100, 100])
+                angle_deg = grid.get("angle (deg)", 0)
+                aspect_ratio = h_nm / w_nm
+
+                # Update the fields in the GUI
+                [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]                
 
             case "gains":
                 gains = parameters

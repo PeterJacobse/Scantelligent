@@ -684,7 +684,7 @@ class NanonisHardware:
         
         return
 
-    def set_I_fb_pA(self, setpoint_pA: float) -> None:
+    def set_I_fb_pA(self, setpoint_pA: float = 0) -> None:
         setpoint_hex = self.conv.float32_to_hex(setpoint_pA * 1E-12)
         self.set_I_fb(setpoint_hex)
 
@@ -758,36 +758,58 @@ class NanonisHardware:
         return
 
     # Scan
-    def get_v_scan(self) -> str:
+    def get_v_scan(self) -> dict:
         command = self.headers["get_v_scan"]
         
         self.send_command(command)
         response = self.receive_response()
         
-        return response
-    
-    def get_v_scan_nm_per_s(self) -> list:
-        response = self.get_v_scan()
-        
         v_fwd = self.conv.hex_to_float32(response[0 : 4])
         v_bwd = self.conv.hex_to_float32(response[4 : 8])
         t_fwd = self.conv.hex_to_float32(response[8 : 12])
         t_bwd = self.conv.hex_to_float32(response[12 : 16])
-        const_param = self.conv.hex_to_uint16(response[16 : 18])
+        lock_param = self.conv.hex_to_uint16(response[16 : 18])
         v_ratio = self.conv.hex_to_float32(response[18 : 22])
         
-        speeds = {
-            "v_fwd (nm/s)": v_fwd * 1E9,
-            "v_bwd (nm/s)": v_bwd * 1E9,
-            "t_fwd (us)": t_fwd,
-            "t_bwd (us)": t_bwd,
-            "const_param": const_param,
-            "v_ratio": v_ratio            
-        }
+        speeds = {"v_fwd (nm/s)": v_fwd * 1E9, "v_bwd (nm/s)": v_bwd * 1E9, "t_fwd (s)": t_fwd, "t_bwd (s)": t_bwd, "lock_v_or_t": lock_param, "v_ratio": v_ratio}
         
         return speeds
 
-    def set_v_scan(self) -> None:
+    def set_v_scan(self, speeds: dict = {}) -> None:
+        [v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param] = [speeds.get(key, None) for key in ["v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "lock_v_or_t"]]
+        
+        # Get current parameters
+        speeds_0 = self.get_v_scan()
+        [v_fwd_nm_per_s_0, v_bwd_nm_per_s_0, lock_param_0] = [speeds_0.get(key, None) for key in ["v_fwd (nm/s)", "v_bwd (nm/s)", "lock_v_or_t"]]
+        frame = self.get_scan_frame_nm()
+        frame_width_nm = frame.get("width (nm)")
+        
+        if t_fwd_s: # If the forward time is given but not the forward speed, then
+            v_fwd_nm_per_s = frame_width_nm / t_fwd_s # calculate the forward speed accordingly (time takes precedence over speed if both are given)
+        if t_bwd_s: # If the backward time is given but not the backward speed, then
+            v_bwd_nm_per_s = frame_width_nm / t_bwd_s # calculate the backward speed accordingly (time takes precedence over speed if both are given)
+
+        if not v_fwd_nm_per_s: # If neither the forward speed nor time were provided (v_fwd was neither given nor calculated from t_fwd), then
+            v_fwd_nm_per_s = v_fwd_nm_per_s_0 # use the old value
+        if not v_bwd_nm_per_s: # If neither the backward speed nor time were provided (v_bwd was neither given nor calculated from t_bwd), then
+            v_bwd_nm_per_s = v_bwd_nm_per_s_0 # use the old value
+        
+        t_fwd_s = frame_width_nm / v_fwd_nm_per_s # (Re)calculate the times now that the speeds are known
+        t_bwd_s = frame_width_nm / v_bwd_nm_per_s
+
+        v_fwd = v_fwd_nm_per_s * 1E-9
+        v_bwd = v_bwd_nm_per_s * 1E-9
+        v_ratio = v_bwd / v_fwd # Now calculate the speed ratio
+        
+        if not lock_param: lock_param = lock_param_0
+
+        ## Make Header
+        command = self.headers["set_v_scan"] + self.conv.float32_to_hex(v_fwd) + self.conv.float32_to_hex(v_bwd) + self.conv.float32_to_hex(t_fwd_s) + self.conv.float32_to_hex(t_bwd_s)
+        command += self.conv.to_hex(lock_param, 2) + self.conv.float32_to_hex(v_ratio)
+        
+        self.send_command(command)
+        self.receive_response(0)
+
         return
 
     def get_scan_frame(self) -> str:
@@ -977,18 +999,18 @@ class NanonisHardware:
 
         """
         command = self.headers["get_scan_data"] + self.conv.to_hex(channel_index, 4) + self.headers[str(backward)]
-                
+
         self.send_command(command)
         response = self.receive_response()
         
         channel_name_size = self.conv.hex_to_int32(response[0 : 4])
-        cns = channel_name_size
-        
-        channel_name = response[4 : 4 + cns].decode()
-        n_rows = self.conv.hex_to_int32(response[4 + cns : 8 + cns])
-        n_columns = self.conv.hex_to_int32(response[8 + cns : 12 + cns])
-        
-        index = 12 + cns
+        channel_name = response[4 : 4 + channel_name_size].decode()
+
+        index = 4 + channel_name_size        
+        n_rows = self.conv.hex_to_int32(response[index : index + 4])
+        index += 4
+        n_columns = self.conv.hex_to_int32(response[index : index + 4])
+
         scan_data = np.empty((n_rows, n_columns))
         for i in range(n_rows):
             for j in range(n_columns):

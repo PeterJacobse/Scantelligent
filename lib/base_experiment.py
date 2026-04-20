@@ -52,7 +52,7 @@ class BaseExperiment(QObject):
 
     def read_parameters_from_gui(self) -> dict:
         parameters = {"dict_name": "gui_parameters"}
-        if hasattr(self, "line_edits"): parameters.update({"line_edits": [self.line_edits[i].getValue() for i in range(3)]})
+        if hasattr(self, "line_edits"): parameters.update({"line_edits": [self.line_edits[i].getValue() for i in range(9)]})
         if hasattr(self, "direction_combobox"): parameters.update({"direction_combobox": self.direction_combobox.currentText()})
         return parameters        
 

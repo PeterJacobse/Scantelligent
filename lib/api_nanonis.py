@@ -73,7 +73,7 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             (gains, error) = self.gains_update() # Sends gain parameters with "dict_name": "gains"
             if error: raise Exception(error)
-            (parameters, error) = self.parameters_update() # Sends scan parameters like voltage, current, feedback and scan speed with "dict_name": "scan_parameters"
+            (parameters, error) = self.feedback_update() # Sends scan parameters like voltage, current, feedback and scan speed with "dict_name": "scan_parameters"
             if error: raise Exception(error)
             (grid, error) = self.grid_update() # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid"
             if error: raise Exception(error)
@@ -125,17 +125,17 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Misc
-    def grids_to_lists(self, grid_object, direction: str = "up") -> tuple[dict, bool | str]:
+    def grids_to_lists(self, grid_dict: dict = {}, direction: str = "up") -> tuple[dict, bool | str]:
         error = False
         lists = {"dict_name": "coordinate_lists"}
         conv = self.nanonis_hardware.conv
 
         for tag in ["x_grid (nm)", "y_grid (nm)"]:
-            if not tag in grid_object.keys():
+            if not tag in grid_dict.keys():
                 error = "grids_to_lists: Input is missing valid grids"
                 return (lists, error)
 
-        [x_grid, y_grid] = [grid_object.get(attribute) for attribute in ["x_grid (nm)", "y_grid (nm)"]]
+        [x_grid, y_grid] = [grid_dict.get(attribute) for attribute in ["x_grid (nm)", "y_grid (nm)"]]
         match direction:
             case "down":
                 x_grid = np.flipud(x_grid)
@@ -152,6 +152,36 @@ class NanonisAPI(QtCore.QObject):
         lists.update({"xy_list": xy_list})
 
         return (lists, error)
+
+    def coords_of_grid_pixel(self, grid_dict: dict = {}, indices: list = [0, 0]) -> list:
+        [x_nm, y_nm, angle_deg, width_nm, height_nm, pixels, lines] = [grid_dict.get(parameter) for parameter in ["x (nm)", "y (nm)", "angle (deg)", "width (nm)", "height (nm)", "pixels", "lines"]]
+        [pixel, line] = indices
+        
+        x_local = ((pixel + .5) / pixels - 0.5) * width_nm
+        y_local = (0.5 - (line + .5) / pixels) * height_nm
+        
+        cos = np.cos(np.deg2rad(angle_deg))
+        sin = np.sin(np.deg2rad(angle_deg))
+
+        x_abs_nm = x_nm + x_local * cos + y_local * sin
+        y_abs_nm = y_nm + y_local * cos - x_local * sin
+
+        return [x_abs_nm, y_abs_nm]
+
+    def find_scan_image_minmax(self, scan_image: np.ndarray, grid_dict: dict = {}) -> dict:
+        (blurred_image, error) = self.data.apply_gaussian(scan_image, sigma = 3)
+        
+        (max_line, max_pixel) = np.unravel_index(blurred_image.argmax(), blurred_image.shape)
+        max_value = blurred_image[max_line, max_pixel]
+        [x_max_nm, y_max_nm] = self.coords_of_grid_pixel(grid_dict = grid_dict, indices = [max_pixel, max_line])
+        
+        (min_line, min_pixel) = np.unravel_index(blurred_image.argmin(), blurred_image.shape)
+        min_value = blurred_image[min_line, min_pixel]
+        [x_min_nm, y_min_nm] = self.coords_of_grid_pixel(grid_dict = grid_dict, indices = [max_pixel, max_line])
+        
+        output_dict = {"minimum": {"pixel": int(min_pixel), "line": int(min_line), "value": float(min_value), "x (nm)": float(x_min_nm), "y (nm)": float(y_min_nm)},
+                       "maximum": {"pixel": int(max_pixel), "line": int(max_line), "value": float(max_value), "x (nm)": float(x_max_nm), "y (nm)": float(y_max_nm)}}
+        return output_dict
 
 
 
@@ -268,7 +298,7 @@ class NanonisAPI(QtCore.QObject):
                 return (scan_image, error)
             
             if not self.status == "running": self.link()
-            scan_data = nhw.get_scan_data(channel_index, backward)
+            scan_data = nhw.get_scan_data(channel_index, not backward)
             scan_image = scan_data.get("scan_data")
 
             n_scan_image = np.size(scan_image)
@@ -343,15 +373,9 @@ class NanonisAPI(QtCore.QObject):
 
             # Set up a dictionary containing the actual tip status parameters
             tip_status = {
-                "dict_name": "tip_status",
-                "x (nm)": x_nm,
-                "y (nm)": y_nm,
-                "z (nm)": z_nm,
-                "I (pA)": I_pA,
-                "location (nm)": [x_nm, y_nm, z_nm],
-                "z_limits (nm)": [z_min, z_max],
-                "feedback": feedback_new,
-                "withdrawn": withdrawn
+                "dict_name": "tip_status", "x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6), "z (nm)": round(z_nm, 6), "I (pA)": round(I_pA, 6),
+                "location (nm)": [round(x_nm, 6), round(y_nm, 6), round(z_nm, 6)], "z_limits (nm)": [round(z_min, 6), round(z_max, 6)],
+                "feedback": feedback_new, "withdrawn": withdrawn
             }
             
             self.parameters.emit(tip_status)
@@ -393,7 +417,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (motor_dict, error)
 
-    def scan_speeds_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def speeds_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
         Function to get and set speed parameters from Nanonis
         """
@@ -403,7 +427,7 @@ class NanonisAPI(QtCore.QObject):
         nhw = self.nanonis_hardware
         
         # Extract numbers from parameters input
-        [v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, const_param] = [parameters.get(key, None) for key in ["v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "const_param"]]
+        [v_xy_nm_per_s, v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param] = [parameters.get(key, None) for key in ["v_xy (nm/s)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "lock_v_or_t"]]
 
         # Set up the TCP connection and get
         try:
@@ -411,39 +435,21 @@ class NanonisAPI(QtCore.QObject):
                 if len(parameters) > 0: self.logprint(f"nanonis.scan_speeds_update(parameters = {parameters})", "code")
                 else: self.logprint(f"nanonis.scan_speeds_update()", "code")
             if not self.status == "running": self.link()
+
+            new_speed_dict = {} # Compile the speed dict to send to nhw.set_v_scan
+            for tag, parameter in zip(["v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "lock_v_or_t"], [v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param]):
+                if parameter: new_speed_dict.update({tag: parameter})
+            if len(new_speed_dict) > 0: nhw.set_v_scan(new_speed_dict) # Send
             
-            # Scan speeds
-            speed_dict = nhw.get_v_scan_nm_per_s()
-            new_speed_dict = {}
-            if v_fwd_nm_per_s:
-                new_speed_dict.update({"v_fwd (nm/s)": v_fwd_nm_per_s})
-            elif t_fwd_s:
-                new_speed_dict.update({"t_fwd (s)": t_fwd_s})
-            
-            if v_bwd_nm_per_s:
-                new_speed_dict.update({"v_bwd (nm/s)": v_bwd_nm_per_s})
-            elif t_bwd_s:
-                new_speed_dict.update({"t_bwd (s)": t_bwd_s})
-            if v_fwd_nm_per_s or v_bwd_nm_per_s or t_fwd_s or t_bwd_s or const_param: nhw.set_v_scan_nm_per_s(new_speed_dict)
+            speed_dict = nhw.get_v_scan() # Request the (updated) speeds from Nanonis
 
             # Tip speed
             v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
-
-            # Session path
-            session_path = nhw.get_path()
-
-            # Coarse motor parameters
-            try: coarse_parameters = nhw.get_motor_f_A() # Evidently does not work in the simulator, which does not have coarse motor control
-            except: pass
             
-            parameters = gains_dict | speed_dict | {
-                "dict_name": "scan_parameters",
-                "V_nanonis (V)": V,
-                "I_fb (pA)": I_fb_pA,
+            parameters = speed_dict | {
+                "dict_name": "speeds",
                 "v_xy (nm/s)": v_xy_nm_per_s,
-                "session_path": session_path
             }
-            if coarse_parameters: parameters.update({"motor_frequency": coarse_parameters.get("frequency"), "motor_amplitude": coarse_parameters.get("amplitude")})
             
             self.parameters.emit(parameters)
 
@@ -456,22 +462,16 @@ class NanonisAPI(QtCore.QObject):
 
 
     # To do: break this up in scan_parameters, gains, scan_speeds
-    def parameters_update(self, parameters: dict = {}, unlink: bool = False) -> tuple[dict, bool | str]:
+    def feedback_update(self, parameters: dict = {}, unlink: bool = False) -> tuple[dict, bool | str]:
         """
         Function to get and set parameters from Nanonis
         """
         # Initalize outputs
-        coarse_parameters = False
         error = False
         nhw = self.nanonis_hardware
         
         # Extract numbers from parameters input
         I_fb_pA = parameters.get("I_fb (pA)", None)
-        v_fwd_nm_per_s = parameters.get("v_fwd (nm/s)", None)
-        v_bwd_nm_per_s = parameters.get("v_bwd (nm/s)", None)
-        t_fwd_s = parameters.get("t_fwd (s)", None)
-        t_bwd_s = parameters.get("t_bwd (s)", None)
-        const_param = parameters.get("const_param", None)
         V_nanonis = parameters.get("V_nanonis (V)", None)
 
         # Set up the TCP connection and get
@@ -486,34 +486,8 @@ class NanonisAPI(QtCore.QObject):
             # Feedback current
             if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
             else: I_fb_pA = nhw.get_I_fb_pA()
-
-            # Scan speeds
-            speed_dict = nhw.get_v_scan_nm_per_s()
-            new_speed_dict = {}
-            if v_fwd_nm_per_s:
-                new_speed_dict.update({"v_fwd (nm/s)": v_fwd_nm_per_s})
-            elif t_fwd_s:
-                new_speed_dict.update({"t_fwd (s)": t_fwd_s})
             
-            if v_bwd_nm_per_s:
-                new_speed_dict.update({"v_bwd (nm/s)": v_bwd_nm_per_s})
-            elif t_bwd_s:
-                new_speed_dict.update({"t_bwd (s)": t_bwd_s})
-            if v_fwd_nm_per_s or v_bwd_nm_per_s or t_fwd_s or t_bwd_s or const_param: nhw.set_v_scan_nm_per_s(new_speed_dict)
-
-            # Tip speed
-            v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
-
-            # Session path
-            session_path = nhw.get_path()
-            
-            parameters = speed_dict | {
-                "dict_name": "scan_parameters",
-                "V_nanonis (V)": V,
-                "I_fb (pA)": I_fb_pA,
-                "v_xy (nm/s)": v_xy_nm_per_s,
-                "session_path": session_path
-            }
+            parameters = {"dict_name": "scan_parameters", "V_nanonis (V)": V, "I_fb (pA)": I_fb_pA}
             
             self.parameters.emit(parameters)
 
@@ -694,17 +668,19 @@ class NanonisAPI(QtCore.QObject):
 
         return (grid, error)
 
-    def bias_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> float | bool:
+    def bias_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         # Initalize outputs
         error = False
         nhw = self.nanonis_hardware
         
         # Extract parameters from the dictionary
         V = parameters.get("V_nanonis (V)", None)
-        dt = parameters.get("dt", .005)
-        dV = parameters.get("dV", .01)
-        dz_nm = parameters.get("dz_nm", 1)
-
+        dt = parameters.get("dt_nanonis (ms)", 5) / 1000
+        dV = parameters.get("dV_nanonis (V)", .01)
+        dz_nm = parameters.get("dz_nanonis (nm)", 1)
+        
+        feedback_dict = {"dV_nanonis (V)": dV, "dt_nanonis (ms)": dt * 1000, "dz_nanonis (nm)": dz_nm, "dict_name": "feedback"}
+        
         try:
             if verbose:
                 if len(parameters) > 0: self.logprint(f"nanonis.bias_update(parameters = {parameters})", "code")
@@ -712,7 +688,8 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()                            
             V_old = nhw.get_V() # Read data from Nanonis
             if not V: V = V_old # V not provided; substitute the old bias
-            if np.abs(V - V_old) < dV: return V_old # If the bias is unchanged, don't slew it
+            feedback_dict.update({"V_nanonis (V)": V})
+            if np.abs(V - V_old) < dV: return (feedback_dict, error) # If the bias is unchanged, don't slew it
 
             feedback = nhw.get_fb()
             tip_height = nhw.get_z_nm()
@@ -736,12 +713,13 @@ class NanonisAPI(QtCore.QObject):
                 nhw.set_fb(True) # Turn the feedback back on
             
             if unlink: self.unlink()
-            return round(V, 4)
+
+            return (feedback_dict, error)
 
         except Exception as e:
             error = e
             if unlink: self.unlink()
-            return error
+            return (feedback_dict, error)
 
     def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
         error = False
@@ -980,6 +958,38 @@ class NanonisAPI(QtCore.QObject):
             if unlink: self.unlink()
         
         return error
+
+    def jitter_tip(self, iterations: int = 32, radius: float = 1.) -> dict:
+        (begin_status, error) = self.tip_update(verbose = False)
+        [x_start_nm, y_start_nm, z_start_nm, I_start_pA] = [begin_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+
+        rng = np.random.default_rng()
+        
+        x_list = [x_start_nm]
+        y_list = [y_start_nm]
+        z_list = [z_start_nm]
+        I_list = [I_start_pA]
+        
+        for iteration in range(iterations):            
+            theta = rng.uniform(0, 2 * np.pi)
+            r = radius * np.sqrt(rng.uniform(0, 1))
+            x_nm = x_start_nm + r * np.cos(theta)
+            y_nm = y_start_nm + r * np.sin(theta)
+            
+            (status, error) = self.tip_update({"x (nm)": x_nm, "y (nm)": y_nm}, verbose = False)            
+            [x_nm, y_nm, z_nm, I_pA] = [status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+            x_list.append(x_nm)
+            y_list.append(y_nm)
+            z_list.append(z_nm)
+            I_list.append(I_pA)
+    
+        (end_status, error) = self.tip_update({"x (nm)": x_start_nm, "y (nm)": y_start_nm}, verbose = False) # Reset
+        
+        results_dict = {"x_values (nm)": x_list, "y_values (nm)": y_list, "z_values (nm)": z_list, "I_values (pA)": I_list,
+                        "x_avg (nm)": round(float(np.average(x_list)), 6), "y_avg (nm)": round(float(np.average(y_list)), 6),
+                        "z_avg (nm)": round(float(np.average(z_list)), 6), "x_avg (nm)": round(float(np.average(z_list)), 6)}
+
+        return results_dict
 
 
 
