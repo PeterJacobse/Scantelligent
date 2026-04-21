@@ -1029,10 +1029,14 @@ class Scantelligent(QtCore.QObject):
                 self.experiment_thread.start()
             
             case "running":
+                start_button.setState("aborted")
                 if hasattr(self, "experiment_thread"):
                     if not self.experiment_thread.isRunning(): return
                     else:
                         self.experiment_thread.requestInterruption()
+            
+            case _:
+                pass
                 
         return
 

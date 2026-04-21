@@ -73,9 +73,9 @@ class STWidgets:
             else:
                 super().mouseClickEvent(event)
 
-    class MultiStateButton(QtWidgets.QPushButton):
+    class MultiStateButtonOld(QtWidgets.QPushButton):
         """
-        A QPushButton with extra method changeToolTip
+        A QPushButton that holds a number (list) of states, allows toggling through them, and changes the button according to the details of each state
         """
         def __init__(self, *args, **kwargs):
             name = kwargs.pop("name", None)
@@ -158,8 +158,122 @@ class STWidgets:
             return
 
         def toggleState(self) -> None:
-            self.setState(-1)
+            self.setState(-1) # Triggers an increase in state_index by 1
             return
+
+        def setStates(self, states: list[dict] = [{}]) -> None:
+            if isinstance(states, list) and isinstance(states[0], dict):
+                self.states = states
+                self.setState(0)            
+            return
+        
+        def isChecked(self) -> bool:
+            return bool(self.state_index) # Returns True unless the state_index is 0
+
+    class MultiStateButton(QtWidgets.QToolButton):
+        """
+        A QToolButton that holds a number (list) of states, allows toggling through them, and changes the button according to the details of each state
+        """
+        def __init__(self, *args, **kwargs):
+            name = kwargs.pop("name", None)
+            tooltip = kwargs.pop("tooltip", None)
+            icon = kwargs.pop("icons", None)
+            states = kwargs.pop("states", None)
+            click_to_toggle = kwargs.pop("click_to_toggle", True)
+            size = kwargs.pop("size", None)
+            self.state_index = 0
+                    
+            super().__init__(*args, **kwargs)
+           
+            if isinstance(name, str): self.setObjectName(name)
+            if isinstance(states, list):
+                self.states = states
+            else:
+                # Default for when no different states are provided
+                self.states = [{"name": "unchecked", "color": "#101010"}]
+            
+            self.button_size = 22
+            if isinstance(size, int): self.button_size = size
+            self.setFixedSize(self.button_size + 12, self.button_size + 12)
+            if isinstance(tooltip, str): self.states[0].update({"tooltip": tooltip}) # If a global tooltip is provided, it is assigned to be the tooltip of state 0
+            if isinstance(icon, QtGui.QIcon): self.states[0].update({"icon": icon}) # If a global icon is provided, it is assigned to be the icon of state 0
+            if not isinstance(click_to_toggle, bool): click_to_toggle = True # click_to_toggle = True means that clicking the button automatically toggles its state
+
+            self.setState(0)
+            self.setToggleable(click_to_toggle)
+
+
+
+        def changeToolTip(self, text: str, line: int = 0) -> None:
+            """
+            Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+            """
+            try:
+                for state in self.states:
+                    old_tooltip = state.get("tooltip")
+                    tooltip_list = old_tooltip.split("\n")
+                    
+                    if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                        tooltip_list.append(text)
+                        new_tooltip = "\n".join(tooltip_list)
+                    elif line < 0: # Add a line to the front if the line number is negative
+                        new_tooltip_list = [text]
+                        [new_tooltip_list.append(item) for item in tooltip_list]
+                        new_tooltip = "\n".join(new_tooltip_list)
+                    else: # Replace a line
+                        tooltip_list[line] = text
+                        new_tooltip = "\n".join(tooltip_list)
+                    
+                    state.update({"tooltip": new_tooltip})
+                
+                # Set the new tooltip
+                self.setToolTip(self.state.get("tooltip"))
+            except:
+                pass
+
+        def setToggleable(self, value: bool = True) -> None:
+            if len(self.states) > 1 and value: self.clicked.connect(self.toggleState)
+            else:
+                try: self.clicked.disconnect(self.toggleState)
+                except: pass
+            return
+
+        def setState(self, value = 0) -> None:
+            if isinstance(value, int): # Index given
+                if value > -1: self.state_index = value # Valid index given: set
+                else: self.state_index += 1 # No index given: tally
+            elif isinstance(value, str): # Name given: find index
+                for index, state in enumerate(self.states):
+                    state_name = state.get("name")
+                    if value == state_name:
+                        self.state_index = index
+                        break
+            else: return
+            if self.state_index > len(self.states) - 1: self.state_index = 0 # Roll over if necessary
+
+            self.state = self.states[self.state_index]
+            self.state_name = self.state.get("name")
+            self.state_tooltip = self.state.get("tooltip")
+            self.state_icon = self.state.get("icon")
+            self.state_color = self.state.get("color")
+            
+            if isinstance(self.state_tooltip, str): self.setToolTip(self.state_tooltip)
+            if isinstance(self.state_icon, QtGui.QIcon): self.setIcon(self.state_icon)
+            if isinstance(self.state_color, str): self.setStyleSheet("QToolButton{ background-color: " + self.state_color + f"; icon-size: {self.button_size}px {self.button_size}px" + "; }")
+            return
+
+        def toggleState(self) -> None:
+            self.setState(-1) # Triggers an increase in state_index by 1
+            return
+
+        def setStates(self, states: list[dict] = [{}]) -> None:
+            if isinstance(states, list) and isinstance(states[0], dict):
+                self.states = states
+                self.setState(0)            
+            return
+        
+        def isChecked(self) -> bool:
+            return bool(self.state_index) # Returns True unless the state_index is 0
 
     class ComboBox(QtWidgets.QComboBox):
         """
@@ -308,6 +422,26 @@ class STWidgets:
             self.blockSignals(True)
             self.setChecked(check_state)
             self.blockSignals(False)
+            return
+
+    class STCheckBox(MultiStateButton): # Phase Checkbox out in the future
+        """
+        A MultiStateButton implementation of a checkBox
+        """
+        def __init__(self, *args, **kwargs):
+            size = kwargs.pop("size", None)
+            if not isinstance(size, int): size = 12
+            
+            super().__init__(*args, size = size, **kwargs)
+            
+            self.setStates([{"name": "unchecked", "color": "#101010"}, {"name": "checked", "color": "#2090ff"}])
+            self.setToggleable()
+            self.setState(0)
+        
+        
+        
+        def setChecked(self, value: bool = True):
+            self.setState(int(value))            
             return
 
     class RadioButton(QtWidgets.QRadioButton):
@@ -687,12 +821,14 @@ class STWidgets:
 
             # 3: Set up the layout
             if orientation == "h": self.widget_layout = QtWidgets.QHBoxLayout()
-            else: self.widget_layout = QtWidgets.QVBoxLayout()
+            else:
+                self.widget_layout = QtWidgets.QVBoxLayout()
+                self.widget_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             
             if minmax_buttons:
                 if orientation == "v": self.widget_layout.addWidget(self.max_button)
                 else: self.widget_layout.addWidget(self.min_button)
-            self.widget_layout.addWidget(self.slider)
+            self.widget_layout.addWidget(self.slider, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
             self.widget_layout.addWidget(self.line_edit)
             if minmax_buttons:
                 if orientation == "v": self.widget_layout.addWidget(self.min_button)

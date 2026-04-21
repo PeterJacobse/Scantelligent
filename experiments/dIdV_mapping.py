@@ -104,6 +104,8 @@ class Experiment(BaseExperiment):
                     scan_finished = self.get_scan_updates(channel = feedback_channel_indices[0])
                     if scan_finished or self.abort_requested: break
                     time.sleep(.5)
+                
+                if self.abort_requested: break
                 (z_image, error) = nn.scan_update(channel = feedback_channel_indices[0]) # Retrieve the scan image created at V = V_begin
 
                 # Image analysis
