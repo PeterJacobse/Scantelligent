@@ -27,6 +27,7 @@ class Experiment(BaseExperiment):
                                                      "max current", "V_calibration\n(use this voltage for calibrating the height)\nSet to zero to use the begin and end voltages"],
                               values = [-2, 100, 2, 1, 30, 2000, 0], digits = [2, 0, 2, 2, 2, 1, 2], limits = [[-10, 10], [0, 10000], [-10, 10], [0, 1000], [.01, 10000], [.01, 10000], [-10, 10]],
                               units = ["V", "mV", "V", "ms", "nm/s", "pA", "V"])
+        self.setup_buttons(gui = gui, states = [{"tooltip": "state 1", "color": gui.colors["blue"]}])
 
     def run(self):
         self.logprint(f"Initializing the experiment", message_type = "message")
@@ -49,7 +50,6 @@ class Experiment(BaseExperiment):
 
         # Request information from Nanonis
         self.logprint(f"Requesting some information from Nanonis...", message_type = "message")
-        (frame, error) = nn.frame_update()
         (grid, error) = nn.grid_update()
         (speeds, error) = nn.speeds_update()
         (bias, error) = nn.bias_update()
@@ -148,15 +148,17 @@ class Experiment(BaseExperiment):
                           f"is {z_relative:.4f} nm higher than the tip height in the corner (z = {z_corner:.4f} nm while drawing I = {self.I_feedback:.4f} pA at V = {self.V_feedback:.4f}) V", message_type = "message")
                 time.sleep(2)
             
-            # After iterating over the min and max bias values, determine what ultimately is the height of the plane relative to the reference point
-            z_above_reference = np.max(relative_z_at_highest_feature)
-            self.logprint(f"Relative height determined to be f{z_above_reference}", message_type = "message")
+            if not self.abort_requested:
+                # After iterating over the min and max bias values, determine what ultimately is the height of the plane relative to the reference point
+                z_above_reference = np.max(relative_z_at_highest_feature)
+                self.logprint(f"Relative height determined to be f{z_above_reference}", message_type = "message")
 
 
 
         # Main experiment
-        self.logprint(f"Now starting the dI/dV mapping series from V = {V_begin:.4f} V to V = {V_end:.4f} V in steps of dV = {V_step:.4f} mV.", message_type = "success")        
+        if not self.abort_requested: self.logprint(f"Now starting the dI/dV mapping series from V = {V_begin:.4f} V to V = {V_end:.4f} V in steps of dV = {V_step:.4f} mV.", message_type = "success")        
         for scan_number, voltage in enumerate(V_list):
+            if self.abort_requested: break
             self.exp_progress.emit(int(100 * scan_number / n_steps)) # Emit experiment progress
             self.logprint(f"Iteration {scan_number + 1} of {n_steps}", message_type = "message")
             
@@ -244,7 +246,7 @@ class Experiment(BaseExperiment):
         nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}}) # Switch lockin off for feedback scan
         nn.bias_update({"V_nanonis (V)": self.V_feedback})
         nn.feedback_update({"I_fb (pA)": self.I_feedback})
-        nn.tip_update({"x (nm)": self.corner_x, "y (nm)": self.corner_y})
-        nn.tip_update({"feedback": True})
+        nn.tip_update({"feedback": True, "x (nm)": self.corner_x, "y (nm)": self.corner_y})
+        nn.tip_update(verbose = False)
         nn.speeds_update({"v_fwd (nm/s)": self.v_fwd_nm_per_s, "v_bwd (nm/s)": self.v_bwd_nm_per_s})
 

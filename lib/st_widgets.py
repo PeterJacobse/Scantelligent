@@ -443,6 +443,9 @@ class STWidgets:
         def setChecked(self, value: bool = True):
             self.setState(int(value))            
             return
+        
+        def changeToolTip(self, text, line = 0):
+            return super().changeToolTip(text, line)
 
     class RadioButton(QtWidgets.QRadioButton):
         """

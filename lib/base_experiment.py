@@ -28,12 +28,12 @@ class BaseExperiment(QObject):
     def logprint(self, message: str = "", message_type: str = "error"):
         return self.message.emit(message, message_type)
 
-    def setup_line_edits(self, gui, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:
-        self.logprint("Setting up line edits")
+    def setup_line_edits(self, gui, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:        
         self.line_edits = [gui.line_edits[f"experiment_{i}"] for i in range(9)]
-        for list_object in [tooltips, digits, limits, units]:
-            if len(list_object) > 2: list_object = list_object[:2]
-        
+        #[self.line_edits[index].setTooltip(f"Experiment parameter field {index}\ngui.line_edits[\"experiment_{index}\"]") for index in range(9)]
+        #[self.line_edits[index].setUnit("") for index in range(9)]
+        #[self.line_edits[index].setValue(None) for index in range(9)]
+
         [self.line_edits[index].changeToolTip(tooltip) for index, tooltip in enumerate(tooltips)]
         [self.line_edits[index].setDigits(digits) for index, digits in enumerate(digits)]
         [self.line_edits[index].setLimits(limits) for index, limits in enumerate(limits)]
@@ -44,6 +44,14 @@ class BaseExperiment(QObject):
     def setup_combobox(self, gui, tooltip: str = "", items: list = []) -> None:
         self.direction_combobox = gui.comboboxes["direction"]
         self.direction_combobox.renewItems(items)
+        return
+
+    def setup_buttons(self, gui, states: list = []) -> None:
+        self.buttons = [gui.buttons[f"experiment_{i}"] for i in range(9)]
+        
+        print(self.buttons[0])
+
+        self.buttons[0].setStates(states)
         return
 
     def toggle_view(self, target: str = "nanonis") -> None:
@@ -84,11 +92,13 @@ class BaseExperiment(QObject):
     def experiment_finished(self):
         if not self.abort_requested:
             self.logprint("Experiment finished", message_type = "success")
-            self.task_progress.emit(100)
             self.exp_progress.emit(100)
         
         self.disconnect_hardware()
+        self.logprint("Cleanup sequence finished", message_type = "message")
         
+        if not self.abort_requested: self.logprint("Experiment finished", message_type = "success")
+
         self.finished.emit()
         return
     

@@ -22,9 +22,9 @@ class Scantelligent(QtCore.QObject):
         self.gui = ScantelligentGUI()
         self.gui.show()
         self.toggle_view("none")
-        # self.connect_console()
+        self.connect_console()
         self.connect_buttons()
-        # self.connect_hardware()
+        self.connect_hardware()
 
 
 

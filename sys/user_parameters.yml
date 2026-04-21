@@ -2,7 +2,7 @@ other_parameters: {}
 scan_parameters:
   0:
     I_fb (pA): 50.0000006675716
-    V_nanonis (V): 1.100000023841858
+    V_nanonis (V): -2.0
     const_param: 0
     dict_name: scan_parameters
     i_gain (nm/s): 26.217229276426224

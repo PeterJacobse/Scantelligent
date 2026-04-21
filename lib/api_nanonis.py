@@ -472,22 +472,21 @@ class NanonisAPI(QtCore.QObject):
         
         # Extract numbers from parameters input
         I_fb_pA = parameters.get("I_fb (pA)", None)
-        V_nanonis = parameters.get("V_nanonis (V)", None)
 
         # Set up the TCP connection and get
         try:
-            self.logprint(f"nanonis.parameters_update(parameters = {parameters})", "code")
+            self.logprint(f"nanonis.feedback_update(parameters = {parameters})", "code")
             if not self.status == "running": self.link()
             
             # Bias voltage
-            if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, unlink = False)
-            else: V = nhw.get_V()
+            #if V_nanonis: V = self.bias_update({"V_nanonis (V)": V_nanonis}, unlink = False)
+            #else: V = nhw.get_V()
             
             # Feedback current
             if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
             else: I_fb_pA = nhw.get_I_fb_pA()
             
-            parameters = {"dict_name": "scan_parameters", "V_nanonis (V)": V, "I_fb (pA)": I_fb_pA}
+            parameters = {"dict_name": "scan_parameters", "I_fb (pA)": I_fb_pA}
             
             self.parameters.emit(parameters)
 
@@ -679,7 +678,7 @@ class NanonisAPI(QtCore.QObject):
         dV = parameters.get("dV_nanonis (V)", .01)
         dz_nm = parameters.get("dz_nanonis (nm)", 1)
         
-        feedback_dict = {"dV_nanonis (V)": dV, "dt_nanonis (ms)": dt * 1000, "dz_nanonis (nm)": dz_nm, "dict_name": "feedback"}
+        feedback_dict = {"dV_nanonis (V)": dV, "dt_nanonis (ms)": dt * 1000, "dz_nanonis (nm)": dz_nm, "dict_name": "bias"}
         
         try:
             if verbose:

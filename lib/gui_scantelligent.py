@@ -110,6 +110,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "backward": LB(text = "backward"),
             "tip": LB(text = "tip"),
             
+            "pulse": LB(text = "pulse"),
+            "shape": LB(text = "shape"),
+            
             "nanonis": LB(text = "Nanonis"),
             "mla": LB(text = "MLA"),
             "keithley": LB(text = "keithley"),
@@ -226,8 +229,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                               {"tooltip": "Composite motion ON\nAll checked vertical motions are combined with the horizontal motion in a composite pattern", "color": self.colors["blue"]}]),
 
             # Tip prep
-            "bias_pulse": MSB(tooltip = "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse")),
-            "tip_shape": MSB(tooltip = "Shape the tip by poking it into the surface", icon = icons.get("tip_shape")),
+            "bias_pulse": MSB(tooltip = "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse"), size = 28),
+            "tip_shape": MSB(tooltip = "Shape the tip by poking it into the surface", icon = icons.get("tip_shape"), size = 28),
             
             # Lockins
             "nanonis_mod1": MSB(icon = icons.get("nanonis_mod1"),
@@ -335,6 +338,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Add the button handles to the tooltips
         [comboboxes[name].changeToolTip(f"gui.comboboxes[\"{name}\"]", line = 10) for name in comboboxes.keys()]
         
+        comboboxes["experiment"].setSizeAdjustPolicy(CB.SizeAdjustPolicy.AdjustToContents)
+        
         return comboboxes
 
     def make_line_edits(self) -> dict:
@@ -409,31 +414,31 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 0),
             
             # Lockins
-            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
-            "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
-            "nanonis_mod1_t": LE(tooltip = "Nanonis modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2),
-            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
-            "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1),
-            "nanonis_mod2_t": LE(tooltip = "Nanonis modulator 2 time constant", unit = "ms", limits = [0, 10000], digits = 2),
-            
-            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1),
-            "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1),
-            "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1),
-            "mla_mod1_t": LE(tooltip = "MLA modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2),
+            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70),
+            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70),
+            "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70),
+            "nanonis_mod1_t": LE(tooltip = "Nanonis modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70),
+            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70),
+            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70),
+            "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70),
+            "nanonis_mod2_t": LE(tooltip = "Nanonis modulator 2 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70),
+
+            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70),
+            "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70),
+            "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70),
+            "mla_mod1_t": LE(tooltip = "MLA modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70),
 
             # Image processing
-            "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 100),
-            "max_full": LE(tooltip = "maximum value of scan data range", digits = 3, max_width = 100),
-            "min_percentiles": LE(value = 1.0, tooltip = "minimum percentile of data range", unit = "%", digits = 1, max_width = 100),
-            "max_percentiles": LE(value = 99.0, tooltip = "maximum percentile of data range", unit = "%", digits = 1, max_width = 100),
-            "min_deviations": LE(value = 2.0, tooltip = "minimum = mean - n * standard deviation", unit = "\u03C3", digits = 1, max_width = 100),
-            "max_deviations": LE(value = 2.0, tooltip = "maximum = mean + n * standard deviation", unit = "\u03C3", digits = 1, max_width = 100),
-            "min_absolute": LE(value = 0, tooltip = "minimum absolute value", digits = 3, max_width = 100),
-            "max_absolute": LE(value = 1, tooltip = "maximum absolute value", digits = 3, max_width = 100),
+            "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 70),
+            "max_full": LE(tooltip = "maximum value of scan data range", digits = 3, max_width = 70),
+            "min_percentiles": LE(value = 1.0, tooltip = "minimum percentile of data range", unit = "%", digits = 1, max_width = 70),
+            "max_percentiles": LE(value = 99.0, tooltip = "maximum percentile of data range", unit = "%", digits = 1, max_width = 70),
+            "min_deviations": LE(value = 2.0, tooltip = "minimum = mean - n * standard deviation", unit = "\u03C3", digits = 1, max_width = 70),
+            "max_deviations": LE(value = 2.0, tooltip = "maximum = mean + n * standard deviation", unit = "\u03C3", digits = 1, max_width = 70),
+            "min_absolute": LE(value = 0, tooltip = "minimum absolute value", digits = 3, max_width = 70),
+            "max_absolute": LE(value = 1, tooltip = "maximum absolute value", digits = 3, max_width = 70),
 
-            "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 100),
+            "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
             "file_name": LE(tooltip = "base name of the file when saved to png or hdf5"),
             
             # Console            
@@ -441,8 +446,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Extra line edits
-        [line_edits.update({f"demod_harmonic_{i}": LE(value = i, tooltip = f"harmonic {i}")}) for i in range(32)]
-        [line_edits.update({f"demod_frequency_{i}": LE(value = i, tooltip = f"frequency of harmonic {i}", unit = "Hz")}) for i in range(32)]
+        [line_edits.update({f"demod_harmonic_{i}": LE(value = i, tooltip = f"harmonic {i}", digits = 0)}) for i in range(32)]
+        [line_edits.update({f"demod_frequency_{i}": LE(value = i, tooltip = f"frequency of harmonic {i}", unit = "Hz", digits = 2)}) for i in range(32)]
         [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}")}) for i in range(9)]
         
         # Named groups
@@ -456,8 +461,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
-        
-        self.tip_prep_widgets = [buttons["bias_pulse"], line_edits["pulse_voltage"], line_edits["pulse_duration"], buttons["tip_shape"]]
 
         self.frame_widgets = [line_edits[name] for name in ["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"]]
         self.grid_widgets = [line_edits[name] for name in ["grid_lines", "grid_pixels", "grid_aspect"]]
@@ -581,7 +584,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "connections": make_layout("g"),
             "coarse_control": make_layout("h"),
             "coarse_prep": make_layout("v"),
-            "tip_prep": make_layout("h"),
+            "tip_prep": make_layout("g"),
             "parameters": make_layout("g"),            
             "image_processing": make_layout("v"),
             "experiment": make_layout("g")            
@@ -857,12 +860,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         fg_layout.addWidget(buttons["grid_aspect"], 2, 3)
         fg_layout.addWidget(line_edits["grid_lines"], 2, 4)
         [fg_layout.addWidget(line_edits[name], 3 + int(index / 2), 3 + index % 2) for index, name in enumerate(["grid_pixels", "grid_aspect", "pixel_width", "pixel_height"])]
-        
         fg_layout.addWidget(buttons["get_grid_parameters"], 6, 3, 1, 1, align_center)
         fg_layout.addWidget(buttons["set_grid_parameters"], 6, 4, 1, 1, align_center)
         
         # Tip prep
-        [layouts["tip_prep"].addWidget(widget) for widget in self.tip_prep_widgets]
+        tp_layout = layouts["tip_prep"]
+        [tp_layout.addWidget(labels[name], 0, 2 * index, 1, 2) for index, name in enumerate(["pulse", "shape"])]
+        [tp_layout.addWidget(make_line("h", 1), 1, 2 * index, 1, 2) for index in range(2)]
+        [tp_layout.addWidget(widget, 2, index, 1, 1, align_center) for index, widget in enumerate([buttons["bias_pulse"], line_edits["pulse_voltage"], line_edits["pulse_duration"], buttons["tip_shape"]])]
         
         # Lockins
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
@@ -883,12 +888,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
         layouts["background_buttons"].addWidget(buttons["rot_trans"])
         p_layout = layouts["matrix_processing"]
-        [p_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace"])]
-        p_layout.addWidget(buttons["gaussian"], 1, 1)
-        p_layout.addWidget(line_edits["gaussian_width"], 1, 2)
-        p_layout.addWidget(buttons["fft"], 1, 0)
-        p_layout.addWidget(comboboxes["projection"], 2, 0)
-        p_layout.addWidget(self.phase_slider, 2, 1, 1, 2)
+        [p_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
+        p_layout.addWidget(line_edits["gaussian_width"], 0, 5)
+        p_layout.addWidget(comboboxes["projection"], 1, 0, 1, 2)
+        p_layout.addWidget(self.phase_slider, 1, 2, 1, 4)
         
         l_layout = layouts["limits"]
         l_layout.setAlignment(align_center)
