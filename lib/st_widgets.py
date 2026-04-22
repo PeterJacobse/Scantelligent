@@ -288,12 +288,12 @@ class STWidgets:
             
             super().__init__(*args, **kwargs)
             
-            self.set_defaults()
+            self.setDefaults()
             if isinstance(items, list): self.addItems(items)
 
 
         
-        def set_defaults(self) -> None:
+        def setDefaults(self) -> None:
             if isinstance(self.name, str): self.setObjectName(self.name)
             if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
             if isinstance(self.max_width, int):
@@ -507,22 +507,34 @@ class STWidgets:
             self.style_sheet = kwargs.pop("style_sheet", None)
             self.digits = kwargs.pop("digits", None)
             self.block = kwargs.pop("block", False)
+            self.base_color = kwargs.pop("base_color", "#101010")
+            self.edited_color = kwargs.pop("edited_color", None)
             
             super().__init__(parent)
             
-            self.set_defaults()
-            if not self.block: self.editingFinished.connect(self.addUnit) 
+            self.setDefaults()
+            if not self.block: self.editingFinished.connect(self.addUnit)
+            if isinstance(self.edited_color, str): self.editingFinished.connect(self.setColor)
+
+        def resetColor(self) -> None:
+            self.setStyleSheet("QLineEdit{ background-color: " + self.base_color + " }")
+            return
         
-        def set_defaults(self) -> None:
+        def setColor(self) -> None:
+            self.setStyleSheet("QLineEdit{ background-color: " + self.edited_color + " }")
+            return
+
+        def setEditedColor(self, value: str) -> None:
+            if isinstance(value, str): self.edited_color = value
+            self.editingFinished.connect(self.setColor)
+            return
+
+        def setDefaults(self) -> None:
             if isinstance(self.value, str) or isinstance(self.value, int) or isinstance(self.value, float): self.setValue(self.value)
             if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
             if isinstance(self.min_width, int): self.setMinimumWidth(self.min_width)
             if isinstance(self.max_width, int): self.setMaximumWidth(self.max_width)            
-            if isinstance(self.style_sheet, str):
-                self.setStyleSheet(self.style_sheet)
-            else:
-                self.setStyleSheet("QLineEdit{ background-color: #101010 }")
-            
+            self.resetColor()            
             return
 
         def changeToolTip(self, text: str, line: int = 0) -> None:
@@ -617,6 +629,7 @@ class STWidgets:
             
             else:
                 self.setText(f"{value}")
+            self.resetColor()
             return
 
         def wheelEvent(self, event) -> None:
@@ -806,7 +819,8 @@ class STWidgets:
         """
         valueChanged = QtCore.pyqtSignal(int)
 
-        def __init__(self, parent = None, tooltip: str = "", limits: list = [-180, 180], initial_val: float = 0, digits: int = 0, max_width = 150, unit = None, orientation: str = "h", minmax_buttons: bool = False):
+        def __init__(self, parent = None, tooltip: str = "", limits: list = [-180, 180], initial_val: float = 0, digits: int = 0, max_width = 150, unit = None, orientation: str = "h",
+                     minmax_buttons: bool = False, min_button_icon: QtGui.QIcon = None, max_button_icon: QtGui.QIcon = None):
             super().__init__(parent)
             [self.min_val, self.max_val] = limits
 
@@ -815,8 +829,10 @@ class STWidgets:
             self.line_edit = STWidgets.PhysicsLineEdit(max_width = max_width, unit = unit, limits = limits, digits = digits, tooltip = tooltip)
 
             if minmax_buttons:
-                self.min_button = STWidgets.MultiStateButton(tooltip = "set slider to minimum")
-                self.max_button = STWidgets.MultiStateButton(tooltip = "set slider to maximum")
+                if isinstance(min_button_icon, QtGui.QIcon): self.min_button = STWidgets.MultiStateButton(tooltip = "set slider to minimum", icon = min_button_icon)
+                else: self.min_button = STWidgets.MultiStateButton(tooltip = "set slider to minimum")
+                if isinstance(max_button_icon, QtGui.QIcon): self.max_button = STWidgets.MultiStateButton(tooltip = "set slider to maximum", icon = max_button_icon)
+                else: self.max_button = STWidgets.MultiStateButton(tooltip = "set slider to maximum")
 
             # 2: Configure widgets
             self.slider.setRange(self.min_val, self.max_val)
@@ -829,12 +845,12 @@ class STWidgets:
                 self.widget_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             
             if minmax_buttons:
-                if orientation == "v": self.widget_layout.addWidget(self.max_button)
+                if orientation == "v": self.widget_layout.addWidget(self.max_button, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
                 else: self.widget_layout.addWidget(self.min_button)
             self.widget_layout.addWidget(self.slider, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
             self.widget_layout.addWidget(self.line_edit)
             if minmax_buttons:
-                if orientation == "v": self.widget_layout.addWidget(self.min_button)
+                if orientation == "v": self.widget_layout.addWidget(self.min_button, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
                 else: self.widget_layout.addWidget(self.max_button)
             
             # Remove extra margins from the layout

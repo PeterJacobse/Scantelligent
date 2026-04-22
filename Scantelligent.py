@@ -1,5 +1,6 @@
 import os, sys, html, atexit
 from PIL import Image
+import sounddevice as sd
 import numpy as np
 from PyQt6 import QtGui, QtCore
 import pyqtgraph as pg
@@ -7,6 +8,65 @@ from lib import STWidgets, ScantelligentGUI
 from lib import DataProcessing, FileFunctions, ParameterManager, UserData
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
+from math import pi
+
+
+
+# AudioGenerator class. Used to provide auditory feedback when using lockin amplifiers
+class AudioGenerator(QtCore.QObject):
+    finished = QtCore.pyqtSignal()
+
+    def __init__(self, sample_rate: int = 44100):
+        super().__init__()
+        self.sample_rate = sample_rate
+        self.w1 = 2 * pi * 220.0
+        self.amplitudes = np.zeros(shape = (32), dtype = float)
+        self.amplitudes[0] = 1
+        self.volume = .2
+        self.phases = np.zeros(len(self.amplitudes))
+        self.stream = None
+
+    @QtCore.pyqtSlot()
+    def start_audio(self):
+        self.stream = sd.OutputStream(channels = 1, callback = self.callback, samplerate = self.sample_rate)
+        self.stream.start()
+
+    def callback(self, outdata, frames, time, status):
+        time_list = np.arange(frames) / self.sample_rate
+        wave = np.zeros(frames)
+        wnyquist = pi * self.sample_rate
+        
+        for i, amp in enumerate(self.amplitudes):
+            wn = self.w1 * (i + 1)
+            
+            if wn < wnyquist:
+                wave += amp * np.sin(wn * time_list + self.phases[i])
+                # Update this harmonic's phase for the next block
+                self.phases[i] = (self.phases[i] + wn * frames / self.sample_rate) % (2 * pi)
+
+        # Soft-clipping to prevent digital distortion if harmonics sum too high
+        outdata[:] = np.tanh(wave * 0.2)[:, np.newaxis]
+
+    @QtCore.pyqtSlot(list)
+    def update_amplitudes(self, values) -> None:
+        self.amplitudes = values
+        return
+
+    @QtCore.pyqtSlot(int)
+    def update_frequency(self, value) -> None:
+        self.w1 = 2 * pi * float(value)
+        return
+
+    @QtCore.pyqtSlot(int)
+    def update_volume(self, value) -> None:
+        self.volume = value
+        return
+
+    def stop(self):
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+        self.finished.emit()
 
 
 
@@ -86,50 +146,32 @@ class Scantelligent(QtCore.QObject):
     def connect_buttons(self) -> None:
         buttons = self.gui.buttons
         shortcuts = self.gui.shortcuts        
+
+        button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
+                        "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.on_approach,
+                        
+                        "audio": lambda: self.logprint("AUDIO"),
+                        
+                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),
+                        
+                        "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
+                        
+                        "start_stop": self.control_experiment
+                        }
         
-        # Connect the buttons to their respective functions
-        connections = [["scanalyzer", self.launch_scanalyzer], ["nanonis", lambda: self.dis_reconnect(target = "nanonis")], ["mla", lambda: self.dis_reconnect(target = "mla")],
-                       ["camera", lambda: self.dis_reconnect(target = "camera")], ["camera", lambda: self.dis_reconnect(target = "camera")], ["exit", self.exit],
-                       ["view", self.toggle_view], ["session_folder", self.open_session_folder], ["info", self.gui.info_box.exec],
-                       
-                       # Experiment
-                       ["start_stop", self.control_experiment],
-                       
-                       # Coarse motion
-                       ["withdraw", self.toggle_withdraw], ["retract", lambda: self.on_coarse_move("up")], ["advance", lambda: self.on_coarse_move("down")], ["approach", self.on_approach],
-                       # Parameters
-                       ["tip", self.change_tip_status],
-                       
-                       # Tip prep
-                       ["bias_pulse", lambda: self.tip_prep("pulse")], ["tip_shape", lambda: self.tip_prep("shape")],
-                       
-                       # Processing
-                       ["fit_to_frame", lambda: self.set_view_range("frame")], ["fit_to_range", lambda: self.set_view_range("piezo_range")],
-                       ["bg_none", self.update_processing_flags], ["bg_plane", self.update_processing_flags], ["bg_linewise", self.update_processing_flags]
-                       ]
+        [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
+        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["bg_none", "bg_plane", "bg_linewise"]]
+        
+        [button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin"]]
+        [button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin"]]
+        
+        [button_slots.update({direction: lambda checked, drxn = direction: self.coarse_move(drxn)}) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
 
-        [connections.append([f"get_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
-        [connections.append([f"set_{parameter_type}_parameters", lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")]) for parameter_type in ["frame", "grid", "gain", "lockin"]]
-
-        for connection in connections:
-            name = connection[0]
-            connected_function = connection[1]
-            buttons[name].clicked.connect(connected_function)
-            
-            if name in shortcuts.keys():
-                shortcut = QtGui.QShortcut(shortcuts[name], self.gui)
+        for button_name, connected_function in button_slots.items():
+            buttons[button_name].clicked.connect(connected_function)
+            if button_name in shortcuts.keys():
+                shortcut = QtGui.QShortcut(shortcuts[button_name], self.gui)
                 shortcut.activated.connect(connected_function)
-        
-        # for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]:
-        [buttons[direction].clicked.connect(lambda checked, drxn = direction: self.on_coarse_move(drxn)) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
-        # buttons["n"].clicked.connect(lambda: self.on_coarse_move("n"))
-        # buttons["ne"].clicked.connect(lambda: self.on_coarse_move("ne"))
-        # buttons["e"].clicked.connect(lambda: self.on_coarse_move("e"))
-        # buttons["se"].clicked.connect(lambda: self.on_coarse_move("se"))
-        # buttons["s"].clicked.connect(lambda: self.on_coarse_move("s"))
-        # buttons["sw"].clicked.connect(lambda: self.on_coarse_move("sw"))
-        # buttons["w"].clicked.connect(lambda: self.on_coarse_move("w"))
-        # buttons["nw"].clicked.connect(lambda: self.on_coarse_move("nw"))
 
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
@@ -248,13 +290,28 @@ class Scantelligent(QtCore.QObject):
                 self.nanonis.data_array.connect(self.receive_data)
                 
                 # Get parameters from Nanonis
-                self.nanonis.initialize()
-                
+                nanonis_parameters = self.nanonis.nanonis_update()
+                                
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
+                self.logprint(f"{nanonis_parameters}", "result")
                 self.gui.buttons["nanonis"].setState("online")
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
                 self.gui.buttons["nanonis"].setState("offline")
+        
+        # Audio
+        try:
+            self.audio_thread = QtCore.QThread()
+            self.audio = AudioGenerator()
+            self.audio.moveToThread(self.audio_thread)
+
+            self.audio_thread.started.connect(self.audio.start_audio)
+            # self.amplitudes.connect(self.audio.update_amplitudes)
+            # self.demod_frequency.connect(self.audio.update_frequency)
+            self.audio.finished.connect(self.audio_thread.quit)
+        except Exception as e:
+            self.logprint(f"Unable to set up audio: {e}", "error")
+            self.gui.buttons["nanonis"].setState("offline")
 
 
         
@@ -732,7 +789,7 @@ class Scantelligent(QtCore.QObject):
         # Operations
         try: [flags.update({operation: checkboxes[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
         except: pass
-        phase = self.gui.phase_slider.getValue()
+        phase = self.gui.sliders["phase"].getValue()
         flags.update({"phase": phase})
 
         self.data.processing_flags.update(flags)
@@ -808,15 +865,12 @@ class Scantelligent(QtCore.QObject):
                     self.status["tip"] = tip_status
                     self.logprint(f"nanonis.tip_update({{\"feedback\": True}})", message_type = "code")
             
-            else: # Toggle the feedback
-                self.logprint(f"status[\"tip\"].get(\"feedback\"] = {tip_in_feedback}", message_type = "result")
-                
+            else: # Toggle the feedback                
                 (tip_status, error) = self.nanonis.tip_update({"feedback": not tip_in_feedback}, unlink = True)
                 if error:
                     self.logprint(f"Error. {e}")
                 if type(tip_status) == dict:
                     self.status["tip"] = tip_status
-                    self.logprint(f"nanonis.tip_update({{\"feedback\": {not tip_in_feedback}}})", message_type = "code")
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
@@ -824,7 +878,7 @@ class Scantelligent(QtCore.QObject):
 
         return True
 
-    def on_coarse_move(self, direction: str = "n") -> bool:
+    def coarse_move(self, direction: str = "n") -> bool:
         if not hasattr(self, "nanonis"): return
         
         checkboxes = self.gui.checkboxes

@@ -15,12 +15,14 @@ class ParameterManager(QtCore.QObject):
         sct = self.scantelligent
         
         if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"]:
-            if not hasattr(sct, "nanonis"): return
+            if not hasattr(sct, "nanonis"):
+                sct.logprint("Cannot get parameters without a Nanonis connection", message_type = "error")
+                return
 
         match parameter_type:
 
             case "feedback":
-                sct.nanonis.parameters_update(unlink = True)
+                sct.nanonis.feedback_update(unlink = True)
 
             case "frame":
                 sct.nanonis.frame_update(unlink = True, update_new_frame = True)
@@ -29,7 +31,7 @@ class ParameterManager(QtCore.QObject):
                 sct.nanonis.grid_update(unlink = True)
 
             case "speeds":
-                sct.nanonis.frame_update(unlink = True)
+                sct.nanonis.speeds_update(unlink = True)
 
             case "gain":
                 sct.nanonis.gains_update(unlink = True)
@@ -48,8 +50,9 @@ class ParameterManager(QtCore.QObject):
         
         # Abort if the relevant hardware objects are missing
         if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"]:
-            sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
-            if not hasattr(sct, "nanonis"): return
+            if not hasattr(sct, "nanonis"):
+                sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
+                return
 
 
 
@@ -58,13 +61,13 @@ class ParameterManager(QtCore.QObject):
             case "feedback":
                 parameters = {"dict_name": "feedback"}
                 
-                for parameter in ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "p_gain (pm)", "t_const (us)", "v_fwd (nm/s)", "v_bwd (nm/s)"]:
+                for parameter in ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
                     quantity = parameter.split()[0]
                     val = sct.gui.line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
 
                 sct.logprint(parameters)
-                sct.nanonis.parameters_update(parameters, unlink = True)
+                sct.nanonis.feedback_update(parameters, unlink = True)
 
             case "frame":
                 offset = [sct.gui.line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
@@ -221,10 +224,10 @@ class ParameterManager(QtCore.QObject):
                 # Update the slider
                 z_limits_nm = tip_status.get("z_limits (nm)")
                 z_nm = tip_status.get("z (nm)")
-                sct.gui.tip_slider.setMinimum(int(z_limits_nm[0]))
-                sct.gui.tip_slider.setMaximum(int(z_limits_nm[1]))
-                sct.gui.tip_slider.setValue(int(z_nm))
-                sct.gui.tip_slider.changeToolTip(f"Tip height: {z_nm:.2f} nm")
+                sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
+                sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
+                sct.gui.sliders["tip"].setValue(int(z_nm))
+                sct.gui.sliders["tip"].changeToolTip(f"Tip height: {z_nm:.2f} nm")
                 
                 # Update the position visible in the image_view
                 sct.gui.image_view.view.removeItem(sct.gui.tip_target)
@@ -246,10 +249,15 @@ class ParameterManager(QtCore.QObject):
                     sct.gui.buttons["withdraw"].setState("landed")
                     if feedback: sct.gui.buttons["tip"].setState("feedback")
                     else: sct.gui.buttons["tip"].setState("constant_height")
-            
-            case "scan_parameters":
-                scan_parameters = parameters
-                sct.user.scan_parameters[0].update(scan_parameters)
+
+            case "bias":
+                [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
+                                                                                 [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
+
+            case "feedback":
+                [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
+                                                                                 [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
+                line_edits["I_fb"].setValue(parameters.get("I_fb (pA)"))
 
             case "frame":
                 frame = parameters
@@ -259,6 +267,9 @@ class ParameterManager(QtCore.QObject):
                 [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
                 angle_deg = frame.get("angle (deg)", 0)
                 aspect_ratio = h_nm / w_nm
+                
+                # Update the fields in the GUI
+                [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
 
                 # Update the frame 'roi' in the ImageView
                 frame_roi = sct.gui.frame_roi
