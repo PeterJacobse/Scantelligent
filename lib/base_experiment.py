@@ -13,7 +13,7 @@ class BaseExperiment(QObject):
     image = pyqtSignal(np.ndarray) # A two-dimensional np.ndarray that is plotted in the gui when sent
     finished = pyqtSignal() # Signal to indicate an experiment is finished. Emission of this signal is connected to cleanup
     data_array = pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
-    
+
     def __init__(self, *args, **kwargs):
         hw_config = kwargs.pop("hw_config", None)        
         super().__init__()
@@ -23,7 +23,6 @@ class BaseExperiment(QObject):
         # Note:
         # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
         # The exception is caught in Scantelligent rather than here
-        self.abort_flag = False
 
     def logprint(self, message: str = "", message_type: str = "error"):
         return self.message.emit(message, message_type)

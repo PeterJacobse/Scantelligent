@@ -203,6 +203,7 @@ class NanonisHardware:
             "set_lockin_freq": make_header('LockIn.ModPhasFreqSet', body_size = 12),            
             "get_lockin_phase": make_header('LockIn.ModPhasGet', body_size = 4),
             "set_lockin_phase": make_header('LockIn.ModPhasSet', body_size = 8),
+            "get_lockin_signal": make_header('LockIn.DemodSignalGet', body_size = 4),
 
             # Booleans
             "True": self.conv.to_hex(True, 4),
@@ -1205,7 +1206,7 @@ class NanonisHardware:
         return
 
     # Lock-in
-    def get_lockin(self, mod_number: int = 1) -> bool:
+    def get_lockin_on(self, mod_number: int = 1) -> bool:
         command = self.headers["get_lockin"] + self.conv.to_hex(mod_number, 4)
         
         self.send_command(command)
@@ -1214,7 +1215,7 @@ class NanonisHardware:
         
         return lockin_onoff
 
-    def set_lockin(self, mod_number: int = 1, on: bool = True) -> None:
+    def set_lockin_on(self, mod_number: int = 1, on: bool = True) -> None:
         command = self.headers["set_lockin"] + self.conv.to_hex(mod_number, 4) + self.conv.to_hex(int(on), 4)
         
         self.send_command(command)

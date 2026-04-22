@@ -52,45 +52,8 @@ class NanonisAPI(QtCore.QObject):
         self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
         return f"Nanonis status: {self.status}"
 
-    def initialize(self, unlink: bool = True) -> None:
-        # Set up the TCP connection and get all relevant parameters
-        self.logprint("nanonis.initialize()", message_type = "code")
-        try:
-            if not self.status == "running": self.link()
-
-            (session_path, error) = self.session_path_update() # Sends piezo range data with "dict_name": "piezo_range"
-            if error: raise Exception(error)
-            (piezo_range, error) = self.piezo_range_update() # Sends piezo range data with "dict_name": "piezo_range"
-            if error: raise Exception(error)
-            (coarse_parameters, error) = self.coarse_parameters_update() # Sends coarse parameter data with "dict_name": "coarse_parameters"
-            # if error: raise Exception(error)
-            # Not useful to raise this error because the simulator does not have motor control
-            (lockin_parameters, error) = self.lockin_update() # Sends coarse parameter data with "dict_name": "coarse_parameters"
-            # if error: raise Exception(error)
-            (tip_status, error) = self.tip_update() # Sends tip status, position and current data with "dict_name": "tip_status"
-            if error: raise Exception(error)
-            (frame, error) = self.frame_update(update_new_frame = True) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
-            if error: raise Exception(error)
-            (gains, error) = self.gains_update() # Sends gain parameters with "dict_name": "gains"
-            if error: raise Exception(error)
-            (parameters, error) = self.feedback_update() # Sends scan parameters like voltage, current, feedback and scan speed with "dict_name": "scan_parameters"
-            if error: raise Exception(error)
-            (grid, error) = self.grid_update() # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid"
-            if error: raise Exception(error)
-            (scan_metadata, error) = self.scan_metadata_update() # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
-            if error: raise Exception(error)
-            
-            self.logprint("Initialization successful", "success")
-
-        except Exception as e:
-            error = e
-            self.logprint(f"Initialization failed: {e}", "error")
-            self.status == "offline"
-            self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
-        finally:
-            if unlink: self.unlink()
-
-        return error
+    def initialize(self, unlink: bool = True) -> tuple[dict, bool | str]:
+        return self.nanonis_update(unlink = unlink)
 
     def nanonis_update(self, unlink: bool = True) -> tuple[dict, bool | str]:
         error = False
@@ -352,6 +315,43 @@ class NanonisAPI(QtCore.QObject):
             if unlink: self.unlink()
 
         return (scan_image, error)
+
+    def signals_update(self, parameter_names: str | list, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        error = False
+        nhw = self.nanonis_hardware
+        parameter_values = {"dict_name": "signals"}
+
+        # If only a single parameter_name is provided, turn it into a list
+        if isinstance(parameter_names, str): parameter_names = [parameter_names]
+
+        try:
+            if verbose: self.logprint(f"nanonis.signals_update({parameter_names})", "code")
+            if not self.status == "running": self.link()
+
+            (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
+            if error: raise Exception(error)
+
+            signal_dict = scan_metadata.get("signal_dict")
+
+            # Find the requested parameters in the signal_dict
+            for parameter_name in parameter_names:
+                signal_index = signal_dict.get(parameter_name, None)
+                
+                # The parameter name is found in the dict and has a corresponding index
+                if isinstance(signal_index, int):
+                    signal_value = nhw.get_signal_value(signal_index)
+                    parameter_values.update({parameter_name: signal_value})
+                
+                else:
+                    parameter_values.update({parameter_name: "not found"})
+            
+            self.parameters.emit(parameter_values)
+        
+        except Exception as e: error = f"Unable to retrieve the requested parameters. {e}"
+        finally:
+            if unlink: self.unlink()
+
+        return (parameter_values, error)
 
 
 
@@ -724,7 +724,7 @@ class NanonisAPI(QtCore.QObject):
                 else: self.logprint(f"nanonis.bias_update()", "code")
             if not self.status == "running": self.link()                            
             V_old = nhw.get_V() # Read data from Nanonis
-            if not V: V = V_old # V not provided; substitute the old bias
+            if not isinstance(V, float | int): V = V_old # V not provided; substitute the old bias
             bias_dict.update({"V_nanonis (V)": V})
             if np.abs(V - V_old) < dV:
                 self.parameters.emit(bias_dict)
@@ -755,12 +755,11 @@ class NanonisAPI(QtCore.QObject):
             
             self.parameters.emit(bias_dict)
 
-            return (bias_dict, error)
-
-        except Exception as e:
-            error = e
+        except Exception as e: error = e
+        finally:
             if unlink: self.unlink()
-            return (bias_dict, error)
+        
+        return (bias_dict, error)
 
     def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
         error = False
@@ -778,7 +777,7 @@ class NanonisAPI(QtCore.QObject):
             mod2_dict = parameters.get("mod2", None)
 
             for mod_number, mod in enumerate([mod1_dict, mod2_dict]):
-                mod_on = nhw.get_lockin(mod_number + 1)
+                mod_on = nhw.get_lockin_on(mod_number + 1)
                 amplitude_mV = nhw.get_lockin_amp(mod_number + 1)
                 frequency_Hz = nhw.get_lockin_freq(mod_number + 1)
                 phase_deg = nhw.get_lockin_phase(mod_number + 1)
@@ -791,7 +790,7 @@ class NanonisAPI(QtCore.QObject):
                     mod_on = mod.get("on", None)
                     if isinstance(mod_on, bool):
                         try:
-                            nhw.set_lockin(mod_number + 1, mod_on)
+                            nhw.set_lockin_on(mod_number + 1, mod_on)
                             mod_new.update({"on": mod_on})
                         except:
                             pass
@@ -826,8 +825,7 @@ class NanonisAPI(QtCore.QObject):
         
             self.parameters.emit(lockin_parameters)
         
-        except Exception as e:
-            error = e
+        except Exception as e: error = e
         finally:
             if unlink: self.unlink()
         
@@ -914,8 +912,7 @@ class NanonisAPI(QtCore.QObject):
             approach = parameters.get("approach", False)
             if approach: self.auto_approach(True, V_motor = V_ver, unlink = False)
 
-        except Exception as e:
-            error = e
+        except Exception as e: error = e
         finally:
             if unlink: self.unlink()
         
@@ -941,44 +938,7 @@ class NanonisAPI(QtCore.QObject):
 
         return error
 
-    def get_parameter_values(self, parameter_names: str | list, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
-        nhw = self.nanonis_hardware
-        parameter_values = {}
-
-        # If only a single parameter_name is provided, turn it into a list
-        if isinstance(parameter_names, str): parameter_names = [parameter_names]
-
-        try:
-            if verbose: self.logprint(f"nanonis.get_parameter_values({parameter_names})", "code")
-            if not self.status == "running": self.link()
-            
-            (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
-            if error: raise Exception(error)
-
-            signal_dict = scan_metadata.get("signal_dict")
-
-            # Find the requested parameters in the signal_dict
-            for parameter_name in parameter_names:
-                signal_index = signal_dict.get(parameter_name, None)
-                
-                # The parameter name is found in the dict and has a corresponding index
-                if isinstance(signal_index, int):
-                    signal_value = nhw.get_signal_value(signal_index)
-                    parameter_values.update({parameter_name: signal_value})
-                
-                else:
-                    parameter_values.update({parameter_name: "not found"})
-        
-        except Exception as e:
-            error = f"Unable to retrieve the requested parameters. {e}"
-        
-        finally:
-            if unlink: self.unlink()
-        
-        return (parameter_values, error)
-
-    def scan_action(self, parameters: dict, unlink: bool = False, verbose: bool = True) -> None:
+    def scan_action(self, parameters: dict, unlink: bool = False, verbose: bool = True) -> bool | str:
         error = False
         nhw = self.nanonis_hardware
         direction = parameters.get("direction", "down")
@@ -1000,37 +960,52 @@ class NanonisAPI(QtCore.QObject):
         
         return error
 
-    def jitter_tip(self, iterations: int = 32, radius: float = 1.) -> dict:
-        (begin_status, error) = self.tip_update(verbose = False)
-        [x_start_nm, y_start_nm, z_start_nm, I_start_pA] = [begin_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+    def jitter_tip(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        error = False
+        
+        [iterations, radius] = [parameters.get(parameter) for parameter in ["iterations", "radius"]]
+        if not isinstance(iterations, int): iterations = 32
+        if not isinstance(radius, float | int): radius = 1.
+        
+        results_dict = {"dict_name": "jitter_result", "iterations": iterations, "radius": radius}
+        
+        try:
+            if verbose: self.logprint(f"nanonis.jitter_tip({parameters})", "code")
+            if not self.status == "running": self.link()
+            (begin_status, error) = self.tip_update(verbose = False)
+            [x_start_nm, y_start_nm, z_start_nm, I_start_pA] = [begin_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
 
-        rng = np.random.default_rng()
-        
-        x_list = [x_start_nm]
-        y_list = [y_start_nm]
-        z_list = [z_start_nm]
-        I_list = [I_start_pA]
-        
-        for iteration in range(iterations):            
-            theta = rng.uniform(0, 2 * np.pi)
-            r = radius * np.sqrt(rng.uniform(0, 1))
-            x_nm = x_start_nm + r * np.cos(theta)
-            y_nm = y_start_nm + r * np.sin(theta)
+            rng = np.random.default_rng()
             
-            (status, error) = self.tip_update({"x (nm)": x_nm, "y (nm)": y_nm}, verbose = False)            
-            [x_nm, y_nm, z_nm, I_pA] = [status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
-            x_list.append(x_nm)
-            y_list.append(y_nm)
-            z_list.append(z_nm)
-            I_list.append(I_pA)
-    
-        (end_status, error) = self.tip_update({"x (nm)": x_start_nm, "y (nm)": y_start_nm}, verbose = False) # Reset
+            x_list = [x_start_nm]
+            y_list = [y_start_nm]
+            z_list = [z_start_nm]
+            I_list = [I_start_pA]
+            
+            for iteration in range(iterations):            
+                theta = rng.uniform(0, 2 * np.pi)
+                r = radius * np.sqrt(rng.uniform(0, 1))
+                x_nm = x_start_nm + r * np.cos(theta)
+                y_nm = y_start_nm + r * np.sin(theta)
+                
+                (status, error) = self.tip_update({"x (nm)": x_nm, "y (nm)": y_nm}, verbose = False)            
+                [x_nm, y_nm, z_nm, I_pA] = [status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+                x_list.append(x_nm)
+                y_list.append(y_nm)
+                z_list.append(z_nm)
+                I_list.append(I_pA)
         
-        results_dict = {"x_values (nm)": x_list, "y_values (nm)": y_list, "z_values (nm)": z_list, "I_values (pA)": I_list,
-                        "x_avg (nm)": round(float(np.average(x_list)), 6), "y_avg (nm)": round(float(np.average(y_list)), 6),
-                        "z_avg (nm)": round(float(np.average(z_list)), 6), "x_avg (nm)": round(float(np.average(z_list)), 6)}
-
-        return results_dict
+            (end_status, error) = self.tip_update({"x (nm)": x_start_nm, "y (nm)": y_start_nm}, verbose = False) # Reset
+            
+            results_dict.update({"x_values (nm)": x_list, "y_values (nm)": y_list, "z_values (nm)": z_list, "I_values (pA)": I_list,
+                            "x_avg (nm)": round(float(np.average(x_list)), 6), "y_avg (nm)": round(float(np.average(y_list)), 6),
+                            "z_avg (nm)": round(float(np.average(z_list)), 6), "x_avg (nm)": round(float(np.average(z_list)), 6)})
+        
+        except Exception as e: error = e
+        finally:
+            if unlink: self.unlink()
+            
+        return (results_dict, error)
 
 
 

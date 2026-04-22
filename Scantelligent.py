@@ -57,11 +57,6 @@ class AudioGenerator(QtCore.QObject):
         self.w1 = 2 * pi * float(value)
         return
 
-    @QtCore.pyqtSlot(int)
-    def update_volume(self, value) -> None:
-        self.volume = value
-        return
-
     def stop(self):
         if self.stream:
             self.stream.stop()
@@ -72,6 +67,9 @@ class AudioGenerator(QtCore.QObject):
 
 # Main class
 class Scantelligent(QtCore.QObject):
+    amplitudes_update = QtCore.pyqtSignal(list)
+    frequency_update = QtCore.pyqtSignal(int)
+
     def __init__(self):
         super().__init__()
         self.parameters_init()
@@ -150,13 +148,11 @@ class Scantelligent(QtCore.QObject):
         button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
                         "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.on_approach,
                         
-                        "audio": lambda: self.logprint("AUDIO"),
-                        
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),
                         
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
-                        "start_stop": self.control_experiment
+                        "audio": self.toggle_audio, "start_stop": self.control_experiment
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
@@ -181,9 +177,10 @@ class Scantelligent(QtCore.QObject):
         self.experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
-        
-        # Checkboxes and radio buttons
-        [self.gui.radio_buttons[name].clicked.connect(self.update_processing_flags) for name in ["min_absolute", "min_deviations", "min_percentiles", "min_full", "max_absolute", "max_deviations", "max_percentiles", "max_full"]]
+                
+        # Sliders
+        self.gui.sliders["volume"].valueChanged.connect(self.send_amplitudes)
+        [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_amplitudes) for i in range(32)]
 
         return
 
@@ -306,7 +303,7 @@ class Scantelligent(QtCore.QObject):
             self.audio.moveToThread(self.audio_thread)
 
             self.audio_thread.started.connect(self.audio.start_audio)
-            # self.amplitudes.connect(self.audio.update_amplitudes)
+            self.amplitudes_update.connect(self.audio.update_amplitudes)
             # self.demod_frequency.connect(self.audio.update_frequency)
             self.audio.finished.connect(self.audio_thread.quit)
         except Exception as e:
@@ -735,6 +732,21 @@ class Scantelligent(QtCore.QObject):
     def closeEvent(self, event) -> None:
         self.exit()
 
+    def toggle_audio(self) -> None:
+        if not hasattr(self, "audio") or not hasattr(self, "audio_thread"): return
+
+        if bool(self.gui.buttons["audio"].state_index):
+            self.audio_thread.start()
+        else:
+            self.audio.stop()            
+        return
+
+    def send_amplitudes(self) -> None:
+        volume = self.gui.sliders["volume"].getValue()
+        amplitudes = [self.gui.sliders[f"f{i}"].getValue() * volume / 10000 for i in range(1, 32)]
+        self.amplitudes_update.emit(amplitudes)
+        return
+
 
 
     # Read the GUI to set processing flags for image/spectrum processing
@@ -834,15 +846,9 @@ class Scantelligent(QtCore.QObject):
             if tip_withdrawn:
                 (tip_status, error) = self.nanonis.tip_update({"feedback": True}, unlink = True)
                 if error: raise
-                elif type(tip_status) == dict:
-                    self.status["tip"] = tip_status
-                    self.logprint("nanonis.tip_update({\"feedback\": True})", message_type = "code")
             else:
                 (tip_status, error) = self.nanonis.tip_update({"withdraw": True}, unlink = True)
                 if error: raise
-                elif type(tip_status) == dict:
-                    self.status["tip"] = tip_status
-                    self.logprint("nanonis.tip_update({\"withdraw\": True})", message_type = "code")
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")

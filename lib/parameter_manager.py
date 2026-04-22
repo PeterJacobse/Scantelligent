@@ -231,9 +231,7 @@ class ParameterManager(QtCore.QObject):
                 
                 # Update the position visible in the image_view
                 sct.gui.image_view.view.removeItem(sct.gui.tip_target)
-                x_tip_nm = tip_status.get("x (nm)", 0)
-                y_tip_nm = tip_status.get("y (nm)", 0)
-                z_tip_nm = tip_status.get("z (nm)", 0)
+                [x_tip_nm, y_tip_nm, z_tip_nm] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)"]]
                 sct.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
                 sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
                 if sct.status["view"] == "nanonis": sct.gui.image_view.view.addItem(sct.gui.tip_target)
@@ -260,12 +258,11 @@ class ParameterManager(QtCore.QObject):
                 line_edits["I_fb"].setValue(parameters.get("I_fb (pA)"))
 
             case "frame":
-                frame = parameters
-                sct.user.frames[0].update(frame)
+                sct.user.frames[0].update(parameters)
             
-                [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
+                [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
+                [w_nm, h_nm] = parameters.get("scan_range (nm)", [100, 100])
+                angle_deg = parameters.get("angle (deg)", 0)
                 aspect_ratio = h_nm / w_nm
                 
                 # Update the fields in the GUI
@@ -290,11 +287,9 @@ class ParameterManager(QtCore.QObject):
                     frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
 
             case "new_frame":
-                frame = parameters
-           
-                [x_0_nm, y_0_nm] = frame.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
+                [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
+                [w_nm, h_nm] = parameters.get("scan_range (nm)", [100, 100])
+                angle_deg = parameters.get("angle (deg)", 0)
                 aspect_ratio = h_nm / w_nm
 
                 # Update the fields in the GUI
@@ -323,22 +318,24 @@ class ParameterManager(QtCore.QObject):
                     new_frame_roi.blockSignals(False)
 
             case "grid":
-                grid = parameters
-
-                [pixels, lines, pixel_width, pixel_height] = [grid.get(parameter, None) for parameter in ["pixels", "lines", "pixel_width (nm)", "pixel_height (nm)"]]
+                [pixels, lines, pixel_width, pixel_height] = [parameters.get(parameter, None) for parameter in ["pixels", "lines", "pixel_width (nm)", "pixel_height (nm)"]]
                 aspect_ratio = lines / pixels
 
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
                 
                 # Frame is embedded in grid. Update the frame parameters as well
-                [x_0_nm, y_0_nm] = grid.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = grid.get("scan_range (nm)", [100, 100])
-                angle_deg = grid.get("angle (deg)", 0)
+                [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
+                [w_nm, h_nm] = parameters.get("scan_range (nm)", [100, 100])
+                angle_deg = parameters.get("angle (deg)", 0)
                 aspect_ratio = h_nm / w_nm
 
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]                
+
+            case "signal":
+                if "Current (A)" in parameters.keys():
+                    current_value = parameters["Current (A)"]
 
             case "gains":
                 gains = parameters
@@ -351,14 +348,12 @@ class ParameterManager(QtCore.QObject):
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "t_const", "i_gain"], [p_gain_ms, t_const_us, i_gain_nm_per_s])]
 
             case "piezo_range":
-                piezo_range = parameters
-
                 piezo_roi = sct.gui.piezo_roi
                 try: sct.gui.image_view.view.removeItem(piezo_roi)
                 except: pass
 
-                piezo_range_nm = [piezo_range.get("x_range (nm)"), piezo_range.get("y_range (nm)")]
-                piezo_lower_left_nm = [piezo_range.get("x_min (nm)"), piezo_range.get("y_min (nm)")]
+                piezo_range_nm = [parameters.get(dim) for dim in ["x_range (nm)", "y_range (nm)"]]
+                piezo_lower_left_nm = [parameters.get(dim) for dim in ["x_min (nm)", "y_min (nm)"]]
                 piezo_roi.setSize(piezo_range_nm, [0, 0], [0, 0])
                 piezo_roi.setPos(piezo_lower_left_nm)
 
@@ -366,12 +361,10 @@ class ParameterManager(QtCore.QObject):
                 if sct.status["view"] == "nanonis": sct.gui.image_view.addItem(piezo_roi)
 
             case "scan_metadata":
-                scan_metadata = parameters
-
                 # Refresh the recorded channels
                 if hasattr(sct, "channels"): channels_old = sct.channels
                 else: channels_old = {}
-                sct.channels = scan_metadata.get("channel_dict", {})
+                sct.channels = parameters.get("channel_dict", {})
                 
                 # Update the channels combobox with the channels that are being recorded if there is a change
                 if sct.channels == channels_old:
