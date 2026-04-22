@@ -126,7 +126,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         return labels
-    
+
     def make_buttons(self) -> dict:
         MSB = STWidgets.MultiStateButton
         icons = self.icons
@@ -846,7 +846,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         fg_layout = layouts["frame_grid"]
         fg_layout.addWidget(labels["frame"], 0, 0, 1, 2)
         fg_layout.addWidget(make_line("h", 1), 1, 0, 1, 2)
-        fg_layout.addWidget(buttons["frame_aspect"], 2, 0)
+        fg_layout.addWidget(buttons["frame_aspect"], 2, 0, 1, 1, align_center)
         fg_layout.addWidget(line_edits["frame_height"], 2, 1)
         [fg_layout.addWidget(line_edits[name], 3 + int(index / 2), index % 2) for index, name in enumerate(["frame_width", "frame_aspect", "frame_x", "frame_y"])]
         fg_layout.addWidget(line_edits["frame_angle"], 5, 0, 1, 2)
@@ -857,7 +857,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         fg_layout.addWidget(labels["grid"], 0, 3, 1, 2)
         fg_layout.addWidget(make_line("h", 1), 1, 3, 1, 2)
-        fg_layout.addWidget(buttons["grid_aspect"], 2, 3)
+        fg_layout.addWidget(buttons["grid_aspect"], 2, 3, 1, 1, align_center)
         fg_layout.addWidget(line_edits["grid_lines"], 2, 4)
         [fg_layout.addWidget(line_edits[name], 3 + int(index / 2), 3 + index % 2) for index, name in enumerate(["grid_pixels", "grid_aspect", "pixel_width", "pixel_height"])]
         fg_layout.addWidget(buttons["get_grid_parameters"], 6, 3, 1, 1, align_center)

@@ -1,4 +1,4 @@
-import os, sys, html, pint, atexit
+import os, sys, html, atexit
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
@@ -12,10 +12,6 @@ from datetime import datetime
 
 # Main class
 class Scantelligent(QtCore.QObject):
-    abort = QtCore.pyqtSignal()
-    parameter_dict = QtCore.pyqtSignal(dict)
-    image_request = QtCore.pyqtSignal(int, bool)
-
     def __init__(self):
         super().__init__()
         self.parameters_init()
@@ -31,7 +27,7 @@ class Scantelligent(QtCore.QObject):
     def parameters_init(self) -> None:
         # Cleanup
         atexit.register(self.cleanup)
-        
+
         # Paths
         self.paths = {
             "script": os.path.abspath(__file__), # The full path of Scanalyzer.py
@@ -55,15 +51,13 @@ class Scantelligent(QtCore.QObject):
                 pass
 
         # Important classes and objects
-        self.ureg = pint.UnitRegistry()
         self.user = UserData()
         self.file_functions = FileFunctions()
         self.data = DataProcessing() # Class for data processing and analysis
-        self.timer = QtCore.QTimer()
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
-        
+
         # Dict to keep track of the hardware and experiment status
         self.status = {
             "initialization": True,
@@ -75,7 +69,7 @@ class Scantelligent(QtCore.QObject):
             "experiment": {"name": None, "status": "idle"},
             "view": "none"
         }
-        
+
         return
 
     def connect_console(self) -> None:
@@ -88,7 +82,7 @@ class Scantelligent(QtCore.QObject):
         self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
 
         return
-    
+
     def connect_buttons(self) -> None:
         buttons = self.gui.buttons
         shortcuts = self.gui.shortcuts        
@@ -686,6 +680,7 @@ class Scantelligent(QtCore.QObject):
 
 
 
+    # Read the GUI to set processing flags for image/spectrum processing
     def update_processing_flags(self) -> None:
         flags = {"dict_name": "processing_flags"}
         
@@ -745,8 +740,7 @@ class Scantelligent(QtCore.QObject):
 
 
 
-    # Nanonis functions
-    # Simple data requests over TCP-IP
+    # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
     def tip_prep(self, action: str):
         if not hasattr(self, "nanonis"): return
         
@@ -771,23 +765,6 @@ class Scantelligent(QtCore.QObject):
 
         return
 
-    def request_nanonis_update(self) -> None:
-        try:
-            channel_name = self.gui.comboboxes["channels"].currentText()
-            backward = self.gui.buttons["direction"].isChecked()
-            channel_index = self.channels.get(channel_name)
-
-            if self.status["nanonis"] == "idle":
-                self.image_request.emit(channel_index, backward)
-            else:
-                pass
-        except:
-            pass
-        return
-
-
-
-    # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
     def toggle_withdraw(self) -> bool:
         if not hasattr(self, "nanonis"): return
         
@@ -959,6 +936,22 @@ class Scantelligent(QtCore.QObject):
         self.nanonis.auto_approach(True, V_motor = V_ver)
         return
 
+    def modulator_control(self, modulator_number: int = 1) -> None:
+        if not hasattr(self, "nanonis"): return
+        
+        style_sheets = self.gui.style_sheets
+        
+        try:
+            mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
+            mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
+
+            self.nanonis.lockin_update({"modulator_1": {"on": mod1_on}, "modulator_2": {"on": mod2_on}})
+            
+        except Exception as e:
+            self.logprint(f"Error controlling modulator {modulator_number}: {e}", message_type = "error")
+        
+        return
+
 
 
     # Experiments
@@ -1038,22 +1031,6 @@ class Scantelligent(QtCore.QObject):
             case _:
                 pass
                 
-        return
-
-    def modulator_control(self, modulator_number: int = 1) -> None:
-        if not hasattr(self, "nanonis"): return
-        
-        style_sheets = self.gui.style_sheets
-        
-        try:
-            mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
-            mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
-
-            self.nanonis.lockin_update({"modulator_1": {"on": mod1_on}, "modulator_2": {"on": mod2_on}})
-            
-        except Exception as e:
-            self.logprint(f"Error controlling modulator {modulator_number}: {e}", message_type = "error")
-        
         return
 
 
