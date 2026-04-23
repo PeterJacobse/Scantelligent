@@ -158,8 +158,8 @@ class Scantelligent(QtCore.QObject):
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
         [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["bg_none", "bg_plane", "bg_linewise"]]
         
-        [button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin"]]
-        [button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin"]]
+        [button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin", "speed"]]
+        [button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin", "speed"]]
         
         [button_slots.update({direction: lambda checked, drxn = direction: self.coarse_move(drxn)}) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
 

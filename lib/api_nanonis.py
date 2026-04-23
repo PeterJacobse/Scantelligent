@@ -484,9 +484,7 @@ class NanonisAPI(QtCore.QObject):
             # Tip speed
             v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
             
-            parameters = speed_dict | {
-                "dict_name": "speeds",
-                "v_xy (nm/s)": v_xy_nm_per_s,
+            parameters = speed_dict | {"dict_name": "speeds", "v_xy (nm/s)": v_xy_nm_per_s, "v_tip (nm/s)": v_xy_nm_per_s,
             }
             
             self.parameters.emit(parameters)
@@ -551,8 +549,7 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
 
             # Extract the parameters from the provided dict
-            p_gain_pm = parameters.get("p_gain (pm)", None)
-            t_const_us = parameters.get("t_const (us)", None)
+            [p_gain_pm, t_const_us, i_gain_nm_per_s] = [parameters.get(name, None) for name in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
 
             # Retrieve the current gains from Nanonis, then overwrite them with the requested new parameters
             gains_dict = nhw.get_gains()

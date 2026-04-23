@@ -100,6 +100,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "load_file": LB(text = "Load file:"),
             "in_folder": LB(text = "in folder:"),
             "number_of_files": LB(text = "which contains 1 sxm file"),
+            
+            "current": LB(text = "current"),
+            "gain": LB(text = "gain"),
 
             "frame": LB(text = "frame"),
             "grid": LB(text = "grid"),
@@ -312,17 +315,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         CB = STWidgets.ComboBox
         
         comboboxes = {
-            "channels": CB(name = "Channels", tooltip = "Available scan channels"),
-            "projection": CB(name = "Projection", tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": CB(name = "Experiment", tooltip = "Select an experiment"),
-            "direction": CB(name = "Direction", tooltip = "Select a scan direction / pattern", items = ["nearest tip", "down", "up", "random"]),
+            "channels": CB(tooltip = "Available scan channels"),
+            "projection": CB(tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
+            "experiment": CB(tooltip = "Select an experiment"),
+            "direction": CB(tooltip = "Select a scan direction / pattern", items = ["nearest tip", "down", "up", "random"]),
             
-            "voltage_current": CB(name = "voltage / current", tooltip = "Load voltage / current parameters"),
-            "gains": CB(name = "gains", tooltip = "Load gains parameters"),
-            "frame": CB(name = "frame", tooltip = "Load frame parameters"),
-            "grid": CB(name = "grid", tooltip = "Load grid parameters"),
+            "bias": CB(tooltip = "Load bias parameters"),
+            "feedback": CB(tooltip = "Load feedback parameters"),
+            "speeds": CB(tooltip = "Load speed parameters"),
+            "frame_grid": CB(tooltip = "Load frame/grid parameters"),
             
-            "approach_fb_parameters": CB(name = "approach_fb_parameters", tooltip = "What feedback parameter set to use transiently during tip approach")
+            "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach")
         }
         
         # Add the button handles to the tooltips
@@ -446,15 +449,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd", "v_bwd"]]
 
         self.experiment_parameter_fields = [line_edits[f"experiment_{i}"] for i in range(9)]
-
-        self.gain_line_edits = [line_edits[name] for name in ["p_gain", "t_const", "i_gain"]]
         
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
-
-        self.frame_widgets = [line_edits[name] for name in ["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"]]
-        self.grid_widgets = [line_edits[name] for name in ["grid_lines", "grid_pixels", "grid_aspect"]]
         
         self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_t"],
                                   buttons["nanonis_mod2"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_t"],
@@ -523,65 +521,73 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_layouts(self) -> dict:
         
         layouts = {
+            # Main
             "main": make_layout("h"),
             "left_side": make_layout("v"),
             "toolbar": make_layout("v"),
+            "empty": make_layout("v"),            
+            "input": make_layout("h"),            
+            "graph": make_layout("h"),
+            "channels": make_layout("g"),
+            "connections": make_layout("g"),
             
-            "parameters_0": make_layout("v"),
-            "scan_parameter_sets": make_layout("h"),
-            
-            "feedback": make_layout("g"),
-            "feedback_getset": make_layout("h"),
-            
-            "gains_line_edits": make_layout("h"),
-            "gains": make_layout("v"),
-            "gains_getset": make_layout("h"),
-
-            "speeds": make_layout("g"),
-            "speeds_getset": make_layout("h"),
-            "speeds_parameter_sets": make_layout("h"),
-            
-            "frame_grid": make_layout("g"),
-            "frame": make_layout("g"),
-            "grid": make_layout("g"),
-            "frame_grid_parameter_sets": make_layout("h"),
-
-            "lockins": make_layout("g"),
-            "lockin_parameter_sets": make_layout("h"),
-
-            "channel_navigation": make_layout("h"),
-
-            "coarse_vertical": make_layout("g"),
-            "coarse_horizontal": make_layout("g"),
-            "approach_percentiles": make_layout("h"),
-            
-            "modulators": make_layout("g"),
-            "mod_set_get": make_layout("h"),
-            "demodulators": make_layout("v"),
-            "volume": make_layout("h"),
-            "demod_sliders": make_layout("h"),
-
-            "background_buttons": make_layout("h"),
-            "matrix_processing": make_layout("g"),
-            "limits": make_layout("g"),
-            "empty": make_layout("v"),
-            
-            "input": make_layout("h"),
+            # Experiment
+            "experiment": make_layout("g"),
             "experiment_controls_0": make_layout("v"),
             "experiment_controls_1": make_layout("h"),
             "experiment_fields": make_layout("g"),
             "experiment_buttons": make_layout("h"),
             
-            "graph": make_layout("h"),
-            "channels": make_layout("g"),
+            # Parameters; Rename feedback to bias. Rename gains to feedback
+            "parameters": make_layout("g"),
+            "parameters_0": make_layout("v"),
+            "scan_parameter_sets": make_layout("h"),
+            
+            # Bias
+            "feedback": make_layout("g"), # Deprecate
+            "feedback_getset": make_layout("h"), # Deprecate
+            
+            "bias": make_layout("g"),
+            "bias_getset": make_layout("h"),
+            
+            # Feedback
+            "gains_line_edits": make_layout("h"),
+            "gains": make_layout("v"),
+            "gains_getset": make_layout("h"),
 
-            "connections": make_layout("g"),
+            # Speeds
+            "speeds": make_layout("g"),
+            "speeds_getset": make_layout("h"),
+            
+            # Frame / grid
+            "frame_grid": make_layout("g"),
+            "frame": make_layout("g"),
+            "grid": make_layout("g"),
+            "frame_grid_getset": make_layout("h"),
+            
+            # Coarse / Prep
             "coarse_control": make_layout("h"),
             "coarse_prep": make_layout("v"),
+            "coarse_vertical": make_layout("g"),
+            "coarse_horizontal": make_layout("g"),
+            "approach_percentiles": make_layout("h"),
             "tip_prep": make_layout("g"),
-            "parameters": make_layout("g"),            
+            
+            # Processing
             "image_processing": make_layout("v"),
-            "experiment": make_layout("g")            
+            "channel_navigation": make_layout("h"),
+            "background_buttons": make_layout("h"),
+            "matrix_processing": make_layout("g"),
+            "limits": make_layout("g"),
+                        
+            # Lockins
+            "lockins": make_layout("g"),
+            "lockin_parameter_sets": make_layout("h"),
+            "modulators": make_layout("g"),
+            "mod_set_get": make_layout("h"),
+            "demodulators": make_layout("v"),
+            "volume": make_layout("h"),
+            "demod_sliders": make_layout("h")
         }
         
         return layouts
@@ -814,31 +820,39 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         cv_layout.addWidget(comboboxes["approach_fb_parameters"], 7, 0, 1, 3)
         cv_layout.addLayout(layouts["approach_percentiles"], 8, 0, 1, 3, alignment = align_center)
         cv_layout.setRowStretch(cv_layout.rowCount(), 1)
-        
-        # Feedback
-        [layouts["feedback_getset"].addWidget(buttons[name]) for name in ["get_feedback_parameters", "set_feedback_parameters"]]
-        
-        fb_layout = layouts["feedback"]
-        [fb_layout.addWidget(labels[name], 0, index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
-        fb_layout.addWidget(make_line("h", 1), 1, 0, 1, 3)
-        [fb_layout.addWidget(line_edits[name], 2, index) for index, name in enumerate(["V_nanonis", "V_mla", "V_keithley"])]
-        buttons["V_swap"].setFixedWidth(50)
-        fb_layout.addWidget(buttons["V_swap"], 3, 0, 1, 2, align_center)
-        
-        [fb_layout.addWidget(line_edits[name], 4 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
-        [fb_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["dz_nanonis", "I_fb"])]
-        [fb_layout.addWidget(line_edits[name], 4 + index, 2) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
-        fb_layout.addLayout(layouts["feedback_getset"], 6, 0, 1, 3)
 
-        # Gains
-        [layouts["gains_line_edits"].addWidget(widget) for widget in self.gain_line_edits]
-        [layouts["gains_getset"].addWidget(widget) for widget in [buttons["get_gain_parameters"], buttons["set_gain_parameters"], comboboxes["gains"]]]
+
+        
+        # Bias
+        [layouts["bias_getset"].addWidget(widget) for widget in [buttons["get_feedback_parameters"], buttons["set_feedback_parameters"], comboboxes["bias"]]]        
+        b_layout = layouts["bias"]
+        [b_layout.addWidget(labels[name], 0, index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
+        b_layout.addWidget(make_line("h", 1), 1, 0, 1, 3)
+        [b_layout.addWidget(line_edits[name], 2, index) for index, name in enumerate(["V_nanonis", "V_mla", "V_keithley"])]
+        buttons["V_swap"].setFixedWidth(50)
+        b_layout.addWidget(buttons["V_swap"], 3, 0, 1, 2, align_center)        
+        [b_layout.addWidget(line_edits[name], 4 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
+        [b_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["dz_nanonis"])]
+        [b_layout.addWidget(line_edits[name], 4 + index, 2) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
+        b_layout.addLayout(layouts["bias_getset"], 6, 0, 1, 3)
+        
+        # Gains (will be called feedback)
+        [layouts["gains_line_edits"].addWidget(line_edits[name]) for name in ["I_fb", "p_gain", "t_const", "i_gain"]]
+        [layouts["gains_getset"].addWidget(widget) for widget in [buttons["get_gain_parameters"], buttons["set_gain_parameters"], comboboxes["feedback"]]]
         layouts["gains"].addLayout(layouts["gains_line_edits"])
         layouts["gains"].addLayout(layouts["gains_getset"])
+
+        # Speeds
+        [layouts["speeds_getset"].addWidget(widget) for widget in [buttons["get_speed_parameters"], buttons["set_speed_parameters"], comboboxes["speeds"]]]
+        [layouts["speeds"].addWidget(labels[name], 0, index) for index, name in enumerate(["forward", "backward", "tip"])]
+        [layouts["speeds"].addWidget(make_line("h", 1), 1, index) for index in range(3)]
+        [layouts["speeds"].addWidget(line_edits[name], 2, index) for index, name in enumerate(["v_fwd", "v_bwd", "v_tip"])]
+        layouts["speeds"].addLayout(layouts["speeds_getset"], 3, 0, 1, 3)
+
+
         
         # Frame_grid
-        [layouts["frame_grid_parameter_sets"].addWidget(buttons[f"grid_parameters_{i}"]) for i in range(6)]
-        
+        [layouts["frame_grid_getset"].addWidget(widget) for widget in [buttons["get_grid_parameters"], buttons["set_grid_parameters"], comboboxes["frame_grid"]]]        
         fg_layout = layouts["frame_grid"]
         fg_layout.addWidget(labels["frame"], 0, 0, 1, 2)
         fg_layout.addWidget(make_line("h", 1), 1, 0, 1, 2)
@@ -846,9 +860,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         fg_layout.addWidget(line_edits["frame_height"], 2, 1)
         [fg_layout.addWidget(line_edits[name], 3 + int(index / 2), index % 2) for index, name in enumerate(["frame_width", "frame_aspect", "frame_x", "frame_y"])]
         fg_layout.addWidget(line_edits["frame_angle"], 5, 0, 1, 2)
-        fg_layout.addWidget(buttons["get_frame_parameters"], 6, 0, 1, 1, align_center)
-        fg_layout.addWidget(buttons["set_frame_parameters"], 6, 1, 1, 1, align_center)
-        
         fg_layout.addWidget(labels["empty"], 0, 2)
         
         fg_layout.addWidget(labels["grid"], 0, 3, 1, 2)
@@ -856,8 +867,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         fg_layout.addWidget(buttons["grid_aspect"], 2, 3, 1, 1, align_center)
         fg_layout.addWidget(line_edits["grid_lines"], 2, 4)
         [fg_layout.addWidget(line_edits[name], 3 + int(index / 2), 3 + index % 2) for index, name in enumerate(["grid_pixels", "grid_aspect", "pixel_width", "pixel_height"])]
-        fg_layout.addWidget(buttons["get_grid_parameters"], 6, 3, 1, 1, align_center)
-        fg_layout.addWidget(buttons["set_grid_parameters"], 6, 4, 1, 1, align_center)
+        fg_layout.addLayout(layouts["frame_grid_getset"], 6, 0, 1, 5)
         
         # Tip prep
         tp_layout = layouts["tip_prep"]
@@ -923,30 +933,27 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         groupboxes = {
             # Connections
-            "connections": SGB(title = "Connections", tooltip = "Connections to hardware (push to check/refresh)"),
+            "connections": SGB(title = "connections", tooltip = "Connections to hardware (push to check/refresh)"),
             
             # Coarse
-            "coarse_vertical": SGB(title = "Vertical", tooltip = "Vertical coarse motion"),
-            "coarse_horizontal": SGB(title = "Horizontal", tooltip = "Horizontal coarse motion"),
+            "coarse_vertical": SGB(title = "vertical", tooltip = "Vertical coarse motion"),
+            "coarse_horizontal": SGB(title = "horizontal", tooltip = "Horizontal coarse motion"),
             
-            "tip_prep": SGB(title = "Tip prep", tooltip = "Tip preparation tools"),
+            "tip_prep": SGB(title = "tip prep", tooltip = "Tip preparation tools"),
 
-            "frame_grid": SGB(title = "Frame / grid", tooltip = "Frame and grid parameters"),
-            "feedback": SGB(title = "Bias / current", tooltip = "Bias and current"),
-            "gains": SGB(title = "Feedback gains", tooltip = "Feedback gains"),
-            "modulators": SGB(title = "Modulators", tooltip = "Modulators"),
-            "demodulators": SGB(title = "Demodulators", tooltip = "Demodulators"),
+            "frame_grid": SGB(title = "frame / grid", tooltip = "Frame and grid parameters"),
+            "bias": SGB(title = "bias", tooltip = "Bias and current"),
+            "gains": SGB(title = "feedback", tooltip = "Feedback gains"),
+            "modulators": SGB(title = "modulators", tooltip = "Modulators"),
+            "demodulators": SGB(title = "demodulators", tooltip = "Demodulators"),
 
-            "speeds": SGB(title = "Speeds", tooltip = "Speeds"),
-            "parameters": SGB(title = "Scan parameters", tooltip = "Scan parameters"),
-            "image_processing": SGB(title = "Image processing", tooltip = "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
-            "experiment": SGB(title = "Experiment", tooltip = "Perform experiment"),
-            
-            "dummy": SGB(title = "Dummy", tooltip = "Invisible groupbox to swap out layouts to make other groupboxes collapse")
+            "speeds": SGB(title = "speeds", tooltip = "Speeds"),
+            "image_processing": SGB(title = "image processing", tooltip = "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
+            "experiment": SGB(title = "experiment", tooltip = "Perform experiment")
         }
 
         # Set layouts for the groupboxes
-        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "feedback", "gains", "speeds", "frame_grid", "tip_prep", "parameters", "modulators", "demodulators", "experiment", "image_processing"]
+        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "gains", "speeds", "frame_grid", "tip_prep", "modulators", "demodulators", "experiment", "image_processing"]
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
         # Make layouts of several groupboxes
@@ -954,7 +961,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["coarse_prep"].addLayout(layouts["coarse_control"])
         layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])
         
-        [layouts["parameters"].addWidget(groupboxes[name]) for name in ["feedback", "gains", "speeds", "frame_grid"]]
+        [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "gains", "speeds", "frame_grid"]]
         [layouts["lockins"].addWidget(groupboxes[name]) for name in ["modulators", "demodulators"]]
 
         return groupboxes

@@ -30,7 +30,7 @@ class ParameterManager(QtCore.QObject):
             case "grid":
                 sct.nanonis.grid_update(unlink = True)
 
-            case "speeds":
+            case "speed" | "speeds":
                 sct.nanonis.speeds_update(unlink = True)
 
             case "gain":
@@ -66,7 +66,6 @@ class ParameterManager(QtCore.QObject):
                     val = sct.gui.line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
 
-                sct.logprint(parameters)
                 sct.nanonis.feedback_update(parameters, unlink = True)
 
             case "frame":
@@ -78,11 +77,13 @@ class ParameterManager(QtCore.QObject):
                 sct.nanonis.frame_update(parameters, unlink = True)
 
             case "grid":
-                grid = [sct.gui.line_edits[tag].getValue() for tag in ["grid_pixels", "grid_lines"]]                
-                sct.nanonis.grid_update(unlink = True)
+                [pixels, lines] = [sct.gui.line_edits[tag].getValue() for tag in ["grid_pixels", "grid_lines"]]
+                
+                parameters = {"dict_name": "grid", "pixels": pixels, "lines": lines}
+                sct.nanonis.grid_update(parameters, unlink = True)
 
-            case "speeds":
-                sct.nanonis.frame_update(unlink = True)
+            case "speed" | "speeds":
+                sct.nanonis.speeds_update(unlink = True)
 
             case "gain":
                 sct.nanonis.gains_update(unlink = True)
@@ -338,11 +339,7 @@ class ParameterManager(QtCore.QObject):
                     current_value = parameters["Current (A)"]
 
             case "gains":
-                gains = parameters
-                
-                p_gain_ms = gains.get("p_gain (pm)")
-                t_const_us = gains.get("t_const (us)")
-                i_gain_nm_per_s = p_gain_ms / (1000 * t_const_us)
+                [p_gain_ms, t_const_us, i_gain_nm_per_s] = [parameters.get(parameter) for parameter in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
 
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "t_const", "i_gain"], [p_gain_ms, t_const_us, i_gain_nm_per_s])]
@@ -384,6 +381,10 @@ class ParameterManager(QtCore.QObject):
                     if mod_dict.get("on"): state = "on"
                     sct.gui.buttons[f"nanonis_mod{i + 1}"].setState(state)
 
+            case "speed" | "speeds":
+                [v_fwd, v_bwd, v_tip] = [parameters.get(quantity) for quantity in ["v_fwd (nm/s)", "v_bwd (nm/s)", "v_tip (nm/s)"]]
+                [line_edits[name].setValue(value) for name, value in zip(["v_fwd", "v_bwd", "v_tip"], [v_fwd, v_bwd, v_tip])]
+                
             case _:
                 pass
 
