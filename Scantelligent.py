@@ -206,7 +206,7 @@ class Scantelligent(QtCore.QObject):
             mla_path = mla_config.get("library_path")
             if os.path.isdir(mla_path):
                 self.paths.update({"mla": mla_path})
-                sys.path.insert(0, self.paths.get("mla")) # Path to the MLA library
+                sys.path.insert(0, mla_path) # Path to the MLA library
 
 
 
