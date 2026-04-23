@@ -30,9 +30,12 @@ class Experiment(BaseExperiment):
         self.setup_buttons(gui = gui, states = [{"tooltip": "state 1", "color": gui.colors["blue"]}])
 
     def run(self):
+        self.logprint(f"Initializing the experiment", message_type = "message")
         try:
-            self.logprint(f"Initializing the experiment", message_type = "message")
+            # Load methods and data; initialize
+            nn = self.nanonis
             self.sct.toggle_view("nanonis") # Changing the active view to Nanonis
+            timeout_s = 260000 # 10 hours
             
             # Load methods and data; initialize
             nn = self.nanonis
@@ -40,7 +43,6 @@ class Experiment(BaseExperiment):
             direction_str = gui_parameters["direction_combobox"] # Reading user parameters
             [V_begin, V_step, V_end, t_per_pixel_ms, v_bwd_nm_per_s, I_max, V_cal] = [gui_parameters["line_edits"][index] for index in range(7)]
             V_step /= 1000 # Convert from mV to V
-            timeout_s = 36000 # 10 hours
 
             map_direction = "up" if direction_str == "scan down / map up" else "down"
             scan_direction = "down" if direction_str == "scan down / map up" else "up"
@@ -50,24 +52,27 @@ class Experiment(BaseExperiment):
             n_steps = len(V_list)
 
             # Information from Nanonis
-            (start_parameters, error) = nn.initialize()
-            [grid, speeds, feedback, gains, scan_metadata, tip_status] = [start_parameters.get(parameter_dict) for parameter_dict in ["grid", "speeds", "feedback", "gains", "scan_metadata", "tip_status"]]
-            nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}}) # Make sure the lockins are initially turned off
+            (self.start_parameters, error) = nn.initialize(verbose = False)
+            [bias, feedback, grid, speeds, scan_metadata, tip_status] = [self.start_parameters.get(parameter_dict) for parameter_dict in ["bias", "feedback", "grid", "speeds", "scan_metadata", "tip_status"]]
+            self.V_start = bias.get("V_nanonis (V)")
+            [self.x_start, self.y_start] = [tip_status.get(dim) for dim in ["x (nm)", "y (nm)"]]
+            [self.v_fwd_nm_per_s, self.v_bwd_nm_per_s] = [speeds.get(parameter) for parameter in ["v_fwd (nm/s)", "v_bwd (nm/s)"]]
+            [self.I_feedback_pA, self.p_gain_pm] = [feedback.get(parameter) for parameter in ["I_fb (pA)", "p_gain (pm)"]]
 
             # Calculate information
             self.corner_before_mapping = list(grid.get("bottom_left_corner (nm)")) if start_corner == "bottom left" else list(grid.get("top_left_corner (nm)"))
             self.corner_before_scanning = list(grid.get("top_left_corner (nm)")) if start_corner == "bottom left" else list(grid.get("bottom_left_corner (nm)"))
             t_per_line_s = t_per_pixel_ms * grid.get("pixels") / 1000 # Calculate the time per line
-            self.V_feedback = feedback.get("V_nanonis (V)") # Save the current bias as attribute of the experiment so it can be reset later
-            self.I_feedback = feedback.get("I_fb (pA)")
-            self.p_gain_pm = gains.get("p_gain (pm)")
-            [self.v_fwd_nm_per_s, self.v_bwd_nm_per_s] = [speeds.get(parameter) for parameter in ["v_fwd (nm/s)", "v_bwd (nm/s)"]]
-            signal_dict = scan_metadata["signal_dict"]
+
+            signal_dict = scan_metadata.get("signal_dict")
             feedback_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]]
             feedback_channel_indices = [index for index in feedback_channel_indices if index is not None]
             constant_height_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Lockin Demod 1 X (A)", "Lockin Demod 1 Y (A)", "Current (A)"]]
             constant_height_channel_indices = [index for index in constant_height_channel_indices if index is not None]
-            nn.scan_metadata_update({"channel_indices": feedback_channel_indices})
+            
+            nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}}) # Make sure the lockins are initially turned off
+            nn.scan_metadata_update({"channel_indices": feedback_channel_indices}) # Make sure the correct channel is being recorded
+            self.sct.set_view_range("frame")
 
 
 
@@ -107,26 +112,24 @@ class Experiment(BaseExperiment):
                     self.logprint(f"Moving the tip to the highest apparent point of the scan at ({x_max_nm:.4f}, {y_max_nm:.4f}) nm and 500 pm jitter to find the height", message_type = "message")
                     nn.tip_update({"x (nm)": x_max_nm, "y (nm)": y_max_nm})
                     nn.tip_update(verbose = False)
-                    nn.gains_update({"p_gain (pm)": .5}) # Reducing the proportional gain to a very low value to stabilize the tip height
-                    nn.feedback_update({"I_fb (pA)": I_max})
+                    nn.feedback_update({"I_fb (pA)": I_max, "p_gain (pm)": .5}) # Reducing the proportional gain to a very low value to stabilize the tip height
                     time.sleep(1)
                                     
                     (tip_data, error) = nn.jitter_tip({"iterations": 32, "radius": .5})
                     z_feature = tip_data.get("z_avg (nm)")
                     z_at_highest_feature.append(z_feature)
                     
-                    nn.feedback_update({"I_fb (pA)": self.I_feedback})
-                    nn.gains_update({"p_gain (pm)": self.p_gain_pm})
+                    nn.feedback_update({"I_fb (pA)": self.I_feedback_pA, "p_gain (pm)": self.p_gain_pm})
                     time.sleep(2)
 
 
 
                     # Now collect a reference height at the corner under normal feedback conditions
-                    self.logprint(f"Measuring a reference tip height at the {start_corner} corner at the feedback voltage of {self.V_feedback:.4f} V using a 500 pm jitter", message_type = "message")
-                    nn.bias_update({"V_nanonis (V)": self.V_feedback})
+                    self.logprint(f"Measuring a reference tip height at the {start_corner} corner at the feedback voltage of {self.V_start:.4f} V using a 500 pm jitter", message_type = "message")
+                    nn.bias_update({"V_nanonis (V)": self.V_start})
                     nn.tip_update({"x (nm)": self.corner_before_mapping[0], "y (nm)": self.corner_before_mapping[1]})
                     nn.tip_update(verbose = False)
-                    nn.gains_update({"p_gain (pm)": 1}) # Reducing the proportional gain to a very low value to stabilize the tip height
+                    nn.feedback_update({"p_gain (pm)": 1}) # Reducing the proportional gain to a very low value to stabilize the tip height
                     time.sleep(1)
 
                     (tip_data, error) = nn.jitter_tip({"iterations": 32, "radius": .5})
@@ -134,10 +137,10 @@ class Experiment(BaseExperiment):
                     z_relative = z_feature - z_corner
                     relative_z_at_highest_feature.append(z_relative)
 
-                    nn.gains_update({"p_gain (pm)": self.p_gain_pm})
+                    nn.feedback_update({"p_gain (pm)": self.p_gain_pm})
 
                     self.logprint(f"The measured tip height on the highest feature (z = {z_at_highest_feature[0]:.4f} nm while drawing I_max = {I_max:.4f} pA at V = {voltage:.4f} V)\n" +
-                            f"is {z_relative:.4f} nm higher than the tip height in the corner (z = {z_corner:.4f} nm while drawing I = {self.I_feedback:.4f} pA at V = {self.V_feedback:.4f}) V", message_type = "message")
+                            f"is {z_relative:.4f} nm higher than the tip height in the corner (z = {z_corner:.4f} nm while drawing I = {self.I_feedback_pA:.4f} pA at V = {self.V_start:.4f}) V", message_type = "message")
                     time.sleep(2)
                 
                 if not self.abort_requested:
@@ -154,13 +157,13 @@ class Experiment(BaseExperiment):
                 self.exp_progress.emit(int(100 * scan_number / n_steps)) # Emit experiment progress
                 self.logprint(f"Iteration {scan_number + 1} of {n_steps}", message_type = "message")
                 
-                self.logprint(f"Switching the lockin off, lifting the tip by 1 nm, restoring the scan speeds and restoring the bias to V = {self.V_feedback:.4f} V", message_type = "message")
+                self.logprint(f"Switching the lockin off, lifting the tip by 1 nm, restoring the scan speeds and restoring the bias to V = {self.V_start:.4f} V", message_type = "message")
                 
                 nn.tip_update({"z_rel (nm)": 1})
                 nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}})
                 nn.speeds_update({"v_fwd (nm/s)": self.v_fwd_nm_per_s, "v_bwd (nm/s)": self.v_bwd_nm_per_s})
-                nn.bias_update({"V_nanonis (V)": self.V_feedback})
-                nn.feedback_update({"I_fb (pA)": self.I_feedback})
+                nn.bias_update({"V_nanonis (V)": self.V_start})
+                nn.feedback_update({"I_fb (pA)": self.I_feedback_pA})
 
                 self.logprint(f"Switching to feedback (topographic STM) mode and starting a scan in the {scan_direction} direction", message_type = "message")
                 nn.scan_metadata_update({"channel_indices": feedback_channel_indices})
@@ -187,14 +190,13 @@ class Experiment(BaseExperiment):
                 self.logprint("Measuring the height at the reference point", message_type = "message")
                 nn.tip_update({"x (nm)": self.corner_before_mapping[0], "y (nm)": self.corner_before_mapping[1]})
                 nn.tip_update(verbose = False)
-                nn.gains_update({"p_gain (pm)": 1}) # Reducing the proportional gain to a very low value to stabilize the tip height
-                nn.feedback_update({"I_fb (pA)": self.I_feedback})
+                nn.feedback_update({"I_fb (pA)": self.I_feedback_pA, "p_gain (pm)": 1}) # Reducing the proportional gain to a very low value to stabilize the tip height
                 time.sleep(1)
 
                 (tip_data, error) = nn.jitter_tip({"iterations": 32, "radius": .5})
                 z_corner = tip_data.get("z_avg (nm)")
 
-                nn.gains_update({"p_gain (pm)": self.p_gain_pm})
+                nn.feedback_update({"p_gain (pm)": self.p_gain_pm})
                 self.logprint(f"Now going into constant height mode. Lifting the tip by {z_above_reference:.4f} nm, switching the lockin on and setting the bias to V = {voltage:.4f} V", message_type = "message")
                 nn.tip_update({"z (nm)": z_corner + z_above_reference})
                 nn.bias_update({"V_nanonis (V)": voltage})
@@ -237,14 +239,14 @@ class Experiment(BaseExperiment):
 
     def cleanup(self):
         nn = self.nanonis
+        
         try:
             nn.scan_action({"action": "stop"})
             nn.tip_update({"z_rel (nm)": 1})
             nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}}) # Switch lockin off for feedback scan
-            nn.bias_update({"V_nanonis (V)": self.V_feedback})
-            nn.feedback_update({"I_fb (pA)": self.I_feedback})
-            nn.gains_update({"p_gain (pm)": self.p_gain_pm})
-            nn.tip_update({"feedback": True, "x (nm)": self.corner_before_scanning[0], "y (nm)": self.corner_before_scanning[1]})
+            nn.bias_update({"V_nanonis (V)": self.V_start})
+            nn.feedback_update({"I_fb (pA)": self.I_feedback_pA, "p_gain (pm)": self.p_gain_pm})
+            nn.tip_update({"feedback": True, "x (nm)": self.x_start, "y (nm)": self.y_start})
             nn.tip_update(verbose = False)
             nn.speeds_update({"v_fwd (nm/s)": self.v_fwd_nm_per_s, "v_bwd (nm/s)": self.v_bwd_nm_per_s})
         except:

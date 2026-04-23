@@ -158,8 +158,9 @@ class Scantelligent(QtCore.QObject):
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
         [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["bg_none", "bg_plane", "bg_linewise"]]
         
-        [button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin", "speed"]]
-        [button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")}) for parameter_type in ["feedback", "frame", "grid", "gain", "lockin", "speed"]]
+        for parameter_type in ["bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper"]:
+            button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
+            button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")})
         
         [button_slots.update({direction: lambda checked, drxn = direction: self.coarse_move(drxn)}) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
 
@@ -290,7 +291,6 @@ class Scantelligent(QtCore.QObject):
                 nanonis_parameters = self.nanonis.nanonis_update()
                                 
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
-                self.logprint(f"{nanonis_parameters}", "result")
                 self.gui.buttons["nanonis"].setState("online")
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
@@ -369,11 +369,7 @@ class Scantelligent(QtCore.QObject):
         if self.status["view"] == "none": return
 
         try:
-            """
-            view_box = self.gui.image_view.getView()
-            for item in view_box.allChildItems():
-                if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
-            """
+            if np.count_nonzero(~np.isnan(image)) < 10: return
             
             if self.status["view"] == "nanonis":
                 self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)
@@ -515,22 +511,14 @@ class Scantelligent(QtCore.QObject):
         self.gui.line_edits["input"].setCompleter(completer)
         return
 
-    def set_view_range(self, obj: str) -> None:
-        imv = self.gui.image_view
-        
-        match obj:
-
+    def set_view_range(self, obj: str = "full") -> None:
+        match obj:            
             case "frame":
                 roi_rect = self.gui.frame_roi.boundingRect()
                 mapped_rect = self.gui.frame_roi.mapRectToParent(roi_rect)
-                imv.view.setRange(mapped_rect)
-
-            case "piezo_range":                
-                imv.autoRange()
-
+                self.gui.image_view.view.setRange(mapped_rect)
             case _:
-                pass
-        
+                self.gui.image_view.view.autoRange(item = self.gui.piezo_roi)
         return
 
     def execute_command(self) -> None:
@@ -638,7 +626,7 @@ class Scantelligent(QtCore.QObject):
                 self.gui.image_view.addItem(self.gui.tip_target)
                 self.nanonis.piezo_range_update()
                 self.nanonis.frame_update(unlink = True)
-                self.set_view_range("frame")
+                self.set_view_range("full")
 
             case _:
                 self.status.update({"view": "none"})

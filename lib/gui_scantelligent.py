@@ -258,8 +258,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["blue"]}])
         }
         
-        [buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))}) for parameter_type in ["scan", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin"]]
-        [buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))}) for parameter_type in ["scan", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin"]]
+        for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper"]:
+            buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
+            buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))})
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
 
         for i in range(6):
@@ -271,7 +272,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             buttons.update({f"parameters_{i}": MSB(tooltip = f"Parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
 
         # Initialize
-        buttons["frame_aspect"].setState(1)
+        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect"]]
 
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
@@ -356,47 +357,55 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "approach_max_percentile": LE(value = 60, tooltip = "maximum percentile of the piezo range\nWithdraw and coarse adjust if the tip lands above this value", unit = "%", digits = 0),
 
             # Parameters
-            "V_nanonis": LE(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
-            "V_mla": LE(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3),
-            "V_keithley": LE(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3),
+            "V_nanonis": LE(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
+            "V_mla": LE(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
+            "V_keithley": LE(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3, edited_color = self.colors["dark_green"]),
 
             "dV_nanonis": LE(tooltip = "voltage step dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
             "dt_nanonis": LE(tooltip = "time step dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
             "dz_nanonis": LE(tooltip = "height step dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
 
-            "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1),
-            "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0),
+            "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1, edited_color = self.colors["dark_green"]),
+            "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0, edited_color = self.colors["dark_green"]),
 
-            "I_fb": LE(tooltip = "feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0),
-            "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0),
-            "I_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0),
+            "I_fb": LE(tooltip = "feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0, edited_color = self.colors["dark_green"]),
+            "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = self.colors["dark_green"]),
+            "I_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = self.colors["dark_green"]),
 
-            "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0),
-            "t_const": LE(tooltip = "time constant", unit = "us", digits = 0),
-            "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0),
+            "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0, edited_color = self.colors["dark_green"]),
+            "t_const": LE(tooltip = "time constant", unit = "us", digits = 0, edited_color = self.colors["dark_green"]),
+            "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0, edited_color = self.colors["dark_green"]),
             
-            "v_fwd": LE(tooltip = "forward scan speed", unit = "nm/s", digits = 2),
-            "v_bwd": LE(tooltip = "backward scan speed", unit = "nm/s", digits = 2),
-            "v_tip": LE(tooltip = "tip move speed", unit = "nm/s", digits = 2),
+            "v_fwd": LE(tooltip = "forward scan speed", unit = "nm/s", digits = 2, edited_color = self.colors["dark_green"]),
+            "v_bwd": LE(tooltip = "backward scan speed", unit = "nm/s", digits = 2, edited_color = self.colors["dark_green"]),
+            "v_tip": LE(tooltip = "tip move speed", unit = "nm/s", digits = 2, edited_color = self.colors["dark_green"]),
             
             # Frame
-            "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1),
-            "frame_width": LE(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1),
-            "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-1000, 1000], digits = 1),
-            "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-1000, 1000], digits = 1),
-            "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1),
-            "frame_aspect": LE(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4),
+            "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1, edited_color = self.colors["dark_green"]),
+            "frame_width": LE(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1, edited_color = self.colors["dark_green"]),
+            "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = self.colors["dark_green"]),
+            "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = self.colors["dark_green"]),
+            "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1, edited_color = self.colors["dark_green"]),
+            "frame_aspect": LE(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4, edited_color = self.colors["dark_green"]),
 
             # Grid
-            "grid_pixels": LE(tooltip = "number of pixels", unit = "px", limits = [1, 10000], digits = 0),
-            "grid_lines": LE(tooltip = "number of lines", unit = "px", limits = [1, 10000], digits = 0),
-            "grid_aspect": LE(tooltip = "grid aspect ratio (lines / pixels)", digits = 4),
-            "pixel_width": LE(tooltip = "pixel width", unit = "nm", digits = 4),
-            "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4),
+            "grid_pixels": LE(tooltip = "number of pixels", unit = "px", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
+            "grid_lines": LE(tooltip = "number of lines", unit = "px", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
+            "grid_aspect": LE(tooltip = "grid aspect ratio (lines / pixels)", digits = 4, edited_color = self.colors["dark_green"]),
+            "pixel_width": LE(tooltip = "pixel width", unit = "nm", digits = 4, edited_color = self.colors["dark_green"]),
+            "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4, edited_color = self.colors["dark_green"]),
             
             # Tip shaper
-            "pulse_voltage": LE(tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
-            "pulse_duration": LE(tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
+            "pulse_voltage": LE(value = 6, tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
+            "pulse_duration": LE(value = 300, tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
+            
+            "poke_voltage": LE(tooltip = "poke voltage (bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = self.colors["dark_green"]),
+            "poke_depth": LE(tooltip = "poke depth (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = self.colors["dark_green"]),
+            "poke_time": LE(tooltip = "poke time (duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
+            
+            "lift_voltage": LE(tooltip = "lift voltage (bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = self.colors["dark_green"]),
+            "lift_height": LE(tooltip = "lift height (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = self.colors["dark_green"]),
+            "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
             
             # STS
             "V_min_STS": LE(tooltip = "starting bias", unit = "V", limits = [-10, 10], digits = 3),
@@ -407,19 +416,19 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 0),
             
             # Lockins
-            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70),
-            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70),
-            "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70),
-            "nanonis_mod1_t": LE(tooltip = "Nanonis modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70),
-            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70),
-            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70),
-            "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70),
-            "nanonis_mod2_t": LE(tooltip = "Nanonis modulator 2 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70),
+            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_t": LE(tooltip = "Nanonis modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_t": LE(tooltip = "Nanonis modulator 2 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
 
-            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70),
-            "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70),
-            "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70),
-            "mla_mod1_t": LE(tooltip = "MLA modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70),
+            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod1_t": LE(tooltip = "MLA modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
 
             # Image processing
             "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 70),
@@ -432,24 +441,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "max_absolute": LE(value = 1, tooltip = "maximum absolute value", digits = 3, max_width = 70),
 
             "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
-            "file_name": LE(tooltip = "base name of the file when saved to png or hdf5"),
             
-            # Console            
+            # Console
             "input": LE(tooltip = "Enter a command\n(Enter to evaluate)", block = True)
         }
-        
-        [line_edit.setEditedColor(self.colors["dark_green"]) for name, line_edit in line_edits.items() if name not in ["input", "gaussian_width", "file_name", "experiment_filename"]]
         
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of harmonic {i}", unit = "Hz", digits = 2)}) for i in range(32)]
         [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}")}) for i in range(9)]
         
         # Named groups
-        self.parameter_line_0 = [buttons["tip"], line_edits["V_nanonis"], buttons["V_swap"], line_edits["V_mla"], line_edits["I_fb"], buttons["set_scan_parameters"], buttons["get_scan_parameters"]]
-        self.parameter_line_1 = [line_edits[name] for name in ["p_gain", "t_const", "v_fwd", "v_bwd"]]
-
         self.experiment_parameter_fields = [line_edits[f"experiment_{i}"] for i in range(9)]
-        
+
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
@@ -543,17 +546,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "parameters_0": make_layout("v"),
             "scan_parameter_sets": make_layout("h"),
             
-            # Bias
-            "feedback": make_layout("g"), # Deprecate
-            "feedback_getset": make_layout("h"), # Deprecate
-            
+            # Bias            
             "bias": make_layout("g"),
             "bias_getset": make_layout("h"),
             
             # Feedback
-            "gains_line_edits": make_layout("h"),
-            "gains": make_layout("v"),
-            "gains_getset": make_layout("h"),
+            "feedback_line_edits": make_layout("h"),
+            "feedback": make_layout("v"),
+            "feedback_getset": make_layout("h"),
 
             # Speeds
             "speeds": make_layout("g"),
@@ -572,6 +572,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "coarse_horizontal": make_layout("g"),
             "approach_percentiles": make_layout("h"),
             "tip_prep": make_layout("g"),
+            "shaper_getset": make_layout("h"),
             
             # Processing
             "image_processing": make_layout("v"),
@@ -612,6 +613,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         new_frame_roi.addScaleHandle([1, 0], [0, 1])
         new_frame_roi.addRotateHandle([0.5, 0], [0.5, 0.5])
+        new_frame_roi.sigRegionChanged.connect(self.limit_roi_angle)
         
         return (piezo_roi, frame_roi, new_frame_roi)
 
@@ -824,7 +826,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         
         # Bias
-        [layouts["bias_getset"].addWidget(widget) for widget in [buttons["get_feedback_parameters"], buttons["set_feedback_parameters"], comboboxes["bias"]]]        
+        [layouts["bias_getset"].addWidget(widget) for widget in [buttons["get_bias_parameters"], buttons["set_bias_parameters"], comboboxes["bias"]]]        
         b_layout = layouts["bias"]
         [b_layout.addWidget(labels[name], 0, index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
         b_layout.addWidget(make_line("h", 1), 1, 0, 1, 3)
@@ -836,11 +838,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [b_layout.addWidget(line_edits[name], 4 + index, 2) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
         b_layout.addLayout(layouts["bias_getset"], 6, 0, 1, 3)
         
-        # Gains (will be called feedback)
-        [layouts["gains_line_edits"].addWidget(line_edits[name]) for name in ["I_fb", "p_gain", "t_const", "i_gain"]]
-        [layouts["gains_getset"].addWidget(widget) for widget in [buttons["get_gain_parameters"], buttons["set_gain_parameters"], comboboxes["feedback"]]]
-        layouts["gains"].addLayout(layouts["gains_line_edits"])
-        layouts["gains"].addLayout(layouts["gains_getset"])
+        # Feedback
+        [layouts["feedback_line_edits"].addWidget(line_edits[name]) for name in ["I_fb", "p_gain", "t_const", "i_gain"]]
+        [layouts["feedback_getset"].addWidget(widget) for widget in [buttons["get_feedback_parameters"], buttons["set_feedback_parameters"], comboboxes["feedback"]]]
+        layouts["feedback"].addLayout(layouts["feedback_line_edits"])
+        layouts["feedback"].addLayout(layouts["feedback_getset"])
 
         # Speeds
         [layouts["speeds_getset"].addWidget(widget) for widget in [buttons["get_speed_parameters"], buttons["set_speed_parameters"], comboboxes["speeds"]]]
@@ -870,10 +872,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         fg_layout.addLayout(layouts["frame_grid_getset"], 6, 0, 1, 5)
         
         # Tip prep
+        [layouts["shaper_getset"].addWidget(buttons[f"{letter}et_tip_shaper_parameters"]) for letter in ["g", "s"]]
         tp_layout = layouts["tip_prep"]
-        [tp_layout.addWidget(labels[name], 0, 2 * index, 1, 2) for index, name in enumerate(["pulse", "shape"])]
-        [tp_layout.addWidget(make_line("h", 1), 1, 2 * index, 1, 2) for index in range(2)]
-        [tp_layout.addWidget(widget, 2, index, 1, 1, align_center) for index, widget in enumerate([buttons["bias_pulse"], line_edits["pulse_voltage"], line_edits["pulse_duration"], buttons["tip_shape"]])]
+        [tp_layout.addWidget(widget, index, 0, 1, 2) for index, widget in enumerate([labels["pulse"], make_line("h", 1)])]
+        [tp_layout.addWidget(widget, index, 2, 1, 3) for index, widget in enumerate([labels["shape"], make_line("h", 1)])]
+        
+        tp_layout.addWidget(buttons["bias_pulse"], 3, 0, 3, 1, align_center)
+        tp_layout.addWidget(buttons["tip_shape"], 3, 4, 3, 1, align_center)
+        
+        [tp_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["pulse_voltage", "pulse_duration"])]
+        [tp_layout.addWidget(line_edits[name], 3 + index, 2) for index, name in enumerate(["poke_depth", "poke_voltage", "poke_time"])]
+        [tp_layout.addWidget(line_edits[name], 3 + index, 3) for index, name in enumerate(["lift_height", "lift_voltage", "lift_time"])]
+        tp_layout.addLayout(layouts["shaper_getset"], 6, 2, 1, 3)
         
         # Lockins
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
@@ -942,8 +952,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "tip_prep": SGB(title = "tip prep", tooltip = "Tip preparation tools"),
 
             "frame_grid": SGB(title = "frame / grid", tooltip = "Frame and grid parameters"),
-            "bias": SGB(title = "bias", tooltip = "Bias and current"),
-            "gains": SGB(title = "feedback", tooltip = "Feedback gains"),
+            "bias": SGB(title = "bias", tooltip = "Bias and ramp parameters"),
+            "feedback": SGB(title = "feedback", tooltip = "Feedback and gains"),
             "modulators": SGB(title = "modulators", tooltip = "Modulators"),
             "demodulators": SGB(title = "demodulators", tooltip = "Demodulators"),
 
@@ -953,7 +963,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
 
         # Set layouts for the groupboxes
-        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "gains", "speeds", "frame_grid", "tip_prep", "modulators", "demodulators", "experiment", "image_processing"]
+        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "modulators", "demodulators", "experiment", "image_processing"]
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
         # Make layouts of several groupboxes
@@ -961,7 +971,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["coarse_prep"].addLayout(layouts["coarse_control"])
         layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])
         
-        [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "gains", "speeds", "frame_grid"]]
+        [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
         [layouts["lockins"].addWidget(groupboxes[name]) for name in ["modulators", "demodulators"]]
 
         return groupboxes
@@ -1027,8 +1037,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     # 6: Interconnect interdependent widgets
     def interconnect(self) -> None:
+        self.line_edits["grid_pixels"].editingFinished.connect(self.set_pixels_to_multiple_of_16)
+        
         self.new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
-        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.height_width_aspect(name_0)) for name in ["frame_width", "frame_height", "frame_aspect"]]
+        [self.line_edits[name].editingFinished.connect(lambda name_0 = name:
+            self.height_width_aspect(name_0)) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
         [self.line_edits[name].editingFinished.connect(self.update_frame_from_fields) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle", "frame_aspect"]]
         
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]
@@ -1038,36 +1051,67 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.buttons["bg_linewise"].clicked.connect(lambda: self.background_mutex("linewise"))
         
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.update_reciprocals(name_0)) for name in ["nanonis_mod1_f", "nanonis_mod2_f", "mla_mod1_f", "nanonis_mod1_t", "nanonis_mod2_t", "mla_mod1_t"]]
-        
         return
 
-    def update_reciprocals(self, target: str = "mla_mod1_f"):
+    def set_pixels_to_multiple_of_16(self) -> None:
+        value = self.line_edits["grid_pixels"].getValue()
+        new_value = int(16 * round(value / 16))
+        
+        self.line_edits["grid_pixels"].setValue(new_value, edited_color = True)
+        
+        if bool(self.buttons["grid_aspect"].state_index):
+            grid_aspect = self.line_edits["grid_aspect"].getValue()
+            lines = int(grid_aspect * new_value)
+            self.line_edits["grid_lines"].setValue(lines, edited_color = True)
+        else:
+            lines = self.line_edits["grid_lines"].getValue()
+            grid_aspect = lines / new_value
+            self.line_edits["grid_aspect"].setValue(grid_aspect)        
+        return
+
+    def limit_roi_angle(self, roi) -> None:
+        angle = roi.angle()
+        new_angle = (angle + 180) % 360 - 180
+        
+        if angle != new_angle:
+            roi.blockSignals(True)
+            roi.setAngle(new_angle)
+            roi.blockSignals(False)
+        return
+
+    def update_reciprocals(self, target: str = "mla_mod1_f") -> None:
         match target:
             case "nanonis_mod1_f":
                 f_Hz = self.line_edits["nanonis_mod1_f"].getValue()
                 t_ms = 1000 / f_Hz
                 self.line_edits["nanonis_mod1_t"].setValue(t_ms)
+                self.line_edits["nanonis_mod1_t"].setEditedColor()
             case "nanonis_mod2_f":
                 f_Hz = self.line_edits["nanonis_mod2_f"].getValue()
                 t_ms = 1000 / f_Hz
                 self.line_edits["nanonis_mod2_t"].setValue(t_ms)
+                self.line_edits["nanonis_mod2_t"].setEditedColor()
             case "mla_mod1_f":
                 f_Hz = self.line_edits["mla_mod1_f"].getValue()
                 t_ms = 1000 / f_Hz
                 self.line_edits["mla_mod1_t"].setValue(t_ms)
+                self.line_edits["mla_mod1_t"].setEditedColor()
 
             case "nanonis_mod1_t":
                 t_ms = self.line_edits["nanonis_mod1_t"].getValue()
                 f_Hz = 1000 / t_ms
                 self.line_edits["nanonis_mod1_f"].setValue(f_Hz)
+                self.line_edits["nanonis_mod1_f"].setEditedColor()
             case "nanonis_mod2_t":
                 t_ms = self.line_edits["nanonis_mod2_t"].getValue()
                 f_Hz = 1000 / t_ms
                 self.line_edits["nanonis_mod2_f"].setValue(f_Hz)
+                self.line_edits["nanonis_mod2_f"].setEditedColor()
             case "mla_mod1_f":
                 t_ms = self.line_edits["mla_mod1_t"].getValue()
                 f_Hz = 1000 / t_ms
                 self.line_edits["mla_mod1_f"].setValue(f_Hz)
+                self.line_edits["mla_mod1_f"].setEditedColor()
         return
 
     def background_mutex(self, method: str = "none") -> None:
@@ -1087,10 +1131,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
 
     def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
-        [self.line_edits[name].blockSignals(True) for name in ["frame_width", "frame_height", "frame_aspect"]]
+        [self.line_edits[name].blockSignals(True) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
 
         match line_edit_name:
-
             case "frame_width":
                 frame_width = self.line_edits["frame_width"].getValue()
                 if not isinstance(frame_width, float) and not isinstance(frame_width, int): return
@@ -1100,36 +1143,30 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
                     if isinstance(frame_aspect, float) or isinstance(frame_aspect, int):
                         frame_height = frame_width * frame_aspect
-                        self.line_edits["frame_height"].setValue(frame_height)
-                        self.line_edits["frame_height"].setColor()
+                        self.line_edits["frame_height"].setValue(frame_height, edited_color = True)
                 else:
                     frame_height = self.line_edits["frame_height"].getValue()
 
-                    print(f"Frame height = {frame_height}")
-
                     if isinstance(frame_height, float) or isinstance(frame_height, int):
                         frame_aspect = frame_height / frame_width
-                        self.line_edits["frame_aspect"].setValue(frame_aspect)
-                        self.line_edits["frame_aspect"].setColor()
+                        self.line_edits["frame_aspect"].setValue(frame_aspect, edited_color = True)
 
             case "frame_height":
                 frame_height = self.line_edits["frame_height"].getValue()
                 if not isinstance(frame_height, float) and not isinstance(frame_height, int): return
 
-                if self.buttons["frame_aspect"].isChecked():
+                if bool(self.buttons["frame_aspect"].state_index):
                     frame_aspect = self.line_edits["frame_aspect"].getValue()
 
                     if isinstance(frame_aspect, float) or isinstance(frame_aspect, int):
                         frame_width = frame_height / frame_aspect
-                        self.line_edits["frame_width"].setValue(frame_width)
-                        self.line_edits["frame_width"].setColor()
+                        self.line_edits["frame_width"].setValue(frame_width, edited_color = True)
                 else:
                     frame_width = self.line_edits["frame_width"].getValue()
                     
                     if isinstance(frame_width, float) or isinstance(frame_width, int):
                         frame_aspect = frame_height / frame_width
-                        self.line_edits["frame_aspect"].setValue(frame_aspect)
-                        self.line_edits["frame_aspect"].setColor()
+                        self.line_edits["frame_aspect"].setValue(frame_aspect, edited_color = True)
 
             case "frame_aspect":
                 frame_aspect = self.line_edits["frame_aspect"].getValue()
@@ -1138,21 +1175,62 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                 frame_width = self.line_edits["frame_width"].getValue()
                 if isinstance(frame_width, float) or isinstance(frame_width, int):
                     frame_height = frame_width * frame_aspect
-                    self.line_edits["frame_height"].setValue(frame_height)
-                    self.line_edits["frame_height"].setColor()
+                    self.line_edits["frame_height"].setValue(frame_height, edited_color = True)
+
+            case "grid_pixels":
+                pixels = self.line_edits["grid_pixels"].getValue()
+                if not isinstance(pixels, float) and not isinstance(pixels, int): return
+
+                if bool(self.buttons["grid_aspect"].state_index):
+                    grid_aspect = self.line_edits["grid_aspect"].getValue()
+
+                    if isinstance(grid_aspect, float) or isinstance(grid_aspect, int):
+                        lines = int(pixels * grid_aspect)
+                        self.line_edits["grid_lines"].setValue(lines, edited_color = True)
+                else:
+                    lines = self.line_edits["grid_lines"].getValue()
+
+                    if isinstance(lines, float) or isinstance(lines, int):
+                        grid_aspect = lines / pixels
+                        self.line_edits["grid_aspect"].setValue(grid_aspect, edited_color = True)
+
+            case "grid_lines":
+                lines = self.line_edits["grid_lines"].getValue()
+                if not isinstance(lines, float) and not isinstance(lines, int): return
+
+                if bool(self.buttons["grid_aspect"].state_index):
+                    grid_aspect = self.line_edits["grid_aspect"].getValue()
+
+                    if isinstance(grid_aspect, float) or isinstance(frame_aspect, int):
+                        pixels = int(lines / grid_aspect)
+                        self.line_edits["grid_pixels"].setValue(pixels, edited_color = True)
+                else:
+                    pixels = self.line_edits["grid_pixels"].getValue()
+                    
+                    if isinstance(pixels, float) or isinstance(pixels, int):
+                        grid_aspect = lines / pixels
+                        self.line_edits["grid_aspect"].setValue(grid_aspect, edited_color = True)
+
+            case "grid_aspect":
+                grid_aspect = self.line_edits["grid_aspect"].getValue()
+                if not isinstance(grid_aspect, float) and not isinstance(grid_aspect, int): return
+
+                pixels = self.line_edits["grid_pixels"].getValue()
+                if isinstance(pixels, float) or isinstance(pixels, int):
+                    lines = int(pixels * grid_aspect)
+                    self.line_edits["grid_lines"].setValue(lines, edited_color = True)
 
             case _:
                 pass
 
-        [self.line_edits[name].blockSignals(False) for name in ["frame_width", "frame_height", "frame_aspect"]]
+        [self.line_edits[name].blockSignals(False) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
         return
 
     def update_fields_from_frame_change(self) -> None:
         [self.line_edits[name].blockSignals(True) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
         
         new_width = self.new_frame_roi.size().x()
-        self.line_edits["frame_width"].setValue(new_width)
-        self.line_edits["frame_width"].setColor()
+        self.line_edits["frame_width"].setValue(new_width, edited_color = True)
         
         if bool(self.buttons["frame_aspect"].state_index):
             new_height = new_width * self.line_edits["frame_aspect"].getValue()
@@ -1162,24 +1240,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             self.new_frame_roi.blockSignals(False)
         else:
             new_height = self.new_frame_roi.size().y()
-            self.line_edits["frame_aspect"].setValue(new_height / new_width)
-            self.line_edits["frame_aspect"].setColor()
+            self.line_edits["frame_aspect"].setValue(new_height / new_width, edited_color = True)
         
-        self.line_edits["frame_height"].setValue(new_height)
-        self.line_edits["frame_height"].setColor()
+        self.line_edits["frame_height"].setValue(new_height, edited_color = True)
                 
         bounding_rect = self.new_frame_roi.boundingRect()
         local_center = bounding_rect.center()
         abs_center = self.new_frame_roi.mapToParent(local_center)
         
-        self.line_edits["frame_x"].setValue(abs_center.x())
-        self.line_edits["frame_y"].setValue(abs_center.y())
+        self.line_edits["frame_x"].setValue(abs_center.x(), edited_color = True)
+        self.line_edits["frame_y"].setValue(abs_center.y(), edited_color = True)
         
-        self.line_edits["frame_x"].setColor()
-        self.line_edits["frame_y"].setColor()
-        
-        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle())
-        self.line_edits["frame_angle"].setColor()
+        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle(), edited_color = True)
         
         [self.line_edits[name].blockSignals(False) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
         return
@@ -1187,12 +1259,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def update_frame_from_fields(self) -> None:
         self.new_frame_roi.blockSignals(True)
         
-        new_width = self.line_edits["frame_width"].getValue()
-        new_height = self.line_edits["frame_height"].getValue()
-        new_angle = self.line_edits["frame_angle"].getValue()
-        new_x = self.line_edits["frame_x"].getValue()
-        new_y = self.line_edits["frame_y"].getValue()
-        
+        [new_width, new_height, new_angle, new_x, new_y] = [self.line_edits[parameter].getValue() for parameter in ["frame_width", "frame_height", "frame_angle", "frame_x", "frame_y"]]
+
         self.new_frame_roi.setPos([0, 0])
         self.new_frame_roi.setSize([new_width, new_height])
         self.new_frame_roi.setAngle(-new_angle)
@@ -1202,9 +1270,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         abs_center = self.new_frame_roi.mapToParent(local_center)
 
         self.new_frame_roi.setPos(new_x - abs_center.x(), new_y - abs_center.y())
-        
-        self.new_frame_roi.blockSignals(False)        
-        
+        self.new_frame_roi.blockSignals(False)
         return
 
     def gains_changed(self, line_edit_name: str = "p_gain") -> None:
@@ -1215,23 +1281,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                 
                 p_gain = self.line_edits["p_gain"].getValue()
                 if not isinstance(i_gain, float) and not isinstance(i_gain, int): return
-                
-                print(p_gain, i_gain)
             case _:
                 pass
         
         return
 
-
-
-    # Helper function to read parameters from the gui
-    def read(self, parameter_type: str = "frame") -> dict:
-        
-        return
-
-
-
-if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
-    logic_app = ScantelligentGUI()
-    sys.exit(app.exec())

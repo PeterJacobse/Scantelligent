@@ -14,34 +14,21 @@ class ParameterManager(QtCore.QObject):
     def get(self, parameter_type: str = "frame") -> None:
         sct = self.scantelligent
         
-        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"]:
+        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain", "tip_shaper"]:
             if not hasattr(sct, "nanonis"):
                 sct.logprint("Cannot get parameters without a Nanonis connection", message_type = "error")
                 return
 
         match parameter_type:
-
-            case "feedback":
-                sct.nanonis.feedback_update(unlink = True)
-
-            case "frame":
-                sct.nanonis.frame_update(unlink = True, update_new_frame = True)
-
-            case "grid":
-                sct.nanonis.grid_update(unlink = True)
-
-            case "speed" | "speeds":
-                sct.nanonis.speeds_update(unlink = True)
-
-            case "gain":
-                sct.nanonis.gains_update(unlink = True)
-            
-            case "lockin":
-                sct.nanonis.lockin_update(unlink = True)
-            
-            case _:
-                pass
-
+            case "bias": sct.nanonis.bias_update(unlink = True)
+            case "feedback": sct.nanonis.feedback_update(unlink = True)
+            case "frame": sct.nanonis.frame_update(unlink = True, update_new_frame = True)
+            case "grid": sct.nanonis.grid_update(unlink = True)
+            case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)
+            case "gain": sct.nanonis.gains_update(unlink = True)            
+            case "lockin": sct.nanonis.lockin_update(unlink = True)
+            case "tip_shaper": sct.nanonis.tip_shaper_update(unlink = True)
+            case _: pass
         return
 
     def set(self, parameter_type: str = "frame") -> None:
@@ -54,14 +41,21 @@ class ParameterManager(QtCore.QObject):
                 sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
                 return
 
-
-
         match parameter_type:
+            case "bias":
+                parameters = {"dict_name": "bias"}
+                
+                for parameter in ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
+                    quantity = parameter.split()[0]
+                    val = sct.gui.line_edits[quantity].getValue()
+                    if isinstance(val, int | float): parameters.update({parameter: val})
+
+                sct.nanonis.bias_update(parameters, unlink = True)
 
             case "feedback":
                 parameters = {"dict_name": "feedback"}
                 
-                for parameter in ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
+                for parameter in ["I_fb (pA)", "p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]:
                     quantity = parameter.split()[0]
                     val = sct.gui.line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
@@ -79,17 +73,20 @@ class ParameterManager(QtCore.QObject):
             case "grid":
                 [pixels, lines] = [sct.gui.line_edits[tag].getValue() for tag in ["grid_pixels", "grid_lines"]]
                 
-                parameters = {"dict_name": "grid", "pixels": pixels, "lines": lines}
+                offset = [sct.gui.line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
+                scan_range = [sct.gui.line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
+                angle = sct.gui.line_edits["frame_angle"].getValue()
+                                
+                parameters = {"dict_name": "grid", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle, "pixels": pixels, "lines": lines}
                 sct.nanonis.grid_update(parameters, unlink = True)
 
             case "speed" | "speeds":
-                sct.nanonis.speeds_update(unlink = True)
-
-            case "gain":
-                sct.nanonis.gains_update(unlink = True)
+                [v_fwd_nm_per_s, v_bwd_nm_per_s, v_tip_nm_per_s] = [sct.gui.line_edits[tag].getValue() for tag in ["v_fwd", "v_bwd", "v_tip"]]
+                
+                parameters = {"dict_name": "speeds", "v_fwd (nm/s)": v_fwd_nm_per_s, "v_bwd (nm/s)": v_bwd_nm_per_s, "v_xy (nm/s)": v_tip_nm_per_s, "v_tip (nm/s)": v_tip_nm_per_s}
+                sct.nanonis.speeds_update(parameters, unlink = True)
             
             case "lockin":
-                sct.logprint("Setting mod")
                 [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{i + 1}"].state_index) for i in range(2)]
                 mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
                 [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
@@ -102,6 +99,9 @@ class ParameterManager(QtCore.QObject):
                               "mla_mod1": {"on": mla_mod1_on, "frequency (Hz)": mla1_f, "amplitude (mV)": mla1_mV, "phase (deg)": mla1_phi}
                               }
                 sct.nanonis.lockin_update(parameters, unlink = True)
+            
+            case "tip_shaper":
+                sct.nanonis.tip_shaper_update(unlink = True)
             
             case _:
                 pass
@@ -254,8 +254,7 @@ class ParameterManager(QtCore.QObject):
                                                                                  [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
 
             case "feedback":
-                [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
-                                                                                 [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
+                [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "i_gain", "t_const"], [parameters.get(name) for name in ["p_gain (pm)", "i_gain (nm/s)", "t_const (us)"]])]
                 line_edits["I_fb"].setValue(parameters.get("I_fb (pA)"))
 
             case "frame":
@@ -319,6 +318,8 @@ class ParameterManager(QtCore.QObject):
                     new_frame_roi.blockSignals(False)
 
             case "grid":
+                sct.user.frames[0].update(parameters)
+
                 [pixels, lines, pixel_width, pixel_height] = [parameters.get(parameter, None) for parameter in ["pixels", "lines", "pixel_width (nm)", "pixel_height (nm)"]]
                 aspect_ratio = lines / pixels
 
@@ -332,7 +333,29 @@ class ParameterManager(QtCore.QObject):
                 aspect_ratio = h_nm / w_nm
 
                 # Update the fields in the GUI
-                [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]                
+                [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
+                
+                # Update the frame 'roi' in the ImageView
+                new_frame_roi = sct.gui.new_frame_roi
+                try: sct.gui.image_view.view.removeItem(new_frame_roi)
+                except: pass
+                
+                if sct.status["view"] == "nanonis":
+                    new_frame_roi.blockSignals(True)
+                    
+                    new_frame_roi.setSize([w_nm, h_nm])
+                    new_frame_roi.setPos([0, 0])
+                    new_frame_roi.setAngle(angle = -angle_deg)
+
+                    sct.gui.image_view.addItem(new_frame_roi)
+                    
+                    bounding_rect = new_frame_roi.boundingRect()
+                    local_center = bounding_rect.center()
+                    abs_center = new_frame_roi.mapToParent(local_center)
+                    
+                    new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                    
+                    new_frame_roi.blockSignals(False)
 
             case "signal":
                 if "Current (A)" in parameters.keys():
@@ -384,7 +407,13 @@ class ParameterManager(QtCore.QObject):
             case "speed" | "speeds":
                 [v_fwd, v_bwd, v_tip] = [parameters.get(quantity) for quantity in ["v_fwd (nm/s)", "v_bwd (nm/s)", "v_tip (nm/s)"]]
                 [line_edits[name].setValue(value) for name, value in zip(["v_fwd", "v_bwd", "v_tip"], [v_fwd, v_bwd, v_tip])]
-                
+            
+            case "tip_shaper":
+                [poke_depth, poke_time, poke_bias, lift_height, lift_time, lift_bias] = [parameters.get(quantity) for quantity in
+                                                                                         ["poke_depth (nm)", "poke_time (s)", "poke_bias (V)", "lift_height (nm)", "lift_time (s)", "lift_bias (V)"]]
+                [line_edits[name].setValue(value) for name, value in zip(["poke_depth", "poke_time", "poke_voltage", "lift_height", "lift_time", "lift_voltage"],
+                                                                         [poke_depth, poke_time, poke_bias, lift_height, lift_time, lift_bias])]
+            
             case _:
                 pass
 

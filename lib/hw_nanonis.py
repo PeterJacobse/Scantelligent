@@ -112,6 +112,7 @@ class NanonisHardware:
             "get_STS_advanced_properties": make_header('BiasSpectr.AdvPropsGet', body_size = 0),
             "get_STS_limits": make_header('BiasSpectr.LimitsGet', body_size = 0),
             "get_STS_timing": make_header('BiasSpectr.TimingGet', body_size = 0),
+            "get_STS_channels": make_header('BiasSpectr.ChsGet', body_size = 0),
             
             # Folme
             "get_xy": make_header('FolMe.XYPosGet', body_size = 4),
@@ -347,7 +348,7 @@ class NanonisHardware:
         return
 
     # BiasSpectr
-    def get_spectrum(self, timeout_s: int = 20) -> dict:
+    def get_spectrum(self, timeout_s: int = 600) -> dict:
         """
         Starts a bias spectroscopy in the Bias Spectroscopy module.
         
@@ -377,20 +378,23 @@ class NanonisHardware:
                       BiasSpectr.PropsGet function
 
         """
+        command = self.headers["open_spectroscopy"]
+        self.send_command(command)
+        self.receive_response(0)
                 
         command = self.headers["get_spectrum"] + self.headers["True"] + "0000"
-        print(command)
+        timeout_old = self.s.gettimeout()
         
-        timeout_old = self.s.timeout
-        self.s.settimeout(timeout_s)
-        self.send_command(command)
         try:
+            self.s.settimeout(timeout_s)
+            self.send_command(command)
             response = self.receive_response()
-            self.s.settimeout(timeout_old)
         except TimeoutError:
             print(f"Spectroscopy timed out after waiting {timeout_s} seconds")
+        finally:
             self.s.settimeout(timeout_old)
-            return
+        
+        return
         
         number_of_channels = self.conv.hex_to_int32(response[4 : 8])
         
@@ -466,6 +470,10 @@ class NanonisHardware:
         
         parameters.update({"limits (V)": [start_value, end_value]})
         
+        # Channel indices
+        channel_indices = self.get_STS_channels()
+        parameters.update({"channel_indices": channel_indices})
+        
         # Timing
         command = self.headers["get_STS_timing"]
         self.send_command(command)
@@ -517,7 +525,7 @@ class NanonisHardware:
         
         return {"channels": channels, "parameters": parameters, "fixed_parameters": fixed_parameters}
     
-    def append_STS_properties_new(self, response):
+    def append_STS_properties_new(self, response: str) -> dict:
         idx = 16
         parameters = []
         num_parameters = self.conv.hex_to_int32(response[idx : idx + 4])
@@ -542,6 +550,35 @@ class NanonisHardware:
         save_dialog = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
 
         return {"parameters": parameters, "fixed_parameters": fixed_parameters, "autosave": autosave, "save_dialog": save_dialog}
+
+    def get_STS_channels(self) -> list:
+        """
+        Returns the list of recorded channels in Bias Spectroscopy
+
+        Returns
+        -------
+        channel_indexes : The indexes of recorded channels. The indexes are 
+                          comprised between 0 and 23 for the 24 signals 
+                          assigned in the signals manager.
+                          To get the signal name and its corresponding index in
+                          the list of 128 available signals in the Nanonis
+                          Controller, use the Signals.InSlotsGet function
+
+        """
+        command = self.headers["get_STS_channels"]
+        self.send_command(command)        
+        response = self.receive_response()
+                
+        number_of_channels = self.conv.hex_to_int32(response[0 : 4])
+        
+        idx = 4
+        channel_indices = []
+        for i in range(number_of_channels):
+            channel_index = self.conv.hex_to_int32(response[idx : idx + 4])
+            channel_indices.append(channel_index)
+            idx += 4
+        
+        return channel_indices
 
 
 
@@ -939,7 +976,7 @@ class NanonisHardware:
         self.receive_response(0)
         return
 
-    def get_scan_props(self) -> dict:
+    def get_scan_properties(self) -> dict:
         command = self.headers["get_scan_props"]        
         
         self.send_command(command)
@@ -1197,12 +1234,70 @@ class NanonisHardware:
         return xyz_nm
 
     # Tip shaper
-    def shape_tip(self, wait: bool = True, timeout = 60000) -> None:
-        command = self.headers["shape_tip"] + self.headers[str(wait)] + self.conv.to_hex(timeout, 4)
+    def get_tip_shaper(self) -> dict:
+        """
+        Returns the configuration of the tip shaper procedure.
+        """
+        command = self.headers["get_tip_shaper"]
         
         self.send_command(command)
+        response = self.receive_response(44)
+        
+        chunks = [response[index : index + 4] for index in range(0, len(response), 4)]
+        
+        switch_off_delay_s = self.conv.hex_to_float32(chunks[0])
+        change_bias = bool(self.conv.hex_to_uint32(chunks[1]))
+        
+        [poke_bias_V, poke_depth_m, poke_time_s, lift_bias_V, bias_settling_time_s, lift_height_m, lift_time_s, end_wait_time_s] = [self.conv.hex_to_float32(chunks[i + 2]) for i in range(8)]
+        poke_depth_nm = 1E9 * poke_depth_m
+        lift_height_nm = 1E9 * lift_height_m
+        
+        restore_feedback = bool(self.conv.hex_to_uint32(chunks[-1]))
+        
+        parameter_dict = {"switch_off_delay (s)": switch_off_delay_s, "change_bias": change_bias, "poke_bias (V)": poke_bias_V, "poke_depth (nm)": poke_depth_nm,
+                          "poke_time (s)": poke_time_s, "lift_bias (V)": lift_bias_V, "bias_settling_time (s)": bias_settling_time_s, "lift_height (nm)": lift_height_nm,
+                          "lift_time (s)": lift_time_s, "end_wait_time (s)": end_wait_time_s, "restore_feedback": restore_feedback}
+        
+        return parameter_dict
+
+    def set_tip_shaper(self, parameters: dict) -> dict:
+        old_parameters = self.get_tip_shaper()
+        
+        for key, value in old_parameters.items():
+            if key not in parameters.keys(): parameters.update({key: value})
+        
+        command = self.headers["set_tip_shaper"]
+        
+        command += self.conv.float32_to_hex(parameters["switch_off_delay (s)"])
+        command += self.conv.to_hex(int(parameters["change_bias"]), 4)
+        command += self.conv.float32_to_hex(parameters["poke_bias (V)"])
+        command += self.conv.float32_to_hex(parameters["poke_depth (nm)"] * 1E-9)
+        command += self.conv.float32_to_hex(parameters["poke_time (s)"])
+        command += self.conv.float32_to_hex(parameters["lift_bias (V)"])
+        command += self.conv.float32_to_hex(parameters["bias_settling_time (s)"])
+        command += self.conv.float32_to_hex(parameters["lift_height (nm)"] * 1E-9)
+        command += self.conv.float32_to_hex(parameters["lift_time (s)"])
+        command += self.conv.float32_to_hex(parameters["end_wait_time (s)"])
+        command += self.conv.to_hex(int(parameters["restore_feedback"]), 4)
+        
+        self.send_command(command)        
         self.receive_response(0)
         
+        return parameters
+
+    def shape_tip(self, wait: bool = True, timeout_s = 60) -> None:
+        timeout_ms = int(timeout_s * 1000)
+        command = self.headers["shape_tip"] + self.headers[str(wait)] + self.conv.to_hex(timeout_ms, 4)
+        
+        timeout_old = self.s.gettimeout()
+        try:
+            self.s.settimeout(timeout_s)
+        
+            self.send_command(command)
+            self.receive_response(0)
+        finally:
+            self.s.settimeout(timeout_old)
+
         return
 
     # Lock-in

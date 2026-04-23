@@ -509,24 +509,39 @@ class STWidgets:
             self.block = kwargs.pop("block", False)
             self.base_color = kwargs.pop("base_color", "#101010")
             self.edited_color = kwargs.pop("edited_color", None)
+            self.warning_color = kwargs.pop("warning_color", None)
             
             super().__init__(parent)
             
             self.setDefaults()
             if not self.block: self.editingFinished.connect(self.addUnit)
-            if isinstance(self.edited_color, str): self.editingFinished.connect(self.setColor)
+            if isinstance(self.edited_color, str): self.editingFinished.connect(lambda: self.setColor(self.edited_color))
+            self.old_tooltip = self.toolTip()
+
+        def setColor(self, color: str) -> None:
+            self.setStyleSheet("QLineEdit{ background-color: " + color + " }")
+            return
 
         def resetColor(self) -> None:
-            self.setStyleSheet("QLineEdit{ background-color: " + self.base_color + " }")
-            return
-        
-        def setColor(self) -> None:
-            self.setStyleSheet("QLineEdit{ background-color: " + self.edited_color + " }")
+            self.setColor(self.base_color)
             return
 
-        def setEditedColor(self, value: str) -> None:
-            if isinstance(value, str): self.edited_color = value
-            self.editingFinished.connect(self.setColor)
+        def setEditedColor(self, value = None) -> None:
+            if isinstance(value, str):
+                self.edited_color = value
+                self.editingFinished.connect(lambda: self.setColor(self.edited_color))
+            return
+
+        def setWarning(self, tooltip: str = "") -> None:
+            if isinstance(self.warning_color, str):
+                self.setColor(self.warning_color)
+            self.old_tooltip = self.toolTip()
+            self.setToolTip(tooltip)
+            return
+
+        def resetWarning(self) -> None:
+            self.setToolTip(self.old_tooltip)
+            self.resetColor()
             return
 
         def setDefaults(self) -> None:
@@ -559,7 +574,7 @@ class STWidgets:
                 self.setToolTip(new_tooltip)
             except:
                 pass
-
+            
             return
 
         def setDigits(self, digits: int) -> None:
@@ -613,7 +628,7 @@ class STWidgets:
 
             return entered_text
 
-        def setValue(self, value) -> None:
+        def setValue(self, value, edited_color: bool = False) -> None:
             # Method for programatically setting a value or str
             if isinstance(value, int) or isinstance(value, float):
                 number = value
@@ -629,7 +644,9 @@ class STWidgets:
             
             else:
                 self.setText(f"{value}")
-            self.resetColor()
+            
+            if edited_color: self.setColor(self.edited_color)
+            else: self.resetColor()
             return
 
         def wheelEvent(self, event) -> None:

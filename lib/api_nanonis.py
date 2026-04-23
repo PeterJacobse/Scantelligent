@@ -52,58 +52,62 @@ class NanonisAPI(QtCore.QObject):
         self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
         return f"Nanonis status: {self.status}"
 
-    def initialize(self, unlink: bool = True) -> tuple[dict, bool | str]:
-        return self.nanonis_update(unlink = unlink)
+    def nanonis_update(self, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:
+        return self.initialize(unlink = unlink, verbose = verbose)
 
-    def nanonis_update(self, unlink: bool = True) -> tuple[dict, bool | str]:
+    def initialize(self, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         parameters = {"dict_name": "nanonis_parameters"}
 
         try:
             if not self.status == "running": self.link()
-            self.logprint("nanonis.nanonis_update()", message_type = "code")
+            self.logprint("nanonis.initialize()", message_type = "code")
 
-            (session_path, error) = self.session_path_update() # Sends piezo range data with "dict_name": "piezo_range"
+            (session_path, error) = self.session_path_update(verbose = verbose) # Sends piezo range data with "dict_name": "piezo_range"
             if error: raise Exception(error)
             else: parameters.update({session_path.get("dict_name"): session_path})
             
-            (piezo_range, error) = self.piezo_range_update() # Sends piezo range data with "dict_name": "piezo_range"
+            (piezo_range, error) = self.piezo_range_update(verbose = verbose) # Sends piezo range data with "dict_name": "piezo_range"
             if error: raise Exception(error)
             else: parameters.update({piezo_range.get("dict_name"): piezo_range})
             
-            (coarse_parameters, error) = self.coarse_parameters_update() # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            (coarse_parameters, error) = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error: pass # Not useful to raise this error because the simulator does not have motor control
             else: parameters.update({coarse_parameters.get("dict_name"): coarse_parameters})
             
-            (lockin_parameters, error) = self.lockin_update() # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            (lockin_parameters, error) = self.lockin_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error: raise Exception(error)
             else: parameters.update({lockin_parameters.get("dict_name"): lockin_parameters})
             
-            (tip_status, error) = self.tip_update() # Sends tip status, position and current data with "dict_name": "tip_status"
+            (tip_status, error) = self.tip_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
             else: parameters.update({tip_status.get("dict_name"): tip_status})
-            
-            (frame, error) = self.frame_update(update_new_frame = True) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
+
+            (tip_shaper, error) = self.tip_shaper_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
+            if error: raise Exception(error)
+            else: parameters.update({tip_shaper.get("dict_name"): tip_shaper})
+
+            (frame, error) = self.frame_update(update_new_frame = True, verbose = verbose) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
             if error: raise Exception(error)
             else: parameters.update({frame.get("dict_name"): frame})
-            
-            (gains, error) = self.gains_update() # Sends gain parameters with "dict_name": "gains"
+
+            (bias, error) = self.bias_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters.update({gains.get("dict_name"): gains})
+            else: parameters.update({bias.get("dict_name"): bias})
             
-            (speeds, error) = self.speeds_update() # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
+            (feedback, error) = self.feedback_update(verbose = verbose)
+            if error: raise Exception(error)
+            else: parameters.update({feedback.get("dict_name"): feedback})
+            
+            (speeds, error) = self.speeds_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
             if error: raise Exception(error)
             else: parameters.update({speeds.get("dict_name"): speeds})
             
-            (feedback_parameters, error) = self.feedback_update() # Sends scan parameters like voltage and current (parent of self.bias_update())
-            if error: raise Exception(error)
-            else: parameters.update({feedback_parameters.get("dict_name"): feedback_parameters})
-            
-            (grid, error) = self.grid_update() # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid" (parent of self.frame_update())
+            (grid, error) = self.grid_update(verbose = verbose) # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid" (parent of self.frame_update())
             if error: raise Exception(error)
             else: parameters.update({grid.get("dict_name"): grid})
             
-            (scan_metadata, error) = self.scan_metadata_update() # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
+            (scan_metadata, error) = self.scan_metadata_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
             if error: raise Exception(error)
             else: parameters.update({scan_metadata.get("dict_name"): scan_metadata})
 
@@ -199,6 +203,7 @@ class NanonisAPI(QtCore.QObject):
             
             session_path.update({"path": nhw.get_path()})
             self.parameters.emit(session_path)
+            if verbose: self.logprint(f"{session_path}", message_type = "result")
         
         except Exception as e: error = e
         finally:
@@ -223,58 +228,13 @@ class NanonisAPI(QtCore.QObject):
                 "x_range (nm)": piezo_range[0], "y_range (nm)": piezo_range[1], "z_range (nm)": piezo_range[2]
             })
             self.parameters.emit(piezo_range_dict)
+            if verbose: self.logprint(f"{piezo_range_dict}", message_type = "result")
 
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
 
         return (piezo_range_dict, error)
-
-    def scan_metadata_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        """
-        get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
-        """
-        # Initalize outputs
-        scan_metadata = None
-        error = False
-        nhw = self.nanonis_hardware
-
-        # Set up the TCP connection and get grid dat
-        try:
-            if verbose:
-                if len(parameters) > 0: self.logprint(f"nanonis.scan_metadata_update({parameters})", "code")
-                else: self.logprint(f"nanonis.scan_metadata_update()", "code")
-            if not self.status == "running": self.link()
-            
-            props = nhw.get_scan_props()
-            buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
-            
-            if "channel_indices" in parameters.keys():
-                indices = parameters["channel_indices"]
-                if isinstance(indices, list) and len(indices) > 0 and isinstance(indices[0], int):
-                    nhw.set_scan_buffer(channel_indices = indices)
-            
-            channel_indices = buffer.get("channel_indices")
-            
-            if nhw.version > 14000: # Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
-                sig_in_slots = nhw.get_signals_in_slots()
-                signal_names = sig_in_slots["names"]
-                signal_indices = sig_in_slots["indices"]
-            else:
-                signal_names = nhw.get_signal_names()
-            
-            signal_dict = {signal_name: index for index, signal_name in enumerate(signal_names)} # Signal_dict is a dict of all signals and their corresponding indices
-            channel_dict = {signal_names[index]: index for index in channel_indices} # Channel_dict is the subset of signals that are actively recorded in the scan
-
-            scan_metadata = props | {"channel_dict": channel_dict, "signal_dict": signal_dict, "dict_name": "scan_metadata"}
-            
-            self.parameters.emit(scan_metadata)
-
-        except Exception as e: error = e
-        finally:
-            if unlink: self.unlink()
-
-        return (scan_metadata, error)
 
     def scan_update(self, channel: int | str, backward: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, bool | str]:
         # Initalize outputs
@@ -346,6 +306,7 @@ class NanonisAPI(QtCore.QObject):
                     parameter_values.update({parameter_name: "not found"})
             
             self.parameters.emit(parameter_values)
+            if verbose: self.logprint(f"{parameter_values}", message_type = "result")
         
         except Exception as e: error = f"Unable to retrieve the requested parameters. {e}"
         finally:
@@ -356,7 +317,7 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Update methods (Gives updates on all parameters and updates those parameters given)
-    def tip_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def tip_update(self, parameters: dict = {}, unlink: bool = False, verbose: int = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it
         """
@@ -417,6 +378,7 @@ class NanonisAPI(QtCore.QObject):
             }
             
             self.parameters.emit(tip_status)
+            if verbose and len(parameters) < 1: self.logprint(f"{tip_status}", message_type = "result")
 
         except Exception as e: error = e
         finally:
@@ -448,6 +410,7 @@ class NanonisAPI(QtCore.QObject):
             if "V_motor (V)" in parameters.keys() or "f_motor (Hz)" in parameters.keys(): nhw.set_motor_f_A(motor_dict)
             
             self.parameters.emit(motor_dict)
+            if verbose and len(parameters) < 1: self.logprint(f"{motor_dict}", message_type = "result")
 
         except Exception as e: error = e            
         finally:
@@ -460,14 +423,13 @@ class NanonisAPI(QtCore.QObject):
         Function to get and set speed parameters from Nanonis
         """
         # Initalize outputs
-        coarse_parameters = False
         error = False
+        speed_parameters = {"dict_name": "speeds"}
         nhw = self.nanonis_hardware
         
         # Extract numbers from parameters input
         [v_xy_nm_per_s, v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param] = [parameters.get(key, None) for key in ["v_xy (nm/s)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "lock_v_or_t"]]
 
-        # Set up the TCP connection and get
         try:
             if verbose:
                 if len(parameters) > 0: self.logprint(f"nanonis.scan_speeds_update({parameters})", "code")
@@ -480,57 +442,76 @@ class NanonisAPI(QtCore.QObject):
             if len(new_speed_dict) > 0: nhw.set_v_scan(new_speed_dict) # Send
             
             speed_dict = nhw.get_v_scan() # Request the (updated) speeds from Nanonis
+            speed_parameters.update(speed_dict)
 
             # Tip speed
             v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
+            speed_parameters.update({"v_xy (nm/s)": v_xy_nm_per_s, "v_tip (nm/s)": v_xy_nm_per_s})
             
-            parameters = speed_dict | {"dict_name": "speeds", "v_xy (nm/s)": v_xy_nm_per_s, "v_tip (nm/s)": v_xy_nm_per_s,
-            }
-            
-            self.parameters.emit(parameters)
+            self.parameters.emit(speed_parameters)
+            if verbose and len(parameters) < 1: self.logprint(f"{speed_parameters}", message_type = "result")
 
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
 
-        return (parameters, error)
+        return (speed_parameters, error)
 
+    def tip_shaper_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        error = False
+        new_parameters = {}
+        nhw = self.nanonis_hardware
+        
+        try:
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.tip_shaper_update({parameters})", "code")
+                else: self.logprint(f"nanonis.tip_shaper_update()", "code")
+            if not self.status == "running": self.link()
+            
+            new_parameters = {"dict_name": "tip_shaper"} | nhw.set_tip_shaper(parameters)
 
+            self.parameters.emit(new_parameters)
+            if verbose and len(parameters) < 1: self.logprint(f"{new_parameters}", message_type = "result")
 
-    # To do: break this up in scan_parameters, gains, scan_speeds
-    def feedback_update(self, parameters: dict = {}, unlink: bool = False) -> tuple[dict, bool | str]:
-        """
-        Function to get and set parameters from Nanonis
-        """
-        # Initalize outputs
+        except Exception as e: error = e
+        finally:
+            if unlink: self.unlink()
+
+        return (new_parameters, error)
+
+    def feedback_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         nhw = self.nanonis_hardware
+        feedback_dict = {"dict_name": "feedback"}
         
         # Extract numbers from parameters input
         I_fb_pA = parameters.get("I_fb (pA)", None)
 
-        # Set up the TCP connection and get
         try:
-            self.logprint(f"nanonis.feedback_update({parameters})", "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.feedback_update({parameters})", "code")
+                else: self.logprint(f"nanonis.feedback_update()", "code")
             if not self.status == "running": self.link()
             
-            # Bias voltage
-            (bias_dict, error) = self.bias_update(parameters, unlink = False)
+            # Gains
+            (gains_dict, error) = self.gains_update(parameters, unlink = False, verbose = False)
 
             # Feedback current
             if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
             else: I_fb_pA = nhw.get_I_fb_pA()
 
-            bias_dict.pop("dict_name")
-            parameters = {"dict_name": "feedback", "I_fb (pA)": I_fb_pA} | bias_dict
+            gains_dict.pop("dict_name")
+            feedback_dict.update(gains_dict)
+            feedback_dict.update({"I_fb (pA)": I_fb_pA})
             
-            self.parameters.emit(parameters)
+            self.parameters.emit(feedback_dict)
+            if verbose and len(parameters) < 1: self.logprint(f"{feedback_dict}", message_type = "result")
 
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
 
-        return (parameters, error)
+        return (feedback_dict, error)
 
     def gains_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """
@@ -559,6 +540,7 @@ class NanonisAPI(QtCore.QObject):
 
             gains_dict.update({"dict_name": "gains"})
             self.parameters.emit(gains_dict)
+            if verbose and len(parameters) < 1: self.logprint(f"{gains_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:
@@ -615,7 +597,8 @@ class NanonisAPI(QtCore.QObject):
 
             frame.update({"dict_name": "frame"})
             self.parameters.emit(frame)
-            
+            if verbose and len(parameters) < 1: self.logprint(f"{frame}", message_type = "result")
+
             if update_new_frame:
                 frame.update({"dict_name": "new_frame"})
                 self.parameters.emit(frame)
@@ -631,7 +614,7 @@ class NanonisAPI(QtCore.QObject):
         Function to get and set grid properties
         """
         # Initalize outputs
-        grid = None
+        grid = {}
         error = False
         nhw = self.nanonis_hardware
 
@@ -640,19 +623,24 @@ class NanonisAPI(QtCore.QObject):
                 if len(parameters) > 0: self.logprint(f"nanonis.grid_update({parameters})", "code")
                 else: self.logprint(f"nanonis.grid_update()", "code")
             if not self.status == "running": self.link()
-            
+
+            # Set the grid if requested
+            if "pixels" in parameters.keys() and "lines" in parameters.keys(): nhw.set_scan_buffer(pixels = parameters["pixels"], lines = parameters["lines"])
+
             # Get the frame and buffer
             frame = nhw.get_scan_frame_nm()
             buffer = nhw.get_scan_buffer()
+            
+            # Set the frame if requested
+            for key, value in parameters.items():
+                if key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]:
+                    (frame, error) = self.frame_update(parameters)
+                    break
 
             # Save the data to a dictionary
             [width, height, angle] = [frame.get(key) for key in ["width (nm)", "height (nm)", "angle (deg)"]]
             [pixels, lines] = [buffer.get(key) for key in ["pixels", "lines"]]            
-            grid = frame | buffer | {
-                "pixel_width (nm)": width / pixels,
-                "pixel_height (nm)": height / lines,
-                "dict_name": "grid"
-            }
+            grid = frame | buffer | {"pixel_width (nm)": width / pixels, "pixel_height (nm)": height / lines, "dict_name": "grid"}
 
         except Exception as e: error = e
         finally:
@@ -682,17 +670,16 @@ class NanonisAPI(QtCore.QObject):
             x_grid += grid["x (nm)"]
             y_grid += grid["y (nm)"]
 
-            # Add the meshgrids to the grid dictionary
-            grid["x_grid (nm)"] = x_grid
-            grid["y_grid (nm)"] = y_grid
-
             # Add vertex information
             frame_vertices = np.asarray([[x_grid[0, 0], y_grid[0, 0]], [x_grid[-1, 0], y_grid[-1, 0]], [x_grid[-1, -1], y_grid[-1, -1]], [x_grid[0, -1], y_grid[0, -1]]])
             bottom_left_corner = frame_vertices[0]
-            top_left_corner = frame_vertices[1]
-            grid["vertices (nm)"] = frame_vertices
-            grid["bottom_left_corner (nm)"] = bottom_left_corner
-            grid["top_left_corner (nm)"] = top_left_corner
+            top_left_corner = frame_vertices[1]            
+            grid.update({"vertices (nm)": frame_vertices, "bottom_left_corner (nm)": bottom_left_corner, "top_left_corner (nm)": top_left_corner})
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{grid}", message_type = "result")
+
+            # Add the meshgrids to the grid dictionary
+            grid.update({"x_grid (nm)": x_grid, "y_grid (nm)": y_grid})
             
             self.parameters.emit(grid)
         
@@ -725,6 +712,7 @@ class NanonisAPI(QtCore.QObject):
             bias_dict.update({"V_nanonis (V)": V})
             if np.abs(V - V_old) < dV:
                 self.parameters.emit(bias_dict)
+                if verbose: self.logprint(f"{bias_dict}", message_type = "result")
                 return (bias_dict, error) # If the bias is unchanged, don't slew it
 
             feedback = nhw.get_fb()
@@ -751,6 +739,7 @@ class NanonisAPI(QtCore.QObject):
             if unlink: self.unlink()
             
             self.parameters.emit(bias_dict)
+            if verbose and len(parameters) < 1: self.logprint(f"{bias_dict}", message_type = "result")
 
         except Exception as e: error = e
         finally:
@@ -821,12 +810,60 @@ class NanonisAPI(QtCore.QObject):
                 lockin_parameters.update({f"mod{mod_number + 1}": mod_new})
         
             self.parameters.emit(lockin_parameters)
+            if verbose and len(parameters) < 1: self.logprint(f"{lockin_parameters}", message_type = "result")
         
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
         
         return (lockin_parameters, error)
+
+    def scan_metadata_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        """
+        get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
+        """
+        # Initalize outputs
+        scan_metadata = None
+        error = False
+        nhw = self.nanonis_hardware
+
+        # Set up the TCP connection and get grid dat
+        try:
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.scan_metadata_update({parameters})", "code")
+                else: self.logprint(f"nanonis.scan_metadata_update()", "code")
+            if not self.status == "running": self.link()
+            
+            props = nhw.get_scan_properties()
+            buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
+            
+            if "channel_indices" in parameters.keys():
+                indices = parameters["channel_indices"]
+                if isinstance(indices, list) and len(indices) > 0 and isinstance(indices[0], int):
+                    nhw.set_scan_buffer(channel_indices = indices)
+            
+            channel_indices = buffer.get("channel_indices")
+            
+            if nhw.version > 14000: # Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
+                sig_in_slots = nhw.get_signals_in_slots()
+                signal_names = sig_in_slots["names"]
+                signal_indices = sig_in_slots["indices"]
+            else:
+                signal_names = nhw.get_signal_names()
+            
+            signal_dict = {signal_name: index for index, signal_name in enumerate(signal_names)} # Signal_dict is a dict of all signals and their corresponding indices
+            channel_dict = {signal_names[index]: index for index in channel_indices} # Channel_dict is the subset of signals that are actively recorded in the scan
+
+            scan_metadata = props | {"channel_dict": channel_dict, "signal_dict": signal_dict, "dict_name": "scan_metadata"}
+            
+            self.parameters.emit(scan_metadata)
+            if verbose and len(parameters) < 1: self.logprint(f"{scan_metadata}", message_type = "result")
+
+        except Exception as e: error = e
+        finally:
+            if unlink: self.unlink()
+
+        return (scan_metadata, error)
 
 
 
@@ -1005,6 +1042,15 @@ class NanonisAPI(QtCore.QObject):
         return (results_dict, error)
 
 
+
+    # Convenience functions
+    def shape_tip(self) -> None:
+        self.tip_prep({"action": "poke"})
+        return
+    
+    def pulse_tip(self, V_V: float = 6, t_ms: float = 300) -> None:
+        self.tip_prep({"action": "pulse", "V_pulse (V)": V_V, "t_pulse (ms)": t_ms})
+        return
 
     # Idling
     def tip_tracker(self, timeout = 6000, unlink = False) -> None:

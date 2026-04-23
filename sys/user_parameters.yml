@@ -78,11 +78,11 @@ scan_parameters:
     v_xy (nm/s): 1378.6766430712305
 tip_prep_parameters:
   0:
-    V_pulse (V): ''
+    V_pulse (V): 3.0
     dict_name: session
     pulse_duration (ms): 300
     pulse_voltage (V): 6
-    t_pulse (ms): ''
+    t_pulse (ms): 400
   1:
     dict_name: alternative
     pulse_duration (ms): 600
