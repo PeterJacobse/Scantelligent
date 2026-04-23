@@ -6,7 +6,17 @@ import numpy as np
 
 
 class MLAAPI:
-    def __init__(self, mla_path):
+    def __init__(self, hw_config: dict = {}):
+        
+        mla_path = False
+        if "mla" in hw_config.keys():
+            mla_dict = hw_config["mla"]
+            if "library_path" in mla_dict:
+                mla_path = mla_dict["library_path"]
+        
+        if not isinstance(mla_path, str): raise Exception("Could not read the MLA library path")
+        if not os.path.isdir(mla_path): raise Exception("The library path provided does not point to a valid folder")
+        
         self.mla_path = mla_path
 
         sys.path.insert(0, mla_path)
@@ -23,7 +33,7 @@ class MLAAPI:
         self.mla.connect()
         
         self.set_defaults()
-        self.set_base_frequency(200)
+        self.set_f1(200)
         
         self.lockin = self.mla.lockin
         self.analog = self.mla.analog
@@ -54,7 +64,7 @@ class MLAAPI:
 
     def set_output_port_mask(self) -> None:
         # Configure output ports
-        mask1 = np.zeros(shape = self.mla.lockin.nr_output_freq, dtype = int)
+        mask1 = np.zeros(shape = self.mla.lockin.nr_output_freq, dtype = int) # List of 32 zeros
         mask1[0] = 1
         self.mla.lockin.set_output_mask(mask1, port = 1)
         return
@@ -62,9 +72,9 @@ class MLAAPI:
     def set_defaults(self) -> None:
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
+        self.set_output_port_mask()
         
         """
-
         mask2 = np.zeros(mla.lockin.nr_output_freq)
         mla.lockin.set_output_mask(mask_2, port = 2)
 
@@ -75,23 +85,26 @@ class MLAAPI:
         phases = np.random.rand(mla.lockin.nr_output_freq)
         mla.lockin.set_phases(phases, 'degree')
 
-        ampls = np.zeros(mla.lockin.nr_output_freq)
-        mla.lockin.set_amplitudes(ampls)
-
-        freqs_hz = np.arange(mla.lockin.nr_output_freq - 1) * f1 + f1
-        mla.lockin.set_frequencies(np.insert(freqs_hz, 0, f1))
-
         input_ports= np.ones(mla.lockin.nr_output_freq - 1) + 1
         mla.lockin.set_input_multiplexer(np.insert(input_ports, 0, 1))
-
-        mla.lockin.set_df(100)  # set df in Hz
         """
         return
 
-    def set_base_frequency(self, f: float = 220):
+
+
+    def set_f1(self, f: float = 220) -> None:
         harmonics_list = np.array(range(32), dtype = int)
         harmonics_list[0] = 1
         self.mla.lockin.set_frequencies_by_n_and_df(harmonics_list, f)
+        self.mla.lockin.set_df(f)
+        return
+
+    def set_amp_mV(self, amp_mV: float = 0) -> None:
+        self.mla.lockin.set_amplitudes(amp_mV / 1000)
+        return
+
+    def set_V(self, V: float = 0, output_port: int = 1) -> None:
+        self.mla.lockin.set_dc_offset(output_port, V)
         return
 
     def unwrap(self) -> object:

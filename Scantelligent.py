@@ -260,7 +260,7 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "mla" or target.lower() == "all":
             try:
                 # Instantiate
-                self.mla = MLAAPI(mla_path = mla_path).unwrap()
+                self.mla = MLAAPI(hw_config = self.hw_config).unwrap()
 
                 self.logprint("MLA: Found the MLA", "success")
                 self.status.update({"mla": "online"})
