@@ -142,9 +142,6 @@ class Scantelligent(QtCore.QObject):
         return
 
     def connect_buttons(self) -> None:
-        buttons = self.gui.buttons
-        shortcuts = self.gui.shortcuts        
-
         button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
                         "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.on_approach,
                         
@@ -165,9 +162,9 @@ class Scantelligent(QtCore.QObject):
         [button_slots.update({direction: lambda checked, drxn = direction: self.coarse_move(drxn)}) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
 
         for button_name, connected_function in button_slots.items():
-            buttons[button_name].clicked.connect(connected_function)
-            if button_name in shortcuts.keys():
-                shortcut = QtGui.QShortcut(shortcuts[button_name], self.gui)
+            self.gui.buttons[button_name].clicked.connect(connected_function)
+            if button_name in self.gui.shortcuts.keys():
+                shortcut = QtGui.QShortcut(self.gui.shortcuts[button_name], self.gui)
                 shortcut.activated.connect(connected_function)
 
         # Line edits
@@ -182,6 +179,9 @@ class Scantelligent(QtCore.QObject):
         # Sliders
         self.gui.sliders["volume"].valueChanged.connect(self.send_amplitudes)
         [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_amplitudes) for i in range(32)]
+        
+        # Check boxes
+        [self.gui.checkboxes[f"channel_{i}"].clicked.connect(lambda show_graph = bool(self.gui.checkboxes[f"channel_{i}"].state_index): self.gui.pdis[i].setVisible(show_graph)) for i in range(len(self.gui.pdis))]
 
         return
 
@@ -417,7 +417,7 @@ class Scantelligent(QtCore.QObject):
         for index in range(min(len(data_array[0]), 20)):            
             new_data = data_array[:, index]
             
-            plot_data_item = self.gui.graphs[index]
+            plot_data_item = self.gui.pdis[index]
             old_data = plot_data_item.getData()[1]
             
             if isinstance(old_data, np.ndarray):
@@ -429,8 +429,7 @@ class Scantelligent(QtCore.QObject):
                     data = np.concatenate([old_data[crop_length:], new_data])
             else: data = new_data
             
-            if self.gui.channel_checkboxes[f"{index}"].isChecked(): plot_data_item.setAlpha(1, False)
-            else: plot_data_item.setAlpha(0, False)
+            plot_data_item.setAlpha(self.gui.checkboxes[f"channel_{index}"].state_index, False)
             plot_data_item.setData(data)
 
         return

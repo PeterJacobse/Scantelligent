@@ -28,7 +28,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
         self.labels = self.make_labels()
         self.buttons = self.make_buttons()
-        (self.checkboxes, self.channel_checkboxes) = self.make_checkboxes()
+        self.checkboxes = self.make_checkboxes()
         self.comboboxes = self.make_comboboxes()
         self.line_edits = self.make_line_edits()
         self.radio_buttons = self.make_radio_buttons()
@@ -36,7 +36,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.layouts = self.make_layouts()
         self.image_view = self.make_image_view()
         (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
-        (self.plot_widget, self.graphs) = self.make_plot_widget()
+        (self.plot_widget, self.pdis) = self.make_plot_widget()
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
         self.sliders = self.make_sliders()
@@ -298,9 +298,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "approach": CB(tooltip = "End the tip move with an auto approach"),
 
             "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
-        }
-        
-        channel_checkboxes = {f"{index}": CB(tooltip = f"channel {index}") for index in range(20)}
+        }        
+        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", states = [{"color": self.colors["off-black"]}, {"color": self.color_list[index]}])}) for index in range(20)]
         
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
@@ -310,7 +309,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Add the button handles to the tooltips
         [checkboxes[name].changeToolTip(f"gui.checkboxes[\"{name}\"]", line = 10) for name in checkboxes.keys()]
 
-        return (checkboxes, channel_checkboxes)
+        return checkboxes
 
     def make_comboboxes(self) -> dict:
         CB = STWidgets.ComboBox
@@ -617,16 +616,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return (piezo_roi, frame_roi, new_frame_roi)
 
-    def make_plot_widget(self) -> pg.PlotWidget:
+    def make_plot_widget(self) -> tuple[pg.PlotWidget, pg.PlotDataItem]:
         plot_widget = pg.PlotWidget()
 
-        graphs = []
+        pdis = [] # PlotDataItems
         for i in range(20):
             pen = pg.mkPen(self.color_list[i])
+            pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)
             
-            graphs.append(plot_widget.plot(x_data = [], y_data = [], pen = pen))
+            pdis.append(pdi)
         
-        return (plot_widget, graphs)
+        return (plot_widget, pdis)
 
     def make_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget
@@ -769,7 +769,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        [layouts["channels"].addWidget(self.channel_checkboxes[f"{i}"], i % 5, int(i / 5)) for i in range(len(self.channel_checkboxes))]
+        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], i % 5, int(i / 5)) for i in range(20)]
         
         layouts["graph"].addWidget(self.plot_widget, 5)
         layouts["graph"].addLayout(layouts["channels"], 1)

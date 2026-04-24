@@ -72,6 +72,8 @@ class Experiment(BaseExperiment):
             
             nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}}) # Make sure the lockins are initially turned off
             nn.scan_metadata_update({"channel_indices": feedback_channel_indices}) # Make sure the correct channel is being recorded
+            channels_dict = {i: name for i, name in enumerate(["x (nm)", "y (nm)", "z (nm)", "I (pA)"])} | {"dict_name": "channels"}
+            self.parameters.emit(channels_dict) # This triggers the GUI to start graphing data
             self.sct.set_view_range("frame")
 
 
@@ -100,7 +102,6 @@ class Experiment(BaseExperiment):
                         t_elapsed = time.time() - t_start
                         scan_finished = self.get_scan_updates(channel = feedback_channel_indices[0])
                         if scan_finished or self.abort_requested: break
-                        time.sleep(.5)
                     
                     if self.abort_requested: break
                     (z_image, error) = nn.scan_update(channel = feedback_channel_indices[0]) # Retrieve the scan image created at V = V_begin
@@ -180,7 +181,6 @@ class Experiment(BaseExperiment):
                     t_elapsed = time.time() - t_start
                     scan_finished = self.get_scan_updates(channel = feedback_channel_indices[0])
                     if scan_finished or self.abort_requested: break
-                    time.sleep(.5)
                 
                 if self.abort_requested: break
                 self.logprint("Feedback scan completed", message_type = "success")
@@ -214,7 +214,6 @@ class Experiment(BaseExperiment):
                     t_elapsed = time.time() - t_start
                     scan_finished = self.get_scan_updates(channel = constant_height_channel_indices[0])
                     if scan_finished or self.abort_requested: break
-                    time.sleep(.5)
 
                 if self.abort_requested: break
                 self.logprint("Constant height scan completed", message_type = "success")
@@ -229,8 +228,9 @@ class Experiment(BaseExperiment):
 
 
     def get_scan_updates(self, channel) -> bool:
-        self.nanonis.frame_update(verbose = False)
         (tip_status, error) = self.nanonis.tip_update(verbose = False)
+        [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+        self.data_array.emit(np.array([[x_nm, y_nm, z_nm, I_pA]]))
         (scan_image, error) = self.nanonis.scan_update(channel = channel, verbose = False)
         nan_mask = np.isnan(scan_image)
         scan_finished = not bool(np.any(nan_mask))

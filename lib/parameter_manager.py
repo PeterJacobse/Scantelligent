@@ -213,8 +213,8 @@ class ParameterManager(QtCore.QObject):
                     channel_index = int(key)
                     if channel_index < 0 or channel_index > 20: continue
 
-                    sct.gui.channel_checkboxes[f"{channel_index}"].setToolTip(f"channel {channel_index}: {value}")
-                    sct.gui.channel_checkboxes[f"{channel_index}"].setChecked(True)
+                    sct.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}: {value}")
+                    sct.gui.checkboxes[f"channel_{channel_index}"].setChecked(True)
                     line = sct.gui.plot_widget.plot()
                     sct.lines.append(line)
 
