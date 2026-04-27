@@ -230,7 +230,7 @@ class Scantelligent(QtCore.QObject):
                 
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
-                self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, unlink = True))
+                self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, wait = True, unlink = True))
 
                 # Nanonis -> Scantelligent
                 self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
@@ -240,7 +240,7 @@ class Scantelligent(QtCore.QObject):
                 self.nanonis.data_array.connect(self.receive_data)
                 
                 # Get parameters from Nanonis
-                nanonis_parameters = self.nanonis.nanonis_update()
+                (nanonis_parameters, _) = self.nanonis.nanonis_update()
                                 
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
                 self.gui.buttons["nanonis"].setState("online")
@@ -955,6 +955,8 @@ class Scantelligent(QtCore.QObject):
 
                 self.logprint(f"Loading/resetting experiment {experiment_name}", message_type = "message")
                 [self.gui.progress_bars[name].setValue(0) for name in ["task", "experiment"]]
+                [pdi.setData() for pdi in self.gui.pdis]
+                [self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]") for i in range(9)]
                 self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 

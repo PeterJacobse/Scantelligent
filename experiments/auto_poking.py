@@ -3,7 +3,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
-from lib import BaseExperiment, AbortedError
+from lib import BaseExperiment
 
 
 
@@ -27,13 +27,15 @@ class Experiment(BaseExperiment):
 
         # Calculate information
         nanonis_parameters = self.start_parameters.get("nanonis")
-        [bias, feedback, grid, speeds, scan_metadata, tip_status] = [nanonis_parameters.get(parameter_dict) for parameter_dict in ["bias", "feedback", "grid", "speeds", "scan_metadata", "tip_status"]]
+        [bias, feedback, grid, speeds, scan_metadata, tip_status, tip_shaper] = [nanonis_parameters.get(parameter_dict, None) for parameter_dict in ["bias", "feedback", "grid", "speeds", "scan_metadata", "tip_status", "tip_shaper"]]
+        if not isinstance(tip_shaper, dict): raise Exception("Error. Could not obtain the parameters from the tip shaper module. Please open the module in Nanonis if it is not yet open and retry")
+        
         signal_dict = scan_metadata.get("signal_dict")
         feedback_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]]
         feedback_channel_indices = [index for index in feedback_channel_indices if index is not None]
 
         nn.lockin_update({"mod1": {"on": False}, "mod2": {"on": False}, "mla_mod1": {"on": False}}) # Make sure the lockins are initially turned off
-        channels_dict = {i: name for i, name in enumerate(["x (nm)", "y (nm)", "z (nm)", "I (pA)"])} | {"dict_name": "channels"}
+        channels_dict = {i: name for i, name in enumerate(["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"])} | {"dict_name": "channels"}
         self.parameters.emit(channels_dict) # This triggers the GUI to start graphing data
         nn.scan_metadata_update({"channel_indices": feedback_channel_indices}) # Make sure the correct channel is being recorded
 
@@ -43,6 +45,7 @@ class Experiment(BaseExperiment):
         self.sct.set_view_range("frame")
         self.monitor_scan(channel = feedback_channel_indices[0])
 
+        # Silly frame update number 1
         self.sct.set_view_range("full")
         time.sleep(1)
         self.logprint("Moving the frame to the bottom left corner", message_type = "warning")
@@ -63,14 +66,6 @@ class Experiment(BaseExperiment):
         nn.scan_action({"action": "start", "direction": "down"})
         self.monitor_scan(channel = feedback_channel_indices[0])
         
-        # Loop to check scan progress
-        # t_start = time.time()
-        # t_elapsed = 0
-        # while t_elapsed < timeout_s:
-        #     t_elapsed = time.time() - t_start
-        #    scan_finished = self.get_scan_updates(channel = feedback_channel_indices[0])
-        #    if scan_finished or self.abort_requested: break
-        
         self.logprint("This looks like a great area to condition the tip!", message_type = "message")
         [width_nm, height_nm] = poke_area.get("scan_range (nm)")
         [x_nm, y_nm] = poke_area.get("offset (nm)")
@@ -83,13 +78,14 @@ class Experiment(BaseExperiment):
         poke_locations = rng.uniform(low = [x_nm - .5 * width_nm, y_nm - .5 * height_nm], high = [x_nm + .5 * width_nm, y_nm + .5 * height_nm], size = (5, 2))
         
         for iteration, location in enumerate(poke_locations):
-            nn.tip_update({"x (nm)": location[0], "y (nm)": location[0]})
+            nn.tip_update({"x (nm)": location[0], "y (nm)": location[0]}, wait = True)
             nn.tip_update(verbose = False)
             nn.shape_tip()
         
         self.logprint("I am done poking the tip. Let's move back to the top right corner and continue scanning there", message_type = "message")            
         self.sct.set_view_range("full")
         
+        # Silly frame update number 2
         for iteration, position in enumerate(np.linspace(-500, 0, 12)):
             nn.frame_update({"offset (nm)": [-500, position]}, verbose = False)
             time.sleep(.05)            

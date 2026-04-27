@@ -10,7 +10,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         super().__init__()
         
         self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
-                           "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#c00000", "#905020", "#707000", "#2020ff"]
+                           "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#C00000", "#905020", "#707000", "#2020ff",
+                           "#CFCFCF", "#CFCF20", "#20CFCF", "#CF60CF", "#60CF60", "#CF6060", "#8080CF", "#909090", "#CFB010", "#C050FF",
+                           "#606020", "#00C0C0", "#B030C0", "#409040", "#904040", "#505090", "#900000", "#605020", "#404000", "#2020Cf"]
         self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff", "off-black": "#101010",
                        "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
         self.style_sheets = {
@@ -299,7 +301,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }        
-        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(20)]
+        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(40)]
 
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
@@ -470,17 +472,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_radio_buttons(self) -> dict:
         RBN = STWidgets.RadioButton
+        CB = STWidgets.CheckBox
         QGroup = QtWidgets.QButtonGroup
         
         radio_buttons = {
-            "min_full": RBN(tooltip = "set to minimum value of scan data range\n(-) to toggle"),
-            "max_full": RBN(tooltip = "set to maximum value of scan data range\n(=) to toggle"),
-            "min_percentiles": RBN(tooltip = "set to minimum percentile of data range\n(-) to toggle"),
-            "max_percentiles": RBN(tooltip = "set to maximum percentile of data range\n(=) to toggle"),
-            "min_deviations": RBN(tooltip = "set to minimum = mean - n * standard deviation\n(-) to toggle"),
-            "max_deviations": RBN(tooltip = "set to maximum = mean + n * standard deviation\n(=) to toggle"),
-            "min_absolute": RBN(tooltip = "set minimum to an absolute value\n(-) to toggle"),
-            "max_absolute": RBN(tooltip = "set maximum to an absolute value\n(=) to toggle"),
+            "min_full": CB(tooltip = "set to minimum value of scan data range\n(-) to toggle"),
+            "max_full": CB(tooltip = "set to maximum value of scan data range\n(=) to toggle"),
+            "min_percentiles": CB(tooltip = "set to minimum percentile of data range\n(-) to toggle"),
+            "max_percentiles": CB(tooltip = "set to maximum percentile of data range\n(=) to toggle"),
+            "min_deviations": CB(tooltip = "set to minimum = mean - n * standard deviation\n(-) to toggle"),
+            "max_deviations": CB(tooltip = "set to maximum = mean + n * standard deviation\n(=) to toggle"),
+            "min_absolute": CB(tooltip = "set minimum to an absolute value\n(-) to toggle"),
+            "max_absolute": CB(tooltip = "set maximum to an absolute value\n(=) to toggle"),
         }
         
         # Add the button handles to the tooltips
@@ -769,7 +772,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], i % 5, int(i / 5)) for i in range(20)]
+        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], i % 8, int(i / 8)) for i in range(40)]
         
         layouts["graph"].addWidget(self.plot_widget, 5)
         layouts["graph"].addLayout(layouts["channels"], 1)

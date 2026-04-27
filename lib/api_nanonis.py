@@ -71,10 +71,6 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             else: parameters.update({piezo_range.get("dict_name"): piezo_range})
             
-            (coarse_parameters, error) = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
-            if error: pass # Not useful to raise this error because the simulator does not have motor control
-            else: parameters.update({coarse_parameters.get("dict_name"): coarse_parameters})
-            
             (lockin_parameters, error) = self.lockin_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error: raise Exception(error)
             else: parameters.update({lockin_parameters.get("dict_name"): lockin_parameters})
@@ -82,10 +78,6 @@ class NanonisAPI(QtCore.QObject):
             (tip_status, error) = self.tip_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
             else: parameters.update({tip_status.get("dict_name"): tip_status})
-
-            (tip_shaper, error) = self.tip_shaper_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
-            if error: raise Exception(error)
-            else: parameters.update({tip_shaper.get("dict_name"): tip_shaper})
 
             (frame, error) = self.frame_update(update_new_frame = True, verbose = verbose) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
             if error: raise Exception(error)
@@ -110,6 +102,18 @@ class NanonisAPI(QtCore.QObject):
             (scan_metadata, error) = self.scan_metadata_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
             if error: raise Exception(error)
             else: parameters.update({scan_metadata.get("dict_name"): scan_metadata})
+            
+            (coarse_parameters, error) = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            if error:
+                self.logprint("Warning. Could not read the coarse parameters", message_type = "warning")
+                pass # Not useful to raise this error because the simulator does not have motor control
+            else: parameters.update({coarse_parameters.get("dict_name"): coarse_parameters})
+            
+            (tip_shaper, error) = self.tip_shaper_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
+            if error:
+                self.logprint("Warning. Could not read parameters from the tip shaper module. It may be closed", message_type = "warning")
+                pass
+            else: parameters.update({tip_shaper.get("dict_name"): tip_shaper})
 
             self.logprint("Initialization successful", "success")
 
@@ -317,7 +321,7 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Update methods (Gives updates on all parameters and updates those parameters given)
-    def tip_update(self, parameters: dict = {}, unlink: bool = False, verbose: int = True) -> tuple[dict, bool | str]:
+    def tip_update(self, parameters: dict = {}, wait: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it
         """
@@ -325,12 +329,13 @@ class NanonisAPI(QtCore.QObject):
         tip_status = None
         error = False
         nhw = self.nanonis_hardware
+        distance_nm = 0 # Distance between target and actual tip location, if a target is provided
                 
         # Extract parameters from the dictionary
         [withdraw, feedback, x_nm, y_nm, z_nm, z_rel_nm] = [parameters.get(key, None) for key in ["withdraw", "feedback", "x (nm)", "y (nm)", "z (nm)", "z_rel (nm)"]]
         if withdraw == None: withdraw = False
-        if x_nm and y_nm: xy_nm = [x_nm, y_nm]
-        else: xy_nm = None
+        if x_nm and y_nm: xy_target_nm = [x_nm, y_nm]
+        else: xy_target_nm = None
 
         # Set up the TCP connection and set/get
         try:
@@ -339,9 +344,12 @@ class NanonisAPI(QtCore.QObject):
                 else: self.logprint(f"nanonis.tip_update()", "code")
             if not self.status == "running": self.link()
             
-            if xy_nm: nhw.set_xy_nm(xy_nm) # Set the tip position
             xy_nm = nhw.get_xy_nm() # Get the tip position
             [x_nm, y_nm] = xy_nm
+            if xy_target_nm: nhw.set_xy_nm(xy_target_nm) # Set the tip position
+            else: xy_target_nm = xy_nm
+            distance_nm = np.linalg.norm(np.array(xy_nm) - np.array(xy_target_nm)) # Zero if no target is provided
+            
             if z_nm:
                 nhw.set_fb(False)
                 sleep(.2)
@@ -357,7 +365,9 @@ class NanonisAPI(QtCore.QObject):
             I_pA = nhw.get_I_pA() # get the current
 
             # Switch the feedback if desired, and retrieve the feedback status
-            if type(feedback) == bool: nhw.set_fb(feedback)
+            if type(feedback) == bool:
+                nhw.set_fb(feedback)
+                sleep(.1)
                         
             withdrawn = False
             if not feedback and np.abs(z_nm - z_max) < 1E-11: # Tip is already withdrawn
@@ -365,19 +375,28 @@ class NanonisAPI(QtCore.QObject):
             if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
                 nhw.withdraw(wait = True)
                 withdrawn = True
-            sleep(.2)
+                sleep(.2)
             
             # Retrieve the feedback status
             feedback_new = nhw.get_fb()
 
             # Set up a dictionary containing the actual tip status parameters
-            tip_status = {
-                "dict_name": "tip_status", "x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6), "z (nm)": round(z_nm, 6), "I (pA)": round(I_pA, 6),
-                "location (nm)": [round(x_nm, 6), round(y_nm, 6), round(z_nm, 6)], "z_limits (nm)": [round(z_min, 6), round(z_max, 6)],
-                "feedback": feedback_new, "withdrawn": withdrawn
-            }
+            tip_status = {"dict_name": "tip_status", "x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6), "z (nm)": round(z_nm, 6), "I (pA)": round(I_pA, 6),
+                "location (nm)": [round(x_nm, 6), round(y_nm, 6), round(z_nm, 6)], "z_limits (nm)": [round(z_min, 6), round(z_max, 6)], "feedback": feedback_new, "withdrawn": withdrawn}
             
+            if wait:
+                while distance_nm > .1:
+                    xy_nm = nhw.get_xy_nm()
+                    distance_nm = np.linalg.norm(np.array(xy_nm) - np.array(xy_target_nm))
+                    [x_nm, y_nm] = xy_nm
+                    tip_status.update({"x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6)})
+                    self.parameters.emit(tip_status)
+                    sleep(.05)
+            
+            tip_status.update({"x (nm)": round(xy_target_nm[0], 6), "y (nm)": round(xy_target_nm[1], 6)})
             self.parameters.emit(tip_status)
+            self.finished.emit()
+            
             if verbose and len(parameters) < 1: self.logprint(f"{tip_status}", message_type = "result")
 
         except Exception as e: error = e
@@ -620,7 +639,9 @@ class NanonisAPI(QtCore.QObject):
 
         try:
             if verbose:
-                if len(parameters) > 0: self.logprint(f"nanonis.grid_update({parameters})", "code")
+                if len(parameters) > 0:
+                    shown_parameters = {key: value for key, value in parameters.items() if not key in ["x_grid (nm)", "y_grid (nm)", "vertices (nm)", "bottom_left_corner (nm)", "top_left_corner (nm)", "vertices (nm)"]}
+                    self.logprint(f"nanonis.grid_update({shown_parameters})", "code")
                 else: self.logprint(f"nanonis.grid_update()", "code")
             if not self.status == "running": self.link()
 
@@ -834,14 +855,13 @@ class NanonisAPI(QtCore.QObject):
                 else: self.logprint(f"nanonis.scan_metadata_update()", "code")
             if not self.status == "running": self.link()
             
-            props = nhw.get_scan_properties()
-            buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines
-            
             if "channel_indices" in parameters.keys():
                 indices = parameters["channel_indices"]
                 if isinstance(indices, list) and len(indices) > 0 and isinstance(indices[0], int):
                     nhw.set_scan_buffer(channel_indices = indices)
-            
+
+            props = nhw.get_scan_properties()
+            buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines            
             channel_indices = buffer.get("channel_indices")
             
             if nhw.version > 14000: # Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition

@@ -222,24 +222,28 @@ class ParameterManager(QtCore.QObject):
                 tip_status = parameters
                 sct.status.update({"tip": tip_status})
                 
-                # Update the slider
-                z_limits_nm = tip_status.get("z_limits (nm)")
-                z_nm = tip_status.get("z (nm)")
-                sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
-                sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
-                sct.gui.sliders["tip"].setValue(int(z_nm))
-                sct.gui.sliders["tip"].changeToolTip(f"Tip height: {z_nm:.2f} nm")
-                
-                # Update the position visible in the image_view
-                sct.gui.image_view.view.removeItem(sct.gui.tip_target)
-                [x_tip_nm, y_tip_nm, z_tip_nm] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)"]]
-                sct.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
-                sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
-                if sct.status["view"] == "nanonis": sct.gui.image_view.view.addItem(sct.gui.tip_target)
-                
                 # Update the tip status button
                 withdrawn = tip_status.get("withdrawn")
                 feedback = tip_status.get("feedback")
+                
+                # Update the position visible in the image_view
+                # sct.gui.image_view.view.removeItem(sct.gui.tip_target)
+                if feedback: sct.gui.tip_target.setPen(sct.gui.colors["green"])
+                else:
+                    if withdrawn: sct.gui.tip_target.setPen(sct.gui.colors["red"])
+                    else: sct.gui.tip_target.setPen(sct.gui.colors["orange"])
+                
+                [x_tip_nm, y_tip_nm, z_tip_nm] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)"]]
+                sct.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
+                sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
+                # if sct.status["view"] == "nanonis": sct.gui.image_view.view.addItem(sct.gui.tip_target)
+                
+                # Update the slider
+                z_limits_nm = tip_status.get("z_limits (nm)")
+                sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
+                sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
+                sct.gui.sliders["tip"].setValue(int(z_tip_nm))
+                sct.gui.sliders["tip"].changeToolTip(f"Tip height: {z_tip_nm:.2f} nm")
                 
                 if withdrawn:
                     sct.gui.buttons["tip"].setState("unknown")

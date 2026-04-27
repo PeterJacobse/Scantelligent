@@ -73,6 +73,9 @@ class BaseExperiment(QObject):
                 (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
                 self.start_parameters.update({"nanonis": nanonis_parameters})
             
+            gui_parameters = self.read_parameters_from_gui()
+            self.start_parameters.update({"gui": gui_parameters})
+            
             try:
                 run(self)
             except AbortedError:
@@ -94,9 +97,9 @@ class BaseExperiment(QObject):
         
         while t_elapsed < timeout_s:
             t_elapsed = time.time() - t_start
-            (tip_status, error) = self.nanonis.tip_update(verbose = False)
+            (tip_status, error) = self.nanonis.tip_update(wait = False, verbose = False)
             [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
-            self.data_array.emit(np.array([[x_nm, y_nm, z_nm, I_pA]]))
+            self.data_array.emit(np.array([[t_elapsed, x_nm, y_nm, z_nm, I_pA]]))
             (scan_image, error) = self.nanonis.scan_update(channel = channel, verbose = False)
             nan_mask = np.isnan(scan_image)
             scan_finished = not bool(np.any(nan_mask))
@@ -112,7 +115,7 @@ class BaseExperiment(QObject):
         parameters = {"dict_name": "gui_parameters"}
         if hasattr(self, "line_edits"): parameters.update({"line_edits": [self.line_edits[i].getValue() for i in range(9)]})
         if hasattr(self, "direction_combobox"): parameters.update({"direction_combobox": self.direction_combobox.currentText()})
-        return parameters        
+        return parameters
 
     def connect_hardware(self, target: str = "nanonis") -> None:
         match target:
@@ -162,10 +165,8 @@ class BaseExperiment(QObject):
                 self.nanonis.speeds_update(speed_parameters)
 
                 tip_parameters = nanonis_parameters.get("tip_status", {})
-                self.nanonis.tip_update(tip_parameters)                
-                self.nanonis.tip_update(verbose = False)
-                
-                self.sct.set_view_range("full")
+                fb = tip_parameters.get("feedback")
+                self.nanonis.tip_update({"feedback": fb})
             except Exception as e:
                 self.logprint(f"Error while resetting Nanonis: {e}", message_type = "error")
             try:
