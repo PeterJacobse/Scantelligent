@@ -299,8 +299,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
         }        
-        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", states = [{"color": self.colors["off-black"]}, {"color": self.color_list[index]}])}) for index in range(20)]
-        
+        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(20)]
+
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
         [checkbox.setChecked(True) for checkbox in self.action_checkboxes]
@@ -964,6 +964,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         # Set layouts for the groupboxes
         groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "modulators", "demodulators", "experiment", "image_processing"]
+        [layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupbox_names]
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
         # Make layouts of several groupboxes

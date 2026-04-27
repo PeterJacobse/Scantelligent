@@ -634,7 +634,7 @@ class NanonisAPI(QtCore.QObject):
             # Set the frame if requested
             for key, value in parameters.items():
                 if key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]:
-                    (frame, error) = self.frame_update(parameters)
+                    (frame, error) = self.frame_update(parameters, verbose = False)
                     break
 
             # Save the data to a dictionary

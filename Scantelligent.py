@@ -6,62 +6,8 @@ from PyQt6 import QtGui, QtCore
 import pyqtgraph as pg
 from lib import STWidgets, ScantelligentGUI
 from lib import DataProcessing, FileFunctions, ParameterManager, UserData
-from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
+from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI, AudioGenerator
 from datetime import datetime
-from math import pi
-
-
-
-# AudioGenerator class. Used to provide auditory feedback when using lockin amplifiers
-class AudioGenerator(QtCore.QObject):
-    finished = QtCore.pyqtSignal()
-
-    def __init__(self, sample_rate: int = 44100):
-        super().__init__()
-        self.sample_rate = sample_rate
-        self.w1 = 2 * pi * 220.0
-        self.amplitudes = np.zeros(shape = (32), dtype = float)
-        self.amplitudes[0] = 1
-        self.volume = .2
-        self.phases = np.zeros(len(self.amplitudes))
-        self.stream = None
-
-    @QtCore.pyqtSlot()
-    def start_audio(self):
-        self.stream = sd.OutputStream(channels = 1, callback = self.callback, samplerate = self.sample_rate)
-        self.stream.start()
-
-    def callback(self, outdata, frames, time, status):
-        time_list = np.arange(frames) / self.sample_rate
-        wave = np.zeros(frames)
-        wnyquist = pi * self.sample_rate
-        
-        for i, amp in enumerate(self.amplitudes):
-            wn = self.w1 * (i + 1)
-            
-            if wn < wnyquist:
-                wave += amp * np.sin(wn * time_list + self.phases[i])
-                # Update this harmonic's phase for the next block
-                self.phases[i] = (self.phases[i] + wn * frames / self.sample_rate) % (2 * pi)
-
-        # Soft-clipping to prevent digital distortion if harmonics sum too high
-        outdata[:] = np.tanh(wave * 0.2)[:, np.newaxis]
-
-    @QtCore.pyqtSlot(list)
-    def update_amplitudes(self, values) -> None:
-        self.amplitudes = values
-        return
-
-    @QtCore.pyqtSlot(int)
-    def update_frequency(self, value) -> None:
-        self.w1 = 2 * pi * float(value)
-        return
-
-    def stop(self):
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-        self.finished.emit()
 
 
 
@@ -181,8 +127,7 @@ class Scantelligent(QtCore.QObject):
         [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_amplitudes) for i in range(32)]
         
         # Check boxes
-        [self.gui.checkboxes[f"channel_{i}"].clicked.connect(lambda show_graph = bool(self.gui.checkboxes[f"channel_{i}"].state_index): self.gui.pdis[i].setVisible(show_graph)) for i in range(len(self.gui.pdis))]
-
+        for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
         return
 
     def connect_hardware(self, target: str = "all") -> None:
@@ -428,10 +373,7 @@ class Scantelligent(QtCore.QObject):
                     crop_length = total_length - max_length
                     data = np.concatenate([old_data[crop_length:], new_data])
             else: data = new_data
-            
-            plot_data_item.setAlpha(self.gui.checkboxes[f"channel_{index}"].state_index, False)
             plot_data_item.setData(data)
-
         return
 
 
@@ -518,6 +460,11 @@ class Scantelligent(QtCore.QObject):
                 self.gui.image_view.view.setRange(mapped_rect)
             case _:
                 self.gui.image_view.view.autoRange(item = self.gui.piezo_roi)
+        return
+
+    def set_pdi_visible(self, index: int = 0) -> None:
+        checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
+        self.gui.pdis[index].setVisible(checked)
         return
 
     def execute_command(self) -> None:

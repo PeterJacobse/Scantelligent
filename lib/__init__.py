@@ -4,8 +4,8 @@ from .hw_nanonis import NanonisHardware, Conversions
 from .api_nanonis import NanonisAPI
 from .api_camera import CameraAPI
 from .api_keithley import KeithleyAPI
-from .api_mla import MLAAPI
+from .api_mla import MLAAPI, AudioGenerator
 from .data_processing import DataProcessing
 from .file_functions import FileFunctions
 from .parameter_manager import ParameterManager, UserData
-from .base_experiment import BaseExperiment
+from .base_experiment import BaseExperiment, AbortedError

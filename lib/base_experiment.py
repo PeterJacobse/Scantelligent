@@ -1,6 +1,13 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from . import NanonisAPI, CameraAPI, MLAAPI, KeithleyAPI
+import time
+
+
+
+class AbortedError(Exception):
+    def __init__(self):
+        super().__init__()
 
 
 
@@ -15,14 +22,16 @@ class BaseExperiment(QObject):
     data_array = pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
 
     def __init__(self, *args, **kwargs):
-        hw_config = kwargs.pop("hw_config", None)        
+        hw_config = kwargs.pop("hw_config", None)
+        parent = kwargs.pop("scantelligent", None)
+        if not parent: parent = kwargs.pop("parent", None)
+        
         super().__init__()
+
         self.abort_requested = False
         self.hw_config = hw_config
+        self.sct = parent
         self.logprint(f"Class BaseExperiment instantiated with hw_config {self.hw_config}", message_type = "message")
-        # Note:
-        # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
-        # The exception is caught in Scantelligent rather than here
 
     def logprint(self, message: str = "", message_type: str = "error"):
         return self.message.emit(message, message_type)
@@ -53,9 +62,51 @@ class BaseExperiment(QObject):
         self.buttons[0].setStates(states)
         return
 
-    def toggle_view(self, target: str = "nanonis") -> None:
 
+
+    def experiment_handler(run):
+        def wrapper(self):
+            self.logprint("Starting the experiment", "success")
+            
+            self.start_parameters = {}
+            if hasattr(self, "nanonis"):
+                (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
+                self.start_parameters.update({"nanonis": nanonis_parameters})
+            
+            try:
+                run(self)
+            except AbortedError:
+                self.logprint("Experiment aborted.", message_type = "error")
+            except Exception as e:
+                self.logprint(f"Error: {e}", message_type = "error")
+                self.abort_requested = True
+            finally:
+                self.finish_experiment()
+        return wrapper
+
+    def toggle_view(self, target: str = "nanonis") -> None:
         return
+
+    def monitor_scan(self, channel, timeout_s: int = 100000) -> np.ndarray:
+        # Loop to check scan progress
+        t_start = time.time()
+        t_elapsed = 0
+        
+        while t_elapsed < timeout_s:
+            t_elapsed = time.time() - t_start
+            (tip_status, error) = self.nanonis.tip_update(verbose = False)
+            [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+            self.data_array.emit(np.array([[x_nm, y_nm, z_nm, I_pA]]))
+            (scan_image, error) = self.nanonis.scan_update(channel = channel, verbose = False)
+            nan_mask = np.isnan(scan_image)
+            scan_finished = not bool(np.any(nan_mask))
+            self.check_abort_request()
+            
+            if scan_finished:
+                self.logprint("Scan finished", message_type = "message")
+                break
+        
+        return scan_image
 
     def read_parameters_from_gui(self) -> dict:
         parameters = {"dict_name": "gui_parameters"}
@@ -78,29 +129,57 @@ class BaseExperiment(QObject):
         
         return
 
-    def disconnect_hardware(self) -> False:
-        if hasattr(self, "nanonis"): self.nanonis.unlink()
-        return
-
     def check_abort_request(self):
         if self.thread().isInterruptionRequested():
-            self.logprint("Experiment aborted", message_type = "error")
             self.abort_requested = True
+            raise AbortedError
         return
 
-    def experiment_finished(self):
-        if not self.abort_requested:
-            self.logprint("Experiment finished", message_type = "success")
-            self.exp_progress.emit(100)
+    def finish_experiment(self) -> None:
+        self.logprint("Starting cleanup sequence", message_type = "message")
         
-        self.disconnect_hardware()
-        self.logprint("Cleanup sequence finished", message_type = "message")
-        
-        if not self.abort_requested: self.logprint("Experiment finished", message_type = "success")
+        if hasattr(self, "nanonis"):
+            try:
+                nanonis_parameters = self.start_parameters.get("nanonis", {})
+                
+                self.nanonis.scan_action({"action": "stop"})
+                
+                grid = nanonis_parameters.get("grid", None)
+                if grid: self.nanonis.grid_update(grid)
 
-        self.finished.emit()
+                self.nanonis.tip_update({"z_rel (nm)": 1})
+                
+                lockin_parameters = nanonis_parameters.get("lockin", {})
+                self.nanonis.lockin_update(lockin_parameters)
+                
+                V_nanonis = nanonis_parameters.get("bias", {}).get("V_nanonis (V)", None)
+                if V_nanonis: self.nanonis.bias_update({"V_nanonis (V)": V_nanonis})
+
+                feedback_parameters = nanonis_parameters.get("feedback", {})
+                self.nanonis.feedback_update(feedback_parameters)
+
+                speed_parameters = nanonis_parameters.get("speeds", {})
+                self.nanonis.speeds_update(speed_parameters)
+
+                tip_parameters = nanonis_parameters.get("tip_status", {})
+                self.nanonis.tip_update(tip_parameters)                
+                self.nanonis.tip_update(verbose = False)
+                
+                self.sct.set_view_range("full")
+            except Exception as e:
+                self.logprint(f"Error while resetting Nanonis: {e}", message_type = "error")
+            try:
+                self.nanonis.unlink()
+            except: pass
+            
+            if not self.abort_requested:
+                self.logprint("Experiment finished!", message_type = "success")
+                self.exp_progress.emit(100)
+            else:
+                self.logprint("Experiment aborted and cleanup sequence finished.", message_type = "error")
+            self.finished.emit()
         return
-    
+
     def gui_not_found_error(self):
         self.logprint("This experiment reads parameters from the Scantelligent GUI, but the GUI could not be found or initialized properly", message_type = "error")
         return

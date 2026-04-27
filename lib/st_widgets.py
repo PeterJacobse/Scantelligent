@@ -430,22 +430,28 @@ class STWidgets:
         """
         def __init__(self, *args, **kwargs):
             size = kwargs.pop("size", None)
-            if not isinstance(size, int): size = 12
+            color = kwargs.pop("color", None)            
+            if not isinstance(size, int): size = 8
             
             super().__init__(*args, size = size, **kwargs)
             
             self.setStates([{"name": "unchecked", "color": "#101010"}, {"name": "checked", "color": "#2090ff"}])
+            if isinstance(color, str): self.setColor(color)
             self.setToggleable()
             self.setState(0)
+
         
         
-        
-        def setChecked(self, value: bool = True):
+        def setChecked(self, value: bool = True) -> None:
             self.setState(int(value))            
             return
         
-        def changeToolTip(self, text, line = 0):
+        def changeToolTip(self, text: str = "", line = 0) -> None:
             return super().changeToolTip(text, line)
+
+        def setColor(self, color: str = "#101010") -> None:
+            self.states[1].update({"color": color})
+            return
 
     class RadioButton(QtWidgets.QRadioButton):
         """
