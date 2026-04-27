@@ -1,12 +1,11 @@
 import os, sys, html, atexit
 from PIL import Image
-import sounddevice as sd
 import numpy as np
 from PyQt6 import QtGui, QtCore
 import pyqtgraph as pg
 from lib import STWidgets, ScantelligentGUI
 from lib import DataProcessing, FileFunctions, ParameterManager, UserData
-from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI, AudioGenerator
+from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
 
 
@@ -30,7 +29,7 @@ class Scantelligent(QtCore.QObject):
 
     def parameters_init(self) -> None:
         # Cleanup
-        atexit.register(self.cleanup)
+        atexit.register(self.exit)
 
         # Paths
         self.paths = {
@@ -206,7 +205,15 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "mla" or target.lower() == "all":
             try:
                 # Instantiate
-                self.mla = MLAAPI(hw_config = self.hw_config).unwrap()
+                self.mla = MLAAPI(hw_config = self.hw_config)
+                
+                # Set up signal-slot connections
+                # Scantelligent -> MLA
+                self.amplitudes_update.connect(self.mla.audio.update_amplitudes)
+                
+                # MLA -> Scantelligent
+                self.mla.message.connect(self.receive_message)
+                self.mla.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
 
                 self.logprint("MLA: Found the MLA", "success")
                 self.status.update({"mla": "online"})
@@ -241,19 +248,7 @@ class Scantelligent(QtCore.QObject):
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
                 self.gui.buttons["nanonis"].setState("offline")
         
-        # Audio
-        try:
-            self.audio_thread = QtCore.QThread()
-            self.audio = AudioGenerator()
-            self.audio.moveToThread(self.audio_thread)
 
-            self.audio_thread.started.connect(self.audio.start_audio)
-            self.amplitudes_update.connect(self.audio.update_amplitudes)
-            # self.demod_frequency.connect(self.audio.update_frequency)
-            self.audio.finished.connect(self.audio_thread.quit)
-        except Exception as e:
-            self.logprint(f"Unable to set up audio: {e}", "error")
-            self.gui.buttons["nanonis"].setState("offline")
 
 
         
@@ -278,7 +273,7 @@ class Scantelligent(QtCore.QObject):
             case "mla":
                 if self.status["mla"] == "running":
                     try:
-                        self.mla.disconnect()
+                        self.mla.unlink()
                         self.status.update({"mla": "idle"})
                         self.gui.buttons["mla"].setState("online")
                     except:
@@ -286,7 +281,7 @@ class Scantelligent(QtCore.QObject):
                         self.gui.buttons["mla"].setState("offline")
                 elif self.status["mla"] == "idle" or self.status["mla"] == "online":
                     try:
-                        self.mla.connect()
+                        self.mla.link()
                         self.status.update({"mla": "running"})
                         self.gui.buttons["mla"].setState("running")
                     except:
@@ -638,24 +633,18 @@ class Scantelligent(QtCore.QObject):
         self.user.save_parameter_sets()
         try:
             self.nanonis.unlink()
-            self.nanonis.disconnect()
         except: pass
         try:
             self.experiment.disconnect()
             self.experiment.deleteLater()
         except: pass
         try:
-            self.mla.disconnect()
+            self.mla.unlink()
         except: pass
-        try:
-            if hasattr(self, "nanonis"): delattr(self, "nanonis")
-        except: pass
-        try:
-            if hasattr(self, "experiment"): delattr(self, "experiment")
-        except: pass
-        try:
-            if hasattr(self, "experiment_thread"): delattr(self, "experiment_thread")
-        except: pass
+
+        for attribute_name in ["nanonis", "mla", "experiment", "experiment_thread", "camera", "camera_thread"]:
+            try: delattr(self, attribute_name)
+            except: pass
         return
 
     def exit(self) -> None:

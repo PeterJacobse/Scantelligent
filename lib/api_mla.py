@@ -3,6 +3,7 @@ from PyQt6 import QtCore
 import array as ar
 import numpy as np
 from math import pi
+import sounddevice as sd
 
 
 
@@ -42,12 +43,12 @@ class AudioGenerator(QtCore.QObject):
         outdata[:] = np.tanh(wave * 0.2)[:, np.newaxis]
 
     @QtCore.pyqtSlot(list)
-    def update_amplitudes(self, values) -> None:
+    def update_amplitudes(self, values: list = []) -> None:
         self.amplitudes = values
         return
 
-    @QtCore.pyqtSlot(int)
-    def update_frequency(self, value) -> None:
+    @QtCore.pyqtSlot(float)
+    def update_frequency(self, value: float = 100) -> None:
         self.w1 = 2 * pi * float(value)
         return
 
@@ -59,8 +60,14 @@ class AudioGenerator(QtCore.QObject):
 
 
 
-class MLAAPI:
+class MLAAPI(QtCore.QObject):
+    amplitudes = QtCore.pyqtSignal(list)
+    frequency = QtCore.pyqtSignal(float)
+    message = QtCore.pyqtSignal(str, str)
+    parameters = QtCore.pyqtSignal(dict)
+
     def __init__(self, hw_config: dict = {}):
+        super().__init__()
         
         mla_path = False
         if "mla" in hw_config.keys():
@@ -81,23 +88,52 @@ class MLAAPI:
         from mlaapi import mla_api
         self.mla = mla_api.MLA(settings)
 
+        # Audio
+        try:
+            self.audio_thread = QtCore.QThread()
+            self.audio = AudioGenerator()
+            self.audio.moveToThread(self.audio_thread)
+
+            self.audio_thread.started.connect(self.audio.start_audio)
+            self.frequency.connect(self.audio.update_frequency)
+            self.audio.finished.connect(self.audio_thread.quit)
+        except Exception as e:
+            raise Exception(f"Unable to set up audio: {e}")
+
 
 
     def link(self) -> None:
-        self.mla.connect()
-        
-        self.set_defaults()
-        self.set_f1(200)
-        
-        self.lockin = self.mla.lockin
-        self.analog = self.mla.analog
-        self.hardware = self.mla.hardware
-        self.feedback = self.mla.feedback
+        try:
+            self.mla.connect()
+            self.set_defaults()
+            self.start_lockin()
+            self.parameters.emit({"dict_name": "mla_status", "status": "running"})
+        except Exception as e:
+            self.logprint(f"Error while connecting to the MLA: {e}", message_type = "error")
+            self.unlink()
         return
 
     def unlink(self) -> None:
-        self.mla.disconnect()
+        try:
+            self.stop_lockin()
+            self.oscillator_on(False)
+            self.set_V(0)
+        finally:
+            self.mla.disconnect()
+            self.parameters.emit({"dict_name": "mla_status", "status": "idle"})
         return
+
+    def start_lockin(self) -> None:
+        return self.mla.lockin.start_lockin()
+
+    def stop_lockin(self) -> None:
+        return self.mla.lockin.stop_lockin()
+
+    def logprint(self, text: str = "", message_type: str = "") -> None:
+        self.message.emit(text, message_type)
+        return
+
+
 
     def set_DACs_ADCs_safe_range(self) -> None:
         # Set all analog inputs to the correct configuration (range = +-20 V)
@@ -116,22 +152,22 @@ class MLAAPI:
         self.mla.osc.set_downsampling(250)
         return
 
-    def set_output_port_mask(self) -> None:
+    def oscillator_on(self, value: bool = True) -> None:
         # Configure output ports
         mask1 = np.zeros(shape = self.mla.lockin.nr_output_freq, dtype = int) # List of 32 zeros
-        mask1[0] = 1
+        mask1[0] = int(value)
         self.mla.lockin.set_output_mask(mask1, port = 1)
+        self.parameters.emit({"dict_name": "lockin", "mla_mod1": {"on": value}})
         return
 
     def set_defaults(self) -> None:
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
-        self.set_output_port_mask()
-        
-        """
-        mask2 = np.zeros(mla.lockin.nr_output_freq)
-        mla.lockin.set_output_mask(mask_2, port = 2)
+        self.oscillator_on(False)
+        self.set_amp_mV(0)
+        self.set_f1(200)
 
+        """
         # Use port 2 for drive waveform (not feedback)
         mla.lockin.set_output_mode_lockin(two_channels = True)
 
@@ -144,13 +180,18 @@ class MLAAPI:
         """
         return
 
+    def get_pixel(self) -> np.ndarray:
+        (pix, _) = self.mla.lockin.get_pixels(1)
+        self.amplitudes.emit(pix)
+        return pix
 
-
-    def set_f1(self, f: float = 220) -> None:
+    def set_f1(self, f: float = 220, samples: int = 1) -> None:
         harmonics_list = np.array(range(32), dtype = int)
         harmonics_list[0] = 1
         self.mla.lockin.set_frequencies_by_n_and_df(harmonics_list, f)
-        self.mla.lockin.set_df(f)
+        self.mla.lockin.set_df(f / samples)
+        
+        self.frequency.emit(f)
         return
 
     def set_amp_mV(self, amp_mV: float = 0) -> None:
