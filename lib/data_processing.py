@@ -56,7 +56,7 @@ class DataProcessing:
             "fft": False,
             "normal": False,
             "projection": "re",
-            "phase": 0,
+            "phase (deg)": 0,
             "min_method": "full", # Method to determine the lower limit of the data. Can be 'full', 'absolute', 'percentiles' or 'deviations'
             "min_method_value": 0, # Argument to calculate the min_limit on the basis of the provided min_method
             "min_limit": 0, # This key will hold the numerical value of the limit as determined by applying the min_method to the data using the min_method_value

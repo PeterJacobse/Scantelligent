@@ -31,13 +31,13 @@ class NanonisAPI(QtCore.QObject):
 
 
 
-    def link(self) -> None:
+    def link(self, verbose: str = False) -> None:
         nhw = self.nanonis_hardware
         if self.status == "running":
             self.logprint("Attempting to connect to Nanonis while it is already running. Operation aborted.", message_type = "error")
             return False
 
-        self.logprint("nanonis.link()", message_type = "code")
+        if verbose: self.logprint("nanonis.link()", message_type = "code")
         connection_success = nhw.link()
         if connection_success:
             self.status = "running"
@@ -45,18 +45,18 @@ class NanonisAPI(QtCore.QObject):
             self.status = "offline"
             self.logprint("Failed to connect to Nanonis.", message_type = "error")
 
-        try: self.callback.setState(self.status)
-        except: pass
+        try: self.callback(self.status)
+        except Exception as e: print(f"{e}")
         return f"Nanonis status: {self.status}"
 
-    def unlink(self) -> None:
+    def unlink(self, verbose: str = False) -> None:
         nhw = self.nanonis_hardware
-        self.logprint("nanonis.unlink()", message_type = "code")
+        if verbose: self.logprint("nanonis.unlink()", message_type = "code")
         nhw.unlink()
         self.status = "idle"
 
-        try: self.callback.setState(self.status)
-        except: pass
+        try: self.callback(self.status)
+        except Exception as e: print(f"{e}")
         return f"Nanonis status: {self.status}"
 
     def nanonis_update(self, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:

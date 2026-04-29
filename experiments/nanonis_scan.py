@@ -11,14 +11,14 @@ class Experiment(BaseExperiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        try: self.prepare_gui(self.sct.gui) # Set up the GUI. See below
-        except: self.gui_not_found_error()
+        gui_setup = {
+            "combobox": {"items": ["nearest tip", "up", "down"]},
+            "line_edits": {},
+            "buttons": {}
+                     }
 
+        self.prepare_gui(gui_setup)
         self.connect_hardware("nanonis") # Set up the required hardware connections
-
-    def prepare_gui(self, gui) -> None:
-        self.setup_combobox(gui = gui, items = ["nearest tip", "up", "down"])
-        self.setup_line_edits(gui = gui)
 
     @BaseExperiment.experiment_handler
     def run(self):

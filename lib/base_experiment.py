@@ -36,8 +36,32 @@ class BaseExperiment(QObject):
     def logprint(self, message: str = "", message_type: str = "error"):
         return self.message.emit(message, message_type)
 
-    def setup_line_edits(self, gui, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:        
-        self.line_edits = [gui.line_edits[f"experiment_{i}"] for i in range(9)]
+    def prepare_gui(self, setup: dict = {}) -> None:
+        if not hasattr(self, "sct"):
+            self.logprint("Error setting up the gui. Scantelligent not found", message_type = "error")
+            return
+        if not hasattr(self.sct, "gui"):
+            self.logprint("Error setting up the gui. Scantelligent GUI not found", message_type = "error")
+            return
+        
+        self.logprint(f"{setup = }")
+        
+        try:
+            combobox_dict = setup.get("combobox", {})
+            self.setup_combobox(items = combobox_dict.get("items", []))
+            
+            line_edits_dict = setup.get("line_edits", {})
+            self.setup_line_edits(tooltips = line_edits_dict.get("tooltips", []), values = line_edits_dict.get("values", []), digits = line_edits_dict.get("digits", []),
+                                  limits = line_edits_dict.get("limits", []), units = line_edits_dict.get("units", []))
+            
+            buttons_dict = setup.get("buttons", {})
+            self.setup_buttons(states = buttons_dict.get("states"))
+        except Exception as e:
+            self.logprint(f"Error setting up the gui: {e}")
+        return
+
+    def setup_line_edits(self, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:        
+        self.line_edits = [self.sct.gui.line_edits[f"experiment_{i}"] for i in range(9)]
         #[self.line_edits[index].setTooltip(f"Experiment parameter field {index}\ngui.line_edits[\"experiment_{index}\"]") for index in range(9)]
         #[self.line_edits[index].setUnit("") for index in range(9)]
         #[self.line_edits[index].setValue(None) for index in range(9)]
@@ -49,17 +73,18 @@ class BaseExperiment(QObject):
         [self.line_edits[index].setUnit(unit) for index, unit in enumerate(units)]
         return
 
-    def setup_combobox(self, gui, tooltip: str = "", items: list = []) -> None:
-        self.direction_combobox = gui.comboboxes["direction"]
+    def setup_combobox(self, tooltip: str = "", items: list = []) -> None:        
+        self.direction_combobox = self.sct.gui.comboboxes["direction"]
         self.direction_combobox.renewItems(items)
+        
+        self.logprint(f"{self.direction_combobox}.renewItems({items})")
         return
 
-    def setup_buttons(self, gui, states: list = []) -> None:
-        self.buttons = [gui.buttons[f"experiment_{i}"] for i in range(9)]
+    def setup_buttons(self, states: list = []) -> None:
+        self.buttons = [self.sct.gui.buttons[f"experiment_{i}"] for i in range(9)]
         
-        print(self.buttons[0])
-
-        self.buttons[0].setStates(states)
+        single_button_states = states[0]
+        self.buttons[0].setStates(single_button_states)
         return
 
 
@@ -91,6 +116,9 @@ class BaseExperiment(QObject):
         return
 
     def monitor_scan(self, channel, timeout_s: int = 100000) -> np.ndarray:
+        channels_dict = {i: name for i, name in enumerate(["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"])} | {"dict_name": "channels"}
+        self.parameters.emit(channels_dict) # This triggers the GUI to start graphing data
+        
         # Loop to check scan progress
         t_start = time.time()
         t_elapsed = 0
@@ -115,6 +143,7 @@ class BaseExperiment(QObject):
         parameters = {"dict_name": "gui_parameters"}
         if hasattr(self, "line_edits"): parameters.update({"line_edits": [self.line_edits[i].getValue() for i in range(9)]})
         if hasattr(self, "direction_combobox"): parameters.update({"direction_combobox": self.direction_combobox.currentText()})
+        if hasattr(self, "buttons"): parameters.update({"buttons": [self.buttons[i].state for i in range(9)]})
         return parameters
 
     def connect_hardware(self, target: str = "nanonis") -> None:

@@ -226,7 +226,7 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "nanonis" or target.lower() == "all":
             try:
                 # Instantiate
-                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["nanonis"])
+                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["nanonis"].setState)
                 
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
@@ -259,10 +259,10 @@ class Scantelligent(QtCore.QObject):
         match target:
             case "nanonis":
                 if self.gui.buttons["nanonis"].state_name == "running":
-                    try: self.nanonis.unlink()
+                    try: self.nanonis.unlink(verbose = True)
                     except: pass
                 elif self.gui.buttons["nanonis"].state_name == "idle" or self.gui.buttons["nanonis"].state_name == "online":
-                    try: self.nanonis.link()
+                    try: self.nanonis.link(verbose = True)
                     except: pass
                 else:
                     self.connect_hardware(target = "nanonis")
@@ -946,18 +946,23 @@ class Scantelligent(QtCore.QObject):
         
         start_button = self.gui.buttons["start_stop"]
         
-        match start_button.state_name:            
+        match start_button.state_name:
             case "load": # Load the experiment
                 experiment_name = self.gui.comboboxes["experiment"].currentText()
                 experiment_path = os.path.join(self.paths["experiments_folder"], experiment_name + ".py")
                 if not os.path.isfile(experiment_path):
                     self.logprint(f"The selected experiment was not found in {self.paths["experiments_folder"]}", "error")
-                    return                
+                    return
 
                 self.logprint(f"Loading/resetting experiment {experiment_name}", message_type = "message")
                 [self.gui.progress_bars[name].setValue(0) for name in ["task", "experiment"]]
                 [pdi.setData() for pdi in self.gui.pdis]
-                [self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]") for i in range(9)]
+                self.gui.comboboxes["direction"].renewItems([])
+                for i in range(9):
+                    self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
+                    self.gui.line_edits[f"experiment_{i}"].setUnit("")
+                    self.gui.line_edits[f"experiment_{i}"].setValue("")
+                    
                 self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
