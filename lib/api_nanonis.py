@@ -15,7 +15,7 @@ class NanonisAPI(QtCore.QObject):
     finished = QtCore.pyqtSignal() # Signal to indicate an experiment is finished
     data_array = QtCore.pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, hw_config: dict):
+    def __init__(self, hw_config: dict, status_callback: object = None):
         super().__init__()
         self.nanonis_hardware = NanonisHardware(hw_config = hw_config)
         # nanonis_hardware methods are low-level methods performing direct communication to the Nanonis FPGA over TCP-IP
@@ -26,6 +26,8 @@ class NanonisAPI(QtCore.QObject):
         # The exception should be caught in the code where the NanonisAPI object is instantiated
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.data = DataProcessing()
+        self.callback = None
+        if status_callback: self.callback = status_callback
 
 
 
@@ -35,6 +37,7 @@ class NanonisAPI(QtCore.QObject):
             self.logprint("Attempting to connect to Nanonis while it is already running. Operation aborted.", message_type = "error")
             return False
 
+        self.logprint("nanonis.link()", message_type = "code")
         connection_success = nhw.link()
         if connection_success:
             self.status = "running"
@@ -42,14 +45,18 @@ class NanonisAPI(QtCore.QObject):
             self.status = "offline"
             self.logprint("Failed to connect to Nanonis.", message_type = "error")
 
-        self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
+        try: self.callback.setState(self.status)
+        except: pass
         return f"Nanonis status: {self.status}"
 
     def unlink(self) -> None:
         nhw = self.nanonis_hardware
+        self.logprint("nanonis.unlink()", message_type = "code")
         nhw.unlink()
         self.status = "idle"
-        self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
+
+        try: self.callback.setState(self.status)
+        except: pass
         return f"Nanonis status: {self.status}"
 
     def nanonis_update(self, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:
@@ -640,7 +647,7 @@ class NanonisAPI(QtCore.QObject):
         try:
             if verbose:
                 if len(parameters) > 0:
-                    shown_parameters = {key: value for key, value in parameters.items() if not key in ["x_grid (nm)", "y_grid (nm)", "vertices (nm)", "bottom_left_corner (nm)", "top_left_corner (nm)", "vertices (nm)"]}
+                    shown_parameters = {key: value for key, value in parameters.items() if not key in ["x_grid (nm)", "y_grid (nm)", "vertices (nm)", "bottom_left_corner (nm)", "top_left_corner (nm)"]}
                     self.logprint(f"nanonis.grid_update({shown_parameters})", "code")
                 else: self.logprint(f"nanonis.grid_update()", "code")
             if not self.status == "running": self.link()

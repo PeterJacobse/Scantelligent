@@ -226,7 +226,7 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "nanonis" or target.lower() == "all":
             try:
                 # Instantiate
-                self.nanonis = NanonisAPI(hw_config = self.hw_config)
+                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["nanonis"])
                 
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
@@ -249,8 +249,6 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["nanonis"].setState("offline")
         
 
-
-
         
         # Populate the autocomplete suggestions in the command input
         self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
@@ -260,10 +258,10 @@ class Scantelligent(QtCore.QObject):
     def dis_reconnect(self, target: str = "nanonis") -> None:
         match target:
             case "nanonis":
-                if self.status["nanonis"] == "running":
+                if self.gui.buttons["nanonis"].state_name == "running":
                     try: self.nanonis.unlink()
                     except: pass
-                elif self.status["nanonis"] == "idle" or self.status["nanonis"] == "online":
+                elif self.gui.buttons["nanonis"].state_name == "idle" or self.gui.buttons["nanonis"].state_name == "online":
                     try: self.nanonis.link()
                     except: pass
                 else:
@@ -674,8 +672,8 @@ class Scantelligent(QtCore.QObject):
 
     # Read the GUI to set processing flags for image/spectrum processing
     def update_processing_flags(self) -> None:
-        flags = {"dict_name": "processing_flags"}
-        
+        flags = {}
+              
         checkboxes = self.gui.checkboxes
         buttons = self.gui.buttons
         comboboxes = self.gui.comboboxes
@@ -685,9 +683,9 @@ class Scantelligent(QtCore.QObject):
         # Background
         bg_methods = ["none", "plane", "linewise"]
         for method in bg_methods:
-            if buttons[f"bg_{method}"].state_index == 1: flags.update({"background": f"{method}"})
-        
-        if buttons["rot_trans"].state_index == 1: flags.update({"rotation": True, "offset": True})
+            if buttons[f"bg_{method}"].isChecked(): flags.update({"background": f"{method}"})
+
+        if buttons["rot_trans"].isChecked(): flags.update({"rotation": True, "offset": True})
         else: flags.update({"rotation": False, "offset": False})
         
         # Limits
@@ -725,9 +723,12 @@ class Scantelligent(QtCore.QObject):
         try: [flags.update({operation: checkboxes[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
         except: pass
         phase = self.gui.sliders["phase"].getValue()
-        flags.update({"phase": phase})
+        flags.update({"phase (deg)": phase})
 
-        self.data.processing_flags.update(flags)
+        self.data.scan_processing_flags.update(flags)
+        
+        flags = self.data.scan_processing_flags.get_all()
+        self.logprint(f"{flags =}", message_type = "result")
         return
 
 
@@ -981,14 +982,6 @@ class Scantelligent(QtCore.QObject):
                     self.experiment.parameters.connect(self.parameters.receive)
                     self.experiment.image.connect(self.receive_image)
                     self.experiment.data_array.connect(self.receive_data)
-                    
-                    # Establish connections to the hardware components instantiated within the experiment object
-                    if hasattr(self.experiment, "nanonis"):
-                        self.experiment.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
-                        self.experiment.nanonis.message.connect(self.receive_message)
-                        self.experiment.nanonis.parameters.connect(self.parameters.receive)
-                        self.experiment.nanonis.image.connect(self.receive_image)
-                        self.experiment.nanonis.data_array.connect(self.receive_data)
                 
                 except Exception as e:
                     self.logprint(f"Unable to load the experiment. {e}", message_type = "error")

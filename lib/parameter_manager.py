@@ -150,17 +150,6 @@ class ParameterManager(QtCore.QObject):
         dict_name = parameters.get("dict_name")
 
         match dict_name:
-
-            case "nanonis_status":
-                status = parameters.get("status")
-                match status:
-                    case "running": sct.status.update({"nanonis": "running"})
-                    case "online" | "idle": sct.status.update({"nanonis": "idle"})
-                    case "offline": sct.status.update({"nanonis": "offline"})
-                    case _: pass
-                try: sct.gui.buttons["nanonis"].setState(status)
-                except: pass
-
             case "keithley_status":
                 status = parameters.get("status")
                 match status:

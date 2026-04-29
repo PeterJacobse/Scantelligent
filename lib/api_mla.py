@@ -66,8 +66,10 @@ class MLAAPI(QtCore.QObject):
     message = QtCore.pyqtSignal(str, str)
     parameters = QtCore.pyqtSignal(dict)
 
-    def __init__(self, hw_config: dict = {}):
+    def __init__(self, hw_config: dict = {}, status_callback: object = None):
         super().__init__()
+        self.callback = None
+        if status_callback: self.callback = status_callback
         
         mla_path = False
         if "mla" in hw_config.keys():
@@ -104,13 +106,18 @@ class MLAAPI(QtCore.QObject):
 
     def link(self) -> None:
         try:
+            self.logprint("mla.link()", message_type = "code")
             self.mla.connect()
             self.set_defaults()
             self.start_lockin()
-            self.parameters.emit({"dict_name": "mla_status", "status": "running"})
+            try: self.callback.setState("running")
+            except: pass
+            # self.parameters.emit({"dict_name": "mla_status", "status": "running"})
         except Exception as e:
             self.logprint(f"Error while connecting to the MLA: {e}", message_type = "error")
             self.unlink()
+            try: self.callback.setState("idle")
+            except: pass
         return
 
     def unlink(self) -> None:
@@ -121,6 +128,8 @@ class MLAAPI(QtCore.QObject):
         finally:
             self.mla.disconnect()
             self.parameters.emit({"dict_name": "mla_status", "status": "idle"})
+            try: self.callback.setState("idle")
+            except: pass
         return
 
     def start_lockin(self) -> None:

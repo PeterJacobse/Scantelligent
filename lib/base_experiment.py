@@ -120,7 +120,10 @@ class BaseExperiment(QObject):
     def connect_hardware(self, target: str = "nanonis") -> None:
         match target:
             case "nanonis":
-                self.nanonis = NanonisAPI(hw_config = self.hw_config)
+                if not hasattr(self.sct, "nanonis"):
+                    raise Exception("Error. Nanonis not found")
+                else:
+                    self.nanonis = self.sct.nanonis
             case "keithley":
                 self.keithley = KeithleyAPI(hw_config = self.hw_config)
             case "mla":

@@ -1,3 +1,4 @@
+from PyQt6.QtCore import QMutex, QMutexLocker
 import numpy as np
 from scipy.signal import convolve2d
 from scipy.ndimage import gaussian_filter
@@ -8,17 +9,43 @@ import pint, re
 
 
 
-class DataProcessing():
+class ThreadSafeDict:
     def __init__(self):
-        self.processing_flags = self.create_scan_processing_flage()
+        self._data = {}
+        self._mutex = QMutex()
+    
+    def update(self, entry: dict = {}):
+        if not entry: return
+        
+        locker = QMutexLocker(self._mutex)
+        self._data.update(entry)
+        return
+    
+    def get(self, key, default):
+        locker = QMutexLocker(self._mutex)
+        return self._data.get(key, default)
+    
+    def get_all(self):
+        locker = QMutexLocker(self._mutex)
+        return self._data.copy()
+
+
+
+class DataProcessing:
+    def __init__(self):
+        self.scan_processing_flags = self.create_scan_processing_flage()
         self.spec_processing_flags = self.create_spec_processing_flags()
         
     def create_scan_processing_flage(self) -> dict:
-        processing_flags = {
+        scan_processing_flags = ThreadSafeDict()
+        
+        entries = {
             "dict_name": "processing_flags", # Self reference to facilitate the app recognizing what kind of dictionary this is
             "direction": "forward", # Forward is the left-to-right (trace) part of the scan; backward is right-to-left (retrace) part of the scan
             "up_or_down": "up", # Scan direction. Terminology 'direction' is avoided for up or down to avoid confusion
-            "channel": "Z", # Scan channel
+            "channels": [], # Available scan channels
+            "channel": "", # Selected scan channel
+            "channel_index": None, # Selected scan channel index
             "background": "none", # Method for background subtraction. Can be 'none', 'plane', or 'linewise'
             "rotation": False, # Flag that determines whether the rotation of the scan frame should be shown
             "offset": False,
@@ -46,10 +73,14 @@ class DataProcessing():
             }
         }
         
-        return processing_flags
+        scan_processing_flags.update(entries)
+        
+        return scan_processing_flags
     
     def create_spec_processing_flags(self) -> dict:
-        processing_flags = {
+        spec_processing_flags = ThreadSafeDict()
+        
+        entries = {
             "line_width": 2,
             "opacity": 1,
             "offset_0": 0,
@@ -63,7 +94,9 @@ class DataProcessing():
             "moving_average_window": 1
         }
         
-        return processing_flags
+        spec_processing_flags.update(entries)
+        
+        return spec_processing_flags
 
 
 
