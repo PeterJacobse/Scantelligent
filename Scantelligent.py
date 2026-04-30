@@ -234,6 +234,7 @@ class Scantelligent(QtCore.QObject):
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
                 self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, wait = True, unlink = True))
+                self.gui.image_view.position_signal_middle_button.connect(lambda x, y: self.parameters.set("grid"))
 
                 # Nanonis -> Scantelligent
                 self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))

@@ -59,10 +59,10 @@ class NanonisAPI(QtCore.QObject):
         except Exception as e: print(f"{e}")
         return f"Nanonis status: {self.status}"
 
-    def nanonis_update(self, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:
+    def nanonis_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         return self.initialize(unlink = unlink, verbose = verbose)
 
-    def initialize(self, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:
+    def initialize(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         parameters = {"dict_name": "nanonis_parameters"}
 
@@ -735,7 +735,7 @@ class NanonisAPI(QtCore.QObject):
         dt = parameters.get("dt_nanonis (ms)", 5) / 1000
         dV = parameters.get("dV_nanonis (mV)", 10) / 1000
         dz_nm = parameters.get("dz_nanonis (nm)", 1)
-        
+                
         bias_dict = {"dV_nanonis (mV)": dV * 1000, "dt_nanonis (ms)": dt * 1000, "dz_nanonis (nm)": dz_nm, "dict_name": "bias"}
         
         try:
@@ -743,7 +743,7 @@ class NanonisAPI(QtCore.QObject):
                 if len(parameters) > 0: self.logprint(f"nanonis.bias_update({parameters})", "code")
                 else: self.logprint(f"nanonis.bias_update()", "code")
             if not self.status == "running": self.link()                            
-            V_old = nhw.get_V() # Read data from Nanonis
+            V_old = nhw.get_V() # Read data from Nanonis            
             if not isinstance(V, float | int): V = V_old # V not provided; substitute the old bias
             bias_dict.update({"V_nanonis (V)": V})
             if np.abs(V - V_old) < dV:

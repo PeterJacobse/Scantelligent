@@ -857,6 +857,7 @@ class STWidgets:
 
     class ImageView(pg.ImageView):
         position_signal = QtCore.pyqtSignal(float, float)
+        position_signal_middle_button = QtCore.pyqtSignal(float, float)
         
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -870,10 +871,20 @@ class STWidgets:
                 
                 mapped_pos = self.view.mapToView(pos)
                 self.position_signal.emit(mapped_pos.x(), mapped_pos.y())
-                return
+
+            # Call base class implementation
+            return super().mouseDoubleClickEvent(event)
+        
+        def mousePressEvent(self, event):
+            if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+                # Get scene position
+                pos = event.position()
+                
+                mapped_pos = self.view.mapToView(pos)
+                self.position_signal_middle_button.emit(mapped_pos.x(), mapped_pos.y())
                 
             # Call base class implementation
-            super().mouseDoubleClickEvent(event)
+            return super().mousePressEvent(event)
 
     class PhaseSlider(SliderLineEdit):
         """

@@ -173,7 +173,7 @@ class BaseExperiment(QObject):
         
         return
 
-    def check_abort_request(self):
+    def check_abort_request(self) -> None:
         if self.thread().isInterruptionRequested():
             self.abort_requested = True
             raise AbortedError
@@ -196,8 +196,8 @@ class BaseExperiment(QObject):
                 lockin_parameters = nanonis_parameters.get("lockin", {})
                 self.nanonis.lockin_update(lockin_parameters)
                 
-                V_nanonis = nanonis_parameters.get("bias", {}).get("V_nanonis (V)", None)
-                if V_nanonis: self.nanonis.bias_update({"V_nanonis (V)": V_nanonis})
+                V_nanonis = round(nanonis_parameters.get("bias", {}).get("V_nanonis (V)", None), 2)
+                if isinstance(V_nanonis, float | int): self.nanonis.bias_update({"V_nanonis (V)": V_nanonis})
 
                 feedback_parameters = nanonis_parameters.get("feedback", {})
                 self.nanonis.feedback_update(feedback_parameters)
@@ -222,6 +222,3 @@ class BaseExperiment(QObject):
             self.finished.emit()
         return
 
-    def gui_not_found_error(self):
-        self.logprint("This experiment reads parameters from the Scantelligent GUI, but the GUI could not be found or initialized properly", message_type = "error")
-        return
