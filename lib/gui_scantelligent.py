@@ -278,7 +278,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return buttons
 
     def make_checkboxes(self) -> tuple[dict, dict]:
-        CB = STWidgets.STCheckBox
+        CB = STWidgets.CheckBox
         QBG = QtWidgets.QButtonGroup
 
         checkboxes = {
@@ -1039,7 +1039,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]
         
-        [self.buttons[f"bg_{method}"].clicked.connect(lambda checked, mthd = method: self.background_mutex(mthd)) for method in ["none", "plane", "linewise"]]        
+        [self.buttons[f"bg_{method}"].clicked.connect(lambda checked, mthd = method: self.background_mutex(mthd)) for method in ["none", "plane", "linewise"]]
+        [self.buttons[f"{method}"].clicked.connect(lambda checked, mthd = method: self.set_both_limits(mthd)) for method in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
         [self.checkboxes[f"min_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"min_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
         [self.checkboxes[f"max_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"max_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
 
@@ -1141,6 +1142,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                     case "percentiles": percentiles.setState(1)
                     case "deviations": deviations.setState(1)
                     case _: absolute.setState(1)
+        return
+
+    def set_both_limits(self, method: str = "full") -> None:
+        match method:
+            case "full_data_range": [self.checkboxes[f"{side}_full"].click() for side in ["min", "max"]]
+            case "percentiles": [self.checkboxes[f"{side}_percentiles"].click() for side in ["min", "max"]]
+            case "standard_deviation": [self.checkboxes[f"{side}_deviations"].click() for side in ["min", "max"]]
+            case _: [self.checkboxes[f"{side}_absolute"].click() for side in ["min", "max"]]
         return
 
     def points_dV(self, target: str = "points_STS") -> None:

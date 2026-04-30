@@ -62,10 +62,6 @@ class BaseExperiment(QObject):
 
     def setup_line_edits(self, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:
         self.line_edits = [self.sct.gui.line_edits[f"experiment_{index}"] for index in range(9)]
-        #[self.line_edits[index].show() for index in range(9)]
-        #[self.line_edits[index].setTooltip(f"Experiment parameter field {index}\ngui.line_edits[\"experiment_{index}\"]") for index in range(9)]
-        #[self.line_edits[index].setUnit("") for index in range(9)]
-        #[self.line_edits[index].setValue(None) for index in range(9)]
 
         [self.line_edits[index].changeToolTip(tooltip) for index, tooltip in enumerate(tooltips)]
         [self.line_edits[index].setDigits(digits) for index, digits in enumerate(digits)]

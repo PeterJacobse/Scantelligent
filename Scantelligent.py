@@ -60,6 +60,7 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
+        self.xy_mode = True # False means graphing parameters as a function of index, rolling when more than 1000 buffer values are filled. True means using the values of channel 0 as x values.
 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -114,6 +115,7 @@ class Scantelligent(QtCore.QObject):
 
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
+        [self.gui.line_edits[name].editingFinished.connect(self.update_processing_flags) for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute", "max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
         # Comboboxes
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
@@ -363,10 +365,11 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data_array: np.ndarray, max_length: int = 1000) -> None:
+        x_data = None
 
         for index in range(min(len(data_array[0]), 40)):            
             new_data = data_array[:, index]
-            
+
             plot_data_item = self.gui.pdis[index]
             old_data = plot_data_item.getData()[1]
             
@@ -378,7 +381,14 @@ class Scantelligent(QtCore.QObject):
                     crop_length = total_length - max_length
                     data = np.concatenate([old_data[crop_length:], new_data])
             else: data = new_data
-            plot_data_item.setData(data)
+            
+            if index == 0: x_data = data # Set x_data to be the updated data from channel 0
+
+            if bool(self.xy_mode):
+                n_points = max(len(x_data), len(data))
+                plot_data_item.setData(x = x_data[:n_points], y = data[:n_points])
+            else:
+                plot_data_item.setData(data)
         return
 
 
@@ -734,7 +744,7 @@ class Scantelligent(QtCore.QObject):
             print("Error updating the image processing flags.")
 
         # Operations
-        try: [flags.update({operation: checkboxes[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
+        try: [flags.update({operation: buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
         except: pass
         phase = self.gui.sliders["phase"].getValue()
         flags.update({"phase (deg)": phase})
@@ -976,7 +986,7 @@ class Scantelligent(QtCore.QObject):
                 self.gui.comboboxes["direction"].renewItems([])
                 for i in range(9):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
-                    self.gui.line_edits[f"experiment_{i}"].setUnit("")
+                    self.gui.line_edits[f"experiment_{i}"].setUnit()
                     self.gui.line_edits[f"experiment_{i}"].setValue("")
                     
                 self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})

@@ -179,6 +179,7 @@ class NanonisHardware:
 
             # Signals
             "get_signals_in_slots": make_header('Signals.InSlotsGet', body_size = 0),
+            "set_signal_in_slot": make_header('Signals.InSlotSet', body_size = 8),
             "get_signal_names": make_header('Signals.NamesGet', body_size = 0),
             "get_signal_value": make_header('Signals.ValGet', body_size = 8),
             
@@ -1131,6 +1132,25 @@ class NanonisHardware:
         parameters = {"names": signal_names, "indices": signal_indices}
             
         return parameters
+
+    def set_signal_in_slot(self, slot: int, signal_index: int) -> None:
+        """
+        Assigns one of the 128 available signals to one of the 24 slots of the 
+        Signals Manager.
+
+        Parameters
+        ----------
+        slot          : The index of the slot in the Signals Manager where one 
+                        of the 128 RT signals is assigned, so that index could 
+                        be any value from 0 to 23
+        RTSignalIndex : The index of the RT signal to assign to the selected 
+                        slot, so that index could be any value from 0 to 127
+
+        """
+        command = self.headers["set_signal_in_slot"] + self.conv.to_hex(slot, 4) + self.conv.to_hex(signal_index, 4)
+        self.send_command(command)        
+        self.receive_response(0)
+        return
 
     def get_signal_names(self) -> list:
         command = self.headers["get_signal_names"]

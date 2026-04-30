@@ -281,7 +281,7 @@ class STWidgets:
             self.blockSignals(False)
             return
 
-    class CheckBox(QtWidgets.QCheckBox):
+    class CheckBoxOld(QtWidgets.QCheckBox):
         """
         A QCheckBox with extra method changeToolTip
         """
@@ -327,7 +327,7 @@ class STWidgets:
             self.blockSignals(False)
             return
 
-    class STCheckBox(MultiStateButton): # Phase Checkbox out in the future
+    class CheckBox(MultiStateButton):
         """
         A MultiStateButton implementation of a checkBox
         """
@@ -498,14 +498,20 @@ class STWidgets:
             if isinstance(unit, str):
                 self.unit = unit
                 self.addUnit()
+            else:
+                self.unit = None
             return
 
         def addUnit(self) -> None:
             number = self.getValue()
             
             self.blockSignals(True)
-            if isinstance(self.unit, str): self.setText(f"{number} {self.unit}")
-            else: self.setText(f"{number}")
+            if isinstance(self.unit, str):
+                if isinstance(self.digits, int): self.setText(f"{number:.{self.digits}f} {self.unit}")
+                else: self.setText(f"{number} {self.unit}")
+            else:
+                if isinstance(self.digits, int): self.setText(f"{number:.{self.digits}f}")
+                else: self.setText(f"{number}")
             self.blockSignals(False)
             return
 
@@ -516,7 +522,7 @@ class STWidgets:
             regex_pattern = r"([-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?)(?:\s*[a-zA-Zμ°%]+)?"
             number_matches = re.findall(regex_pattern, entered_text)
             
-            if isinstance(self.digits, int) and self.digits < 1: numbers = [int(x) for x in number_matches]
+            if isinstance(self.digits, int) and self.digits < 1: numbers = [int(float(x)) for x in number_matches]
             else: numbers = [float(x) for x in number_matches]
             
             if len(numbers) > 0:
@@ -547,9 +553,9 @@ class STWidgets:
                     if self.digits < 1: number = int(number)
 
                 if isinstance(self.unit, str):
-                    self.setText(f"{number} {self.unit}")
+                    self.setText(f"{number:.{self.digits}f} {self.unit}")
                 else:
-                    self.setText(f"{number}")
+                    self.setText(f"{number:.{self.digits}f}")
             
             else:
                 self.setText(f"{value}")
@@ -559,25 +565,69 @@ class STWidgets:
             return
 
         def wheelEvent(self, event) -> None:
-            delta = event.angleDelta().y() # Scroll direction
-
             if not self.hasFocus(): return # Only accept scrolling if it is selected
+            
+            (pos, number, error) = self.move_cursor()
+            if bool(error): return
 
-            pos = self.cursorPosition() - 1 # Cursor position
-            if pos < 0: pos = 0
-
+            delta = event.angleDelta().y() # Scroll direction
+            value = self.getValue()
+            if value < 0: delta *= -1
             old_pos = pos
             new_pos = pos
             
-            for iteration in range(10):
+            for _ in range(10):
                 new_pos = self.update_number_at_pos(old_pos, new_pos, delta)
                 if isinstance(new_pos, bool): break
                 elif new_pos < 0: break
 
+        def move_cursor(self) -> tuple[int, int, int]:
+            number = 0
+            
+            pos = self.cursorPosition() - 1
+            if pos < 0: # Cursor is all the way to the left: move one character to the right so the character 'in focus' is the first one
+                pos = 0
+                self.setCursorPosition(pos + 1)
+
+            txt = self.text() # Read the text
+            if len(txt) < 1: return (pos, number, 1) # No text. Return
+            
+            text_at_pos = txt[pos]
+            if text_at_pos.isnumeric(): # The character in focus is a number. Return
+                number = int(txt[pos])
+                return (pos, number, 0)
+            
+            if text_at_pos == ".": # The character in focus is a decimal dot. Move one position to the right
+                pos += 1
+                self.setCursorPosition(pos + 1)
+                text_at_pos = txt[pos]
+                if text_at_pos.isnumeric():
+                    number = int(txt[pos])
+                    return (pos, number, 0)
+
+            if pos < 1: # The character in focus is the first one but it is not numeric. This happens when there is a leading minus sign
+                pos += 1
+                self.setCursorPosition(pos + 1)
+                text_at_pos = txt[pos]
+                if text_at_pos.isnumeric():
+                    number = int(txt[pos])
+                    return (pos, number, 0)
+            
+            # Else the cursor must be to the right side. Move it to the left until it hits a numeric character
+            while pos > 0:
+                pos -= 1
+                text_at_pos = txt[pos]
+                if text_at_pos.isnumeric():
+                    self.setCursorPosition(pos + 1)
+                    number = int(txt[pos])
+                    return (pos, number, 0)
+
+            # In case the value is not numeric at all
+            return (pos, number, 1)
+
         def update_number_at_pos(self, old_pos: int = 0, new_pos: int = 0, delta = 1) -> bool | int:
             txt = self.text()
             text_pos = txt[new_pos] # Text at the cursor position
-            # if text_pos == ".": return new_pos - 1
             if not text_pos.isnumeric(): return new_pos - 1 # Only continue if the character at the cursor position is an integer
             number = int(text_pos) # Integer at the cursor position
 
@@ -586,7 +636,9 @@ class STWidgets:
                 if new_number > 9: new_number = 0
             else: # Scroll down
                 new_number = number - 1
-                if new_number < 0: new_number = 9
+                if new_number < 0:
+                    if new_pos > 0: new_number = 9
+                    else: new_number = -1
                 
             new_txt = txt[:new_pos] + str(new_number) + txt[new_pos + 1:]
             if new_txt[0] == 0: # Delete leading zero if it arises

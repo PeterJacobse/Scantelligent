@@ -27,6 +27,7 @@ class NanonisAPI(QtCore.QObject):
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.data = DataProcessing()
         self.callback = None
+        self.piezo_range = {} # When self.piezo_range_update is called, this parameter is updated
         if status_callback: self.callback = status_callback
 
 
@@ -78,13 +79,13 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             else: parameters.update({piezo_range.get("dict_name"): piezo_range})
             
-            (lockin_parameters, error) = self.lockin_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
-            if error: raise Exception(error)
-            else: parameters.update({lockin_parameters.get("dict_name"): lockin_parameters})
-            
             (tip_status, error) = self.tip_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
             else: parameters.update({tip_status.get("dict_name"): tip_status})
+            
+            (lockin_parameters, error) = self.lockin_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            if error: raise Exception(error)
+            else: parameters.update({lockin_parameters.get("dict_name"): lockin_parameters})
 
             (frame, error) = self.frame_update(update_new_frame = True, verbose = verbose) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
             if error: raise Exception(error)
@@ -244,6 +245,8 @@ class NanonisAPI(QtCore.QObject):
             })
             self.parameters.emit(piezo_range_dict)
             if verbose: self.logprint(f"{piezo_range_dict}", message_type = "result")
+            
+            self.piezo_range = piezo_range_dict
 
         except Exception as e: error = e
         finally:
@@ -292,38 +295,52 @@ class NanonisAPI(QtCore.QObject):
 
         return (scan_image, error)
 
-    def signals_update(self, parameter_names: str | list, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def signals_update(self, signals: str | list, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         nhw = self.nanonis_hardware
         parameter_values = {"dict_name": "signals"}
+        signal_indices = []
+        signal_dict = {}
 
-        # If only a single parameter_name is provided, turn it into a list
-        if isinstance(parameter_names, str): parameter_names = [parameter_names]
+        # If only a single signal is provided, turn it into a list (needs to be subscriptable)
+        if isinstance(signals, str | int): signals = [signals]
 
         try:
-            if verbose: self.logprint(f"nanonis.signals_update({parameter_names})", "code")
+            if verbose: self.logprint(f"nanonis.signals_update({signals})", "code")
             if not self.status == "running": self.link()
-
-            (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
-            if error: raise Exception(error)
-
-            signal_dict = scan_metadata.get("signal_dict")
-
-            # Find the requested parameters in the signal_dict
-            for parameter_name in parameter_names:
-                signal_index = signal_dict.get(parameter_name, None)
-                
-                # The parameter name is found in the dict and has a corresponding index
-                if isinstance(signal_index, int):
-                    signal_value = nhw.get_signal_value(signal_index)
-                    parameter_values.update({parameter_name: signal_value})
-                
-                else:
-                    parameter_values.update({parameter_name: "not found"})
             
+            if isinstance(signals[0], str) or name_lookup: # The parameters given are strings. Use the scan_metadata signal_dict to extract the signal_indices
+                (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
+                if error: raise Exception(error)
+                signal_dict = scan_metadata.get("signal_dict", {})
+
+            for signal in signals: # Iterate over the requested signals
+                if isinstance(signal, str):
+                    signal_name = signal
+                    signal_index = signal_dict.get(signal_name, None)
+
+                    # The parameter name is found in the dict and has a corresponding index
+                    if isinstance(signal_index, int):
+                        signal_value = nhw.get_signal_value(signal_index)
+                        parameter_values.update({signal_index: (signal_name, signal_value)})
+                    
+                    else:
+                        parameter_values.update({signal_name: (signal_name, f"signal not found")})
+
+                elif isinstance(signal, int):
+                    signal_index = signal
+                    signal_value = nhw.get_signal_value(signal_index)
+                    
+                    if name_lookup:
+                        for name, index in signal_dict.items():
+                            if index == signal_index: break
+                        parameter_values.update({name: (signal_index, signal_value)})
+                    else:
+                        parameter_values.update({signal_index: (signal_index, signal_value)})
+
             self.parameters.emit(parameter_values)
             if verbose: self.logprint(f"{parameter_values}", message_type = "result")
-        
+
         except Exception as e: error = f"Unable to retrieve the requested parameters. {e}"
         finally:
             if unlink: self.unlink()
@@ -619,7 +636,7 @@ class NanonisAPI(QtCore.QObject):
                 [x_nm, y_nm] = parameters.get("offset (nm)")
             elif "center (nm)" in parameters.keys():
                 [x_nm, y_nm] = parameters.get("center (nm)")
-            if x_nm and y_nm: new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "offset (nm)": [x_nm, y_nm], "center (nm)": [x_nm, y_nm]})
+            if isinstance(x_nm, int | float) and isinstance(y_nm, int | float): new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "offset (nm)": [x_nm, y_nm], "center (nm)": [x_nm, y_nm]})
 
             angle_deg = parameters.get("angle (deg)", None)
             if isinstance(angle_deg, float) or isinstance(angle_deg, int): new_parameters.update({"angle (deg)": angle_deg})
@@ -732,6 +749,8 @@ class NanonisAPI(QtCore.QObject):
         
         # Extract parameters from the dictionary
         V = parameters.get("V_nanonis (V)", None)
+        if not V: V = parameters.get("V (V)", None)
+        if not V: V = parameters.get("V", None)
         dt = parameters.get("dt_nanonis (ms)", 5) / 1000
         dV = parameters.get("dV_nanonis (mV)", 10) / 1000
         dz_nm = parameters.get("dz_nanonis (nm)", 1)
@@ -884,7 +903,7 @@ class NanonisAPI(QtCore.QObject):
         get_scan_metadata gets data regarding the properties of the current scan frame, such as the names of the recorded channels and the save properties
         """
         # Initalize outputs
-        scan_metadata = None
+        scan_metadata = {"dict_name": "scan_metadata"}
         error = False
         nhw = self.nanonis_hardware
 
@@ -901,20 +920,21 @@ class NanonisAPI(QtCore.QObject):
                     nhw.set_scan_buffer(channel_indices = indices)
 
             props = nhw.get_scan_properties()
+            scan_metadata.update(props)
+            
             buffer = nhw.get_scan_buffer() # The buffer has the number of channels, indices of these channels, and pixels and lines            
             channel_indices = buffer.get("channel_indices")
-            
+            signal_names = nhw.get_signal_names()            
+            all_signals = {signal_name: index for index, signal_name in enumerate(signal_names)} # All signals gives the 128 signals available internally in the Nanonis NI daq
+            scan_metadata.update({"all_signals": all_signals})
+
             if nhw.version > 14000: # Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
                 sig_in_slots = nhw.get_signals_in_slots()
                 signal_names = sig_in_slots["names"]
-                signal_indices = sig_in_slots["indices"]
-            else:
-                signal_names = nhw.get_signal_names()
-            
-            signal_dict = {signal_name: index for index, signal_name in enumerate(signal_names)} # Signal_dict is a dict of all signals and their corresponding indices
-            channel_dict = {signal_names[index]: index for index in channel_indices} # Channel_dict is the subset of signals that are actively recorded in the scan
 
-            scan_metadata = props | {"channel_dict": channel_dict, "signal_dict": signal_dict, "dict_name": "scan_metadata"}
+            signal_dict = {signal_name: index for index, signal_name in enumerate(signal_names)} # Signal_dict is a dict of all signals (in the subset of 'slots') and their corresponding (slot) indices
+            channel_dict = {signal_names[index]: index for index in channel_indices} # Channel_dict is the subset of signals that are actively recorded in the scan
+            scan_metadata.update({"channel_dict": channel_dict, "signal_dict": signal_dict})
             
             self.parameters.emit(scan_metadata)
             if verbose and len(parameters) < 1: self.logprint(f"{scan_metadata}", message_type = "result")
