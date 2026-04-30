@@ -20,7 +20,7 @@ class Scantelligent(QtCore.QObject):
         self.parameters_init()
         self.gui = ScantelligentGUI()
         self.gui.show()
-        self.toggle_view("none")
+        [self.toggle_view(view) for view in ["nanonis", "none"]]
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
@@ -98,9 +98,9 @@ class Scantelligent(QtCore.QObject):
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
-        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["bg_none", "bg_plane", "bg_linewise"]]
+        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["bg_none", "bg_plane", "bg_linewise", "sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
         
-        for parameter_type in ["bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper"]:
+        for parameter_type in ["bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
             button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
             button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")})
         
@@ -125,8 +125,11 @@ class Scantelligent(QtCore.QObject):
         self.gui.sliders["volume"].valueChanged.connect(self.send_amplitudes)
         [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_amplitudes) for i in range(32)]
         
-        # Check boxes
+        # Checkboxes
         for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
+        for method in ["full", "percentiles", "deviations", "absolute"]:
+            self.gui.checkboxes[f"min_{method}"].clicked.connect(self.update_processing_flags)
+            self.gui.checkboxes[f"max_{method}"].clicked.connect(self.update_processing_flags)
         return
 
     def connect_hardware(self, target: str = "all") -> None:
@@ -304,55 +307,63 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_image(self, image: np.ndarray) -> None:
-        if self.status["view"] == "none": return
-
         try:
+            if self.gui.buttons["view"].state_name == "none": return
             if np.count_nonzero(~np.isnan(image)) < 10: return
             
-            if self.status["view"] == "nanonis":
-                self.gui.image_view.setImage(np.fliplr(np.flipud(image)).T, autoRange = False)
+            match self.gui.buttons["view"].state_name:
+                case "nanonis":
+                    flipped_image = np.fliplr(np.flipud(image)).T
+                    (processed_scan, statistics, limits, error) = self.data.process_scan(flipped_image)
+                    [self.gui.line_edits[f"{side}_full"].setValue(statistics[f"{side}"]) for side in ["min", "max"]]
+                    
+                    self.gui.image_view.setImage(processed_scan, autoRange = False)
 
-                # Use the frame to update the imageitem box
-                frame = self.user.frames[0]
-                
-                scan_range_nm = frame.get("scan_range (nm)", [100, 100])
-                angle_deg = frame.get("angle (deg)", 0)
-                offset_nm = frame.get("offset (nm)", [0, 0])
-            
-                w = scan_range_nm[0]
-                h = scan_range_nm[1]
-                x = offset_nm[0]
-                y = offset_nm[1]
-            
-                image_item = self.gui.image_view.getImageItem()
-                box = QtCore.QRectF(- w / 2, - h / 2, w, h)
-                image_item.setRect(box)
-                
-                center = image_item.boundingRect().center()
-                image_item.setTransformOriginPoint(center)
-                image_item.setRotation(90 - angle_deg)
-                image_item.setPos(x, y)
-            
-            if self.status["view"] == "camera":
+                    # Use the frame to update the imageitem box
+                    frame = self.user.frames[0]
 
-                self.gui.image_view.setImage(np.flipud(image), autoRange = False)
+                    scan_range_nm = frame.get("scan_range (nm)", [100, 100])
+                    angle_deg = frame.get("angle (deg)", 0)
+                    offset_nm = frame.get("offset (nm)", [0, 0])
 
-                image_item = self.gui.image_view.getImageItem()
-                identity_transform = QtGui.QTransform()
-                image_item.setTransform(identity_transform)
+                    w = scan_range_nm[0]
+                    h = scan_range_nm[1]
+                    x = offset_nm[0]
+                    y = offset_nm[1]
                 
-                view_box = self.gui.image_view.getView()
-                view_box.autoRange()
+                    image_item = self.gui.image_view.getImageItem()
+                    box = QtCore.QRectF(- w / 2, - h / 2, w, h)
+                    image_item.setRect(box)
+                    
+                    center = image_item.boundingRect().center()
+                    image_item.setTransformOriginPoint(center)
+                    image_item.setRotation(90 - angle_deg)
+                    image_item.setPos(x, y)
+                    
+                    self.gui.hist_item.setLevels(limits[0], limits[1])
+                
+                case "camera":
+                    self.gui.image_view.setImage(np.flipud(image), autoRange = False)
+
+                    image_item = self.gui.image_view.getImageItem()
+                    identity_transform = QtGui.QTransform()
+                    image_item.setTransform(identity_transform)
+                    
+                    view_box = self.gui.image_view.getView()
+                    view_box.autoRange()
+                
+                case _:
+                    pass
 
         except Exception as e:
-            self.logprint(f"Error: {e}", "error")
+            pass
             
         return
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data_array: np.ndarray, max_length: int = 1000) -> None:
 
-        for index in range(min(len(data_array[0]), 20)):            
+        for index in range(min(len(data_array[0]), 40)):            
             new_data = data_array[:, index]
             
             plot_data_item = self.gui.pdis[index]
@@ -495,9 +506,8 @@ class Scantelligent(QtCore.QObject):
         return
 
     def toggle_view(self, view: str = None):
+        if self.gui.buttons["view"].state_name == view: return
         new_view = "none"
-        
-        self.logprint(f"The current view is {self.gui.buttons["view"].state_name}", message_type = "message")
         
         # Determine the new view mode
         if isinstance(view, str) and view in ["nanonis", "camera", "none"]:
@@ -527,7 +537,7 @@ class Scantelligent(QtCore.QObject):
         match new_view:
             case "camera":
                 self.status.update({"view": "camera"})
-                self.gui.buttons["view"].setState("Camera")
+                self.gui.buttons["view"].setState("camera")
 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(np.zeros((2, 2)))
@@ -556,7 +566,7 @@ class Scantelligent(QtCore.QObject):
 
             case "nanonis":
                 self.status.update({"view": "nanonis"})
-                self.gui.buttons["view"].setState("Nanonis")
+                self.gui.buttons["view"].setState("nanonis")
 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(np.zeros((2, 2)))
@@ -569,7 +579,7 @@ class Scantelligent(QtCore.QObject):
 
             case _:
                 self.status.update({"view": "none"})
-                self.gui.buttons["view"].setState("None")
+                self.gui.buttons["view"].setState("none")
                 
                 image_item = self.gui.image_view.getImageItem()
                 image_item.setImage(self.splash_screen)                
@@ -578,6 +588,7 @@ class Scantelligent(QtCore.QObject):
                 
                 view_box.autoRange()
 
+        self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
         return
 
     def camera_finished(self):
@@ -677,7 +688,6 @@ class Scantelligent(QtCore.QObject):
         checkboxes = self.gui.checkboxes
         buttons = self.gui.buttons
         comboboxes = self.gui.comboboxes
-        radio_buttons = self.gui.radio_buttons
         line_edits = self.gui.line_edits
 
         # Background
@@ -691,7 +701,7 @@ class Scantelligent(QtCore.QObject):
         # Limits
         lim_methods = ["full", "percentiles", "deviations", "absolute"]
         for method in lim_methods:
-            if radio_buttons[f"min_{method}"].isChecked():
+            if checkboxes[f"min_{method}"].isChecked():
                 min_value = 0
                 try:
                     min_str = line_edits[f"min_{method}"].text()
@@ -700,7 +710,7 @@ class Scantelligent(QtCore.QObject):
                 except:
                     pass
                 flags.update({"min_method": f"{method}", "min_method_value": f"{min_value}"})
-            if radio_buttons[f"max_{method}"].isChecked():
+            if checkboxes[f"max_{method}"].isChecked():
                 max_value = 1
                 try:
                     max_str = line_edits[f"max_{method}"].text()
@@ -712,23 +722,28 @@ class Scantelligent(QtCore.QObject):
 
         # Channel, direction, projection
         try:
-            channel = comboboxes["channels"].currentText()
-            direction = "backward" if bool(buttons["direction"].state_index) else "forward"
+            selected_channel = comboboxes["channels"].currentText()
+            (quantity, unit, backward, error) = self.file_functions.split_physical_quantity(selected_channel)
+            if isinstance(unit, str): [line_edits[f"{side}_full"].setUnit(unit) for side in ["min", "max"]]
+            
+            backward = bool(buttons["direction"].state_index)
             projection = comboboxes["projection"].currentText()
-            flags.update({"channel": channel, "direction": direction, "projection": projection})
+            flags.update({"backward": backward, "projection": projection})
         except:
             print("Error updating the image processing flags.")
-        
+
         # Operations
         try: [flags.update({operation: checkboxes[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
         except: pass
         phase = self.gui.sliders["phase"].getValue()
         flags.update({"phase (deg)": phase})
 
+        channels = self.data.scan_processing_flags.get("channels")
+        if channels:
+            channel_index = channels.get(selected_channel, None)
+            if isinstance(channel_index, int): flags.update({"channel": selected_channel, "channel_index": channel_index})
+                
         self.data.scan_processing_flags.update(flags)
-        
-        flags = self.data.scan_processing_flags.get_all()
-        self.logprint(f"{flags =}", message_type = "result")
         return
 
 

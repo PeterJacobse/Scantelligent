@@ -110,6 +110,10 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             else: parameters.update({scan_metadata.get("dict_name"): scan_metadata})
             
+            (sts_parameters, error) = self.sts_update(verbose = verbose)
+            if error: raise Exception(error)
+            else: parameters.update({sts_parameters.get("dict_name"): sts_parameters})
+            
             (coarse_parameters, error) = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error:
                 self.logprint("Warning. Could not read the coarse parameters", message_type = "warning")
@@ -155,7 +159,7 @@ class NanonisAPI(QtCore.QObject):
         match direction:
             case "down":
                 x_grid = np.flipud(x_grid)
-                y_grid = np.flipud(x_grid)
+                y_grid = np.flipud(y_grid)
             case _:
                 pass
 
@@ -270,6 +274,7 @@ class NanonisAPI(QtCore.QObject):
                 return (scan_image, error)
             
             if not self.status == "running": self.link()
+            
             scan_data = nhw.get_scan_data(channel_index, not backward)
             scan_image = scan_data.get("scan_data")
 
@@ -328,7 +333,7 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Update methods (Gives updates on all parameters and updates those parameters given)
-    def tip_update(self, parameters: dict = {}, wait: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, bool | str]:
+    def tip_update(self, parameters: dict = {}, wait: bool = False, fast_mode: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it
         """
@@ -337,7 +342,9 @@ class NanonisAPI(QtCore.QObject):
         error = False
         nhw = self.nanonis_hardware
         distance_nm = 0 # Distance between target and actual tip location, if a target is provided
-                
+        z_min = None
+        z_max = None
+
         # Extract parameters from the dictionary
         [withdraw, feedback, x_nm, y_nm, z_nm, z_rel_nm] = [parameters.get(key, None) for key in ["withdraw", "feedback", "x (nm)", "y (nm)", "z (nm)", "z_rel (nm)"]]
         if withdraw == None: withdraw = False
@@ -367,29 +374,30 @@ class NanonisAPI(QtCore.QObject):
                 nhw.set_fb(False)
                 sleep(.2)
                 nhw.set_z_nm(z_nm)
-            [z_min, z_max] = nhw.get_z_limits_nm()
+            if not fast_mode: [z_min, z_max] = nhw.get_z_limits_nm()
 
             I_pA = nhw.get_I_pA() # get the current
 
             # Switch the feedback if desired, and retrieve the feedback status
-            if type(feedback) == bool:
-                nhw.set_fb(feedback)
-                sleep(.1)
-                        
-            withdrawn = False
-            if not feedback and np.abs(z_nm - z_max) < 1E-11: # Tip is already withdrawn
-                withdrawn = True
-            if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
-                nhw.withdraw(wait = True)
-                withdrawn = True
-                sleep(.2)
+            if not fast_mode:
+                if type(feedback) == bool:
+                    nhw.set_fb(feedback)
+                    sleep(.1)
+
+                withdrawn = False
+                if not feedback and np.abs(z_nm - z_max) < 1E-11: # Tip is already withdrawn
+                    withdrawn = True
+                if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
+                    nhw.withdraw(wait = True)
+                    withdrawn = True
+                    sleep(.2)
             
-            # Retrieve the feedback status
-            feedback_new = nhw.get_fb()
+                # Retrieve the feedback status
+                feedback_new = nhw.get_fb()
 
             # Set up a dictionary containing the actual tip status parameters
-            tip_status = {"dict_name": "tip_status", "x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6), "z (nm)": round(z_nm, 6), "I (pA)": round(I_pA, 6),
-                "location (nm)": [round(x_nm, 6), round(y_nm, 6), round(z_nm, 6)], "z_limits (nm)": [round(z_min, 6), round(z_max, 6)], "feedback": feedback_new, "withdrawn": withdrawn}
+            tip_status = {"dict_name": "tip_status", "x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6), "z (nm)": round(z_nm, 6), "I (pA)": round(I_pA, 6)}
+            if not fast_mode: tip_status.update({"location (nm)": [round(x_nm, 6), round(y_nm, 6), round(z_nm, 6)], "z_limits (nm)": [round(z_min, 6), round(z_max, 6)], "feedback": feedback_new, "withdrawn": withdrawn})
             
             if wait:
                 while distance_nm > .1:
@@ -845,6 +853,31 @@ class NanonisAPI(QtCore.QObject):
             if unlink: self.unlink()
         
         return (lockin_parameters, error)
+
+    def sts_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
+        error = False
+        nhw = self.nanonis_hardware
+
+        sts_parameters = {"dict_name": "sts"}
+
+        try:
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.sts_update({parameters})", "code")
+                else: self.logprint(f"nanonis.sts_update()", "code")
+
+            if not self.status == "running": self.link()
+            
+            retrieved_parameters = nhw.get_STS_parameters()
+            sts_parameters.update(retrieved_parameters)
+
+            self.parameters.emit(sts_parameters)
+            if verbose and len(parameters) < 1: self.logprint(f"{sts_parameters}", message_type = "result")
+
+        except Exception as e: error = e
+        finally:
+            if unlink: self.unlink()
+        
+        return (sts_parameters, error)
 
     def scan_metadata_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         """

@@ -12,8 +12,10 @@ class Experiment(BaseExperiment):
         super().__init__(*args, **kwargs)
 
         gui_setup = {
-            "combobox": {"items": ["up", "down"]},
-            "line_edits": {},
+            "combobox": {},
+            "line_edits": {"tooltips": ["1", "2"],
+                           "values": [-2, 10, 2, 100], "units": ["V", "mV", "V", "ms"]
+                           },
             "buttons": {}
                      }
 

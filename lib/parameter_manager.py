@@ -28,6 +28,7 @@ class ParameterManager(QtCore.QObject):
             case "gain": sct.nanonis.gains_update(unlink = True)            
             case "lockin": sct.nanonis.lockin_update(unlink = True)
             case "tip_shaper": sct.nanonis.tip_shaper_update(unlink = True)
+            case "spectroscopy": sct.nanonis.sts_update(unlink = True)
             case _: pass
         return
 
@@ -200,10 +201,11 @@ class ParameterManager(QtCore.QObject):
                     if key == "dict_name": continue
 
                     channel_index = int(key)
-                    if channel_index < 0 or channel_index > 20: continue
+                    if channel_index < 0 or channel_index > 40: continue
 
                     sct.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}: {value}")
                     sct.gui.checkboxes[f"channel_{channel_index}"].setChecked(True)
+                    sct.gui.pdis[channel_index].setVisible(True)
                     line = sct.gui.plot_widget.plot()
                     sct.lines.append(line)
 
@@ -211,36 +213,34 @@ class ParameterManager(QtCore.QObject):
                 tip_status = parameters
                 sct.status.update({"tip": tip_status})
                 
-                # Update the tip status button
-                withdrawn = tip_status.get("withdrawn")
-                feedback = tip_status.get("feedback")
-                
                 # Update the position visible in the image_view
                 # sct.gui.image_view.view.removeItem(sct.gui.tip_target)
-                if feedback: sct.gui.tip_target.setPen(sct.gui.colors["green"])
-                else:
-                    if withdrawn: sct.gui.tip_target.setPen(sct.gui.colors["red"])
-                    else: sct.gui.tip_target.setPen(sct.gui.colors["orange"])
-                
+                if "feedback" in tip_status.keys():
+                    feedback = tip_status.get("feedback")
+                    if feedback:
+                        sct.gui.tip_target.setPen(sct.gui.colors["green"])
+                        sct.gui.buttons["tip"].setState("feedback")
+                        sct.gui.buttons["withdraw"].setState("landed")
+                    else:
+                        withdrawn = tip_status.get("withdrawn")
+                        if withdrawn:
+                            sct.gui.tip_target.setPen(sct.gui.colors["red"])
+                            sct.gui.buttons["tip"].setState("unknown")
+                            sct.gui.buttons["withdraw"].setState("withdrawn")
+                        else:
+                            sct.gui.tip_target.setPen(sct.gui.colors["orange"])
+                            sct.gui.buttons["tip"].setState("constant_height")
+                    
+                    # Update the slider
+                    z_limits_nm = tip_status.get("z_limits (nm)")
+                    sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
+                    sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
+
                 [x_tip_nm, y_tip_nm, z_tip_nm] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)"]]
                 sct.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
                 sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
-                # if sct.status["view"] == "nanonis": sct.gui.image_view.view.addItem(sct.gui.tip_target)
-                
-                # Update the slider
-                z_limits_nm = tip_status.get("z_limits (nm)")
-                sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
-                sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
                 sct.gui.sliders["tip"].setValue(int(z_tip_nm))
                 sct.gui.sliders["tip"].changeToolTip(f"Tip height: {z_tip_nm:.2f} nm")
-                
-                if withdrawn:
-                    sct.gui.buttons["tip"].setState("unknown")
-                    sct.gui.buttons["withdraw"].setState("withdrawn")
-                else:
-                    sct.gui.buttons["withdraw"].setState("landed")
-                    if feedback: sct.gui.buttons["tip"].setState("feedback")
-                    else: sct.gui.buttons["tip"].setState("constant_height")
 
             case "bias":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
@@ -354,6 +354,16 @@ class ParameterManager(QtCore.QObject):
                 if "Current (A)" in parameters.keys():
                     current_value = parameters["Current (A)"]
 
+            case "sts":
+                [V_start, V_end] = parameters.get("limits (V)")
+                if V_start: [sct.gui.line_edits[name].setValue(value) for name, value in zip(["V_start_STS", "V_end_STS"], [V_start, V_end])]
+                
+                [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (s)", "t_settle (s)"]]
+                t_int_ms = t_int_s * 1000
+                t_settle_s = t_settle_s * 1000
+                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["points_STS", "t_integration", "t_settle"], [n_points, t_int_s, t_settle_s])]
+                sct.gui.points_dV("points_STS") # Calculate the dV
+
             case "gains":
                 [p_gain_ms, t_const_us, i_gain_nm_per_s] = [parameters.get(parameter) for parameter in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
 
@@ -375,16 +385,14 @@ class ParameterManager(QtCore.QObject):
 
             case "scan_metadata":
                 # Refresh the recorded channels
-                if hasattr(sct, "channels"): channels_old = sct.channels
-                else: channels_old = {}
-                sct.channels = parameters.get("channel_dict", {})
+                old_channels = sct.data.scan_processing_flags.get("channels")
+                new_channels = parameters.get("channel_dict", {})
                 
                 # Update the channels combobox with the channels that are being recorded if there is a change
-                if sct.channels == channels_old:
-                    pass
-                else:
-                    sct.gui.comboboxes["channels"].renewItems(list(sct.channels.keys()))
-                    [sct.gui.comboboxes["channels"].selectItem(preferred_channel) for preferred_channel in ["LI Demod 1 X (A)", "Current (A)", "Z (m)"]]
+                if not old_channels == new_channels:
+                    sct.data.scan_processing_flags.update({"channels": new_channels})
+                    sct.gui.comboboxes["channels"].renewItems(list(new_channels.keys()))
+                    [sct.gui.comboboxes["channels"].selectItem(preferred_channel) for preferred_channel in ["Current (A)", "LI Demod 1 X (A)", "Z (m)"]]
                     sct.update_processing_flags()
 
             case "lockin":

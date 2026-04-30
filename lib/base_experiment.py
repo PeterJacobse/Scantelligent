@@ -60,8 +60,9 @@ class BaseExperiment(QObject):
             self.logprint(f"Error setting up the gui: {e}")
         return
 
-    def setup_line_edits(self, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:        
-        self.line_edits = [self.sct.gui.line_edits[f"experiment_{i}"] for i in range(9)]
+    def setup_line_edits(self, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:
+        self.line_edits = [self.sct.gui.line_edits[f"experiment_{index}"] for index in range(9)]
+        #[self.line_edits[index].show() for index in range(9)]
         #[self.line_edits[index].setTooltip(f"Experiment parameter field {index}\ngui.line_edits[\"experiment_{index}\"]") for index in range(9)]
         #[self.line_edits[index].setUnit("") for index in range(9)]
         #[self.line_edits[index].setValue(None) for index in range(9)]
@@ -71,6 +72,9 @@ class BaseExperiment(QObject):
         [self.line_edits[index].setLimits(limits) for index, limits in enumerate(limits)]
         [self.line_edits[index].setValue(value) for index, value in enumerate(values)]
         [self.line_edits[index].setUnit(unit) for index, unit in enumerate(units)]
+        
+        max_number = max([len(key) for key in [tooltips, digits, limits, values, units]])
+        #[self.line_edits[index].hide() for index in range(max_number, 9)]
         return
 
     def setup_combobox(self, tooltip: str = "", items: list = []) -> None:        
@@ -118,20 +122,25 @@ class BaseExperiment(QObject):
     def monitor_scan(self, channel, timeout_s: int = 100000) -> np.ndarray:
         channels_dict = {i: name for i, name in enumerate(["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"])} | {"dict_name": "channels"}
         self.parameters.emit(channels_dict) # This triggers the GUI to start graphing data
-        
+
         # Loop to check scan progress
         t_start = time.time()
         t_elapsed = 0
-        
+
         while t_elapsed < timeout_s:
             t_elapsed = time.time() - t_start
-            (tip_status, error) = self.nanonis.tip_update(wait = False, verbose = False)
+            (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)
             [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
             self.data_array.emit(np.array([[t_elapsed, x_nm, y_nm, z_nm, I_pA]]))
-            (scan_image, error) = self.nanonis.scan_update(channel = channel, verbose = False)
+            
+            channel_index = self.sct.data.scan_processing_flags.get("channel_index")
+            backward = self.sct.data.scan_processing_flags.get("backward")
+            
+            (scan_image, error) = self.nanonis.scan_update(channel = channel_index, backward = backward, verbose = False)
             nan_mask = np.isnan(scan_image)
             scan_finished = not bool(np.any(nan_mask))
             self.check_abort_request()
+            time.sleep(.05)
             
             if scan_finished:
                 self.logprint("Scan finished", message_type = "message")

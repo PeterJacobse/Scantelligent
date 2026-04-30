@@ -33,7 +33,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.checkboxes = self.make_checkboxes()
         self.comboboxes = self.make_comboboxes()
         self.line_edits = self.make_line_edits()
-        self.radio_buttons = self.make_radio_buttons()
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
         self.image_view = self.make_image_view()
@@ -167,9 +166,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "running", "color": self.colors["blue"], "tooltip": "Camera: running"}]),
             "view": MSB(click_to_toggle = False, size = 28,
-                        states = [{"name": "None", "tooltip": "Toggle the active view", "icon": icons.get("eye"), "color": self.colors["off-black"]},
-                                  {"name": "Camera", "tooltip": "Active view: Camera", "icon": icons.get("view_camera"), "color": self.colors["off-black"]},
-                                  {"name": "Nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("view_nanonis"), "color": self.colors["off-black"]}]),
+                        states = [{"name": "none", "tooltip": "Toggle the active view", "icon": icons.get("eye"), "color": self.colors["off-black"]},
+                                  {"name": "camera", "tooltip": "Active view: Camera", "icon": icons.get("view_camera"), "color": self.colors["off-black"]},
+                                  {"name": "nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("view_nanonis"), "color": self.colors["off-black"]}]),
             "exit": MSB(tooltip = "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape"), size = 28),
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
@@ -260,30 +259,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["blue"]}])
         }
         
-        for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper"]:
+        for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
             buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
             buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))})
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
 
-        for i in range(6):
-            buttons.update({f"scan_parameters_{i}": MSB(tooltip = f"Load scan parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"coarse_parameters_{i}": MSB(tooltip = f"Load coarse parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"gain_parameters_{i}": MSB(tooltip = f"Load gain parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"speed_parameters_{i}": MSB(tooltip = f"Load speed parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"grid_parameters_{i}": MSB(tooltip = f"Load grid parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-            buttons.update({f"parameters_{i}": MSB(tooltip = f"Parameter set {i}\n(Ctrl + {i})", icon = icons.get(f"{i}"))})
-
         # Initialize
-        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect"]]
+        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none"]]
 
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
-        self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]        
-        self.scan_parameter_sets = [buttons[f"scan_parameters_{i + 1}"] for i in range(4)]
-        self.scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
-        
-        self.background_buttons = [buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise"]]
+        self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
 
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
@@ -292,16 +279,27 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_checkboxes(self) -> tuple[dict, dict]:
         CB = STWidgets.STCheckBox
-        
+        QBG = QtWidgets.QButtonGroup
+
         checkboxes = {
+            # Coarse
             "withdraw": CB(tooltip = "Include withdrawing of the tip during a tip move"),
             "retract": CB(tooltip = "Include retracting the tip during a tip move"),
             "advance": CB(tooltip = "Include advancing the tip during a move"),
             "approach": CB(tooltip = "End the tip move with an auto approach"),
-
-            "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion"))
+            "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion")),
+            
+            # Limits
+            "min_full": CB(tooltip = "set to minimum value of scan data range\n(-) to toggle"),
+            "max_full": CB(tooltip = "set to maximum value of scan data range\n(=) to toggle"),
+            "min_percentiles": CB(tooltip = "set to minimum percentile of data range\n(-) to toggle"),
+            "max_percentiles": CB(tooltip = "set to maximum percentile of data range\n(=) to toggle"),
+            "min_deviations": CB(tooltip = "set to minimum = mean - n * standard deviation\n(-) to toggle"),
+            "max_deviations": CB(tooltip = "set to maximum = mean + n * standard deviation\n(=) to toggle"),
+            "min_absolute": CB(tooltip = "set minimum to an absolute value\n(-) to toggle"),
+            "max_absolute": CB(tooltip = "set maximum to an absolute value\n(=) to toggle"),
         }        
-        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(40)]
+        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(40)] # Channels
 
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
@@ -310,6 +308,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         # Add the button handles to the tooltips
         [checkboxes[name].changeToolTip(f"gui.checkboxes[\"{name}\"]", line = 10) for name in checkboxes.keys()]
+        
+        # Add buttons to QButtonGroups for exclusive selection and check the defaults        
+        self.min_button_group = QBG()
+        self.max_button_group = QBG()
+        limit_methods = ["full", "percentiles", "deviations", "absolute"]
+        [self.min_button_group.addButton(checkboxes[f"min_{method}"]) for method in limit_methods]
+        [self.max_button_group.addButton(checkboxes[f"max_{method}"]) for method in limit_methods]
+        
+        # Initialize
+        checked_buttons = [checkboxes[name] for name in ["min_full", "max_full"]]
+        [button.setChecked(True) for button in checked_buttons]
 
         return checkboxes
 
@@ -320,12 +329,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "channels": CB(tooltip = "Available scan channels"),
             "projection": CB(tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
             "experiment": CB(tooltip = "Select an experiment"),
-            "direction": CB(tooltip = "Select a scan direction / pattern", items = ["nearest tip", "down", "up", "random"]),
+            "direction": CB(tooltip = "Select a scan direction / pattern"),
             
             "bias": CB(tooltip = "Load bias parameters"),
             "feedback": CB(tooltip = "Load feedback parameters"),
             "speeds": CB(tooltip = "Load speed parameters"),
             "frame_grid": CB(tooltip = "Load frame/grid parameters"),
+            "spectroscopy": CB(tooltip = "Load spectroscopy parameters"),
             
             "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach")
         }
@@ -409,12 +419,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
             
             # STS
-            "V_min_STS": LE(tooltip = "starting bias", unit = "V", limits = [-10, 10], digits = 3),
-            "V_max_STS": LE(tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3),
+            "V_start_STS": LE(tooltip = "starting bias", unit = "V", limits = [-10, 10], digits = 3),
+            "V_end_STS": LE(tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3),
             "dV_STS": LE(tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 1),
             "points_STS": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
-            "t_integration": LE(tooltip = "integration time per data point", unit = "ms", limits = [0, 10000], digits = 0),
-            "t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 0),
+            "t_integration": LE(tooltip = "integration time per data point", unit = "ms", limits = [0, 10000], digits = 2),
+            "t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 2),
             
             # Lockins
             "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
@@ -469,43 +479,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [line_edits[name].setEnabled(False) for name in ["min_full", "max_full"]]
         
         return line_edits
-
-    def make_radio_buttons(self) -> dict:
-        RBN = STWidgets.RadioButton
-        CB = STWidgets.CheckBox
-        QGroup = QtWidgets.QButtonGroup
-        
-        radio_buttons = {
-            "min_full": CB(tooltip = "set to minimum value of scan data range\n(-) to toggle"),
-            "max_full": CB(tooltip = "set to maximum value of scan data range\n(=) to toggle"),
-            "min_percentiles": CB(tooltip = "set to minimum percentile of data range\n(-) to toggle"),
-            "max_percentiles": CB(tooltip = "set to maximum percentile of data range\n(=) to toggle"),
-            "min_deviations": CB(tooltip = "set to minimum = mean - n * standard deviation\n(-) to toggle"),
-            "max_deviations": CB(tooltip = "set to maximum = mean + n * standard deviation\n(=) to toggle"),
-            "min_absolute": CB(tooltip = "set minimum to an absolute value\n(-) to toggle"),
-            "max_absolute": CB(tooltip = "set maximum to an absolute value\n(=) to toggle"),
-        }
-        
-        # Add the button handles to the tooltips
-        [radio_buttons[name].changeToolTip(f"gui.radio_buttons[\"{name}\"]", line = 10) for name in radio_buttons.keys()]
-        
-        # Named groups
-        min_names = ["min_full", "min_percentiles", "min_deviations", "min_absolute"]
-        max_names = ["max_full", "max_percentiles", "max_deviations", "max_absolute"]
-        self.min_radio_buttons = [radio_buttons[name] for name in min_names]
-        self.max_radio_buttons = [radio_buttons[name] for name in max_names]
-                
-        # Add buttons to QButtonGroups for exclusive selection and check the defaults        
-        self.min_button_group = QGroup()
-        self.max_button_group = QGroup()
-        [self.min_button_group.addButton(button) for button in self.min_radio_buttons]
-        [self.max_button_group.addButton(button) for button in self.max_radio_buttons]
-        
-        # Initialize
-        checked_buttons = [radio_buttons[name] for name in ["min_full", "max_full"]]
-        [button.setChecked(True) for button in checked_buttons]
-        
-        return radio_buttons
 
     def make_progress_bars(self) -> dict:
         PB = STWidgets.ProgressBar
@@ -583,8 +556,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "matrix_processing": make_layout("g"),
             "limits": make_layout("g"),
                         
-            # Lockins
-            "lockins": make_layout("g"),
+            # STS
+            "sts": make_layout("v"),
+            "spectroscopy": make_layout("g"),
+            "spectroscopy_getset": make_layout("h"),
+            
             "lockin_parameter_sets": make_layout("h"),
             "modulators": make_layout("g"),
             "mod_set_get": make_layout("h"),
@@ -601,10 +577,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         plot_item = pg.PlotItem()
         im_view = STWidgets.ImageView(view = plot_item)
         im_view.view.invertY(False)
+        hist_widget = im_view.getHistogramWidget()
+        self.hist_item = hist_widget.item
         
         # Make a tip target item in the image_view
         self.tip_target = STWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = True)
-        im_view.view.addItem(self.tip_target)        
+        im_view.view.addItem(self.tip_target)
         
         return im_view
 
@@ -623,7 +601,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         plot_widget = pg.PlotWidget()
 
         pdis = [] # PlotDataItems
-        for i in range(20):
+        for i in range(40):
             pen = pg.mkPen(self.color_list[i])
             pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)
             
@@ -640,6 +618,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "coarse_actions": QWgt(),
             "arrows": QWgt(),
             "graph": QWgt(),
+            "sts": QWgt(),
 
             "connections": QWgt(),
             "coarse_control": QWgt(),
@@ -829,13 +808,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         
         # Bias
-        [layouts["bias_getset"].addWidget(widget) for widget in [buttons["get_bias_parameters"], buttons["set_bias_parameters"], comboboxes["bias"]]]        
+        [layouts["bias_getset"].addWidget(widget) for widget in [buttons["get_bias_parameters"], buttons["set_bias_parameters"], comboboxes["bias"]]]
         b_layout = layouts["bias"]
         [b_layout.addWidget(labels[name], 0, index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
         b_layout.addWidget(make_line("h", 1), 1, 0, 1, 3)
         [b_layout.addWidget(line_edits[name], 2, index) for index, name in enumerate(["V_nanonis", "V_mla", "V_keithley"])]
         buttons["V_swap"].setFixedWidth(50)
-        b_layout.addWidget(buttons["V_swap"], 3, 0, 1, 2, align_center)        
+        b_layout.addWidget(buttons["V_swap"], 3, 0, 1, 2, align_center)
         [b_layout.addWidget(line_edits[name], 4 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
         [b_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["dz_nanonis"])]
         [b_layout.addWidget(line_edits[name], 4 + index, 2) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
@@ -888,7 +867,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [tp_layout.addWidget(line_edits[name], 3 + index, 3) for index, name in enumerate(["lift_height", "lift_voltage", "lift_time"])]
         tp_layout.addLayout(layouts["shaper_getset"], 6, 2, 1, 3)
         
-        # Lockins
+        # STS
+        [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
+        [layouts["spectroscopy"].addWidget(line_edits[name], 0, index) for index, name in enumerate(["V_start_STS", "dV_STS", "V_end_STS"])]
+        [layouts["spectroscopy"].addWidget(line_edits[name], 1, index) for index, name in enumerate(["points_STS", "t_integration", "t_settle"])]
+        layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 3)
+        
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
         [layouts["modulators"].addWidget(widget, int(i / 5), i % 5) for i, widget in enumerate(self.modulator_widgets)]
         layouts["modulators"].addLayout(layouts["mod_set_get"], 3, 0, 1, 4)
@@ -906,7 +890,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         cn_layout.addWidget(self.buttons["direction"], 1)
         [cn_layout.addWidget(self.buttons[name], 1) for name in ["fit_to_frame", "fit_to_range"]]
         
-        [layouts["background_buttons"].addWidget(button) for button in self.background_buttons]
+        [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
         layouts["background_buttons"].addWidget(buttons["rot_trans"])
         p_layout = layouts["matrix_processing"]
         [p_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
@@ -916,8 +900,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         l_layout = layouts["limits"]
         l_layout.setAlignment(align_center)
-        self.limits_columns = [self.min_line_edits, self.min_radio_buttons, self.scale_buttons, self.max_radio_buttons, self.max_line_edits]
-        for j, group in enumerate(self.limits_columns): [l_layout.addWidget(item, i, j) for i, item in enumerate(group)]
+        limit_methods = ["full", "percentiles", "deviations", "absolute"]
+        scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
+        
+        for row_no, method in enumerate(limit_methods):
+            widgets = [self.line_edits[f"min_{method}"], self.checkboxes[f"min_{method}"], scale_buttons[row_no], self.checkboxes[f"max_{method}"], self.line_edits[f"max_{method}"]]
+            [l_layout.addWidget(widget, row_no, column_no, 1, 1, align_center) for column_no, widget in enumerate(widgets)]
 
         ip_layout = layouts["image_processing"]
         ip_layout.addWidget(labels["scan_control"])
@@ -946,27 +934,28 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         groupboxes = {
             # Connections
-            "connections": SGB(title = "connections", tooltip = "Connections to hardware (push to check/refresh)"),
+            "connections": SGB(title = "connections", tooltip = "connections to hardware (push to check/refresh)"),
             
             # Coarse
-            "coarse_vertical": SGB(title = "vertical", tooltip = "Vertical coarse motion"),
-            "coarse_horizontal": SGB(title = "horizontal", tooltip = "Horizontal coarse motion"),
+            "coarse_vertical": SGB(title = "vertical", tooltip = "vertical coarse motion"),
+            "coarse_horizontal": SGB(title = "horizontal", tooltip = "horizontal coarse motion"),
             
-            "tip_prep": SGB(title = "tip prep", tooltip = "Tip preparation tools"),
+            "tip_prep": SGB(title = "tip prep", tooltip = "tip preparation tools"),
 
-            "frame_grid": SGB(title = "frame / grid", tooltip = "Frame and grid parameters"),
-            "bias": SGB(title = "bias", tooltip = "Bias and ramp parameters"),
-            "feedback": SGB(title = "feedback", tooltip = "Feedback and gains"),
-            "modulators": SGB(title = "modulators", tooltip = "Modulators"),
-            "demodulators": SGB(title = "demodulators", tooltip = "Demodulators"),
+            "frame_grid": SGB(title = "frame / grid", tooltip = "frame and grid parameters"),
+            "bias": SGB(title = "bias", tooltip = "bias and ramp parameters"),
+            "feedback": SGB(title = "feedback", tooltip = "feedback and gains"),
+            "spectroscopy": SGB(title = "spectroscopy", tooltip = "spectroscopy"),
+            "modulators": SGB(title = "modulators", tooltip = "modulators"),
+            "demodulators": SGB(title = "demodulators", tooltip = "demodulators"),
 
-            "speeds": SGB(title = "speeds", tooltip = "Speeds"),
+            "speeds": SGB(title = "speeds", tooltip = "speeds"),
             "image_processing": SGB(title = "image processing", tooltip = "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
             "experiment": SGB(title = "experiment", tooltip = "Perform experiment")
         }
 
         # Set layouts for the groupboxes
-        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "modulators", "demodulators", "experiment", "image_processing"]
+        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "spectroscopy", "modulators", "demodulators", "experiment", "image_processing"]
         [layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupbox_names]
         [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
 
@@ -976,7 +965,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])
         
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
-        [layouts["lockins"].addWidget(groupboxes[name]) for name in ["modulators", "demodulators"]]
+        [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "modulators", "demodulators"]]
 
         return groupboxes
 
@@ -986,8 +975,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_tab_widget(self) -> QtWidgets.QTabWidget:
         tab_widget = QtWidgets.QTabWidget()
         
-        tabs = ["parameters", "coarse_prep", "image_processing", "lockins"]
-        tab_names = ["Parameters", "Coarse/Prep", "Processing", "Lock-ins"]
+        tabs = ["parameters", "coarse_prep", "image_processing", "sts"]
+        tab_names = ["Parameters", "Coarse/Prep", "Processing", "STS"]
         [self.widgets[name0].setLayout(self.layouts[name0]) for name0 in tabs]
         [tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
 
@@ -1050,11 +1039,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]
         
-        self.buttons["bg_none"].clicked.connect(lambda: self.background_mutex("none"))
-        self.buttons["bg_plane"].clicked.connect(lambda: self.background_mutex("plane"))
-        self.buttons["bg_linewise"].clicked.connect(lambda: self.background_mutex("linewise"))
-        
+        [self.buttons[f"bg_{method}"].clicked.connect(lambda checked, mthd = method: self.background_mutex(mthd)) for method in ["none", "plane", "linewise"]]        
+        [self.checkboxes[f"min_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"min_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
+        [self.checkboxes[f"max_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"max_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
+
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.update_reciprocals(name_0)) for name in ["nanonis_mod1_f", "nanonis_mod2_f", "mla_mod1_f", "nanonis_mod1_t", "nanonis_mod2_t", "mla_mod1_t"]]
+        
+        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.points_dV(name_0)) for name in ["points_STS", "dV_STS"]]
         return
 
     def set_pixels_to_multiple_of_16(self) -> None:
@@ -1132,7 +1123,41 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                 linewise.setState(1)
         return
 
+    def limits_mutex(self, method: str = "min_full") -> None:
+        match method[:3]:
+            case "min":
+                [full, percentiles, deviations, absolute] = [self.checkboxes[f"min_{method}"] for method in ["full", "percentiles", "deviations", "absolute"]]
+                [checkbox.setState(0) for checkbox in [full, percentiles, deviations, absolute]]
+                match method[4:]:
+                    case "full": full.setState(1)
+                    case "percentiles": percentiles.setState(1)
+                    case "deviations": deviations.setState(1)
+                    case _: absolute.setState(1)
+            case _:
+                [full, percentiles, deviations, absolute] = [self.checkboxes[f"max_{method}"] for method in ["full", "percentiles", "deviations", "absolute"]]
+                [checkbox.setState(0) for checkbox in [full, percentiles, deviations, absolute]]
+                match method[4:]:
+                    case "full": full.setState(1)
+                    case "percentiles": percentiles.setState(1)
+                    case "deviations": deviations.setState(1)
+                    case _: absolute.setState(1)
+        return
 
+    def points_dV(self, target: str = "points_STS") -> None:
+        V_start = self.line_edits["V_start_STS"].getValue()
+        V_end = self.line_edits["V_end_STS"].getValue()
+        if not V_start or not V_end: return
+
+        match target:
+            case "points_STS":
+                num_points = self.line_edits["points_STS"].getValue()
+                dV = (num_points - 1) / (V_end - V_start)
+                self.line_edits["dV_STS"].setValue(dV)
+            case _:
+                dV = self.line_edits["dV_STS"].getValue()
+                num_points = 1 + dV * (V_end - V_start)
+                self.line_edits["points_STS"].setValue(num_points)
+        return
 
     def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
         [self.line_edits[name].blockSignals(True) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]

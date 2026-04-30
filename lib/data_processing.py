@@ -14,18 +14,18 @@ class ThreadSafeDict:
         self._data = {}
         self._mutex = QMutex()
     
-    def update(self, entry: dict = {}):
+    def update(self, entry: dict = {}) -> None:
         if not entry: return
         
         locker = QMutexLocker(self._mutex)
         self._data.update(entry)
         return
     
-    def get(self, key, default):
+    def get(self, key: str = "", default = None) -> object:
         locker = QMutexLocker(self._mutex)
         return self._data.get(key, default)
     
-    def get_all(self):
+    def get_all(self) -> dict:
         locker = QMutexLocker(self._mutex)
         return self._data.copy()
 
@@ -41,7 +41,7 @@ class DataProcessing:
         
         entries = {
             "dict_name": "processing_flags", # Self reference to facilitate the app recognizing what kind of dictionary this is
-            "direction": "forward", # Forward is the left-to-right (trace) part of the scan; backward is right-to-left (retrace) part of the scan
+            "backward": False, # Forward is the left-to-right (trace) part of the scan; backward is right-to-left (retrace) part of the scan
             "up_or_down": "up", # Scan direction. Terminology 'direction' is avoided for up or down to avoid confusion
             "channels": [], # Available scan channels
             "channel": "", # Selected scan channel
@@ -111,7 +111,7 @@ class DataProcessing:
         return numbers
     
     def add_tags_to_file_name(self, bare_name: str = "") -> str:
-        flags = self.processing_flags
+        flags = self.scan_processing_flags
         
         tagged_name = bare_name
         if flags["sobel"]: tagged_name += "_sobel"
@@ -134,7 +134,7 @@ class DataProcessing:
             channels = scan_object.channels
             frame = scan_object.frame
             
-            requested_channel = self.processing_flags.get("channel")
+            requested_channel = self.scan_processing_flags.get("channel")
             
             # Initialize to fail and update to success if the requested channel is found
             selected_channel = channels[0]
@@ -144,10 +144,10 @@ class DataProcessing:
                     selected_channel = requested_channel
                     tensor_slice = scan_tensor[index]
                     break
-            image = tensor_slice[int(self.processing_flags.get("direction") == "backward")]
+            image = tensor_slice[int(self.scan_processing_flags.get("direction") == "backward")]
             
             # Update the frame to the processing flags
-            self.processing_flags.update({"frame": frame})
+            self.scan_processing_flags.update({"frame": frame})
             
         except Exception as e:
             error = e
@@ -351,8 +351,7 @@ class DataProcessing:
         
             # Calculate the limits
             (limits, error) = self.calculate_limits(processed_scan)
-            self.processing_flags["min_limit"] = limits[0]
-            self.processing_flags["max_limit"] = limits[1]
+            self.scan_processing_flags.update({"min_limit": limits[0], "max_limit": limits[1]})
             if error: raise Exception(error)
         
         except Exception as e:
@@ -362,10 +361,8 @@ class DataProcessing:
 
     def operate_scan(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
-        flags = self.processing_flags
-        gaussian_sigma = flags["gaussian_width (nm)"]
-        scan_range_nm = flags["scan_range (nm)"]
-        
+        flags = self.scan_processing_flags.get_all()
+                
         # Background subtraction
         (image, error) = self.subtract_background(image)
         if error: return (image, error)
@@ -380,8 +377,11 @@ class DataProcessing:
         if flags["laplace"]: (image, error) = self.apply_laplace(image, scan_range_nm)
         if error: return (image, error)
         
-        if flags["gaussian"]: (image, error) = self.apply_gaussian(image, gaussian_sigma, scan_range_nm)
-        if error: return (image, error)
+        if flags["gaussian"]:
+            gaussian_sigma = flags.get("gaussian_width (nm)")
+            scan_range_nm = flags.get("scan_range (nm)")
+            if gaussian_sigma: (image, error) = self.apply_gaussian(image, gaussian_sigma, scan_range_nm)
+            if error: return (image, error)
         
         if flags["fft"]: (image, error) = self.apply_fft(image, scan_range_nm)
         if error: return (image, error)
@@ -414,7 +414,7 @@ class DataProcessing:
         min_limit = 0
         max_limit = 0
         
-        flags = self.processing_flags
+        flags = self.scan_processing_flags
         
         try:
             (statistics, error) = self.get_image_statistics(image)
@@ -468,7 +468,7 @@ class DataProcessing:
             return (image, error)
 
         try:
-            phase = self.processing_flags.get("phase", 0)
+            phase = self.scan_processing_flags.get("phase", 0)
             if phase == 0: return(image, error)
             phase_factor = np.exp(1j * phase * np.pi / 180)
             phase_shifted_image = phase_factor * image
@@ -666,10 +666,13 @@ class DataProcessing:
                 x = range(len(line))
                 # Construct the design matrix A for a linear fit (y = mx + c)
                 # The first column is x, the second is a column of ones for the intercept
-                A = np.vstack([x, np.ones(len(x))]).T
+                A = np.vstack([x, np.ones_like(x)]).T
+                mask = np.isfinite(A).all(axis=1) & np.isfinite(line)
+                A_clean = A[mask]
+                line_clean = line[mask]
 
                 # Perform the least squares fit
-                coefficients, residuals, rank, singular_values = lstsq(A, line)
+                coefficients, residuals, rank, singular_values = lstsq(A_clean, line_clean)
                 y_fit = coefficients[1] + coefficients[0] * x
                 line_subtracted = line - y_fit
 
@@ -712,26 +715,26 @@ class DataProcessing:
     def subtract_background(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
         input_image = image
-        mode = self.processing_flags.get("background", "none")
+        mode = self.scan_processing_flags.get("background", "none")
 
         if not isinstance(image, np.ndarray):
             error = "Error. The provided image is not a numpy array."
             return (image, error)
-        
+
         try:
             # Unfinished scans: remove NaN rows
             num_rows = len(image)
             nan_mask = np.isnan(image).any(axis = 1)
-            image = image[~nan_mask]
-            non_nan_rows = len(image)
+            #image = image[~nan_mask]
+            #non_nan_rows = len(image)
 
-            if non_nan_rows < 3: # Do not perform data processing if the scan is all NaNs
-                return (input_image, error)
+            #if non_nan_rows < 3: # Do not perform data processing if the scan is all NaNs
+            #    return (input_image, error)
 
-            avg_image = np.mean(image.flatten()) # The average value of the image, or the offset
+            avg_image = np.nanmean(image.flatten()) # The average value of the image, or the offset
             (gradient_image, error) = self.image_gradient(image) # The (complex) gradient of the image
             if error: return (image, error)
-            avg_gradient = np.mean(gradient_image.flatten()) # The average value of the gradient
+            avg_gradient = np.nanmean(gradient_image.flatten()) # The average value of the gradient
             if not isinstance(avg_gradient, complex):
                 error = "Error. Could not compute average gradient for background subtraction."
                 return (input_image, error)
@@ -753,7 +756,7 @@ class DataProcessing:
                     processed_image = image
             
             # Pad the NaN rows back
-            if num_rows - non_nan_rows > 0: processed_image = np.pad(processed_image, ((0, num_rows - non_nan_rows), (0, 0)), mode = 'constant', constant_values = np.nan)
+            #if num_rows - non_nan_rows > 0: processed_image = np.pad(processed_image, ((0, num_rows - non_nan_rows), (0, 0)), mode = 'constant', constant_values = np.nan)
     
             return (processed_image, error)
         
@@ -768,16 +771,18 @@ class DataProcessing:
         error = False
 
         try:
-            data_sorted_c = np.sort(image.flatten())
-            data_sorted = np.real(data_sorted_c)
+            data_flat = image.flatten()
+            data_non_nan = data_flat[~np.isnan(data_flat)]
+            data_sorted_complex = np.sort(data_non_nan)
+            data_sorted = np.real(data_sorted_complex)
             n_pixels = len(data_sorted)
             data_firsthalf = data_sorted[:int(n_pixels / 2)]
             data_secondhalf = data_sorted[-int(n_pixels / 2):]
 
-            range_mean = np.mean(data_sorted) # Calculate the mean
-            Q1 = np.mean(data_firsthalf) # Calculate the first and third quartiles
+            range_mean = np.nanmean(data_sorted) # Calculate the mean
+            Q1 = np.nanmean(data_firsthalf) # Calculate the first and third quartiles
             Q2 = data_secondhalf[0] # Q2 is the median
-            Q3 = np.mean(data_secondhalf)
+            Q3 = np.nanmean(data_secondhalf)
             range_min, range_max = (data_sorted[0], data_sorted[-1]) # Calculate the total range
             range_total = range_max - range_min
             standard_deviation = np.sum(np.sqrt((data_sorted - range_mean) ** 2) / n_pixels) # Calculate the standard deviation
@@ -796,8 +801,8 @@ class DataProcessing:
                 "range_total": range_total,
                 "standard_deviation": standard_deviation
             }
-        except:
-            error = "Error. Image statistics could not be calculated."
+        except Exception as e:
+            error = f"Error. Image statistics could not be calculated. {e}"
             return ({}, error)
         
         try:
