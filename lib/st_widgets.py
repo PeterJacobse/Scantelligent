@@ -652,24 +652,109 @@ class STWidgets:
                 return new_pos - 1
             if delta < 0 and new_number == 9: # Roll over to the next digit
                 return new_pos - 1
-
             return True
 
-        def keyPressEvent(self, event):
-            # Check if Tab is pressed and a completer is set up and visible. If so, use tab to autocomplete
-            if event.key() == QtCore.Qt.Key.Key_Tab:
-                print("Tab was pressed") # Not working yet
-                if self.completer() and self.completer().popup().isVisible():
-                    # Get the current completion from the popup
-                    completion = self.completer().currentCompletion()
-                    self.setText(completion)
-                    self.completer().popup().hide()
-                    event.accept()
-                else:
-                    super().keyPressEvent(event)
-            else:
-                # For all other keys, use default QLineEdit behavior
-                super().keyPressEvent(event)
+    class InputLineEdit(QtWidgets.QLineEdit):
+        """
+        A QLineEdit with capabilities to efficiently add units, extract and set values
+        """
+        def __init__(self, parent = None, **kwargs):
+            self.value = kwargs.pop("value", None)
+            self.tooltip = kwargs.pop("tooltip", None)
+            self.min_width = kwargs.pop("min_width", None)
+            self.max_width = kwargs.pop("max_width", None)
+            self.style_sheet = kwargs.pop("style_sheet", None)
+            self.block = kwargs.pop("block", False)
+            self.base_color = kwargs.pop("base_color", "#101010")
+            self.history = []
+            self.history_index = -1
+
+            super().__init__(parent)
+            
+            self.setDefaults()
+            self.old_tooltip = self.toolTip()
+
+        def setDefaults(self) -> None:
+            if isinstance(self.value, str) or isinstance(self.value, int) or isinstance(self.value, float): self.setValue(self.value)
+            if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
+            if isinstance(self.min_width, int): self.setMinimumWidth(self.min_width)
+            if isinstance(self.max_width, int): self.setMaximumWidth(self.max_width)            
+            self.resetColor()            
+            return
+
+        def setColor(self, color: str) -> None:
+            self.setStyleSheet("QLineEdit{ background-color: " + color + " }")
+            return
+
+        def resetColor(self) -> None:
+            self.setColor(self.base_color)
+            return
+
+        def changeToolTip(self, text: str, line: int = 0) -> None:
+            """
+            Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+            """
+            try:
+                old_tooltip = self.toolTip()
+                tooltip_list = old_tooltip.split("\n")
+                
+                if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                    tooltip_list.append(text)
+                    new_tooltip = "\n".join(tooltip_list)
+                elif line < 0: # Add a line to the front if the line number is negative
+                    new_tooltip_list = [text]
+                    [new_tooltip_list.append(item) for item in tooltip_list]
+                    new_tooltip = "\n".join(new_tooltip_list)
+                else: # Replace a line
+                    tooltip_list[line] = text
+                    new_tooltip = "\n".join(tooltip_list)
+
+                self.setToolTip(new_tooltip)
+            except:
+                pass
+            return
+
+        def event(self, event):
+            # Use .Type.KeyPress for PySide6/PyQt6
+            if event.type() == QtCore.QEvent.Type.KeyPress:
+                match event.key():
+                    case QtCore.Qt.Key.Key_Tab | QtCore.Qt.Key.Key_Right:
+                        if self.completer() and self.completer().popup().isVisible():
+                            # Get the current completion from the popup
+                            # completion = self.completer().currentCompletion()
+                            
+                            index = self.completer().popup().currentIndex()
+                            if index.isValid():
+                                completion = self.completer().completionModel().data(index)
+                                self.setText(completion)
+                            
+                            self.completer().popup().hide()
+                            event.accept()
+                            return True
+                    case QtCore.Qt.Key.Key_Up: # Up arrow scrolls through history
+                        self.history_index += 1
+                        if self.history_index > len(self.history) - 1:
+                            self.history_index = 0
+                        if self.history_index > len(self.history) - 1:
+                            event.accept()
+                            return super().event(event)
+                        self.setText(self.history[self.history_index])
+                        event.accept()
+                        return True
+                    case QtCore.Qt.Key.Key_Return:
+                        self.history.insert(0, self.text()) # Add the query to the history
+                        if len(self.history) > 10: self.history = self.history[:9]
+                        self.history_index = -1 # Reset history
+                        return super().event(event)
+                    case _:
+                        pass
+            return super().event(event)
+
+        def focusOutEvent(self, event): # Prevent evaluation when focus is lost
+            self.blockSignals(True)
+            super().focusOutEvent(event)
+            self.blockSignals(False)
+            return
 
     class ProgressBar(QtWidgets.QProgressBar):
         """

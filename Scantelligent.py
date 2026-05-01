@@ -1,4 +1,4 @@
-import os, sys, html, atexit
+import os, sys, html, atexit, re
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
@@ -506,6 +506,10 @@ class Scantelligent(QtCore.QObject):
         text = input_le.text()
         input_le.clear()
         input_le.blockSignals(False)
+        
+        #split_text = re.split(r"()[,;|]. ", text)
+        #self.logprint(f"{split_text}")
+        
         command = f"self.{text}"
         
         try:

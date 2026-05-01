@@ -228,9 +228,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod2": MSB(icon = icons.get("nanonis_mod2"),
                                 states = [{"name": "off", "tooltip": "Nanonis modulator 2 OFF", "color": self.colors["off-black"]},
                                           {"name": "on", "tooltip": "Nanonis modulator 2 ON", "color": self.colors["blue"]}]),
+            "mla_mod0": MSB(icon = icons.get("mla_oscillator"),
+                            states = [{"name": "off", "tooltip": "MLA modulator 0 OFF", "color": self.colors["off-black"]},
+                                      {"name": "on", "tooltip": "MLA modulator 0 ON", "color": self.colors["blue"]}]),
             "mla_mod1": MSB(icon = icons.get("mla_oscillator"),
                             states = [{"name": "off", "tooltip": "MLA modulator 1 OFF", "color": self.colors["off-black"]},
                                       {"name": "on", "tooltip": "MLA modulator 1 ON", "color": self.colors["blue"]}]),
+            "mla_mod2": MSB(icon = icons.get("mla_oscillator"),
+                            states = [{"name": "off", "tooltip": "MLA modulator 2 OFF", "color": self.colors["off-black"]},
+                                      {"name": "on", "tooltip": "MLA modulator 2 ON", "color": self.colors["blue"]}]),
+            "mla_mod3": MSB(icon = icons.get("mla_oscillator"),
+                            states = [{"name": "off", "tooltip": "MLA modulator 3 OFF", "color": self.colors["off-black"]},
+                                      {"name": "on", "tooltip": "MLA modulator 3 ON", "color": self.colors["blue"]}]),
 
             "start_scan": MSB(tooltip = "Start scan"),
             "start_spectrum": MSB(tooltip = "Acquire spectrum"),
@@ -360,6 +369,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_line_edits(self) -> dict:
         buttons = self.buttons
         LE = STWidgets.PhysicsLineEdit
+        ILE = STWidgets.InputLineEdit
         
         line_edits = {
             # Experiment
@@ -437,19 +447,40 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 2),
             
             # Lockins
-            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod1_t": LE(tooltip = "Nanonis modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod2_t": LE(tooltip = "Nanonis modulator 2 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_df": LE(tooltip = "Nanonis frequency resolution", unit = "Hz", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
+            
+            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_n": LE(tooltip = "Nanonis modulator 1 number of oscillations in measurement window", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
 
+            "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
+            
+            "mla_mod0_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod0_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod0_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod0_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            
             "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod1_t": LE(tooltip = "MLA modulator 1 time constant", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            
+            "mla_mod2_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod2_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod2_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod2_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            
+            "mla_mod3_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod3_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod3_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod3_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
 
             # Image processing
             "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 70),
@@ -464,7 +495,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
             
             # Console
-            "input": LE(tooltip = "Enter a command\n(Enter to evaluate)", block = True)
+            "input": ILE(tooltip = "Enter a command\n(Enter to evaluate)")
         }
         
         # Extra line edits
@@ -478,9 +509,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
-        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_t"],
-                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_t"],
-                                  buttons["mla_mod1"], line_edits["mla_mod1_mV"], line_edits["mla_mod1_phi"], line_edits["mla_mod1_f"], line_edits["mla_mod1_t"]]
+        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_n"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"],
+                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_n"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"],
+                                  buttons["mla_mod0"], line_edits["mla_mod0_n"], line_edits["mla_mod0_f"], line_edits["mla_mod1_mV"], line_edits["mla_mod1_phi"]]
         
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
@@ -569,6 +600,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "limits": make_layout("g"),
                         
             # STS
+            "osc": make_layout("v"),
             "sts": make_layout("v"),
             "spectroscopy": make_layout("g"),
             "spectroscopy_getset": make_layout("h"),
@@ -632,6 +664,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "coarse_actions": QWgt(),
             "arrows": QWgt(),
             "graph": QWgt(),
+            "osc": QWgt(),
             "sts": QWgt(),
 
             "connections": QWgt(),
@@ -887,6 +920,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["spectroscopy"].addWidget(line_edits[name], 1, index) for index, name in enumerate(["points_STS", "t_integration", "t_settle"])]
         layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 3)
         
+        # Modulators
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
         [layouts["modulators"].addWidget(widget, int(i / 5), i % 5) for i, widget in enumerate(self.modulator_widgets)]
         layouts["modulators"].addLayout(layouts["mod_set_get"], 3, 0, 1, 4)
@@ -930,13 +964,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         s_layout.addWidget(make_line("h", 1))
         s_layout.addWidget(labels["matrix_operations"])
         s_layout.addLayout(o_layout)
-        #s_layout.addWidget(make_line("h", 1))
-        #s_layout.addWidget(labels["limits"])
-        #s_layout.addLayout(l_layout)
         
-        #layouts["input"].addWidget(self.buttons["input"], 1)
+        # Input console
         layouts["input"].addWidget(self.consoles["input"])
-        
         return
 
 
@@ -998,10 +1028,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_tab_widget(self) -> QtWidgets.QTabWidget:
         tab_widget = QtWidgets.QTabWidget()
         
-        tabs = ["parameters", "coarse_prep", "scan", "sts"]
-        tab_names = ["Parameters", "Coarse/Prep", "Scan", "STS"]
-        [self.widgets[name0].setLayout(self.layouts[name0]) for name0 in tabs]
-        [tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
+        tabs = ["parameters", "coarse_prep", "scan", "osc", "sts"]
+        [self.widgets[name].setLayout(self.layouts[name]) for name in tabs]
+        [tab_widget.addTab(self.widgets[name], name) for name in tabs]
 
         return tab_widget
 
@@ -1067,7 +1096,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [self.checkboxes[f"min_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"min_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
         [self.checkboxes[f"max_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"max_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
 
-        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.update_reciprocals(name_0)) for name in ["nanonis_mod1_f", "nanonis_mod2_f", "mla_mod1_f", "nanonis_mod1_t", "nanonis_mod2_t", "mla_mod1_t"]]
+        #[self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.update_reciprocals(name_0)) for name in ["nanonis_mod1_f", "nanonis_mod2_f", "mla_mod1_f", "nanonis_mod1_t", "nanonis_mod2_t", "mla_mod1_t"]]
         
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.points_dV(name_0)) for name in ["points_STS", "dV_STS"]]
         return
