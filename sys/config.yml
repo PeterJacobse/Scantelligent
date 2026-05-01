@@ -1,7 +1,7 @@
 nanonis:
  tcp_ip: "127.0.0.1"
  tcp_port: 6501
- version_number: 14380
+ version_number: 13437
 camera:
  argument: 0
 keithley:
@@ -9,4 +9,4 @@ keithley:
  address: 18
 scanalyzer_path: C:\Scripts\Scanalyzer\Scanalyzer.py
 mla:
- library_path: C:\IMP\imp_mla-4.6-any
+ library_path: C:\IMP\imp_mla-4.7-any

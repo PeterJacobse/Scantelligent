@@ -402,7 +402,12 @@ class ParameterManager(QtCore.QObject):
                     [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi", "t"], mod_values)]
                     
                     state = "off"
-                    if mod_dict.get("on"): state = "on"
+                    if mod_dict.get("on"):
+                        state = "on"
+                        f1 = mod_dict.get("frequency (Hz)", None)
+                        if isinstance(f1, float | int):
+                            sct.frequency.emit(f1)
+                            [line_edits[f"demod_frequency_{i}"].setValue(i * f1) for i in range(32)]
                     sct.gui.buttons[f"nanonis_mod{i + 1}"].setState(state)
 
             case "speed" | "speeds":

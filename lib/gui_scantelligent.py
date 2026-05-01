@@ -458,7 +458,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Extra line edits
-        [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of harmonic {i}", unit = "Hz", digits = 2)}) for i in range(32)]
+        [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of harmonic {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
         [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}")}) for i in range(9)]
         
         # Named groups

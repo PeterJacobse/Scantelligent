@@ -4,7 +4,7 @@ import numpy as np
 from PyQt6 import QtGui, QtCore
 import pyqtgraph as pg
 from lib import STWidgets, ScantelligentGUI
-from lib import DataProcessing, FileFunctions, ParameterManager, UserData
+from lib import DataProcessing, FileFunctions, ParameterManager, UserData, AudioGenerator
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
 
@@ -12,8 +12,10 @@ from datetime import datetime
 
 # Main class
 class Scantelligent(QtCore.QObject):
-    amplitudes_update = QtCore.pyqtSignal(list)
-    frequency_update = QtCore.pyqtSignal(int)
+    volume = QtCore.pyqtSignal(int)
+    amplitudes = QtCore.pyqtSignal(list)
+    amplitude_volumes = QtCore.pyqtSignal(list)
+    frequency = QtCore.pyqtSignal(float)
 
     def __init__(self):
         super().__init__()
@@ -158,6 +160,42 @@ class Scantelligent(QtCore.QObject):
                 self.paths.update({"mla": mla_path})
                 sys.path.insert(0, mla_path) # Path to the MLA library
 
+        # Audio generator
+        if target.lower() == "audio" or target.lower() == "all":
+            try:
+                # Instantiate
+                self.audio = AudioGenerator()
+                # self.audio_thread = QtCore.QThread()
+                # self.audio.moveToThread(self.audio_thread)
+
+                # Set up signal-slot connections
+                self.volume.connect(self.audio.update_volume)
+                self.amplitudes.connect(self.audio.update_amplitudes)
+                self.amplitude_volumes.connect(self.audio.update_amplitude_volumes)
+                self.frequency.connect(self.audio.update_frequency)
+                                
+                self.logprint(f"AudioGenerator: Successfully connected the audio generator, and instantiated AudioGenerator as audio", "success")
+            except Exception as e:
+                self.logprint(f"AudioGenerator: Unable to connect to the audio generator: {e}", "error")
+
+        # Camera
+        if target.lower() == "camera" or target.lower() == "all":
+            try:
+                # Instantiate
+                self.camera = CameraAPI(hw_config = self.hw_config)
+                
+                # Set up signal-slot connections
+                self.camera.parameters.connect(self.parameters.receive)
+                
+                # Initialize
+                self.camera.initialize()
+                self.camera_home_thread = self.camera.thread()
+                self.logprint("Camera: Found the camera and instantiated CameraAPI as camera", "success")
+                self.gui.buttons["camera"].setState("online")
+            except Exception as e:
+                self.logprint(f"Camera: Unable to connect to camera: {e}", "warning")
+                self.gui.buttons["keithley"].setState("offline")
+
 
 
         # Scanalyzer
@@ -189,23 +227,6 @@ class Scantelligent(QtCore.QObject):
                 self.logprint(f"Keithley: Unable to connect to the Keithley source meter: {e}", "warning")
                 self.gui.buttons["keithley"].setState("offline")
 
-        # Camera
-        if target.lower() == "camera" or target.lower() == "all":
-            try:
-                # Instantiate
-                self.camera = CameraAPI(hw_config = self.hw_config)
-                
-                # Set up signal-slot connections
-                self.camera.parameters.connect(self.parameters.receive)
-                
-                # Initialize
-                self.camera.initialize()
-                self.logprint("Camera: Found the camera and instantiated CameraAPI as camera", "success")
-                self.gui.buttons["camera"].setState("online")
-            except Exception as e:
-                self.logprint(f"Camera: Unable to connect to camera: {e}", "warning")
-                self.gui.buttons["keithley"].setState("offline")
-
         # MLA
         if target.lower() == "mla" or target.lower() == "all":
             try:
@@ -213,8 +234,6 @@ class Scantelligent(QtCore.QObject):
                 self.mla = MLAAPI(hw_config = self.hw_config)
                 
                 # Set up signal-slot connections
-                # Scantelligent -> MLA
-                self.amplitudes_update.connect(self.mla.audio.update_amplitudes)
                 
                 # MLA -> Scantelligent
                 self.mla.message.connect(self.receive_message)
@@ -293,7 +312,6 @@ class Scantelligent(QtCore.QObject):
                 else:
                     self.connect_hardware(target = "mla")
                 return
-
             
             case _:
                 pass
@@ -676,18 +694,19 @@ class Scantelligent(QtCore.QObject):
         self.exit()
 
     def toggle_audio(self) -> None:
-        if not hasattr(self, "audio") or not hasattr(self, "audio_thread"): return
+        if not hasattr(self, "audio"): return
 
         if bool(self.gui.buttons["audio"].state_index):
-            self.audio_thread.start()
+            self.audio.start()
         else:
-            self.audio.stop()            
+            self.audio.stop()
         return
 
     def send_amplitudes(self) -> None:
-        volume = self.gui.sliders["volume"].getValue()
-        amplitudes = [self.gui.sliders[f"f{i}"].getValue() * volume / 10000 for i in range(1, 32)]
-        self.amplitudes_update.emit(amplitudes)
+        volume = int(self.gui.sliders["volume"].getValue())
+        amplitude_volumes = [self.gui.sliders[f"f{i}"].getValue() * volume / 10000 for i in range(1, 32)]
+        self.volume.emit(volume)
+        self.amplitude_volumes.emit(amplitude_volumes)        
         return
 
 
