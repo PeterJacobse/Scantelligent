@@ -197,15 +197,19 @@ class NanonisHardware:
             "set_tip_shaper": make_header('TipShaper.PropsSet', body_size = 44),
 
             # Lockin
-            "get_lockin": make_header('LockIn.ModOnOffGet', body_size = 4),
-            "set_lockin": make_header('LockIn.ModOnOffSet', body_size = 8),
-            "get_lockin_amp": make_header('LockIn.ModAmpGet', body_size = 4),
-            "set_lockin_amp": make_header('LockIn.ModAmpSet', body_size = 8),
-            "get_lockin_freq": make_header('LockIn.ModPhasFreqGet', body_size = 4),
-            "set_lockin_freq": make_header('LockIn.ModPhasFreqSet', body_size = 12),            
-            "get_lockin_phase": make_header('LockIn.ModPhasGet', body_size = 4),
-            "set_lockin_phase": make_header('LockIn.ModPhasSet', body_size = 8),
-            "get_lockin_signal": make_header('LockIn.DemodSignalGet', body_size = 4),
+            "get_mod": make_header('LockIn.ModOnOffGet', body_size = 4),
+            "set_mod": make_header('LockIn.ModOnOffSet', body_size = 8),
+            "get_mod_amp": make_header('LockIn.ModAmpGet', body_size = 4),
+            "set_mod_amp": make_header('LockIn.ModAmpSet', body_size = 8),
+            "get_mod_signal": make_header('LockIn.ModSignalGet', body_size = 4),
+            "set_mod_signal": make_header('LockIn.ModSignalSet', body_size = 8),
+            
+            "get_mod_freq": make_header('LockIn.ModPhasFreqGet', body_size = 4),
+            "set_mod_freq": make_header('LockIn.ModPhasFreqSet', body_size = 12),            
+            "get_mod_phase": make_header('LockIn.ModPhasGet', body_size = 4),
+            "set_mod_phase": make_header('LockIn.ModPhasSet', body_size = 8),
+            
+            "get_demod_signal": make_header('LockIn.DemodSignalGet', body_size = 4),
 
             # Booleans
             "True": self.conv.to_hex(True, 4),
@@ -1321,8 +1325,8 @@ class NanonisHardware:
         return
 
     # Lock-in
-    def get_lockin_on(self, mod_number: int = 1) -> bool:
-        command = self.headers["get_lockin"] + self.conv.to_hex(mod_number, 4)
+    def get_mod_on(self, mod_number: int = 1) -> bool:
+        command = self.headers["get_mod"] + self.conv.to_hex(mod_number, 4)
         
         self.send_command(command)
         response = self.receive_response()
@@ -1330,55 +1334,79 @@ class NanonisHardware:
         
         return lockin_onoff
 
-    def set_lockin_on(self, mod_number: int = 1, on: bool = True) -> None:
-        command = self.headers["set_lockin"] + self.conv.to_hex(mod_number, 4) + self.conv.to_hex(int(on), 4)
+    def set_mod_on(self, mod_number: int = 1, on: bool = True) -> None:
+        command = self.headers["set_mod"] + self.conv.to_hex(mod_number, 4) + self.conv.to_hex(int(on), 4)
         
         self.send_command(command)
         response = self.receive_response(0)
 
         return response
 
-    def get_lockin_amp(self, mod_number: int = 1) -> float:
-        command = self.headers["get_lockin_amp"] + self.conv.to_hex(mod_number, 4)
+    def get_mod_signal(self, mod_number: int = 1) -> None:
+        command = self.headers["get_mod_signal"] + self.conv.to_hex(mod_number, 4)
         
         self.send_command(command)        
         response = self.receive_response()
-        amplitude_mV = self.conv.hex_to_float32(response[0 : 4]) * 1000
+        signal_index = self.conv.hex_to_uint32(response[0 : 4])        
+        return signal_index
+
+    def set_mod_signal(self, mod_number: int = 1, signal_index: int = 0) -> None:
+        """
+        Selects the modulated signal of the specified Lock-In modulator.
+
+        Parameters
+        ----------
+        modulator_number : the number that specifies which modulator to use.
+                           It starts from number 1 (=Modulator 1)
+        modulator_signal_index : the signal index out of the list of 128 signals
+                           available in the software.
+                           To get a list of the available signals, use the
+                           Signals.NamesGet function.
+
+        """
+        command = self.headers["set_mod_signal"] + self.conv.to_hex(mod_number, 4) + self.conv.to_hex(signal_index, 4)
+        self.send_command(command)
+        self.receive_response(0)
+        return
+
+    def get_mod_amp(self, mod_number: int = 1) -> float:
+        command = self.headers["get_mod_amp"] + self.conv.to_hex(mod_number, 4)
         
+        self.send_command(command)        
+        response = self.receive_response()
+        amplitude_mV = self.conv.hex_to_float32(response[0 : 4]) * 1000        
         return amplitude_mV
 
-    def set_lockin_amp(self, mod_number: int = 1, amplitude_mV: float = 0) -> None:
-        command = self.headers["set_lockin_amp"] + self.conv.to_hex(mod_number, 4) + self.conv.float32_to_hex(amplitude_mV / 1000)
+    def set_mod_amp(self, mod_number: int = 1, amplitude_mV: float = 0) -> None:
+        command = self.headers["set_mod_amp"] + self.conv.to_hex(mod_number, 4) + self.conv.float32_to_hex(amplitude_mV / 1000)
         
         self.send_command(command)
         return
 
-    def get_lockin_freq(self, mod_number: int = 1) -> float:        
-        command = self.headers["get_lockin_freq"] + self.conv.to_hex(mod_number, 4)
+    def get_mod_freq(self, mod_number: int = 1) -> float:        
+        command = self.headers["get_mod_freq"] + self.conv.to_hex(mod_number, 4)
         
         self.send_command(command)        
         response = self.receive_response()        
-        frequency = self.conv.hex_to_float64(response[0 : 8])
-        
+        frequency = self.conv.hex_to_float64(response[0 : 8])        
         return frequency
 
-    def set_lockin_freq(self, mod_number: int = 1, frequency: float = 100) -> None:
-        command = self.headers["set_lockin_freq"] + self.conv.to_hex(mod_number, 4) + self.conv.float64_to_hex(frequency)
+    def set_mod_freq(self, mod_number: int = 1, frequency: float = 100) -> None:
+        command = self.headers["set_mod_freq"] + self.conv.to_hex(mod_number, 4) + self.conv.float64_to_hex(frequency)
         
         self.send_command(command)
         return
 
-    def get_lockin_phase(self, mod_number: int = 1) -> float:
-        command = self.headers["get_lockin_phase"] + self.conv.to_hex(mod_number, 4)
+    def get_mod_phase(self, mod_number: int = 1) -> float:
+        command = self.headers["get_mod_phase"] + self.conv.to_hex(mod_number, 4)
         
         self.send_command(command)
         response = self.receive_response()        
-        phase_deg = self.conv.hex_to_float32(response[0 : 4])
-        
+        phase_deg = self.conv.hex_to_float32(response[0 : 4])        
         return phase_deg
 
-    def set_lockin_phase(self, mod_number: int = 1, phase_deg: float = 0) -> None:
-        command = self.headers["set_lockin_phase"] + self.conv.to_hex(mod_number, 4) + self.conv.float32_to_hex(phase_deg)
+    def set_mod_phase(self, mod_number: int = 1, phase_deg: float = 0) -> None:
+        command = self.headers["set_mod_phase"] + self.conv.to_hex(mod_number, 4) + self.conv.float32_to_hex(phase_deg)
         
         self.send_command(command)
         return

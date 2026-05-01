@@ -299,7 +299,6 @@ class NanonisAPI(QtCore.QObject):
         error = False
         nhw = self.nanonis_hardware
         parameter_values = {"dict_name": "signals"}
-        signal_indices = []
         signal_dict = {}
 
         # If only a single signal is provided, turn it into a list (needs to be subscriptable)
@@ -802,7 +801,7 @@ class NanonisAPI(QtCore.QObject):
         
         return (bias_dict, error)
 
-    def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
+    def lockin_update(self, parameters: dict = {}, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
         error = False
         nhw = self.nanonis_hardware
 
@@ -817,21 +816,32 @@ class NanonisAPI(QtCore.QObject):
             mod1_dict = parameters.get("mod1", None)
             mod2_dict = parameters.get("mod2", None)
 
+            if name_lookup:
+                (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
+                if error: raise Exception(error)
+                signal_dict = scan_metadata.get("signal_dict", {})
+
             for mod_number, mod in enumerate([mod1_dict, mod2_dict]):
-                mod_on = nhw.get_lockin_on(mod_number + 1)
-                amplitude_mV = nhw.get_lockin_amp(mod_number + 1)
-                frequency_Hz = nhw.get_lockin_freq(mod_number + 1)
-                phase_deg = nhw.get_lockin_phase(mod_number + 1)
+                mod_on = nhw.get_mod_on(mod_number + 1)
+                amplitude_mV = nhw.get_mod_amp(mod_number + 1)
+                frequency_Hz = nhw.get_mod_freq(mod_number + 1)
+                phase_deg = nhw.get_mod_phase(mod_number + 1)
+                signal_index = nhw.get_mod_signal(mod_number + 1)
                 if frequency_Hz > .01: time_ms = 1000 / frequency_Hz
                 else: time_ms = None
                 
-                mod_new = {"on": mod_on, "frequency (Hz)": frequency_Hz, "amplitude (mV)": amplitude_mV, "phase (deg)": phase_deg, "time_constant (ms)": time_ms}
-    
+                mod_new = {"on": mod_on, "signal_index": signal_index, "frequency (Hz)": frequency_Hz, "amplitude (mV)": amplitude_mV, "phase (deg)": phase_deg, "time_constant (ms)": time_ms}
+                
+                if name_lookup:
+                    for name, index in signal_dict.items():
+                        if index == signal_index: break
+                    mod_new.update({"signal_name": name})
+
                 if isinstance(mod, dict):
                     mod_on = mod.get("on", None)
                     if isinstance(mod_on, bool):
                         try:
-                            nhw.set_lockin_on(mod_number + 1, mod_on)
+                            nhw.set_mod_on(mod_number + 1, mod_on)
                             mod_new.update({"on": mod_on})
                         except:
                             pass
@@ -839,7 +849,7 @@ class NanonisAPI(QtCore.QObject):
                     amp = mod.get("amplitude (mV)", None)
                     if isinstance(amp, float) or isinstance(amp, int):
                         try:
-                            nhw.set_lockin_amp(mod_number + 1, amp)
+                            nhw.set_mod_amp(mod_number + 1, amp)
                             mod_new.update({"amplitude (mV)": amp})
                         except:
                             pass
@@ -847,7 +857,7 @@ class NanonisAPI(QtCore.QObject):
                     freq = mod.get("frequency (Hz)", None)
                     if isinstance(freq, float) or isinstance(freq, int):
                         try:
-                            nhw.set_lockin_freq(mod_number + 1, freq)
+                            nhw.set_mod_freq(mod_number + 1, freq)
                             mod_new.update({"frequency (Hz)": freq})
                             
                             mod_new.update({"time_constant (ms)": 1000 / freq})
@@ -857,7 +867,7 @@ class NanonisAPI(QtCore.QObject):
                     phase = mod.get("phase (deg)", None)
                     if isinstance(phase, float) or isinstance(phase, int):
                         try:
-                            nhw.set_lockin_phase(mod_number + 1, phase)
+                            nhw.set_mod_phase(mod_number + 1, phase)
                             mod_new.update({"phase (deg)": phase})
                         except:
                             pass

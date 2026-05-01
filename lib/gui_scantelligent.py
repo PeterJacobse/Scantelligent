@@ -232,6 +232,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                             states = [{"name": "off", "tooltip": "MLA modulator 1 OFF", "color": self.colors["off-black"]},
                                       {"name": "on", "tooltip": "MLA modulator 1 ON", "color": self.colors["blue"]}]),
 
+            "start_scan": MSB(tooltip = "Start scan"),
+            "start_spectrum": MSB(tooltip = "Acquire spectrum"),
+            
             # Processing
             "direction": MSB(tooltip = "Change scan direction\n(X)",
                              states = [{"name": "forward", "icon": icons.get("triple_arrow"), "color": self.colors["off-black"]},
@@ -337,7 +340,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "frame_grid": CB(tooltip = "Load frame/grid parameters"),
             "spectroscopy": CB(tooltip = "Load spectroscopy parameters"),
             
-            "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach")
+            "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach"),
+            
+            "mod1_channel": CB(tooltip = "Add Nanonis modulator 1 to this channel"),
+            "mod2_channel": CB(tooltip = "Add Nanonis modulator 2 to this channel"),
+            "mla_mod0_channel": CB(tooltip = "Add MLA modulator 0 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
+            "mla_mod1_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
+            "mla_mod2_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
+            "mla_mod3_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
         }
         
         # Add the button handles to the tooltips
@@ -549,17 +559,21 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "tip_prep": make_layout("g"),
             "shaper_getset": make_layout("h"),
             
-            # Processing
-            "image_processing": make_layout("v"),
-            "channel_navigation": make_layout("h"),
+            # Scan
+            "scan": make_layout("v"),
+            "quick_scan": make_layout("h"),
+            "navigation": make_layout("h"),
+            "background": make_layout("h"),
+            "operations": make_layout("g"),
             "background_buttons": make_layout("h"),
-            "matrix_processing": make_layout("g"),
             "limits": make_layout("g"),
                         
             # STS
             "sts": make_layout("v"),
             "spectroscopy": make_layout("g"),
             "spectroscopy_getset": make_layout("h"),
+            
+            "waveforms": make_layout("h"),
             
             "lockin_parameter_sets": make_layout("h"),
             "modulators": make_layout("g"),
@@ -626,7 +640,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "frame_grid": QWgt(),
             "tip_prep": QWgt(),
             "parameters": QWgt(),
-            "image_processing": QWgt(),
+            "scan": QWgt(),
             "experiment": QWgt(),
             "lockins": QWgt(),
             "demodulators": QWgt()
@@ -884,19 +898,19 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.demod_scroller.setWidget(self.widgets["demodulators"])
         layouts["demodulators"].addWidget(self.demod_scroller)
         
-        # Image processing                
-        cn_layout = layouts["channel_navigation"]
-        cn_layout.addWidget(comboboxes["channels"], 4)
-        cn_layout.addWidget(self.buttons["direction"], 1)
-        [cn_layout.addWidget(self.buttons[name], 1) for name in ["fit_to_frame", "fit_to_range"]]
+        # Scan
+        n_layout = layouts["navigation"]
+        n_layout.addWidget(comboboxes["channels"], 4)
+        n_layout.addWidget(self.buttons["direction"], 1)
+        [n_layout.addWidget(self.buttons[name], 1) for name in ["fit_to_frame", "fit_to_range"]]
         
         [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
         layouts["background_buttons"].addWidget(buttons["rot_trans"])
-        p_layout = layouts["matrix_processing"]
-        [p_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
-        p_layout.addWidget(line_edits["gaussian_width"], 0, 5)
-        p_layout.addWidget(comboboxes["projection"], 1, 0, 1, 2)
-        p_layout.addWidget(self.sliders["phase"], 1, 2, 1, 4)
+        o_layout = layouts["operations"]
+        [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
+        o_layout.addWidget(line_edits["gaussian_width"], 0, 5)
+        o_layout.addWidget(comboboxes["projection"], 1, 0, 1, 2)
+        o_layout.addWidget(self.sliders["phase"], 1, 2, 1, 4)
         
         l_layout = layouts["limits"]
         l_layout.setAlignment(align_center)
@@ -907,18 +921,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             widgets = [self.line_edits[f"min_{method}"], self.checkboxes[f"min_{method}"], scale_buttons[row_no], self.checkboxes[f"max_{method}"], self.line_edits[f"max_{method}"]]
             [l_layout.addWidget(widget, row_no, column_no, 1, 1, align_center) for column_no, widget in enumerate(widgets)]
 
-        ip_layout = layouts["image_processing"]
-        ip_layout.addWidget(labels["scan_control"])
-        ip_layout.addLayout(layouts["channel_navigation"])
-        ip_layout.addWidget(make_line("h", 1))
-        ip_layout.addWidget(labels["background_subtraction"])
-        ip_layout.addLayout(layouts["background_buttons"])
-        ip_layout.addWidget(make_line("h", 1))
-        ip_layout.addWidget(labels["matrix_operations"])
-        ip_layout.addLayout(p_layout)
-        ip_layout.addWidget(make_line("h", 1))
-        ip_layout.addWidget(labels["limits"])
-        ip_layout.addLayout(l_layout)
+        s_layout = layouts["scan"]
+        s_layout.addWidget(labels["scan_control"])
+        s_layout.addLayout(layouts["navigation"])
+        s_layout.addWidget(make_line("h", 1))
+        s_layout.addWidget(labels["background_subtraction"])
+        s_layout.addLayout(layouts["background_buttons"])
+        s_layout.addWidget(make_line("h", 1))
+        s_layout.addWidget(labels["matrix_operations"])
+        s_layout.addLayout(o_layout)
+        #s_layout.addWidget(make_line("h", 1))
+        #s_layout.addWidget(labels["limits"])
+        #s_layout.addLayout(l_layout)
         
         #layouts["input"].addWidget(self.buttons["input"], 1)
         layouts["input"].addWidget(self.consoles["input"])
@@ -947,17 +961,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "feedback": SGB(title = "feedback", tooltip = "feedback and gains"),
             "spectroscopy": SGB(title = "spectroscopy", tooltip = "spectroscopy"),
             "modulators": SGB(title = "modulators", tooltip = "modulators"),
+            "waveforms": SGB(title = "waveforms", tooltip = "waveforms"),
             "demodulators": SGB(title = "demodulators", tooltip = "demodulators"),
+            
+            "quick_scan": SGB(title = "quick scan", tooltip = "quick scan"),
+            "navigation": SGB(title = "navigation", tooltip = "navigation"),
+            "background": SGB(title = "background subtraction", tooltip = "background subtraction"),
+            "operations": SGB(title = "image processing operations", tooltip = "image processing operations"),
+            "limits": SGB(title = "limits", tooltip = "limits"),
 
             "speeds": SGB(title = "speeds", tooltip = "speeds"),
-            "image_processing": SGB(title = "image processing", tooltip = "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
+            #"image_processing": SGB(title = "image processing", tooltip = "Select the background subtraction, matrix operations and set the image range limits (use shift key to access these functions)"),
             "experiment": SGB(title = "experiment", tooltip = "Perform experiment")
         }
 
         # Set layouts for the groupboxes
-        groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "spectroscopy", "modulators", "demodulators", "experiment", "image_processing"]
-        [layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupbox_names]
-        [groupboxes[name].setLayout(layouts[name]) for name in groupbox_names]
+        #groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "spectroscopy", "modulators", "demodulators", "experiment", "limits"]
+        [layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupboxes.keys()]
+        [groupboxes[name].setLayout(layouts[name]) for name in groupboxes.keys()]
 
         # Make layouts of several groupboxes
         [layouts["coarse_control"].addWidget(groupboxes[name], 1) for name in ["coarse_horizontal", "coarse_vertical"]]
@@ -966,6 +987,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
         [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "modulators", "demodulators"]]
+        
+        layouts["scan"].addWidget(groupboxes["limits"])
 
         return groupboxes
 
@@ -975,8 +998,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_tab_widget(self) -> QtWidgets.QTabWidget:
         tab_widget = QtWidgets.QTabWidget()
         
-        tabs = ["parameters", "coarse_prep", "image_processing", "sts"]
-        tab_names = ["Parameters", "Coarse/Prep", "Processing", "STS"]
+        tabs = ["parameters", "coarse_prep", "scan", "sts"]
+        tab_names = ["Parameters", "Coarse/Prep", "Scan", "STS"]
         [self.widgets[name0].setLayout(self.layouts[name0]) for name0 in tabs]
         [tab_widget.addTab(self.widgets[name0], name) for name0, name in zip(tabs, tab_names)]
 
