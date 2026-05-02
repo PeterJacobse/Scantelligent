@@ -129,18 +129,18 @@ class Scantelligent(QtCore.QObject):
         self.gui.sliders["volume"].valueChanged.connect(self.send_amplitudes)
         [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_amplitudes) for i in range(32)]
         
-        # Checkboxes
-        for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
-        for method in ["full", "percentiles", "deviations", "absolute"]:
-            self.gui.checkboxes[f"min_{method}"].clicked.connect(self.update_processing_flags)
-            self.gui.checkboxes[f"max_{method}"].clicked.connect(self.update_processing_flags)
+        # Checkboxes and button groups
+        #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
+        [self.gui.button_groups[name].clicked.connect(self.update_processing_flags) for name in ["min", "max", "background"]]
+        self.gui.button_groups["channels"].clicked.connect(lambda index_str: self.set_pdi_visible(int(index_str)))
         return
 
     def connect_hardware(self, target: str = "all") -> None:
+        self.populate_completer()
+        
         """
         Set up and test hardware connections, and request parameters from the hardware components
         """
-
         self.logprint(f"Attempting to connect to the following hardware: {target}", message_type = "message")
 
         # Read hardware configurations from file
@@ -173,6 +173,15 @@ class Scantelligent(QtCore.QObject):
                 self.amplitudes.connect(self.audio.update_amplitudes)
                 self.amplitude_volumes.connect(self.audio.update_amplitude_volumes)
                 self.frequency.connect(self.audio.update_frequency)
+                
+                # Add attributes to the input line edit
+                new_attributes = ["audio." + attr for attr in self.audio.__dict__ if not attr.startswith("_")]
+                completer = self.gui.line_edits["input"].completer()
+                model = completer.model()
+                string_list = model.stringList()
+                [string_list.append(item) for item in new_attributes if item not in string_list]
+                model.setStringList(string_list)
+                completer.setModel(model)
                                 
                 self.logprint(f"AudioGenerator: Successfully connected the audio generator, and instantiated AudioGenerator as audio", "success")
             except Exception as e:
@@ -266,6 +275,17 @@ class Scantelligent(QtCore.QObject):
                 
                 # Get parameters from Nanonis
                 (nanonis_parameters, _) = self.nanonis.nanonis_update()
+                
+                # Populate the input line edit completer
+                nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
+                nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith("_")]
+                completer = self.gui.line_edits["input"].completer()
+                model = completer.model()
+                string_list = model.stringList()
+                [string_list.append(item) for item in nanonis_attributes if item not in string_list]
+                [string_list.append(item) for item in nanonis_hw_attributes if item not in string_list]
+                model.setStringList(string_list)
+                completer.setModel(model)
                                 
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
                 self.gui.buttons["nanonis"].setState("online")
@@ -277,7 +297,7 @@ class Scantelligent(QtCore.QObject):
         
         # Populate the autocomplete suggestions in the command input
         self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
-        self.populate_completer()
+        #self.populate_completer()
         return
 
     def dis_reconnect(self, target: str = "nanonis") -> None:
@@ -457,12 +477,6 @@ class Scantelligent(QtCore.QObject):
         user_attributes = []
         parameters_attributes = []
 
-        if hasattr(self, "nanonis"):
-            nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
-            try:
-                nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith("_")]
-            except:
-                pass
         if hasattr(self, "mla"):
             mla_attributes = ["mla." + attr for attr in self.mla.__dict__ if not attr.startswith("_")]
             try:
@@ -507,26 +521,28 @@ class Scantelligent(QtCore.QObject):
         input_le.clear()
         input_le.blockSignals(False)
         
-        #split_text = re.split(r"()[,;|]. ", text)
-        #self.logprint(f"{split_text}")
+        # Add "self." to attributes that are instances of the main Scantelligent class
+        self_objects = [attribute for attribute in dir(self) if not attribute.startswith("_")]
+        split_text = re.split(r"(\s+|,|\(|\)|:|\w+)", text)
+        for index, substring in enumerate(split_text):
+            if substring in self_objects:
+                if index < 2:
+                    split_text[index] = "self." + substring
+                if split_text[index - 2] == "self":
+                    pass
+                else:
+                    split_text[index] = "self." + substring
+        command = "".join(split_text)
         
-        command = f"self.{text}"
-        
-        try:
+        try: # Attempt to evaluate
             self.logprint(f"{text}", message_type = "code")
             compile(command, "<string>", "eval")
 
             result = eval(command)
             self.logprint(f"{result}", message_type = "result")
         except SyntaxError:
-            try:
+            try: # Attempt to execute
                 compile(command, "<string>", "exec")
-                
-                assignment = command.split("=")
-                assignment = [part.strip() for part in assignment]
-                
-                if assignment[1].startswith("nanonis") or assignment[1].startswith("data") or assignment[1].startswith("file_functions") or assignment[1].startswith("user"):
-                    command = f"{assignment[0]} = self.{assignment[1]}"
 
                 exec(command)
             except SyntaxError:
@@ -534,8 +550,7 @@ class Scantelligent(QtCore.QObject):
             except Exception as e:
                 self.logprint(f"{e}", message_type = "error")
         except Exception as e:
-            self.logprint(f"{e}", message_type = "error")
-        
+            self.logprint(f"{e}", message_type = "error")        
         return
 
     def toggle_view(self, view: str = None):

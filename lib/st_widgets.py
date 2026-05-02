@@ -6,7 +6,6 @@ import numpy as np
 
 
 class STWidgets:
-
     class Label(QtWidgets.QLabel):
         def __init__(self, *args, **kwargs):
             text = kwargs.pop("text", None)
@@ -1106,6 +1105,85 @@ class STWidgets:
     class Application(QtWidgets.QApplication):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
+
+    class ButtonGroup(QtCore.QObject):
+        clicked = QtCore.pyqtSignal(str)
+        
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+            
+            self.widgets = {}
+            self.exclusive = True
+            
+            if len(args) > 0 and isinstance(args[0], list):
+                [self.addButton(widget, index) for index, widget in enumerate(args[0])]
+            if len(args) > 0 and isinstance(args[0], dict):
+                [self.addButton(widget, name) for name, widget in args[0].items()]
+            
+            exclusive = kwargs.pop("exclusive", "none")
+            if isinstance(exclusive, bool):
+                self.exclusive = exclusive
+        
+        def addButton(self, widget, name):
+            if not isinstance(widget, STWidgets.MultiStateButton | STWidgets.CheckBox): return
+            self.widgets.update({f"{name}": widget})
+            
+            widget.clicked.connect(lambda checked: self.widgetClicked(name))
+            return
+        
+        def widgetClicked(self, name):
+            [widget.blockSignals(True) for widget in self.widgets.values()]
+            
+            if self.exclusive:
+                [widget.setState(0) for widget in self.widgets.values()]
+                self.widgets[name].setState(1)
+            
+            self.clicked.emit(name)
+            [widget.blockSignals(False) for widget in self.widgets.values()]
+            return
+
+    class ReciprocalGroup(QtCore.QObject):
+        def __init__(self, *args, **kwargs):
+            """
+            Add pairs or triplets of line_edits to this group in order to establish reciprocal behavior between them when one of them is edited
+            
+            For pairs:
+            LE(0) changed: LE(1) = factor / LE(0) <=> LE(1) changed: LE(0) = factor / LE(1)
+            
+            For triplets:
+            Not yet implemented
+            """
+            super().__init__()
+            
+            if not isinstance(args[0], list): raise Exception("STWidgets.ReciprocalPair: No valid list of STWidgets.PhysicsLineEdits provided")
+            if not isinstance(args[0][0], STWidgets.PhysicsLineEdit): raise Exception("STWidgets.ReciprocalPair: No valid list of STWidgets.PhysicsLineEdits provided")
+
+            self.line_edits = args[0]
+            self.factor = 1
+            
+            factor = kwargs.pop("factor", None)
+            if isinstance(factor, int | bool): self.factor = factor
+
+            self.line_edits[0].editingFinished.connect(self.update_line_edit_1)
+            self.line_edits[1].editingFinished.connect(self.update_line_edit_0)
+
+        def update_line_edit_0(self) -> None:
+            value = self.line_edits[1].getValue()
+            if not isinstance(value, int | float): return
+            if -.000001 < value < .000001: return
+            
+            reciprocal_value = self.factor / value
+            self.line_edits[0].setValue(reciprocal_value, edited_color = True)
+            return
+
+        def update_line_edit_1(self) -> None:
+            value = self.line_edits[0].getValue()
+            if not isinstance(value, int | float): return
+            if -.000001 < value < .000001: return
+            
+            reciprocal_value = self.factor / value
+            self.line_edits[1].setValue(reciprocal_value, edited_color = True)
+            return
 
 
 

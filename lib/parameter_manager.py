@@ -88,6 +88,10 @@ class ParameterManager(QtCore.QObject):
                 sct.nanonis.speeds_update(parameters, unlink = True)
             
             case "lockin":
+                if not hasattr(sct, "nanonis"):
+                    sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
+                    return
+            
                 [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{i + 1}"].state_index) for i in range(2)]
                 mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
                 [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
@@ -384,6 +388,10 @@ class ParameterManager(QtCore.QObject):
                 if sct.status["view"] == "nanonis": sct.gui.image_view.addItem(piezo_roi)
 
             case "scan_metadata":
+                signals = parameters.get("signal_dict")
+                signals.pop("dict_name")
+                [sct.gui.comboboxes[f"nanonis_mod{index + 1}"].renewItems(list(signals.keys())) for index in range(2)]
+
                 # Refresh the recorded channels
                 old_channels = sct.data.scan_processing_flags.get("channels")
                 new_channels = parameters.get("channel_dict", {})

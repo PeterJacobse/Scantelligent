@@ -37,7 +37,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.layouts = self.make_layouts()
         self.image_view = self.make_image_view()
         (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
-        (self.plot_widget, self.pdis) = self.make_plot_widget()
+        (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
         self.widgets = self.make_widgets()
         self.consoles = self.make_consoles()
         self.sliders = self.make_sliders()
@@ -199,9 +199,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                                                {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": self.colors["off-black"]}]),
             "retract": MSB(tooltip = "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
             "advance": MSB(tooltip = "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
-            "approach": MSB(tooltip = "Initiate auto approach\n(Ctrl + A)", icon = icons.get("approach")),
-            "set_coarse": MSB(tooltip = "Set the new coarse parameters\n(Ctrl + P)", icon = icons.get("set")),
-            "get_coarse": MSB(tooltip = "Get the coarse parameters\n(P)", icon = icons.get("get")),
+            "approach": MSB(size = 28,
+                            states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": self.colors["off-black"]},
+                                      {"name": "running", "tooltip": "Stop auto approach", "icon": icons.get("stop_approach"), "color": self.colors["blue"]}]),
 
             # Coarse horizontal
             "n": MSB(tooltip = mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = rotate_icon(arrow, angle = 270)),
@@ -291,7 +291,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def make_checkboxes(self) -> tuple[dict, dict]:
         CB = STWidgets.CheckBox
-        QBG = QtWidgets.QButtonGroup
+        BG = STWidgets.ButtonGroup
 
         checkboxes = {
             # Coarse
@@ -301,15 +301,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "approach": CB(tooltip = "End the tip move with an auto approach"),
             "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion")),
             
+            # STS
+            "voltage_sweep": CB(tooltip = "Perform STS in voltage sweep mode"),
+            "frequency_sweep": CB(tooltip = "Perform STS in frequency sweep mode"),
+            "height_sweep": CB(tooltip = "Perform STS in height sweep mode"),
+            
+            "single_sweep": CB(tooltip = "Perform single sweep"),
+            "amplitude_sweep": CB(tooltip = "Perform iterative STS in amplitude sweep mode"),
+            "line_spectroscopy": CB(tooltip = "Perform iterative STS over a line"),
+            
             # Limits
-            "min_full": CB(tooltip = "set to minimum value of scan data range\n(-) to toggle"),
-            "max_full": CB(tooltip = "set to maximum value of scan data range\n(=) to toggle"),
-            "min_percentiles": CB(tooltip = "set to minimum percentile of data range\n(-) to toggle"),
-            "max_percentiles": CB(tooltip = "set to maximum percentile of data range\n(=) to toggle"),
-            "min_deviations": CB(tooltip = "set to minimum = mean - n * standard deviation\n(-) to toggle"),
-            "max_deviations": CB(tooltip = "set to maximum = mean + n * standard deviation\n(=) to toggle"),
-            "min_absolute": CB(tooltip = "set minimum to an absolute value\n(-) to toggle"),
-            "max_absolute": CB(tooltip = "set maximum to an absolute value\n(=) to toggle"),
+            "min_full": CB(tooltip = "Set to minimum value of scan data range"),
+            "max_full": CB(tooltip = "Set to maximum value of scan data range"),
+            "min_percentiles": CB(tooltip = "Set to minimum percentile of data range"),
+            "max_percentiles": CB(tooltip = "Set to maximum percentile of data range"),
+            "min_deviations": CB(tooltip = "Set to minimum = mean - n * standard deviation"),
+            "max_deviations": CB(tooltip = "Set to maximum = mean + n * standard deviation"),
+            "min_absolute": CB(tooltip = "Set minimum to an absolute value"),
+            "max_absolute": CB(tooltip = "Set maximum to an absolute value"),
         }        
         [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(40)] # Channels
 
@@ -321,12 +330,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Add the button handles to the tooltips
         [checkboxes[name].changeToolTip(f"gui.checkboxes[\"{name}\"]", line = 10) for name in checkboxes.keys()]
         
-        # Add buttons to QButtonGroups for exclusive selection and check the defaults        
-        self.min_button_group = QBG()
-        self.max_button_group = QBG()
-        limit_methods = ["full", "percentiles", "deviations", "absolute"]
-        [self.min_button_group.addButton(checkboxes[f"min_{method}"]) for method in limit_methods]
-        [self.max_button_group.addButton(checkboxes[f"max_{method}"]) for method in limit_methods]
+        # Add buttons to QButtonGroups for exclusive selection and check the defaults
+        self.button_groups = {
+            "min": BG(),
+            "max": BG(),
+            "background": BG(),
+            "channels": BG(exclusive = False)
+        }
+        limit_methods = ["full", "percentiles", "deviations", "absolute"]        
+        [self.button_groups["min"].addButton(checkboxes[f"min_{method}"], f"min_{method}") for method in limit_methods]
+        [self.button_groups["max"].addButton(checkboxes[f"max_{method}"], f"max_{method}") for method in limit_methods]
+        [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise"]]
+        [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(40)]
         
         # Initialize
         checked_buttons = [checkboxes[name] for name in ["min_full", "max_full"]]
@@ -367,9 +382,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         return comboboxes
 
     def make_line_edits(self) -> dict:
-        buttons = self.buttons
         LE = STWidgets.PhysicsLineEdit
         ILE = STWidgets.InputLineEdit
+        RG = STWidgets.ReciprocalGroup
         
         line_edits = {
             # Experiment
@@ -417,7 +432,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = self.colors["dark_green"]),
             "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = self.colors["dark_green"]),
             "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1, edited_color = self.colors["dark_green"]),
-            "frame_aspect": LE(value = 1, tooltip = "frame aspect ratio (height / width)", digits = 4, edited_color = self.colors["dark_green"]),
+            "frame_aspect": LE(tooltip = "frame aspect ratio (height / width)", digits = 4, edited_color = self.colors["dark_green"]),
 
             # Grid
             "grid_pixels": LE(tooltip = "number of pixels", unit = "px", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
@@ -439,48 +454,59 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
             
             # STS
-            "V_start_STS": LE(tooltip = "starting bias", unit = "V", limits = [-10, 10], digits = 3),
-            "V_end_STS": LE(tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3),
-            "dV_STS": LE(tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 1),
-            "points_STS": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
-            "t_integration": LE(tooltip = "integration time per data point", unit = "ms", limits = [0, 10000], digits = 2),
-            "t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 2),
+            "STS_V_start": LE(tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3),
+            "STS_V_end": LE(tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3),
+            "STS_dV": LE(tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 1),
+            "STS_V_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            
+            "STS_f_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "STS_f_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "STS_df": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
+            "STS_f_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            
+            "STS_z_start": LE(tooltip = "start height", unit = "nm", limits = [-10, 10], digits = 3),
+            "STS_z_end": LE(tooltip = "end height", unit = "nm", limits = [-10, 10], digits = 3),
+            "STS_dz": LE(tooltip = "height step value", unit = "nm", limits = [0, 10000], digits = 3),
+            "STS_z_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),            
+            
+            "STS_t_int": LE(tooltip = "integration time per data point", unit = "ms", limits = [0, 10000], digits = 2),
+            "STS_t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 2),
             
             # Lockins
             "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_df": LE(tooltip = "Nanonis frequency resolution", unit = "Hz", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_df": LE(tooltip = "Nanonis frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             
-            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_mV": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "nanonis_mod1_phi": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod1_n": LE(tooltip = "Nanonis modulator 1 number of oscillations in measurement window", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
-            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod1_n": LE(tooltip = "Nanonis modulator 1 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "nanonis_mod2_mV": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "nanonis_mod2_phi": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
 
             "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             
-            "mla_mod0_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod0_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod0_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod0_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod0_mV": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod0_phi": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
             
             "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod1_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
             
-            "mla_mod2_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod2_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod2_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod2_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "mla_mod2_f": LE(tooltip = "MLA modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod2_mV": LE(tooltip = "MLA modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod2_phi": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
             
-            "mla_mod3_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod3_mV": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod3_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod3_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod3_mV": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod3_phi": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
+            "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", unit = "ms", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
 
             # Image processing
             "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 70),
@@ -498,6 +524,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "input": ILE(tooltip = "Enter a command\n(Enter to evaluate)")
         }
         
+        # Reciprocal pairs
+        self.nanonis_t_f = RG([line_edits[name] for name in ["nanonis_t", "nanonis_df"]], factor = 1000)
+        self.mla_t_f = RG([line_edits[name] for name in ["mla_t", "mla_df"]], factor = 1000)
+        
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of harmonic {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
         [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}")}) for i in range(9)]
@@ -508,10 +538,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
         self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
         self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
-        
-        self.modulator_widgets = [buttons["nanonis_mod1"], line_edits["nanonis_mod1_n"], line_edits["nanonis_mod1_f"], line_edits["nanonis_mod1_mV"], line_edits["nanonis_mod1_phi"],
-                                  buttons["nanonis_mod2"], line_edits["nanonis_mod2_n"], line_edits["nanonis_mod2_f"], line_edits["nanonis_mod2_mV"], line_edits["nanonis_mod2_phi"],
-                                  buttons["mla_mod0"], line_edits["mla_mod0_n"], line_edits["mla_mod0_f"], line_edits["mla_mod1_mV"], line_edits["mla_mod1_phi"]]
         
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
@@ -643,8 +669,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return (piezo_roi, frame_roi, new_frame_roi)
 
-    def make_plot_widget(self) -> tuple[pg.PlotWidget, pg.PlotDataItem]:
+    def make_plot_widgets(self) -> tuple[pg.PlotWidget, list[pg.PlotDataItem], pg.PlotWidget, list[pg.PlotDataItem]]:
         plot_widget = pg.PlotWidget()
+        waveform_widget = pg.PlotWidget()
 
         pdis = [] # PlotDataItems
         for i in range(40):
@@ -653,7 +680,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             pdis.append(pdi)
         
-        return (plot_widget, pdis)
+        waveforms = [] # PlotDataItems
+        for i in range(4):
+            pen = pg.mkPen(self.color_list[i])
+            waveform = waveform_widget.plot(x_data = [], y_data = [], pen = pen)
+            
+            waveforms.append(waveform)
+        
+        return (waveform_widget, waveforms, plot_widget, pdis)
 
     def make_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget
@@ -916,15 +950,29 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # STS
         [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
-        [layouts["spectroscopy"].addWidget(line_edits[name], 0, index) for index, name in enumerate(["V_start_STS", "dV_STS", "V_end_STS"])]
-        [layouts["spectroscopy"].addWidget(line_edits[name], 1, index) for index, name in enumerate(["points_STS", "t_integration", "t_settle"])]
+        [layouts["spectroscopy"].addWidget(line_edits[name], 0, index) for index, name in enumerate(["STS_V_start", "STS_dV", "STS_V_end"])]
+        [layouts["spectroscopy"].addWidget(line_edits[name], 1, index) for index, name in enumerate(["STS_V_points", "STS_t_int", "STS_t_settle"])]
         layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 3)
-        
+
         # Modulators
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
-        [layouts["modulators"].addWidget(widget, int(i / 5), i % 5) for i, widget in enumerate(self.modulator_widgets)]
-        layouts["modulators"].addLayout(layouts["mod_set_get"], 3, 0, 1, 4)
+
+        [layouts["modulators"].addWidget(line_edits[f"nanonis_{quantity}"], 0, 2 * index, 1, 2) for index, quantity in enumerate(["t", "df"])]
+        [layouts["modulators"].addWidget(buttons[f"nanonis_mod{index + 1}"], 1 + 2 * index, 0, 2, 1) for index in range(2)]
+        [[layouts["modulators"].addWidget(line_edits[f"nanonis_mod{number + 1}_{quantity}"], 1 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phi"])] for number in range(2)]
+        [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_mV"], comboboxes[f"mod{number + 1}_channel"]])] for number in range(2)]
         
+        [layouts["modulators"].addWidget(line_edits[f"mla_{quantity}"], 5, 2 * index, 1, 2) for index, quantity in enumerate(["t", "df"])]
+        [layouts["modulators"].addWidget(buttons[f"mla_mod{index}"], 6 + 2 * index, 0, 2, 1) for index in range(4)]
+        [[layouts["modulators"].addWidget(line_edits[f"mla_mod{number}_{quantity}"], 6 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phi"])] for number in range(4)]
+        [[layouts["modulators"].addWidget(widget, 7 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"mla_mod{number}_mV"], comboboxes[f"mla_mod{number}_channel"]])] for number in range(4)]
+        
+        layouts["modulators"].addLayout(layouts["mod_set_get"], 16, 0, 1, 4)        
+        layouts["waveforms"].addWidget(self.waveform_widget)
+
+
+
+        # Demodulators
         [layouts["volume"].addWidget(widget) for widget in [buttons["audio"], self.sliders["volume"]]]
         layouts["demodulators"].addLayout(layouts["volume"])
         [layouts["demod_sliders"].addWidget(self.sliders[f"f{i}"]) for i in range(32)]
@@ -938,32 +986,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         n_layout.addWidget(self.buttons["direction"], 1)
         [n_layout.addWidget(self.buttons[name], 1) for name in ["fit_to_frame", "fit_to_range"]]
         
+        # Operations
         [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
         layouts["background_buttons"].addWidget(buttons["rot_trans"])
         o_layout = layouts["operations"]
-        [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
-        o_layout.addWidget(line_edits["gaussian_width"], 0, 5)
-        o_layout.addWidget(comboboxes["projection"], 1, 0, 1, 2)
-        o_layout.addWidget(self.sliders["phase"], 1, 2, 1, 4)
+        o_layout.addLayout(layouts["background_buttons"], 0, 0, 1, 5)        
+        [o_layout.addWidget(buttons[name], 1, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
+        o_layout.addWidget(line_edits["gaussian_width"], 1, 5)
+        o_layout.addWidget(comboboxes["projection"], 2, 0, 1, 2)
+        o_layout.addWidget(self.sliders["phase"], 2, 2, 1, 4)
         
         l_layout = layouts["limits"]
         l_layout.setAlignment(align_center)
         limit_methods = ["full", "percentiles", "deviations", "absolute"]
         scale_buttons = [buttons[name] for name in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
-        
+
         for row_no, method in enumerate(limit_methods):
             widgets = [self.line_edits[f"min_{method}"], self.checkboxes[f"min_{method}"], scale_buttons[row_no], self.checkboxes[f"max_{method}"], self.line_edits[f"max_{method}"]]
             [l_layout.addWidget(widget, row_no, column_no, 1, 1, align_center) for column_no, widget in enumerate(widgets)]
-
-        s_layout = layouts["scan"]
-        s_layout.addWidget(labels["scan_control"])
-        s_layout.addLayout(layouts["navigation"])
-        s_layout.addWidget(make_line("h", 1))
-        s_layout.addWidget(labels["background_subtraction"])
-        s_layout.addLayout(layouts["background_buttons"])
-        s_layout.addWidget(make_line("h", 1))
-        s_layout.addWidget(labels["matrix_operations"])
-        s_layout.addLayout(o_layout)
         
         # Input console
         layouts["input"].addWidget(self.consoles["input"])
@@ -1016,9 +1056,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])
         
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
-        [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "modulators", "demodulators"]]
-        
-        layouts["scan"].addWidget(groupboxes["limits"])
+        [layouts["osc"].addWidget(groupboxes[name]) for name in ["modulators", "waveforms"]]
+        [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "demodulators"]]
+        [layouts["scan"].addWidget(groupboxes[name]) for name in ["quick_scan", "navigation", "operations", "limits"]]
+        [layouts[name].addStretch(1) for name in ["sts", "osc", "coarse_prep", "scan"]]
 
         return groupboxes
 
@@ -1089,16 +1130,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             self.height_width_aspect(name_0)) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
         [self.line_edits[name].editingFinished.connect(self.update_frame_from_fields) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle", "frame_aspect"]]
         
-        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]
-        
-        [self.buttons[f"bg_{method}"].clicked.connect(lambda checked, mthd = method: self.background_mutex(mthd)) for method in ["none", "plane", "linewise"]]
+        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]        
         [self.buttons[f"{method}"].clicked.connect(lambda checked, mthd = method: self.set_both_limits(mthd)) for method in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
-        [self.checkboxes[f"min_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"min_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
-        [self.checkboxes[f"max_{method}"].clicked.connect(lambda checked, mthd = method: self.limits_mutex(f"max_{mthd}")) for method in ["full", "percentiles", "deviations", "absolute"]]
-
-        #[self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.update_reciprocals(name_0)) for name in ["nanonis_mod1_f", "nanonis_mod2_f", "mla_mod1_f", "nanonis_mod1_t", "nanonis_mod2_t", "mla_mod1_t"]]
-        
-        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.points_dV(name_0)) for name in ["points_STS", "dV_STS"]]
+        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.points_dV(name_0)) for name in ["STS_V_points", "STS_dV"]]
         return
 
     def set_pixels_to_multiple_of_16(self) -> None:
@@ -1127,75 +1161,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             roi.blockSignals(False)
         return
 
-    def update_reciprocals(self, target: str = "mla_mod1_f") -> None:
-        match target:
-            case "nanonis_mod1_f":
-                f_Hz = self.line_edits["nanonis_mod1_f"].getValue()
-                t_ms = 1000 / f_Hz
-                self.line_edits["nanonis_mod1_t"].setValue(t_ms)
-                self.line_edits["nanonis_mod1_t"].setEditedColor()
-            case "nanonis_mod2_f":
-                f_Hz = self.line_edits["nanonis_mod2_f"].getValue()
-                t_ms = 1000 / f_Hz
-                self.line_edits["nanonis_mod2_t"].setValue(t_ms)
-                self.line_edits["nanonis_mod2_t"].setEditedColor()
-            case "mla_mod1_f":
-                f_Hz = self.line_edits["mla_mod1_f"].getValue()
-                t_ms = 1000 / f_Hz
-                self.line_edits["mla_mod1_t"].setValue(t_ms)
-                self.line_edits["mla_mod1_t"].setEditedColor()
-
-            case "nanonis_mod1_t":
-                t_ms = self.line_edits["nanonis_mod1_t"].getValue()
-                f_Hz = 1000 / t_ms
-                self.line_edits["nanonis_mod1_f"].setValue(f_Hz)
-                self.line_edits["nanonis_mod1_f"].setEditedColor()
-            case "nanonis_mod2_t":
-                t_ms = self.line_edits["nanonis_mod2_t"].getValue()
-                f_Hz = 1000 / t_ms
-                self.line_edits["nanonis_mod2_f"].setValue(f_Hz)
-                self.line_edits["nanonis_mod2_f"].setEditedColor()
-            case "mla_mod1_f":
-                t_ms = self.line_edits["mla_mod1_t"].getValue()
-                f_Hz = 1000 / t_ms
-                self.line_edits["mla_mod1_f"].setValue(f_Hz)
-                self.line_edits["mla_mod1_f"].setEditedColor()
-        return
-
-    def background_mutex(self, method: str = "none") -> None:
-        [none, plane, linewise] = [self.buttons[name] for name in ["bg_none", "bg_plane", "bg_linewise"]]
-        match method:
-            case "none":
-                [button.setState(0) for button in [plane, linewise]]
-                none.setState(1)
-            case "plane":
-                [button.setState(0) for button in [none, linewise]]
-                plane.setState(1)
-            case _:
-                [button.setState(0) for button in [none, plane]]
-                linewise.setState(1)
-        return
-
-    def limits_mutex(self, method: str = "min_full") -> None:
-        match method[:3]:
-            case "min":
-                [full, percentiles, deviations, absolute] = [self.checkboxes[f"min_{method}"] for method in ["full", "percentiles", "deviations", "absolute"]]
-                [checkbox.setState(0) for checkbox in [full, percentiles, deviations, absolute]]
-                match method[4:]:
-                    case "full": full.setState(1)
-                    case "percentiles": percentiles.setState(1)
-                    case "deviations": deviations.setState(1)
-                    case _: absolute.setState(1)
-            case _:
-                [full, percentiles, deviations, absolute] = [self.checkboxes[f"max_{method}"] for method in ["full", "percentiles", "deviations", "absolute"]]
-                [checkbox.setState(0) for checkbox in [full, percentiles, deviations, absolute]]
-                match method[4:]:
-                    case "full": full.setState(1)
-                    case "percentiles": percentiles.setState(1)
-                    case "deviations": deviations.setState(1)
-                    case _: absolute.setState(1)
-        return
-
     def set_both_limits(self, method: str = "full") -> None:
         match method:
             case "full_data_range": [self.checkboxes[f"{side}_full"].click() for side in ["min", "max"]]
@@ -1204,20 +1169,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             case _: [self.checkboxes[f"{side}_absolute"].click() for side in ["min", "max"]]
         return
 
-    def points_dV(self, target: str = "points_STS") -> None:
-        V_start = self.line_edits["V_start_STS"].getValue()
-        V_end = self.line_edits["V_end_STS"].getValue()
+    def points_dV(self, target: str = "STS_V_points") -> None:
+        V_start = self.line_edits["STS_V_start"].getValue()
+        V_end = self.line_edits["STS_V_end"].getValue()
         if not V_start or not V_end: return
 
         match target:
-            case "points_STS":
-                num_points = self.line_edits["points_STS"].getValue()
+            case "STS_V_points":
+                num_points = self.line_edits["STS_V_points"].getValue()
                 dV = (num_points - 1) / (V_end - V_start)
-                self.line_edits["dV_STS"].setValue(dV)
+                self.line_edits["STS_dV"].setValue(dV)
             case _:
-                dV = self.line_edits["dV_STS"].getValue()
+                dV = self.line_edits["STS_dV"].getValue()
                 num_points = 1 + dV * (V_end - V_start)
-                self.line_edits["points_STS"].setValue(num_points)
+                self.line_edits["STS_V_points"].setValue(num_points)
         return
 
     def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
