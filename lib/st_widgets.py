@@ -1114,18 +1114,18 @@ class STWidgets:
             
             self.widgets = {}
             self.exclusive = True
-            
-            if len(args) > 0 and isinstance(args[0], list):
-                [self.addButton(widget, index) for index, widget in enumerate(args[0])]
-            if len(args) > 0 and isinstance(args[0], dict):
-                [self.addButton(widget, name) for name, widget in args[0].items()]
+            self.keep_one_checked = True
             
             exclusive = kwargs.pop("exclusive", "none")
             if isinstance(exclusive, bool):
                 self.exclusive = exclusive
+            keep_one_checked = kwargs.pop("keep_one_checked", "none")
+            if isinstance(keep_one_checked, bool):
+                self.keep_one_checked = keep_one_checked
         
         def addButton(self, widget, name):
             if not isinstance(widget, STWidgets.MultiStateButton | STWidgets.CheckBox): return
+            widget.setToggleable(False) # Toggling is done manually in widgetClicked
             self.widgets.update({f"{name}": widget})
             
             widget.clicked.connect(lambda checked: self.widgetClicked(name))
@@ -1134,9 +1134,20 @@ class STWidgets:
         def widgetClicked(self, name):
             [widget.blockSignals(True) for widget in self.widgets.values()]
             
-            if self.exclusive:
-                [widget.setState(0) for widget in self.widgets.values()]
-                self.widgets[name].setState(1)
+            # Manual toggle. Save both the old state and the new one            
+            clicked_widget = self.widgets[name]
+            old_index = clicked_widget.state_index
+            clicked_widget.toggleState()
+            new_index = clicked_widget.state_index
+            
+            if self.keep_one_checked:
+                state_indices = []
+                for widget in self.widgets.values(): state_indices.append(widget.state_index) # Tally the current states
+                if not 1 in state_indices: new_index = 1 # Reset the widget to state_index 1 if it turns out that none of the other widgets is in state 1
+            
+            if self.exclusive: [widget.setState(0) for widget in self.widgets.values() if widget.state_index == new_index]
+            
+            clicked_widget.setState(new_index)
             
             self.clicked.emit(name)
             [widget.blockSignals(False) for widget in self.widgets.values()]
@@ -1185,6 +1196,60 @@ class STWidgets:
             self.line_edits[1].setValue(reciprocal_value, edited_color = True)
             return
 
+    class RangeStepsGroup(QtCore.QObject):
+        def __init__(self, *args, **kwargs):
+            """
+            line_edits[0] = min
+            line_edits[1] = max
+            line_edits[2] = step size (delta)
+            line_edits[3] = number of steps
+            """
+            super().__init__()
+            
+            if not isinstance(args[0], list): raise Exception("STWidgets.RangeStepsGroup: No valid list of STWidgets.PhysicsLineEdits provided")
+            if not isinstance(args[0][0], STWidgets.PhysicsLineEdit): raise Exception("STWidgets.RangeStepsGroup: No valid list of STWidgets.PhysicsLineEdits provided")
+            if len(args[0]) < 4: raise Exception("STWidgets.RangeStepsGroup: A list of 4 STWidgets.PhysicsLineEdits is expected but not provided")
+
+            self.line_edits = args[0]
+            self.factor = 1
+            self.getRange()
+
+            factor = kwargs.pop("factor", None)
+            if isinstance(factor, int | bool): self.factor = factor
+
+            [self.line_edits[index].editingFinished.connect(self.updateFromSteps) for index in [0, 1, 3]]
+            self.line_edits[2].editingFinished.connect(self.updateFromSize)
+
+        def getRange(self):
+            max = self.line_edits[1].getValue()
+            min = self.line_edits[0].getValue()
+            self.range = max - min
+            return self.range
+
+        def getStepsFromSize(self):
+            self.getRange()
+            delta = self.line_edits[2].getValue() / self.factor # self.factor allows to account for different base units of the min and max and the delta
+            if not delta: return
+            n_steps_exc = self.range / delta
+            if n_steps_exc < 0: n_steps_exc = -n_steps_exc
+            steps = int(n_steps_exc + 1)
+            return steps
+
+        def updateFromSize(self):
+            steps = self.getStepsFromSize()
+            self.line_edits[3].setValue(steps)
+            self.updateFromSteps()
+            return
+
+        def updateFromSteps(self):
+            self.getRange()
+            steps = self.line_edits[3].getValue()
+            if steps < 1: return
+            delta = self.range / (steps - 1)
+            
+            if delta < 0: delta = -delta
+            self.line_edits[2].setValue(delta * self.factor)
+            return
 
 
 

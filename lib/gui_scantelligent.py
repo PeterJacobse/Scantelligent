@@ -173,7 +173,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
                                             {"name": "online", "color": self.colors["dark_green"], "tooltip": "Open the session folder"}]),
-            "info": MSB(tooltip = "Info", icon = self.icons.get("i")),
+            "info": MSB(tooltip = "Info", icon = icons.get("i")),
             
             # Experiment
             "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy")),
@@ -241,8 +241,24 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                             states = [{"name": "off", "tooltip": "MLA modulator 3 OFF", "color": self.colors["off-black"]},
                                       {"name": "on", "tooltip": "MLA modulator 3 ON", "color": self.colors["blue"]}]),
 
-            "start_scan": MSB(tooltip = "Start scan"),
-            "start_spectrum": MSB(tooltip = "Acquire spectrum"),
+            "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28),
+            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28),
+            
+            "STS_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": self.colors["off-black"], "icon": icons.get("V")},
+                                   {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": self.colors["blue"], "icon": icons.get("V_x")},
+                                   {"name": "y", "tooltip": "Voltage sweep selected for the y-axis (slow/secondary axis)", "color": self.colors["blue"], "icon": icons.get("V_y")}]),
+            "STS_f": MSB(states = [{"name": "off", "tooltip": "Check to include a frequency sweep", "color": self.colors["off-black"], "icon": icons.get("f")},
+                                   {"name": "x", "tooltip": "Frequency sweep selected for the x-axis (fast/primary axis)", "color": self.colors["blue"], "icon": icons.get("f_x")},
+                                   {"name": "y", "tooltip": "Frequency sweep selected for the y-axis (slow/secondary axis)", "color": self.colors["blue"], "icon": icons.get("f_y")}]),
+            "STS_amp": MSB(states = [{"name": "off", "tooltip": "Check to include an amplitude sweep", "color": self.colors["off-black"], "icon": icons.get("A")},
+                                     {"name": "x", "tooltip": "Amplitude sweep selected for the x-axis (fast/primary axis)", "color": self.colors["blue"], "icon": self.icons.get("A_x")},
+                                     {"name": "y", "tooltip": "Amplitude sweep selected for the y-axis (slow/secondary axis)", "color": self.colors["blue"], "icon": self.icons.get("A_y")}]),
+            "STS_z": MSB(states = [{"name": "off", "tooltip": "Check to include a height sweep", "color": self.colors["off-black"], "icon": icons.get("z")},
+                                   {"name": "x", "tooltip": "Height sweep selected for the x-axis (fast/primary axis)", "color": self.colors["blue"], "icon": icons.get("z_x")},
+                                   {"name": "y", "tooltip": "Height sweep selected for the y-axis (slow/secondary axis)", "color": self.colors["blue"], "icon": icons.get("z_y")}]),
+            "STS_V_keithley": MSB(states = [{"name": "off", "tooltip": "Check to include a Keithley voltage sweep", "color": self.colors["off-black"], "icon": icons.get("V")},
+                                            {"name": "x", "tooltip": "Keithley voltage sweep selected for the x-axis (fast/primary axis)", "color": self.colors["blue"], "icon": icons.get("V_x")},
+                                            {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": self.colors["blue"], "icon": icons.get("V_y")}]),
             
             # Processing
             "direction": MSB(tooltip = "Change scan direction\n(X)",
@@ -335,13 +351,15 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "min": BG(),
             "max": BG(),
             "background": BG(),
-            "channels": BG(exclusive = False)
+            "channels": BG(exclusive = False),
+            "spec_axes": BG(keep_one_checked = False)
         }
         limit_methods = ["full", "percentiles", "deviations", "absolute"]        
         [self.button_groups["min"].addButton(checkboxes[f"min_{method}"], f"min_{method}") for method in limit_methods]
         [self.button_groups["max"].addButton(checkboxes[f"max_{method}"], f"max_{method}") for method in limit_methods]
         [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise"]]
         [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(40)]
+        [self.button_groups["spec_axes"].addButton(self.buttons[f"STS_{quantity}"], quantity) for quantity in ["V", "z", "f", "amp", "V_keithley"]]
         
         # Initialize
         checked_buttons = [checkboxes[name] for name in ["min_full", "max_full"]]
@@ -363,15 +381,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "speeds": CB(tooltip = "Load speed parameters"),
             "frame_grid": CB(tooltip = "Load frame/grid parameters"),
             "spectroscopy": CB(tooltip = "Load spectroscopy parameters"),
+            "spectroscopy_parameter": CB(tooltip = "Load spectroscopy parameters", items = ["V_nanonis", "V_mla", "V_keithley", "f_mla", "z_nanonis"]),
             
             "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach"),
             
             "mod1_channel": CB(tooltip = "Add Nanonis modulator 1 to this channel"),
             "mod2_channel": CB(tooltip = "Add Nanonis modulator 2 to this channel"),
-            "mla_mod0_channel": CB(tooltip = "Add MLA modulator 0 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
-            "mla_mod1_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
-            "mla_mod2_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
-            "mla_mod3_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["Port A", "Port B", "Port C", "Port D"]),
+            "mla_mod0_channel": CB(tooltip = "Add MLA modulator 0 to this channel", items = ["port 1", "port 2"]),
+            "mla_mod1_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["port 1", "port 2"]),
+            "mla_mod2_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["port 1", "port 2"]),
+            "mla_mod3_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["port 1", "port 2"]),
         }
         
         # Add the button handles to the tooltips
@@ -385,6 +404,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         LE = STWidgets.PhysicsLineEdit
         ILE = STWidgets.InputLineEdit
         RG = STWidgets.ReciprocalGroup
+        RSG = STWidgets.RangeStepsGroup
         
         line_edits = {
             # Experiment
@@ -454,23 +474,33 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
             
             # STS
-            "STS_V_start": LE(tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3),
-            "STS_V_end": LE(tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3),
-            "STS_dV": LE(tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 1),
-            "STS_V_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
-            
-            "STS_f_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "STS_f_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "STS_df": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
-            "STS_f_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
-            
-            "STS_z_start": LE(tooltip = "start height", unit = "nm", limits = [-10, 10], digits = 3),
-            "STS_z_end": LE(tooltip = "end height", unit = "nm", limits = [-10, 10], digits = 3),
-            "STS_dz": LE(tooltip = "height step value", unit = "nm", limits = [0, 10000], digits = 3),
-            "STS_z_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),            
-            
             "STS_t_int": LE(tooltip = "integration time per data point", unit = "ms", limits = [0, 10000], digits = 2),
             "STS_t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 2),
+            
+            "STS_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3),
+            "STS_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3),
+            "STS_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 1),
+            "STS_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            
+            "STS_f_start": LE(value = 0, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "STS_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "STS_df": LE(value = 100, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
+            "STS_f_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            
+            "STS_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2),
+            "STS_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2),
+            "STS_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [0, 200], digits = 2),
+            "STS_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),            
+
+            "STS_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1),
+            "STS_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1),
+            "STS_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 1),
+            "STS_amp_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+
+            "STS_V_keithley_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "STS_V_keithley_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "STS_dV_keithley": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
+            "STS_V_keithley_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
             
             # Lockins
             "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = self.colors["dark_green"]),
@@ -524,9 +554,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "input": ILE(tooltip = "Enter a command\n(Enter to evaluate)")
         }
         
-        # Reciprocal pairs
+        # Reciprocal pairs and rang-steps groups (inter-line-edit update logic)
         self.nanonis_t_f = RG([line_edits[name] for name in ["nanonis_t", "nanonis_df"]], factor = 1000)
         self.mla_t_f = RG([line_edits[name] for name in ["mla_t", "mla_df"]], factor = 1000)
+        self.sts_V_r_s = RSG([line_edits[name] for name in ["STS_V_start", "STS_V_end", "STS_dV", "STS_V_points"]], factor = 1000)
+        self.sts_z_r_s = RSG([line_edits[name] for name in ["STS_z_start", "STS_z_end", "STS_dz", "STS_z_points"]])
+        self.sts_f_r_s = RSG([line_edits[name] for name in ["STS_f_start", "STS_f_end", "STS_df", "STS_f_points"]])
+        self.sts_amp_r_s = RSG([line_edits[name] for name in ["STS_amp_start", "STS_amp_end", "STS_damp", "STS_amp_points"]])
         
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of harmonic {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
@@ -950,9 +984,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         # STS
         [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
-        [layouts["spectroscopy"].addWidget(line_edits[name], 0, index) for index, name in enumerate(["STS_V_start", "STS_dV", "STS_V_end"])]
-        [layouts["spectroscopy"].addWidget(line_edits[name], 1, index) for index, name in enumerate(["STS_V_points", "STS_t_int", "STS_t_settle"])]
-        layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 3)
+        
+        layouts["spectroscopy"].addWidget(buttons["start_spectrum"], 0, 0, 1, 3, align_center)
+        [layouts["spectroscopy"].addWidget(buttons[f"STS_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
+        [layouts["spectroscopy"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["STS_t_int", "STS_t_settle"])]
+        for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):
+            [layouts["spectroscopy"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"STS_{quantity}_start", f"STS_{quantity}_end", f"STS_d{quantity}", f"STS_{quantity}_points"])]
+        
+        # layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 11, 0, 1, 3)
 
         # Modulators
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
@@ -981,6 +1020,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["demodulators"].addWidget(self.demod_scroller)
         
         # Scan
+        layouts["quick_scan"].addWidget(buttons["start_scan"])
+        
         n_layout = layouts["navigation"]
         n_layout.addWidget(comboboxes["channels"], 4)
         n_layout.addWidget(self.buttons["direction"], 1)
@@ -1071,7 +1112,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         tabs = ["parameters", "coarse_prep", "scan", "osc", "sts"]
         [self.widgets[name].setLayout(self.layouts[name]) for name in tabs]
-        [tab_widget.addTab(self.widgets[name], name) for name in tabs]
+        tab_widget.addTab(self.widgets["parameters"], "params")
+        [tab_widget.addTab(self.widgets[name], name) for name in tabs if not name == "parameters"]
 
         return tab_widget
 
@@ -1132,7 +1174,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.gains_changed(name_0)) for name in ["p_gain", "t_const", "i_gain"]]        
         [self.buttons[f"{method}"].clicked.connect(lambda checked, mthd = method: self.set_both_limits(mthd)) for method in ["full_data_range", "percentiles", "standard_deviation", "absolute_values"]]
-        [self.line_edits[name].editingFinished.connect(lambda name_0 = name: self.points_dV(name_0)) for name in ["STS_V_points", "STS_dV"]]
         return
 
     def set_pixels_to_multiple_of_16(self) -> None:
@@ -1167,22 +1208,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             case "percentiles": [self.checkboxes[f"{side}_percentiles"].click() for side in ["min", "max"]]
             case "standard_deviation": [self.checkboxes[f"{side}_deviations"].click() for side in ["min", "max"]]
             case _: [self.checkboxes[f"{side}_absolute"].click() for side in ["min", "max"]]
-        return
-
-    def points_dV(self, target: str = "STS_V_points") -> None:
-        V_start = self.line_edits["STS_V_start"].getValue()
-        V_end = self.line_edits["STS_V_end"].getValue()
-        if not V_start or not V_end: return
-
-        match target:
-            case "STS_V_points":
-                num_points = self.line_edits["STS_V_points"].getValue()
-                dV = (num_points - 1) / (V_end - V_start)
-                self.line_edits["STS_dV"].setValue(dV)
-            case _:
-                dV = self.line_edits["STS_dV"].getValue()
-                num_points = 1 + dV * (V_end - V_start)
-                self.line_edits["STS_V_points"].setValue(num_points)
         return
 
     def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:

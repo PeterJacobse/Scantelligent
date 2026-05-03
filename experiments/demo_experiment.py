@@ -15,7 +15,7 @@ class Experiment(BaseExperiment):
         
         # Set up the GUI. See below
         try: self.prepare_gui(scantelligent.gui)
-        except: self.gui_not_found_error()
+        except: pass
         
         # Set up the required hardware connections
         #self.connect_hardware("nanonis")
@@ -42,9 +42,4 @@ class Experiment(BaseExperiment):
             self.logprint(f"Iteration {iter}\nIs an abort requested? {self.abort_requested}", message_type = "message")
             if self.abort_requested: break
             sleep(t_ms / 1000)
-
-        self.experiment_finished()
-
-    def cleanup(self):
-        self.disconnect_hardware()
 

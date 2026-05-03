@@ -22,10 +22,10 @@ class Scantelligent(QtCore.QObject):
         self.parameters_init()
         self.gui = ScantelligentGUI()
         self.gui.show()
-        [self.toggle_view(view) for view in ["nanonis", "none"]]
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
+        self.toggle_view("nanonis")
 
 
 
@@ -97,7 +97,7 @@ class Scantelligent(QtCore.QObject):
                         
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
-                        "audio": self.toggle_audio, "start_stop": self.control_experiment
+                        "audio": self.toggle_audio, "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
@@ -553,15 +553,14 @@ class Scantelligent(QtCore.QObject):
             self.logprint(f"{e}", message_type = "error")        
         return
 
-    def toggle_view(self, view: str = None):
-        if self.gui.buttons["view"].state_name == view: return
-        new_view = "none"
-        
+    def toggle_view(self, view: str = None, verbose: bool = True):
+        if self.gui.buttons["view"].state_name == view: return # Return if the view is not changed
+
         # Determine the new view mode
-        if isinstance(view, str) and view in ["nanonis", "camera", "none"]:
+        if isinstance(view, str) and view in ["nanonis", "camera", "none"]: # Explicit selection
             new_view = view
         else:
-            match self.status["view"]:
+            match self.status["view"]: # Toggling to the next view mode
                 # Set to Camera
                 case "none": new_view = "camera"
                 case "camera": new_view = "nanonis"
@@ -577,8 +576,8 @@ class Scantelligent(QtCore.QObject):
         for item in view_box.allChildItems():
             if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
 
-        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
         if new_view == "camera": new_view = "nanonis"
+        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
 
 
 
@@ -594,10 +593,10 @@ class Scantelligent(QtCore.QObject):
 
                 try:
                     # Instantiate
-                    self.camera = CameraAPI({"argument": "rtsp://admin:CT108743@192.168.236.108"})
+                    self.camera = CameraAPI(self.hw_config)
                     self.camera_thread = QtCore.QThread()
                     self.camera.moveToThread(self.camera_thread)
-                    
+
                     # Set up signal-slot connections
                     # Camera -> Scantelligent
                     self.camera.frame_captured.connect(self.receive_image)
@@ -636,7 +635,7 @@ class Scantelligent(QtCore.QObject):
                 
                 view_box.autoRange()
 
-        self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
+        if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
         return
 
     def camera_finished(self):
@@ -1003,7 +1002,7 @@ class Scantelligent(QtCore.QObject):
 
 
     # Experiments
-    def control_experiment(self) -> None:
+    def control_experiment(self, experiment_name = None) -> None:
         if not "session_path" in list(self.paths.keys()) or not os.path.isdir(self.paths["session_path"]):
             self.logprint(f"Error. No session folder loaded. Either select one manually or get it from a Nanonis connection", message_type = "error")
             return
@@ -1012,7 +1011,10 @@ class Scantelligent(QtCore.QObject):
         
         match start_button.state_name:
             case "load": # Load the experiment
-                experiment_name = self.gui.comboboxes["experiment"].currentText()
+                if not experiment_name: experiment_name = self.gui.comboboxes["experiment"].currentText()
+                else:
+                    try: self.gui.comboboxes["experiment"].setCurrentText(experiment_name)
+                    except: pass
                 experiment_path = os.path.join(self.paths["experiments_folder"], experiment_name + ".py")
                 if not os.path.isfile(experiment_path):
                     self.logprint(f"The selected experiment was not found in {self.paths["experiments_folder"]}", "error")
@@ -1078,6 +1080,14 @@ class Scantelligent(QtCore.QObject):
             case _:
                 pass
                 
+        return
+
+    def quick_scan(self) -> None:
+        self.control_experiment("nn_scan")
+        return
+    
+    def start_spectroscopy(self) -> None:
+        self.control_experiment("nn_spectroscopy")
         return
 
 
