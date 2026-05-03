@@ -360,13 +360,13 @@ class ParameterManager(QtCore.QObject):
 
             case "sts":
                 [V_start, V_end] = parameters.get("limits (V)")
-                if V_start: [sct.gui.line_edits[name].setValue(value) for name, value in zip(["V_start_STS", "V_end_STS"], [V_start, V_end])]
+                if V_start: [sct.gui.line_edits[name].setValue(value) for name, value in zip(["STS_V_start", "STS_V_end"], [V_start, V_end])]
                 
-                [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (s)", "t_settle (s)"]]
+                [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (ms)", "t_settle (ms)"]]
                 t_int_ms = t_int_s * 1000
                 t_settle_s = t_settle_s * 1000
-                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["points_STS", "t_integration", "t_settle"], [n_points, t_int_s, t_settle_s])]
-                sct.gui.points_dV("points_STS") # Calculate the dV
+                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["STS_V_points", "STS_t_int", "STS_t_settle"], [n_points, t_int_s, t_settle_s])]
+                sct.gui.sts_V_r_s.updateFromSteps()
 
             case "gains":
                 [p_gain_ms, t_const_us, i_gain_nm_per_s] = [parameters.get(parameter) for parameter in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
@@ -389,7 +389,6 @@ class ParameterManager(QtCore.QObject):
 
             case "scan_metadata":
                 signals = parameters.get("signal_dict")
-                signals.pop("dict_name")
                 [sct.gui.comboboxes[f"nanonis_mod{index + 1}"].renewItems(list(signals.keys())) for index in range(2)]
 
                 # Refresh the recorded channels
@@ -408,6 +407,13 @@ class ParameterManager(QtCore.QObject):
                     
                     mod_values = [mod_dict.get(key) for key in ["frequency (Hz)", "amplitude (mV)", "phase (deg)", "time_constant (ms)"]]                    
                     [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi"], mod_values)]
+                    
+                    if i == 0:
+                        df_Hz = mod_values[0] # Measurement resolution is a single cycle of modulator 1
+                        tm_ms = 1000 / df_Hz
+                        [line_edits[f"nanonis_{quantity}"].setValue(val) for quantity, val in zip(["df", "t"], [df_Hz, tm_ms])]
+                    
+                    line_edits[f"nanonis_mod{i + 1}_n"].setValue(mod_values[0] / df_Hz)
                     
                     state = "off"
                     if mod_dict.get("on"):

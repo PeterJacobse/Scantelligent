@@ -31,7 +31,7 @@ class Experiment(BaseExperiment):
         direction = gui_parameters.get("direction_combobox")
 
         signal_dict = scan_metadata.get("signal_dict") # All signals
-        recorded_channel_indices = scan_metadata.get("channel_dict").values() # Signals currently being recorded
+        recorded_channel_indices = list(scan_metadata.get("channel_dict").values()) # Signals currently being recorded
         feedback_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]] # Retrieve the channel indices from the signal_dict
         feedback_channel_indices = [index for index in feedback_channel_indices if index is not None]
         [recorded_channel_indices.append(channel_index) for channel_index in feedback_channel_indices if channel_index not in recorded_channel_indices]

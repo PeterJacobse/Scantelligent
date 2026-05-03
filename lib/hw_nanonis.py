@@ -433,7 +433,7 @@ class NanonisHardware:
         
         return {"data_dict": data_dict, "parameters": parameters}
 
-    def get_STS_parameters(self) -> dict:
+    def get_sts_parameters(self) -> dict:
         command = self.headers["open_spectroscopy"]
         self.send_command(command)
         self.receive_response(0)
@@ -450,8 +450,8 @@ class NanonisHardware:
         
         parameters = {"save_all": save_all, "num_sweeps": num_sweeps, "back_sweep": back_sweep, "num_points": num_points}
         
-        if(self.version < 11798): parameters.update(self.append_STS_properties_old(response))
-        if(self.version >= 11798): parameters.update(self.append_STS_properties_new(response))
+        if(self.version < 11798): parameters.update(self.append_sts_properties_old(response))
+        if(self.version >= 11798): parameters.update(self.append_sts_properties_new(response))
         
         # 'Advanced' properties
         command = self.headers["get_STS_advanced_properties"]
@@ -476,7 +476,7 @@ class NanonisHardware:
         parameters.update({"limits (V)": [start_value, end_value]})
         
         # Channel indices
-        channel_indices = self.get_STS_channels()
+        channel_indices = self.get_sts_channels()
         parameters.update({"channel_indices": channel_indices})
         
         # Timing
@@ -484,21 +484,21 @@ class NanonisHardware:
         self.send_command(command)
         response = self.receive_response()
         
-        z_averaging_time = self.conv.hex_to_float32(response[0:4])
-        z_offset = self.conv.hex_to_float32(response[4:8])
-        initial_settling_time = self.conv.hex_to_float32(response[8:12])
-        maximum_slew_rate = self.conv.hex_to_float32(response[12:16])
-        settling_time = self.conv.hex_to_float32(response[16:20])
-        integration_time = self.conv.hex_to_float32(response[20:24])
-        end_settling_time = self.conv.hex_to_float32(response[24:28])
-        z_control_time = self.conv.hex_to_float32(response[28:32]) * 1E9
+        t_averaging_z_ms = self.conv.hex_to_float32(response[0 : 4]) * 1000
+        z_offset_nm = self.conv.hex_to_float32(response[4 : 8]) * 1E9
+        t_settle_begin_ms = self.conv.hex_to_float32(response[8 : 12]) * 1000
+        slew_rate_max_V_per_s = self.conv.hex_to_float32(response[12 : 16])
+        t_settle_ms = self.conv.hex_to_float32(response[16 : 20]) * 1000
+        t_integration_ms = self.conv.hex_to_float32(response[20 : 24]) * 1000
+        t_settle_end_ms = self.conv.hex_to_float32(response[24 : 28]) * 1000
+        t_control_z_ms = self.conv.hex_to_float32(response[28 : 32]) * 1000
         
-        parameters.update({"t_avg_z (s)": z_averaging_time, "z_offset (nm)": z_offset, "t_settle_begin (s)": initial_settling_time, "slew_rate (V/s)": maximum_slew_rate,
-                           "t_settle (s)": settling_time, "t_integration (s)": integration_time, "t_settle_end (s)": end_settling_time, "t_z_control (s)": z_control_time})
+        parameters.update({"t_avg_z (ms)": t_averaging_z_ms, "z_offset (nm)": z_offset_nm, "t_settle_begin (ms)": t_settle_begin_ms, "slew_rate (V/s)": slew_rate_max_V_per_s,
+                           "t_settle (ms)": t_settle_ms, "t_integration (ms)": t_integration_ms, "t_settle_end (ms)": t_settle_end_ms, "t_z_control (ms)": t_control_z_ms})
         
         return parameters
         
-    def append_STS_properties_old(self, response: str) -> dict:
+    def append_sts_properties_old(self, response: str) -> dict:
         idx = 20
         channels = []
         num_channels = self.conv.hex_to_int32(response[16 : 20])
@@ -530,7 +530,7 @@ class NanonisHardware:
         
         return {"channels": channels, "parameters": parameters, "fixed_parameters": fixed_parameters}
     
-    def append_STS_properties_new(self, response: str) -> dict:
+    def append_sts_properties_new(self, response: str) -> dict:
         idx = 16
         parameters = []
         num_parameters = self.conv.hex_to_int32(response[idx : idx + 4])
@@ -556,7 +556,7 @@ class NanonisHardware:
 
         return {"parameters": parameters, "fixed_parameters": fixed_parameters, "autosave": autosave, "save_dialog": save_dialog}
 
-    def get_STS_channels(self) -> list:
+    def get_sts_channels(self) -> list:
         """
         Returns the list of recorded channels in Bias Spectroscopy
 

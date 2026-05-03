@@ -28,13 +28,23 @@ class Experiment(BaseExperiment):
         nhw = nn.nanonis_hardware
         # nn.link() # Although NanonisAPI functions will automatically manage TCP connections, NanonisHardware will not work unless a TCP connection is established explicitly
 
-        # Calculate information
-        [V_start, V_end, n_points, t_int_ms, t_settle_ms] = [self.sct.gui.line_edits[name].getValue() for name in ["V_start_STS", "V_end_STS", "points_STS", "t_integration", "t_settle"]]
-        V_0 = self.start_parameters["nanonis"].get("bias").get("V_nanonis (V)")
-        V_list = np.linspace(V_start, V_end, n_points)
-        V_list_retrace = np.linspace(V_end, V_start, n_points)
+        # Read and calculate information
+        [t_int_ms, t_settle_ms] = [self.sct.gui.line_edits[name].getValue() for name in ["STS_t_int", "STS_t_settle"]]
         t_settle_s = t_settle_ms / 1000
         t_int_s = t_int_ms / 1000
+        
+        button_states = [self.sct.gui.buttons[name].state_index for name in ["STS_V", "STS_z", "STS_f", "STS_amp", "STS_V_keithley"]]
+        if not 1 in button_states:
+            raise Exception("Error. No variable on the x-axis selected. Check one of the variable buttons in the spectroscopy module")
+        if button_states[0] == 1: x_axis = "V"
+        elif button_states[1] == 1: x_axis = "z"
+        
+        self.logprint(f"Starting a spectroscopy experiment, measuring as a function of {x_axis}", message_type = "success")
+        #V_start, V_end, n_points "STS_V_start", "STS_V_end", "STS_V_points"
+        #V_0 = self.start_parameters["nanonis"].get("bias").get("V_nanonis (V)")
+        #V_list = np.linspace(V_start, V_end, n_points)
+        #V_list_retrace = np.linspace(V_end, V_start, n_points)
+        
         
         # Find the LI demodulator channels and put them in slots 20 through 23 so that they can be accessed by nanonis.signals_update
         scan_metadata = self.start_parameters["nanonis"].get("scan_metadata")

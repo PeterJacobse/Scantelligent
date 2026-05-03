@@ -896,7 +896,7 @@ class NanonisAPI(QtCore.QObject):
 
             if not self.status == "running": self.link()
             
-            retrieved_parameters = nhw.get_STS_parameters()
+            retrieved_parameters = nhw.get_sts_parameters()
             sts_parameters.update(retrieved_parameters)
 
             self.parameters.emit(sts_parameters)

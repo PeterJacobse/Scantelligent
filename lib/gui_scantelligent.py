@@ -385,12 +385,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach"),
             
-            "mod1_channel": CB(tooltip = "Add Nanonis modulator 1 to this channel"),
-            "mod2_channel": CB(tooltip = "Add Nanonis modulator 2 to this channel"),
-            "mla_mod0_channel": CB(tooltip = "Add MLA modulator 0 to this channel", items = ["port 1", "port 2"]),
-            "mla_mod1_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["port 1", "port 2"]),
-            "mla_mod2_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["port 1", "port 2"]),
-            "mla_mod3_channel": CB(tooltip = "Add MLA modulator 1 to this channel", items = ["port 1", "port 2"]),
+            "nanonis_mod1": CB(tooltip = "Add Nanonis modulator 1 to this channel"),
+            "nanonis_mod2": CB(tooltip = "Add Nanonis modulator 2 to this channel"),
+            "mla_mod0": CB(tooltip = "Add MLA modulator 0 to this output port", items = ["port 1", "port 2"]),
+            "mla_mod1": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
+            "mla_mod2": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
+            "mla_mod3": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
         }
         
         # Add the button handles to the tooltips
@@ -999,12 +999,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["modulators"].addWidget(line_edits[f"nanonis_{quantity}"], 0, 2 * index, 1, 2) for index, quantity in enumerate(["t", "df"])]
         [layouts["modulators"].addWidget(buttons[f"nanonis_mod{index + 1}"], 1 + 2 * index, 0, 2, 1) for index in range(2)]
         [[layouts["modulators"].addWidget(line_edits[f"nanonis_mod{number + 1}_{quantity}"], 1 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phi"])] for number in range(2)]
-        [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_mV"], comboboxes[f"mod{number + 1}_channel"]])] for number in range(2)]
+        [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_mV"], comboboxes[f"nanonis_mod{number + 1}"]])] for number in range(2)]
         
         [layouts["modulators"].addWidget(line_edits[f"mla_{quantity}"], 5, 2 * index, 1, 2) for index, quantity in enumerate(["t", "df"])]
         [layouts["modulators"].addWidget(buttons[f"mla_mod{index}"], 6 + 2 * index, 0, 2, 1) for index in range(4)]
         [[layouts["modulators"].addWidget(line_edits[f"mla_mod{number}_{quantity}"], 6 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phi"])] for number in range(4)]
-        [[layouts["modulators"].addWidget(widget, 7 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"mla_mod{number}_mV"], comboboxes[f"mla_mod{number}_channel"]])] for number in range(4)]
+        [[layouts["modulators"].addWidget(widget, 7 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"mla_mod{number}_mV"], comboboxes[f"mla_mod{number}"]])] for number in range(4)]
         
         layouts["modulators"].addLayout(layouts["mod_set_get"], 16, 0, 1, 4)        
         layouts["waveforms"].addWidget(self.waveform_widget)
