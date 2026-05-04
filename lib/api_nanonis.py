@@ -50,7 +50,7 @@ class NanonisAPI(QtCore.QObject):
             self.status = "offline"
             self.logprint("Failed to connect to Nanonis.", message_type = "error")
 
-        try: self.callback(self.status)
+        try: self.status_callback(self.status)
         except Exception as e: print(f"{e}")
         return f"Nanonis status: {self.status}"
 
@@ -60,7 +60,7 @@ class NanonisAPI(QtCore.QObject):
         nhw.unlink()
         self.status = "idle"
 
-        try: self.callback(self.status)
+        try: self.status_callback(self.status)
         except Exception as e: print(f"{e}")
         return f"Nanonis status: {self.status}"
 

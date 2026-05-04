@@ -552,9 +552,11 @@ class STWidgets:
                     if self.digits < 1: number = int(number)
 
                 if isinstance(self.unit, str):
-                    self.setText(f"{number:.{self.digits}f} {self.unit}")
+                    if isinstance(self.digits, int): self.setText(f"{number:.{self.digits}f} {self.unit}")
+                    else: self.setText(f"{number} {self.unit}")
                 else:
-                    self.setText(f"{number:.{self.digits}f}")
+                    if isinstance(self.digits, int): self.setText(f"{number:.{self.digits}f}")
+                    else: self.setText(f"{number}")                    
             
             else:
                 self.setText(f"{value}")
@@ -881,7 +883,7 @@ class STWidgets:
         """
         valueChanged = QtCore.pyqtSignal(int)
 
-        def __init__(self, parent = None, tooltip: str = "", limits: list = [-180, 180], initial_val: float = 0, digits: int = 0, max_width = 150, unit = None, orientation: str = "h",
+        def __init__(self, parent = None, tooltip: str = "", limits: list = [-180, 180], value: float = 0, digits: int = 0, max_width = 150, unit = None, orientation: str = "h",
                      minmax_buttons: bool = False, min_button_icon: QtGui.QIcon = None, max_button_icon: QtGui.QIcon = None):
             super().__init__(parent)
             [self.min_val, self.max_val] = limits
@@ -899,7 +901,7 @@ class STWidgets:
 
             # 2: Configure widgets
             self.slider.setRange(self.min_val, self.max_val)
-            [widget.setValue(initial_val) for widget in [self.slider, self.line_edit]]
+            [widget.setValue(value) for widget in [self.slider, self.line_edit]]
 
             # 3: Set up the layout
             if orientation == "h": self.widget_layout = QtWidgets.QHBoxLayout()
@@ -1028,7 +1030,7 @@ class STWidgets:
         A slider line edit with buttons for controlling a phase
         """
         def __init__(self, parent = None, unit = "", phase_0_icon = None, phase_180_icon = None, tooltip = None):
-            super().__init__(parent, unit = unit, limits = [-180, 180], initial_val = 0, max_width = 80)
+            super().__init__(parent, unit = unit, limits = [-180, 180], value = 0, max_width = 80)
             
             self.phase_0_button = STWidgets.MultiStateButton()
             self.phase_0_button.setToolTip("Set the phase to 0")
@@ -1245,7 +1247,7 @@ class STWidgets:
         def updateFromSteps(self):
             self.getRange()
             steps = self.line_edits[3].getValue()
-            if steps < 1: return
+            if not isinstance(steps, int) or steps < 2: return
             delta = self.range / (steps - 1)
             
             if delta < 0: delta = -delta

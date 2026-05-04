@@ -22,69 +22,24 @@ class BaseExperiment(QObject):
     data_array = pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
 
     def __init__(self, *args, **kwargs):
-        hw_config = kwargs.pop("hw_config", None)
-        parent = kwargs.pop("scantelligent", None)
-        if not parent: parent = kwargs.pop("parent", None)
+        self.hw_config = kwargs.pop("hw_config", None)
+        self.scan_processing_flags = kwargs.pop("scan_processing_flags", None)
+
+        self.gui_setup = {}
+        self.abort_requested = False
+        self.start_parameters = {}
+        self.gui_parameters = {"combobox": None, "line_edits": [None], "buttons": [None]}
         
         super().__init__()
 
-        self.abort_requested = False
-        self.hw_config = hw_config
-        self.sct = parent
-        self.logprint(f"Class BaseExperiment instantiated with hw_config {self.hw_config}", message_type = "message")
+
 
     def logprint(self, message: str = "", message_type: str = "error"):
         return self.message.emit(message, message_type)
 
-    def prepare_gui(self, setup: dict = {}) -> None:
-        if not hasattr(self, "sct"):
-            self.logprint("Error setting up the gui. Scantelligent not found", message_type = "error")
-            return
-        if not hasattr(self.sct, "gui"):
-            self.logprint("Error setting up the gui. Scantelligent GUI not found", message_type = "error")
-            return
-        
-        self.logprint(f"{setup = }")
-        
-        try:
-            combobox_dict = setup.get("combobox", {})
-            self.setup_combobox(items = combobox_dict.get("items", []))
-            
-            line_edits_dict = setup.get("line_edits", {})
-            self.setup_line_edits(tooltips = line_edits_dict.get("tooltips", []), values = line_edits_dict.get("values", []), digits = line_edits_dict.get("digits", []),
-                                  limits = line_edits_dict.get("limits", []), units = line_edits_dict.get("units", []))
-            
-            buttons_dict = setup.get("buttons", {})
-            self.setup_buttons(states = buttons_dict.get("states"))
-        except Exception as e:
-            self.logprint(f"Error setting up the gui: {e}")
-        return
-
-    def setup_line_edits(self, tooltips: list = [], values: list = [], digits: list = [], limits: list = [], units: list = []) -> None:
-        self.line_edits = [self.sct.gui.line_edits[f"experiment_{index}"] for index in range(9)]
-
-        [self.line_edits[index].changeToolTip(tooltip) for index, tooltip in enumerate(tooltips)]
-        [self.line_edits[index].setDigits(digits) for index, digits in enumerate(digits)]
-        [self.line_edits[index].setLimits(limits) for index, limits in enumerate(limits)]
-        [self.line_edits[index].setValue(value) for index, value in enumerate(values)]
-        [self.line_edits[index].setUnit(unit) for index, unit in enumerate(units)]
-        
-        max_number = max([len(key) for key in [tooltips, digits, limits, values, units]])
-        #[self.line_edits[index].hide() for index in range(max_number, 9)]
-        return
-
-    def setup_combobox(self, tooltip: str = "", items: list = []) -> None:        
-        self.direction_combobox = self.sct.gui.comboboxes["direction"]
-        self.direction_combobox.renewItems(items)
-        
-        self.logprint(f"{self.direction_combobox}.renewItems({items})")
-        return
-
-    def setup_buttons(self, states: list = []) -> None:
-        self.buttons = [self.sct.gui.buttons[f"experiment_{i}"] for i in range(9)]
-        
-        single_button_states = states[0]
-        self.buttons[0].setStates(single_button_states)
+    def prepare_gui(self) -> None:
+        self.gui_setup.update({"dict_name": "gui_setup"})
+        self.parameters.emit(self.gui_setup)
         return
 
 
@@ -92,14 +47,7 @@ class BaseExperiment(QObject):
     def experiment_handler(run):
         def wrapper(self):
             self.logprint("Starting the experiment", "success")
-            
-            self.start_parameters = {}
-            if hasattr(self, "nanonis"):
-                (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
-                self.start_parameters.update({"nanonis": nanonis_parameters})
-            
-            gui_parameters = self.read_parameters_from_gui()
-            self.start_parameters.update({"gui": gui_parameters})
+            self.start_parameters.update({"gui": self.gui_parameters})
             
             try:
                 run(self)
@@ -111,9 +59,6 @@ class BaseExperiment(QObject):
             finally:
                 self.finish_experiment()
         return wrapper
-
-    def toggle_view(self, target: str = "nanonis") -> None:
-        return
 
     def monitor_scan(self, channel, timeout_s: int = 100000) -> np.ndarray:
         channels_dict = {i: name for i, name in enumerate(["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"])} | {"dict_name": "channels"}
@@ -129,8 +74,8 @@ class BaseExperiment(QObject):
             [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
             self.data_array.emit(np.array([[t_elapsed, x_nm, y_nm, z_nm, I_pA]]))
             
-            channel_index = self.sct.data.scan_processing_flags.get("channel_index")
-            backward = self.sct.data.scan_processing_flags.get("backward")
+            channel_index = self.scan_processing_flags.get("channel_index")
+            backward = self.scan_processing_flags.get("backward")
             
             (scan_image, error) = self.nanonis.scan_update(channel = channel_index, backward = backward, verbose = False)
             nan_mask = np.isnan(scan_image)
@@ -144,26 +89,29 @@ class BaseExperiment(QObject):
         
         return scan_image
 
-    def read_parameters_from_gui(self) -> dict:
-        parameters = {"dict_name": "gui_parameters"}
-        if hasattr(self, "line_edits"): parameters.update({"line_edits": [self.line_edits[i].getValue() for i in range(9)]})
-        if hasattr(self, "direction_combobox"): parameters.update({"direction_combobox": self.direction_combobox.currentText()})
-        if hasattr(self, "buttons"): parameters.update({"buttons": [self.buttons[i].state for i in range(9)]})
-        return parameters
-
     def connect_hardware(self, target: str = "nanonis") -> None:
         match target:
             case "nanonis":
-                if not hasattr(self.sct, "nanonis"):
-                    raise Exception("Error. Nanonis not found")
-                else:
-                    self.nanonis = self.sct.nanonis
+                self.nanonis = NanonisAPI(hw_config = self.hw_config, message_callback = self.logprint)
+                self.nanonis.parameters.connect(self.parameters.emit)
+                self.nanonis.task_progress.connect(self.task_progress.emit)
+                
+                (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
+                self.start_parameters.update({"nanonis": nanonis_parameters})
+            
             case "keithley":
                 self.keithley = KeithleyAPI(hw_config = self.hw_config)
+
             case "mla":
-                self.mla = MLAAPI(hw_config = self.hw_config)
+                self.mla = MLAAPI(hw_config = self.hw_config, message_callback = self.logprint)
+                self.mla.parameters.connect(self.parameters.emit)
+                
+                (mla_parameters, error) = self.mla.time_constant_update()                
+                self.start_parameters.update({"mla": mla_parameters})
+
             case "camera":
                 self.camera = CameraAPI(hw_config = self.hw_config)
+
             case _:
                 pass
         
@@ -210,11 +158,11 @@ class BaseExperiment(QObject):
                 self.nanonis.unlink()
             except: pass
             
-            if not self.abort_requested:
-                self.logprint("Experiment finished!", message_type = "success")
-                self.exp_progress.emit(100)
-            else:
-                self.logprint("Experiment aborted and cleanup sequence finished.", message_type = "error")
-            self.finished.emit()
+        if not self.abort_requested:
+            self.logprint("Experiment finished!", message_type = "success")
+            self.exp_progress.emit(100)
+        else:
+            self.logprint("Experiment aborted and cleanup sequence finished.", message_type = "error")
+        self.finished.emit()
         return
 

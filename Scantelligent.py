@@ -1,4 +1,4 @@
-import os, sys, html, atexit, re
+import os, sys, html, atexit, re, copy
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
@@ -12,10 +12,9 @@ from datetime import datetime
 
 # Main class
 class Scantelligent(QtCore.QObject):
-    volume = QtCore.pyqtSignal(int)
-    amplitudes = QtCore.pyqtSignal(list)
-    amplitude_volumes = QtCore.pyqtSignal(list)
-    frequency = QtCore.pyqtSignal(float)
+    volumes = QtCore.pyqtSignal(list)
+    amplitudes = QtCore.pyqtSignal(list)    
+    frequencies = QtCore.pyqtSignal(list)
 
     def __init__(self):
         super().__init__()
@@ -93,11 +92,11 @@ class Scantelligent(QtCore.QObject):
         button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
                         "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.on_approach,
                         
-                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),
-                        
+                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
-                        "audio": self.toggle_audio, "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy
+                        "audio": self.toggle_audio, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
+                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
@@ -126,8 +125,8 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
                 
         # Sliders
-        self.gui.sliders["volume"].valueChanged.connect(self.send_amplitudes)
-        [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_amplitudes) for i in range(32)]
+        self.gui.sliders["volume"].valueChanged.connect(self.send_volumes)
+        [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_volumes) for i in range(32)]
         
         # Checkboxes and button groups
         #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
@@ -169,10 +168,9 @@ class Scantelligent(QtCore.QObject):
                 # self.audio.moveToThread(self.audio_thread)
 
                 # Set up signal-slot connections
-                self.volume.connect(self.audio.update_volume)
-                self.amplitudes.connect(self.audio.update_amplitudes)
-                self.amplitude_volumes.connect(self.audio.update_amplitude_volumes)
-                self.frequency.connect(self.audio.update_frequency)
+                self.volumes.connect(self.audio.volumes_update)
+                self.amplitudes.connect(self.audio.amplitudes_update)                
+                self.frequencies.connect(self.audio.frequencies_update)
                 
                 # Add attributes to the input line edit
                 new_attributes = ["audio." + attr for attr in self.audio.__dict__ if not attr.startswith("_")]
@@ -717,11 +715,10 @@ class Scantelligent(QtCore.QObject):
             self.audio.stop()
         return
 
-    def send_amplitudes(self) -> None:
-        volume = int(self.gui.sliders["volume"].getValue())
-        amplitude_volumes = [self.gui.sliders[f"f{i}"].getValue() * volume / 10000 for i in range(1, 32)]
-        self.volume.emit(volume)
-        self.amplitude_volumes.emit(amplitude_volumes)        
+    def send_volumes(self) -> None:
+        overal_volume = int(self.gui.sliders["volume"].getValue())
+        volumes = [int(self.gui.sliders[f"f{i}"].getValue() * overal_volume) for i in range(32)]
+        self.volumes.emit(volumes)
         return
 
 
@@ -980,6 +977,9 @@ class Scantelligent(QtCore.QObject):
         self.nanonis.auto_approach(True, V_motor = V_ver)
         return
 
+
+
+    # Nanonis/MLA functions
     def modulator_control(self, modulator_number: int = 1) -> None:
         if not hasattr(self, "nanonis"): return
         
@@ -994,6 +994,23 @@ class Scantelligent(QtCore.QObject):
         except Exception as e:
             self.logprint(f"Error controlling modulator {modulator_number}: {e}", message_type = "error")
         
+        return
+
+    def request_pixel(self, target: str = "mla") -> None:
+        match target:
+            case "nanonis":
+                try:
+                    pass
+                except Exception as e:
+                    self.logprint(f"Cannot request a pixel from Nanonis: {e}", message_type = "error")
+            case "mla":
+                try:
+                    self.mla.frequencies_update()
+                    self.mla.get_pixel()
+                except Exception as e:
+                    self.logprint(f"Cannot request a pixel from the MLA: {e}", message_type = "error")
+            case _:
+                pass
         return
 
 
@@ -1030,7 +1047,7 @@ class Scantelligent(QtCore.QObject):
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
                 try:
-                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, parent = self, hw_config = self.hw_config)                    
+                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, scan_processing_flags = self.data.scan_processing_flags)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
                     
@@ -1046,23 +1063,32 @@ class Scantelligent(QtCore.QObject):
                     self.experiment.exp_progress.connect(lambda val: self.gui.progress_bars["experiment"].setValue(val))
 
                     # Other data
-                    self.experiment.message.connect(self.receive_message)
+                    self.experiment.message.connect(lambda message, message_type: self.logprint(message = message, message_type = message_type))
                     self.experiment.parameters.connect(self.parameters.receive)
                     self.experiment.image.connect(self.receive_image)
                     self.experiment.data_array.connect(self.receive_data)
+                    
+                    # Set up the GUI. This direct call triggers the self.gui_setup to be emitted and handled by the Scantelligent ParameterManager
+                    self.experiment.prepare_gui()
                 
                 except Exception as e:
                     self.logprint(f"Unable to load the experiment. {e}", message_type = "error")
                     return
                 
-                self.status["experiment"].update({"name": experiment_name})                
+                self.status["experiment"].update({"name": experiment_name})
                 start_button.setState("ready")
             
-            case "ready":
+            case "ready": # Experiment is loaded and ready. Start it
                 if not hasattr(self, "experiment") or not hasattr(self, "experiment_thread"):
                     self.logprint("Error. No experiment object or thread initialized", message_type = "error")
                     start_button.setState("load")
                     return
+                
+                # Pass the parameters entered into the gui
+                gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),
+                                  "line_edits": [self.gui.line_edits[f"experiment_{index}"].getValue() for index in range(9)],
+                                  "buttons": [self.gui.buttons[f"experiment_{index}"].state for index in range(6)]}                
+                self.experiment.gui_parameters = copy.deepcopy(gui_parameters)
                 
                 start_button.setState("running")
                 self.experiment_thread.start()

@@ -27,7 +27,7 @@ class MLAAPI(QtCore.QObject):
         
         if not isinstance(mla_path, str): raise Exception("Could not read the MLA library path")
         if not os.path.isdir(mla_path): raise Exception("The library path provided does not point to a valid folder")
-        
+
         self.mla_path = mla_path
 
         sys.path.insert(0, mla_path)
@@ -37,13 +37,17 @@ class MLAAPI(QtCore.QObject):
         
         settings = mla_globals.read_config()
         self.mla = mla_api.MLA(settings)
+        self.parameters_init()
 
+
+
+    def parameters_init(self) -> None:
         self.df = 100 # Defaults, to be overwritten by the first call to time_constant_update()
         self.tm = 10
+        self.V = [0, 0]
         self.status = "online"
-        self.status_callback(self.status)
-
-
+        self.status_callback(self.status)        
+        return
 
     def link(self) -> None:
         try:
@@ -121,21 +125,13 @@ class MLAAPI(QtCore.QObject):
         return
 
     def get_pixel(self) -> np.ndarray:
-        #(pix, _) = self.mla.lockin.get_pixels(1)
-        rng = np.random.default_rng()
-        pix = rng.random(32) + 1j * rng.random(32)
+        if self.test_mode:
+            rng = np.random.default_rng()
+            pix = rng.random(32) + 1j * rng.random(32)
+        else:
+            (pix, _) = self.mla.lockin.get_pixels(1)
         self.parameters.emit({"dict_name": "pixel", "pixel": pix})
         return pix
-
-    def convert_pixel_to_amp_phase(self) -> np.ndarray:
-        return
-
-    def get_tone(self, idx = 0, n_points: int = 1) -> np.ndarray:
-        return self.mla.lockin.set_tone(idx, n_points)
-
-    def set_V(self, V: float = 0, output_port: int = 1) -> None:
-        self.mla.lockin.set_dc_offset(output_port, V)
-        return
 
     def set_DACs_ADCs_safe_range(self) -> None:
         # Set all analog inputs to the correct configuration (range = +-20 V)
@@ -158,7 +154,38 @@ class MLAAPI(QtCore.QObject):
 
     # 'Update' methods that both take and apply parameters supplied to them and read from the mla
     def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        return
+        error = False
+        parameters_dict = {"dict_name": "parameters"}
+        
+        try:
+            if len(parameters) > 0: self.logprint(f"mla.lockin_update({parameters})", message_type = "code")
+            else: self.logprint("mla.lockin_update()", message_type = "code")
+            
+            if not self.status == "running" and not self.test_mode: self.link()
+            
+            # time_constant_update
+            tm = parameters.get("tm (ms)", None)
+            df = parameters.get("df (Hz)", None)
+            if isinstance(df, float | int): (time_constant, error) = self.time_constant_update({"df (Hz)": df})
+            elif isinstance(tm, float | int): (time_constant, error) = self.time_constant_update({"tm (ms)": tm})
+            else: (time_constant, error) = self.time_constant_update()
+            parameters_dict.update(time_constant)
+            
+            # frequencies_update
+            frequencies = parameters.get("frequencies (Hz)", None)
+            numbers = parameters.get("numbers", None)
+            times = parameters.get("times (ms)", None)
+            if isinstance(frequencies, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"frequencies (Hz)": frequencies})
+            elif isinstance(numbers, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"numbers": numbers})
+            elif isinstance(times, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"times (ms)": times})
+            else: (frequencies_dict, error) = self.frequencies_update()
+            parameters_dict.update(frequencies_dict)
+        
+        except Exception as e: error = e
+        finally:
+            if unlink: self.unlink()
+        
+        return (parameters_dict, error)
 
     def time_constant_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
@@ -175,11 +202,11 @@ class MLAAPI(QtCore.QObject):
             df = parameters.get("df (Hz)", None)
             
             # Set
-            if isinstance(df, float | int): self.mla.lockin.set_df(df)
-            elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000) # Default unit in Scantelligent is ms, not s
-            
-            # Read
             if not self.test_mode:
+                if isinstance(df, float | int): self.mla.lockin.set_df(df)
+                elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000) # Default unit in Scantelligent is ms, not s
+            
+                # Read            
                 self.tm = self.mla.lockin.get_Tm() * 1000 # Default unit in Scantelligent is ms, not s
                 self.df = self.mla.lockin.get_df()
             
@@ -205,26 +232,30 @@ class MLAAPI(QtCore.QObject):
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             frequencies = parameters.get("frequencies (Hz)", None)
             numbers = parameters.get("numbers", None)
+            times = parameters.get("times (ms)", None)
+            if isinstance(times, list | np.ndarray) and isinstance(times[0], int | float): numbers = times / self.tm
             
-            if self.text_mode: old_frequencies = np.random.random(32) * 1000
+            if self.test_mode: old_frequencies = np.random.random(32) * 1000
             else: self.mla.lockin.get_frequencies()
             new_frequencies = old_frequencies # To be overwritten with user data
             
-            # Set
-            if isinstance(frequencies, list) and isinstance(frequencies[0], int | float):
-                for idx in range(min(self.mla.lockin.nr_input_freq, len(frequencies))): new_frequencies[idx] = frequencies[idx]
+            # Set            
+            if isinstance(frequencies, list | np.ndarray) and isinstance(frequencies[0], int | float):
+                if not self.test_mode:
+                    for idx in range(min(self.mla.lockin.nr_input_freq, len(frequencies))): new_frequencies[idx] = frequencies[idx]
             elif isinstance(frequencies, dict):
                 for key, value in frequencies.items():
                     if not isinstance(value, float | int): continue
                     try: new_frequencies[int(key)] = value
                     except: pass
-            elif isinstance(numbers, list) and isinstance(numbers[0], int | float):
+            elif isinstance(numbers, list | np.ndarray) and isinstance(numbers[0], int | float):
                 for idx in range(min(self.mla.lockin.nr_input_freq, len(numbers))): new_frequencies[idx] = numbers[idx] * self.df
             elif isinstance(numbers, dict) and isinstance(numbers[0], int | float):
                 for key, value in numbers.items():
                     if not isinstance(value, float | int): continue
                     try: new_frequencies[int(key)] = value * self.df
                     except: pass
+            
             if not self.test_mode: self.mla.lockin.set_frequencies(new_frequencies, wait_for_effect = True)
             
             # Read
@@ -260,8 +291,9 @@ class MLAAPI(QtCore.QObject):
             new_amplitudes = old_amplitudes # To be overwritten with user data
             
             # Set
-            if isinstance(amplitudes, list) and isinstance(amplitudes[0], int | float):
-                for idx in range(min(self.mla.lockin.nr_input_freq, len(amplitudes))): new_amplitudes[idx] = amplitudes[idx]
+            if isinstance(amplitudes, list | np.ndarray) and isinstance(amplitudes[0], int | float):
+                if not self.test_mode:
+                    for idx in range(min(self.mla.lockin.nr_input_freq, len(amplitudes))): new_amplitudes[idx] = amplitudes[idx]
             elif isinstance(amplitudes, dict):
                 for key, value in amplitudes.items():
                     if not isinstance(value, float | int): continue
@@ -270,7 +302,8 @@ class MLAAPI(QtCore.QObject):
             #self.mla.lockin.set_amplitudes(new_amplitudes / 1000)
             
             # Read
-            read_amplitudes = np.random.random # np.round(self.mla.lockin.get_amplitudes() * 1000, 5)
+            if self.test_mode: read_amplitudes = np.random.random(32)
+            else: read_amplitudes = np.round(self.mla.lockin.get_amplitudes() * 1000, 5)
 
             amp_dict.update({"amplitudes (mV)": read_amplitudes})
             self.parameters.emit(amp_dict)
@@ -286,10 +319,11 @@ class MLAAPI(QtCore.QObject):
         outputs_dict = {"dict_name": "outputs"}
         
         try:
-            if len(parameters) > 0: print(f"mla.outputs_update({parameters})")
-            else: print("mla.outputs_update()")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.outputs_update({parameters})", message_type = "code")
+                else: self.logprint("mla.outputs_update()", message_type = "code")
             
-            if not self.status == "running": self.link()
+            if not self.status == "running" and not self.test_mode: self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             mod0 = parameters.get("mod0", None)
@@ -324,79 +358,68 @@ class MLAAPI(QtCore.QObject):
 
     def phases_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
-        phases_dict = {"dict_name": "phases"}
+        amp_dict = {"dict_name": "phases"}
         
         try:
-            if len(parameters) > 0: print(f"mla.phases_update({parameters})")
-            else: print("mla.phases_update()")
+            if len(parameters) > 0: self.logprint(f"mla.phases_update({parameters})")
+            else: self.logprint("mla.phases_update()")
             
-            if not self.status == "running": self.link()
+            if not self.status == "running" and not self.test_mode: self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
-            mod0 = parameters.get("mod0", None)
-            if not mod0: mod0 = parameters.get("mla_mod0", None)
-            mod1 = parameters.get("mod1", None)
-            if not mod1: mod1 = parameters.get("mla_mod1", None)
-            mod2 = parameters.get("mod2", None)
-            if not mod2: mod2 = parameters.get("mla_mod2", None)
-            mod1 = parameters.get("mod2", None)
-            if not mod1: mod1 = parameters.get("mla_mod2", None)
+            amplitudes = parameters.get("phases (deg)", None)
+            
+            if self.test_mode: old_amplitudes = np.random.random(32)
+            else: self.mla.lockin.get_amplitudes() * 1000 # Scantelligent uses mV by default
+            new_amplitudes = old_amplitudes # To be overwritten with user data
             
             # Set
-            #output_mask = [0, 0, 0, 0]
-            #if isinstance(mod1, dict):
-            #    port1 = mod1.get("port1", False)
-            #    port2 = mod1.get("port2", False)
-            #    on = mod1.get("on", True)
-            #    if on:
-            #        if port1: output
-            #elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000) # Default unit in Scantelligent is ms, not s
+            if isinstance(amplitudes, list | np.ndarray) and isinstance(amplitudes[0], int | float):
+                if not self.test_mode:
+                    for idx in range(min(self.mla.lockin.nr_input_freq, len(amplitudes))): new_amplitudes[idx] = amplitudes[idx]
+            elif isinstance(amplitudes, dict):
+                for key, value in amplitudes.items():
+                    if not isinstance(value, float | int): continue
+                    try: new_amplitudes[int(key)] = value
+                    except: pass
+            #self.mla.lockin.set_amplitudes(new_amplitudes / 1000)
             
             # Read
-            
-            phases_dict.update({})
-            self.parameters.emit(phases_dict)
+            if self.test_mode: read_amplitudes = np.random.random(32)
+            else: read_amplitudes = np.round(self.mla.lockin.get_amplitudes() * 1000, 5)
+
+            amp_dict.update({"phases (deg)": read_amplitudes})
+            self.parameters.emit(amp_dict)
         
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
         
-        return (phases_dict, error)
+        return (amp_dict, error)
 
-    def bias_update(self, parameters: dict = {}, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:
+    def bias_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
-        bias_dict = {"dict_name": "bias"}
+        bias_dict = {"dict_name": "mla_bias"}
         
         try:
-            if len(parameters) > 0: print(f"mla.phases_update({parameters})")
-            else: print("mla.phases_update()")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.bias_update({parameters})", message_type = "code")
+                else: self.logprint("mla.bias_update()", message_type = "code")
             
-            if not self.status == "running": self.link()
+            if not self.status == "running" and not self.test_mode: self.link()
             
-            # Read the time constant and df from the parameter dict. If both are given, df takes precedence
-            mod0 = parameters.get("mod0", None)
-            if not mod0: mod0 = parameters.get("mla_mod0", None)
-            mod1 = parameters.get("mod1", None)
-            if not mod1: mod1 = parameters.get("mla_mod1", None)
-            mod2 = parameters.get("mod2", None)
-            if not mod2: mod2 = parameters.get("mla_mod2", None)
-            mod1 = parameters.get("mod2", None)
-            if not mod1: mod1 = parameters.get("mla_mod2", None)
+            [port1, port2] = [parameters.get(f"port_{index + 1} (V)", None) for index in range(2)]
+            if isinstance(port1, float | int):
+                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port1)
+                self.V[0] = port1
+            if isinstance(port2, float | int):
+                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port2)
+                self.V[1] = port2
             
-            # Set
-            #output_mask = [0, 0, 0, 0]
-            #if isinstance(mod1, dict):
-            #    port1 = mod1.get("port1", False)
-            #    port2 = mod1.get("port2", False)
-            #    on = mod1.get("on", True)
-            #    if on:
-            #        if port1: output
-            #elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000) # Default unit in Scantelligent is ms, not s
-            
-            # Read
-            
-            bias_dict.update({})
+            bias_dict.update({"port_1 (V)": self.V[0], "port_2 (V)": self.V[1]})
             self.parameters.emit(bias_dict)
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{bias_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:

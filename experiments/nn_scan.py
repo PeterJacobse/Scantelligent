@@ -11,19 +11,14 @@ class Experiment(BaseExperiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        gui_setup = {
-            "combobox": {"items": ["nearest tip", "up", "down"]},
-            "line_edits": {},
-            "buttons": {}
-                     }
-
-        self.prepare_gui(gui_setup)
-        self.connect_hardware("nanonis") # Set up the required hardware connections
+        self.gui_setup = {"combobox": {"items": ["nearest tip", "up", "down"]}, "line_edits": {}, "buttons": {}}
 
     @BaseExperiment.experiment_handler
     def run(self):
+        self.connect_hardware("nanonis")
+        
         nn = self.nanonis # Using nn as an alias for self.nanonis        
-        self.sct.toggle_view("nanonis") # Changing the active view to Nanonis
+        #self.toggle_view("nanonis") # Changing the active view to Nanonis
 
         # Calculate information
         [scan_metadata, grid, tip_status] = [self.start_parameters["nanonis"].get(parameter) for parameter in ["scan_metadata", "grid", "tip_status"]]

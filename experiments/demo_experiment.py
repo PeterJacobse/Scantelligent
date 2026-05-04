@@ -9,25 +9,14 @@ from lib import BaseExperiment
 
 class Experiment(BaseExperiment):
     def __init__(self, *args, **kwargs):
-        scantelligent = kwargs.pop("parent", None)
-        if scantelligent == None: scantelligent = kwargs.pop("scantelligent", None)
         super().__init__(*args, **kwargs)
-        
-        # Set up the GUI. See below
-        try: self.prepare_gui(scantelligent.gui)
-        except: pass
-        
-        # Set up the required hardware connections
-        #self.connect_hardware("nanonis")
 
-    def prepare_gui(self, gui) -> None:
-        self.setup_combobox(gui = gui, items = ["n", "e", "s", "w"])
-        self.setup_line_edits(gui = gui, tooltips = ["Time per iteration", "Number of iterations"],
-                              values = [100, 4, 3], digits = [0, 0, 0], limits = [[0, 1000], [0, 200], [0, 3]], units = ["ms", "steps", ""])
+        self.gui_setup = {"combobox": {"items": ["n", "e", "s", "w"]},
+                          "line_edits": {"tooltips": ["Time per iteration", "Number of iterations"], "values": [100, 4, 3], "digits": [0, 0, 0], "limits": [[0, 1000], [0, 200], [0, 3]], "units": ["ms", "steps", ""]}}
 
+    @BaseExperiment.experiment_handler
     def run(self):
-        gui_parameters = self.read_parameters_from_gui()
-        # self.read_parameters_from_gui() # The following parameters can be accessed: self.direction, self.line_value_0, self.line_value_1, self.line_value_2
+        gui_parameters = self.start_parameters.get("gui")
         
         self.logprint("Hello from this demo experiment!", message_type = "message")
         self.logprint(f"I read the following parameters from the GUI: {gui_parameters}", message_type = "message")

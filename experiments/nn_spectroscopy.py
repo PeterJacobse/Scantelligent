@@ -11,19 +11,14 @@ class Experiment(BaseExperiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        gui_setup = {
-            "combobox": {},
-            "line_edits": {"tooltips": ["1", "2"],
-                           "values": [-2, 10, 2, 100], "units": ["V", "mV", "V", "ms"]
-                           },
-            "buttons": {}
-                     }
-
-        self.prepare_gui(gui_setup)
-        self.connect_hardware("nanonis") # Set up the required hardware connections
+        self.gui_setup = {"combobox": {},
+                          "line_edits": {"tooltips": ["1", "2"], "values": [-2, 10, 2, 100], "units": ["V", "mV", "V", "ms"], "digits": [3, 2, 1, 0, 4], "tooltips": ["bla"]},
+                          "buttons": {}}
 
     @BaseExperiment.experiment_handler
     def run(self):
+        self.connect_hardware("nanonis") # Set up the required hardware connections
+        
         nn = self.nanonis # Using nn as an alias for self.nanonis
         nhw = nn.nanonis_hardware
         # nn.link() # Although NanonisAPI functions will automatically manage TCP connections, NanonisHardware will not work unless a TCP connection is established explicitly

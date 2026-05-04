@@ -160,6 +160,28 @@ class ParameterManager(QtCore.QObject):
         dict_name = parameters.get("dict_name")
 
         match dict_name:
+            case "gui_setup":
+                [combobox_setup, line_edits_setup, buttons_setup] = [parameters.get(key, None) for key in ["combobox", "line_edits", "buttons"]]
+                if isinstance(line_edits_setup, dict):
+                    for key, values in line_edits_setup.items():
+                        if isinstance(values, int | float | str): values = [values]
+                        if not isinstance(values, list): continue
+                        match key:
+                            case "tooltips": [line_edits[f"experiment_{index}"].changeToolTip({tooltip}) for index, tooltip in enumerate(values)]
+                            case "digits": [line_edits[f"experiment_{index}"].setDigits(digits) for index, digits in enumerate(values)]
+                            case "limits": [line_edits[f"experiment_{index}"].setLimits(limits) for index, limits in enumerate(values)]
+                            case "values": [line_edits[f"experiment_{index}"].setValue(value) for index, value in enumerate(values)]
+                            case "units": [line_edits[f"experiment_{index}"].setUnit(unit) for index, unit in enumerate(values)]
+                            case _: pass
+                if isinstance(combobox_setup, dict):
+                    for key, values in combobox_setup.items():
+                        if isinstance(values, int | float | str): values = [values]
+                        if not isinstance(values, list): continue
+                        match key:
+                            case "tooltip": sct.gui.comboboxes["direction"].changeToolTip(values)
+                            case "items": sct.gui.comboboxes["direction"].renewItems(values)
+                            case _: pass
+
             case "keithley_status":
                 status = parameters.get("status")
                 match status:
@@ -191,7 +213,10 @@ class ParameterManager(QtCore.QObject):
             case "pixel":
                 pixel = parameters.get("pixel")
                 abs_values = np.abs(pixel)
+                #arg_values = np.rad2deg(np.angle(pixel))
                 [line_edits[f"demod_amplitude_{index}"].setValue(value) for index, value in enumerate(abs_values)]
+                #[line_edits[f"demod_angle_{index}"].setValue(value) for index, value in enumerate(abs_values)]
+                sct.amplitudes.emit(abs_values)
 
             case "time_constant":
                 [line_edits[f"mla_{quantity}"].setValue(value) for quantity, value in zip(["t", "df"], [parameters.get(key) for key in ["tm (ms)", "df (Hz)"]])]
@@ -200,6 +225,7 @@ class ParameterManager(QtCore.QObject):
                 freqs = parameters.get("frequencies (Hz)")
                 [line_edits[f"mla_mod{index}_f"].setValue(value) for index, value in enumerate(freqs[:4])]
                 [line_edits[f"demod_frequency_{index}"].setValue(value) for index, value in enumerate(freqs)]
+                sct.frequencies.emit(freqs)
             
             case "amplitudes":
                 amplitudes = parameters.get("amplitudes (mV)")

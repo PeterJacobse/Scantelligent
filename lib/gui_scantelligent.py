@@ -260,8 +260,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                             {"name": "x", "tooltip": "Keithley voltage sweep selected for the x-axis (fast/primary axis)", "color": self.colors["blue"], "icon": icons.get("V_x")},
                                             {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": self.colors["blue"], "icon": icons.get("V_y")}]),
             
-            "get_pixel_nanonis": MSB(),
-            "get_pixel_mla": MSB(),
+            "get_pixel_nanonis": MSB(tooltip = "Click to receive a pixel from Nanonis", icon = icons.get("nanonis")),
+            "get_pixel_mla": MSB(tooltip = "Click to receive a pixel from the MLA", icon = icons.get("imp")),
             
             # Processing
             "direction": MSB(tooltip = "Change scan direction\n(X)",
@@ -670,6 +670,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "lockin_parameter_sets": make_layout("h"),
             "modulators": make_layout("g"),
             "mod_set_get": make_layout("h"),
+            "pixel": make_layout("h"),
             "demodulators": make_layout("v"),
             "volume": make_layout("h"),
             "demod_sliders": make_layout("h")
@@ -772,13 +773,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         sliders = {
             "tip": SL(tooltip = "tip height (nm)", orientation = "v"),
-            "volume": SLE(tooltip = "volume", orientation = "h", limits = [0, 100], unit = "%", minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100")),
+            "volume": SLE(tooltip = "volume", orientation = "h", limits = [0, 100], value = 20, unit = "%", minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100")),
             "phase": PS(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))
         }
 
         for tone in range(32):
-            initial_val = 100 if tone > 0 else 0
-            sle = SLE(tooltip = f"relative volume of tone {tone}", orientation = "v", limits = [0, 100], initial_val = initial_val, digits = 0, unit = "%",
+            value = 100 if tone > 0 else 0
+            sle = SLE(tooltip = f"relative volume of tone {tone}", orientation = "v", limits = [0, 100], value = value, digits = 0, unit = "%",
                       minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100"))
             
             self.labels[f"demod_index_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -792,8 +793,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             sliders.update({f"f{tone}": sle})
 
-        # [widget.setEnabled(False) for widget in [sliders["f0"].slider, sliders["f0"].line_edit, sliders["f0"].min_button, sliders["f0"].max_button, self.line_edits[f"demod_frequency_0"]]]
-        
         self.demod_scroller = QtWidgets.QScrollArea()
         self.demod_scroller.setWidgetResizable(True)
 
@@ -1015,7 +1014,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
 
         # Demodulators
+        [layouts["pixel"].addWidget(widget) for widget in [buttons["get_pixel_nanonis"], buttons["get_pixel_mla"]]]
         [layouts["volume"].addWidget(widget) for widget in [buttons["audio"], self.sliders["volume"]]]
+        layouts["demodulators"].addLayout(layouts["pixel"])
         layouts["demodulators"].addLayout(layouts["volume"])
         [layouts["demod_sliders"].addWidget(self.sliders[f"f{i}"]) for i in range(32)]
         self.widgets["demodulators"].setLayout(layouts["demod_sliders"])

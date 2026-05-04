@@ -1,7 +1,6 @@
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 import sounddevice as sd
-from math import pi
 
 
 
@@ -12,14 +11,12 @@ class AudioGenerator(QObject):
     def __init__(self, sample_rate: int = 44100):
         super().__init__()
         self.sample_rate = sample_rate
-        self.w1 = 2 * pi * 220.0
+        self.w = np.pi * 220.0 * np.arange(32)
         self.amplitudes = np.zeros(shape = (32), dtype = float)
         self.amplitudes[0] = 1
-        self.amplitude_volumes = 100 * np.ones(shape = (32), dtype = int)
-        self.volume = 20
-        self.phases = np.zeros(len(self.amplitudes))
+        self.volumes = 2000 * np.ones_like(self.amplitudes, dtype = int)
+        self.phases = np.zeros_like(self.amplitudes)
         self.stream = None
-        self.home_thread = self.thread()
 
     @pyqtSlot()
     def start(self):
@@ -30,38 +27,33 @@ class AudioGenerator(QObject):
         if self.thread().isInterruptionRequested(): self.stop()
         time_list = np.arange(frames) / self.sample_rate
         wave = np.zeros(frames)
-        wnyquist = pi * self.sample_rate
+        wnyquist = np.pi * self.sample_rate
         
-        for i, amp in enumerate(self.amplitudes):
-            amp_vol = self.volume * amp / 100
-            wn = self.w1 * (i + 1)
+        for i in range(32):
+            wn = self.w[i]
+            amp = self.amplitudes[i] * self.volumes[i] / 10000
             
             if wn < wnyquist:
-                wave += amp_vol * np.sin(wn * time_list + self.phases[i])
+                wave += amp * np.sin(wn * time_list + self.phases[i])
                 # Update this harmonic's phase for the next block
-                self.phases[i] = (self.phases[i] + wn * frames / self.sample_rate) % (2 * pi)
+                self.phases[i] = (self.phases[i] + wn * frames / self.sample_rate) % (2 * np.pi)
 
         # Soft-clipping to prevent digital distortion if harmonics sum too high
         outdata[:] = np.tanh(wave * 0.2)[:, np.newaxis]
 
-    @pyqtSlot(int)
-    def update_volume(self, volume: int = 0) -> None:
-        self.volume = volume
+    @pyqtSlot(list)
+    def volumes_update(self, values: list = []) -> None:
+        for idx in range(min(32, len(values))): self.volumes[idx] = int(values[idx])
         return
 
     @pyqtSlot(list)
-    def update_amplitudes(self, values: list = []) -> None:
-        self.amplitudes = values
+    def amplitudes_update(self, values: list = []) -> None:
+        for idx in range(min(32, len(values))): self.amplitudes[idx] = float(values[idx])
         return
 
     @pyqtSlot(list)
-    def update_amplitude_volumes(self, values: list = []) -> None:
-        self.amplitude_volumes = values
-        return
-
-    @pyqtSlot(float)
-    def update_frequency(self, value: float = 100) -> None:
-        self.w1 = 2 * pi * float(value)
+    def frequencies_update(self, values: list = []) -> None:
+        for idx in range(min(32, len(values))): self.w[idx] = 2 * np.pi * float(values[idx])
         return
 
     def stop(self):
@@ -69,5 +61,5 @@ class AudioGenerator(QObject):
             self.stream.stop()
             self.stream.close()
         self.finished.emit()
-        self.moveToThread(self.home_thread)
+        #self.moveToThread(self.home_thread)
 
