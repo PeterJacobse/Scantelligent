@@ -1,5 +1,6 @@
 import os, yaml
 from PyQt6 import QtCore
+import numpy as np
 
 
 
@@ -26,7 +27,11 @@ class ParameterManager(QtCore.QObject):
             case "grid": sct.nanonis.grid_update(unlink = True)
             case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)
             case "gain": sct.nanonis.gains_update(unlink = True)            
-            case "lockin": sct.nanonis.lockin_update(unlink = True)
+            case "lockin":
+                if hasattr(sct, "nanonis"): sct.nanonis.lockin_update(unlink = True)
+                if hasattr(sct, "mla"):
+                    sct.mla.time_constant_update(unlink = False)
+                    sct.mla.frequencies_update(unlink = False)
             case "tip_shaper": sct.nanonis.tip_shaper_update(unlink = True)
             case "spectroscopy": sct.nanonis.sts_update(unlink = True)
             case _: pass
@@ -175,16 +180,6 @@ class ParameterManager(QtCore.QObject):
                 try: sct.gui.buttons["camera"].setState(status)
                 except: pass
 
-            case "mla_status":
-                status = parameters.get("status")
-                match status:
-                    case "running": sct.status.update({"mla": "running"})
-                    case "idle": sct.status.update({"mla": "idle"})
-                    case "offline": sct.status.update({"mla": "offline"})
-                    case _: pass
-                try: sct.gui.buttons["mla"].setState(status)
-                except: pass
-
             case "session_path":
                 session_path = parameters.get("path")
                 sct.paths.update({"session_path": session_path})
@@ -193,6 +188,27 @@ class ParameterManager(QtCore.QObject):
 
 
 
+            case "pixel":
+                pixel = parameters.get("pixel")
+                abs_values = np.abs(pixel)
+                [line_edits[f"demod_amplitude_{index}"].setValue(value) for index, value in enumerate(abs_values)]
+
+            case "time_constant":
+                [line_edits[f"mla_{quantity}"].setValue(value) for quantity, value in zip(["t", "df"], [parameters.get(key) for key in ["tm (ms)", "df (Hz)"]])]
+
+            case "frequencies":
+                freqs = parameters.get("frequencies (Hz)")
+                [line_edits[f"mla_mod{index}_f"].setValue(value) for index, value in enumerate(freqs[:4])]
+                [line_edits[f"demod_frequency_{index}"].setValue(value) for index, value in enumerate(freqs)]
+            
+            case "amplitudes":
+                amplitudes = parameters.get("amplitudes (mV)")
+                [line_edits[f"mla_mod{index}_mV"].setValue(value) for index, value in enumerate(amplitudes[:4])]
+            
+            case "phases":
+                phases = parameters.get("phases (deg)")
+                [line_edits[f"mla_mod{index}_phi"].setValue(value) for index, value in enumerate(phases[:4])]
+            
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)
                 

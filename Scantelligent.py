@@ -240,26 +240,26 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "mla" or target.lower() == "all":
             try:
                 # Instantiate
-                self.mla = MLAAPI(hw_config = self.hw_config)
+                self.mla = MLAAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["mla"].setState, message_callback = self.logprint)
                 
                 # Set up signal-slot connections
                 
                 # MLA -> Scantelligent
-                self.mla.message.connect(self.receive_message)
+                # self.mla.message.connect(self.receive_message)
                 self.mla.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
 
                 self.logprint("MLA: Found the MLA", "success")
                 self.status.update({"mla": "online"})
-                self.gui.buttons["mla"].setState("online")
+                #self.gui.buttons["mla"].setState("online")
             except Exception as e:
                 self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
-                self.gui.buttons["mla"].setState("offline")
+                #self.gui.buttons["mla"].setState("offline")
 
         # Nanonis
         if target.lower() == "nanonis" or target.lower() == "all":
             try:
                 # Instantiate
-                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["nanonis"].setState)
+                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["nanonis"].setState, message_callback = self.logprint)
                 
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
@@ -268,7 +268,7 @@ class Scantelligent(QtCore.QObject):
 
                 # Nanonis -> Scantelligent
                 self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
-                self.nanonis.message.connect(self.receive_message)
+                # self.nanonis.message.connect(self.receive_message)
                 self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
                 self.nanonis.image.connect(self.receive_image)
                 self.nanonis.data_array.connect(self.receive_data)
@@ -314,19 +314,16 @@ class Scantelligent(QtCore.QObject):
                 return
             
             case "mla":
-                if self.status["mla"] == "running":
+                if self.gui.buttons["mla"].state_name == "running":
                     try:
                         self.mla.unlink()
                         self.status.update({"mla": "idle"})
-                        self.gui.buttons["mla"].setState("online")
                     except:
                         self.status.update({"mla": "offline"})
-                        self.gui.buttons["mla"].setState("offline")
-                elif self.status["mla"] == "idle" or self.status["mla"] == "online":
+                elif self.gui.buttons["mla"].state_name == "idle" or self.gui.buttons["mla"].state_name == "online":
                     try:
                         self.mla.link()
                         self.status.update({"mla": "running"})
-                        self.gui.buttons["mla"].setState("running")
                     except:
                         pass
                 else:

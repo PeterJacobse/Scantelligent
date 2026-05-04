@@ -15,8 +15,14 @@ class NanonisAPI(QtCore.QObject):
     finished = QtCore.pyqtSignal() # Signal to indicate an experiment is finished
     data_array = QtCore.pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, hw_config: dict, status_callback: object = None):
+    def __init__(self, hw_config: dict, status_callback: object = None, message_callback: object = None):        
         super().__init__()
+        
+        self.status_callback = print
+        if status_callback: self.status_callback = status_callback
+        self.message_callback = lambda message, message_type: print(message)
+        if message_callback: self.message_callback = message_callback
+        
         self.nanonis_hardware = NanonisHardware(hw_config = hw_config)
         # nanonis_hardware methods are low-level methods performing direct communication to the Nanonis FPGA over TCP-IP
         # nanonisAPI methods are higher-level methods that incorporate these methods, but provide a friendlier interface
@@ -26,9 +32,7 @@ class NanonisAPI(QtCore.QObject):
         # The exception should be caught in the code where the NanonisAPI object is instantiated
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.data = DataProcessing()
-        self.callback = None
         self.piezo_range = {} # When self.piezo_range_update is called, this parameter is updated
-        if status_callback: self.callback = status_callback
 
 
 
@@ -143,7 +147,7 @@ class NanonisAPI(QtCore.QObject):
 
     # Misc
     def logprint(self, message: str, message_type: str = "error") -> None:
-        self.message.emit(message, message_type)
+        self.message_callback(message = message, message_type = message_type)
         return
 
     def grids_to_lists(self, grid_dict: dict = {}, direction: str = "up") -> tuple[dict, bool | str]:
@@ -451,7 +455,6 @@ class NanonisAPI(QtCore.QObject):
             # Read the parameters from Nanonis
             motor_dict = nhw.get_motor_f_A()
             motor_dict.update({"dict_name": "coarse_parameters"})
-            self.message.emit(motor_dict)
             
             if "V_motor (V)" in parameters.keys(): motor_dict.update({"V_motor (V)": parameters.get("V_motor (V)")})
             if "f_motor (Hz)" in parameters.keys(): motor_dict.update({"f_motor (Hz)": parameters.get("f_motor (Hz)")})
@@ -1157,7 +1160,6 @@ class NanonisAPI(QtCore.QObject):
         data = np.zeros((chunk_size, len(recorded_channels)), dtype = float)
         
         try:
-            self.message.emit(f"tip_tracker()", "code")
             if not self.status == "running": self.link()
             
             t0 = time() # Start time            

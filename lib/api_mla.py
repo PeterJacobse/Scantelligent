@@ -1,19 +1,22 @@
 import os, sys, time
 from PyQt6 import QtCore
 import numpy as np
+import asyncio
 
 
 
 class MLAAPI(QtCore.QObject):
     amplitudes = QtCore.pyqtSignal(list)
     frequency = QtCore.pyqtSignal(float)
-    message = QtCore.pyqtSignal(str, str)
     parameters = QtCore.pyqtSignal(dict)
 
-    def __init__(self, hw_config: dict = {}, status_callback: object = None):
+    def __init__(self, hw_config: dict = {}, status_callback: object = None, message_callback: object = None):
         super().__init__()
-        self.callback = None
-        if status_callback: self.callback = status_callback
+        
+        self.status_callback = print
+        if status_callback: self.status_callback = status_callback
+        self.message_callback = lambda message, message_type: print(message)
+        if message_callback: self.message_callback = message_callback
         
         mla_path = False
         if "mla" in hw_config.keys():
@@ -36,24 +39,26 @@ class MLAAPI(QtCore.QObject):
 
         self.df = 100 # Defaults, to be overwritten by the first call to time_constant_update()
         self.tm = 10
-        self.status = "offline"
+        self.status = "online"
+        self.status_callback(self.status)
 
 
 
     def link(self) -> None:
         try:
             self.logprint("mla.link()", message_type = "code")
-            self.mla.connect()
+            self.mla.connect(server_text_callback = lambda text: self.logprint(text, message_type = "result"), ping_attempts = 4)
             self.status = "running"
             self.set_defaults()
-            self.start_lockin()            
-            try: self.callback.setState("running")
-            except: pass            
+            try: self.status_callback(self.status)
+            except Exception as e:
+                self.status = "offline"
+                self.status_callback(self.status)
+                self.logprint(f"Error: {e}", message_type = "error")
         except Exception as e:
             self.logprint(f"Error while connecting to the MLA: {e}", message_type = "error")
-            self.unlink()
-            self.status = "idle"
-            try: self.callback.setState("idle")
+            self.status = "offline"
+            try: self.status_callback(self.status)
             except: pass
         return
 
@@ -64,8 +69,8 @@ class MLAAPI(QtCore.QObject):
             self.set_V(0)
         finally:
             self.mla.disconnect()
-            self.parameters.emit({"dict_name": "mla_status", "status": "idle"})
-            try: self.callback.setState("idle")
+            self.status = "idle"
+            try: self.status_callback.setState(self.status)
             except: pass
         return
 
@@ -75,8 +80,8 @@ class MLAAPI(QtCore.QObject):
     def stop_lockin(self) -> None:
         return self.mla.lockin.stop_lockin()
 
-    def logprint(self, text: str = "", message_type: str = "") -> None:
-        self.message.emit(text, message_type)
+    def logprint(self, message: str = "", message_type: str = "", append_new_line: bool = False) -> None:
+        self.message_callback(message = message, message_type = message_type)
         return
 
     def unwrap(self) -> object:
@@ -113,8 +118,10 @@ class MLAAPI(QtCore.QObject):
         return
 
     def get_pixel(self) -> np.ndarray:
-        (pix, _) = self.mla.lockin.get_pixels(1)
-        self.amplitudes.emit(pix)
+        #(pix, _) = self.mla.lockin.get_pixels(1)
+        rng = np.random.default_rng()
+        pix = rng.random(32) + 1j * rng.random(32)
+        self.parameters.emit({"dict_name": "pixel", "pixel": pix})
         return pix
 
     def convert_pixel_to_amp_phase(self) -> np.ndarray:
@@ -147,15 +154,18 @@ class MLAAPI(QtCore.QObject):
 
 
     # 'Update' methods that both take and apply parameters supplied to them and read from the mla
+    def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        return
+
     def time_constant_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         tc_dict = {"dict_name": "time_constant"}
         
         try:
-            if len(parameters) > 0: print(f"mla.time_constant_update({parameters})")
-            else: print("mla.time_constant_update()")
+            if len(parameters) > 0: self.logprint(f"mla.time_constant_update({parameters})", message_type = "code")
+            else: self.logprint("mla.time_constant_update()", message_type = "code")
             
-            if not self.status == "running": self.link()
+            #if not self.status == "running": self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             tm = parameters.get("tm (ms)", None)
@@ -166,8 +176,8 @@ class MLAAPI(QtCore.QObject):
             elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000) # Default unit in Scantelligent is ms, not s
             
             # Read
-            self.tm = self.mla.lockin.get_Tm() * 1000 # Default unit in Scantelligent is ms, not s
-            self.df = self.mla.lockin.get_df()
+            #self.tm = self.mla.lockin.get_Tm() * 1000 # Default unit in Scantelligent is ms, not s
+            #self.df = self.mla.lockin.get_df()
             
             tc_dict.update({"tm (ms)": self.tm, "df (Hz)": self.df})
             self.parameters.emit(tc_dict)
@@ -178,24 +188,21 @@ class MLAAPI(QtCore.QObject):
         
         return (tc_dict, error)
 
-    def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        return
-
     def frequencies_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         freq_dict = {"dict_name": "frequencies"}
         
         try:
-            if len(parameters) > 0: print(f"mla.frequencies_update({parameters})")
-            else: print("mla.frequencies_update()")
+            if len(parameters) > 0: self.logprint(f"mla.frequencies_update({parameters})", message_type = "code")
+            else: self.logprint("mla.frequencies_update()", message_type = "code")
             
-            if not self.status == "running": self.link()
+            #if not self.status == "running": self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             frequencies = parameters.get("frequencies (Hz)", None)
             numbers = parameters.get("numbers", None)
             
-            old_frequencies = self.mla.lockin.get_frequencies()
+            old_frequencies = np.random.random(32) * 1000 # self.mla.lockin.get_frequencies()
             new_frequencies = old_frequencies # To be overwritten with user data
             
             # Set
@@ -213,10 +220,10 @@ class MLAAPI(QtCore.QObject):
                     if not isinstance(value, float | int): continue
                     try: new_frequencies[int(key)] = value * self.df
                     except: pass
-            self.mla.lockin.set_frequencies(new_frequencies, wait_for_effect = True)
+            #self.mla.lockin.set_frequencies(new_frequencies, wait_for_effect = True)
             
             # Read
-            read_frequencies = np.round(self.mla.lockin.get_frequencies(), 5)
+            read_frequencies = np.random.random(32) * 1000 # np.round(self.mla.lockin.get_frequencies(), 5)
             read_numbers = np.round(np.array([frequency / self.df for frequency in read_frequencies]), 5)
             osc_times = np.round(np.array([1000 / frequency if not frequency == 0 else 0 for frequency in read_frequencies]), 5)
 
@@ -234,15 +241,15 @@ class MLAAPI(QtCore.QObject):
         amp_dict = {"dict_name": "amplitudes"}
         
         try:
-            if len(parameters) > 0: print(f"mla.frequencies_update({parameters})")
-            else: print("mla.frequencies_update()")
+            if len(parameters) > 0: self.logprint(f"mla.frequencies_update({parameters})")
+            else: self.logprint("mla.frequencies_update()")
             
-            if not self.status == "running": self.link()
+            # if not self.status == "running": self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             amplitudes = parameters.get("amplitudes (mV)", None)
             
-            old_amplitudes = self.mla.lockin.get_amplitudes() * 1000 # Scantelligent uses mV by default
+            old_amplitudes = np.random.random(32) # self.mla.lockin.get_amplitudes() * 1000 # Scantelligent uses mV by default
             new_amplitudes = old_amplitudes # To be overwritten with user data
             
             # Set
@@ -253,10 +260,10 @@ class MLAAPI(QtCore.QObject):
                     if not isinstance(value, float | int): continue
                     try: new_amplitudes[int(key)] = value
                     except: pass
-            self.mla.lockin.set_frequencies(new_amplitudes / 1000)
+            #self.mla.lockin.set_amplitudes(new_amplitudes / 1000)
             
             # Read
-            read_amplitudes = np.round(self.mla.lockin.get_amplitudes() * 1000, 5)
+            read_amplitudes = np.random.random # np.round(self.mla.lockin.get_amplitudes() * 1000, 5)
 
             amp_dict.update({"amplitudes (mV)": read_amplitudes})
             self.parameters.emit(amp_dict)
@@ -351,7 +358,7 @@ class MLAAPI(QtCore.QObject):
 
     def bias_update(self, parameters: dict = {}, unlink: bool = True, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
-        bias_dict = {"dict_name": "phases"}
+        bias_dict = {"dict_name": "bias"}
         
         try:
             if len(parameters) > 0: print(f"mla.phases_update({parameters})")

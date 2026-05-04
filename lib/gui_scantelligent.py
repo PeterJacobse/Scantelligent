@@ -128,7 +128,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "move_horizontally": LB(text = "< horizontal motion >", tooltip = "In composite motion, horizontal motion\nis carried out between retract and advance\nSee 'horizontal'"),
         }
         
-        [labels.update({f"demod_harmonic_{i}": LB(text = f"#{i}", tooltip = f"harmonic {i}")}) for i in range(32)]
+        [labels.update({f"demod_index_{i}": LB(text = f"#{i}", tooltip = f"demodulator index {i}")}) for i in range(32)]
         
         return labels
 
@@ -260,6 +260,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                             {"name": "x", "tooltip": "Keithley voltage sweep selected for the x-axis (fast/primary axis)", "color": self.colors["blue"], "icon": icons.get("V_x")},
                                             {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": self.colors["blue"], "icon": icons.get("V_y")}]),
             
+            "get_pixel_nanonis": MSB(),
+            "get_pixel_mla": MSB(),
+            
             # Processing
             "direction": MSB(tooltip = "Change scan direction\n(X)",
                              states = [{"name": "forward", "icon": icons.get("triple_arrow"), "color": self.colors["off-black"]},
@@ -351,7 +354,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "min": BG(),
             "max": BG(),
             "background": BG(),
-            "channels": BG(exclusive = False),
+            "channels": BG(exclusive = False, keep_one_checked = False),
             "spec_axes": BG(keep_one_checked = False)
         }
         limit_methods = ["full", "percentiles", "deviations", "absolute"]        
@@ -563,15 +566,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.sts_amp_r_s = RSG([line_edits[name] for name in ["STS_amp_start", "STS_amp_end", "STS_damp", "STS_amp_points"]])
         
         # Extra line edits
-        [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of harmonic {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
+        [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
+        [line_edits.update({f"demod_amplitude_{i}": LE(value = 100 * i, tooltip = f"amplitude of tone {i}", unit = "mV", digits = 2, min_width = 80)}) for i in range(32)]
         [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}")}) for i in range(9)]
-        
-        # Named groups
-        self.experiment_parameter_fields = [line_edits[f"experiment_{i}"] for i in range(9)]
 
+        # Named groups
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
-        self.min_line_edits = [line_edits[name] for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute"]]
-        self.max_line_edits = [line_edits[name] for name in ["max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
@@ -776,20 +776,23 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "phase": PS(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))
         }
 
-        for harmonic in range(32):
-            initial_val = 100 if harmonic > 0 else 0
-            sle = SLE(tooltip = f"relative volume of harmonic {harmonic}", orientation = "v", limits = [0, 100], initial_val = initial_val, digits = 0, unit = "%",
+        for tone in range(32):
+            initial_val = 100 if tone > 0 else 0
+            sle = SLE(tooltip = f"relative volume of tone {tone}", orientation = "v", limits = [0, 100], initial_val = initial_val, digits = 0, unit = "%",
                       minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100"))
             
-            self.labels[f"demod_harmonic_{harmonic}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            self.line_edits[f"demod_frequency_{harmonic}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.labels[f"demod_index_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.line_edits[f"demod_frequency_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.line_edits[f"demod_amplitude_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             
-            sle.widget_layout.insertWidget(0, self.line_edits[f"demod_frequency_{harmonic}"])
-            sle.widget_layout.insertWidget(0, self.labels[f"demod_harmonic_{harmonic}"])
+            sle.widget_layout.insertWidget(0, self.line_edits[f"demod_amplitude_{tone}"])
+            sle.widget_layout.insertWidget(0, self.line_edits[f"demod_frequency_{tone}"])
+            sle.widget_layout.insertWidget(0, self.labels[f"demod_index_{tone}"])
+            sle.widget_layout.setContentsMargins(0, 0, 0, 0)
 
-            sliders.update({f"f{harmonic}": sle})
+            sliders.update({f"f{tone}": sle})
 
-        [widget.setEnabled(False) for widget in [sliders["f0"].slider, sliders["f0"].line_edit, sliders["f0"].min_button, sliders["f0"].max_button, self.line_edits[f"demod_frequency_0"]]]
+        # [widget.setEnabled(False) for widget in [sliders["f0"].slider, sliders["f0"].line_edit, sliders["f0"].min_button, sliders["f0"].max_button, self.line_edits[f"demod_frequency_0"]]]
         
         self.demod_scroller = QtWidgets.QScrollArea()
         self.demod_scroller.setWidgetResizable(True)
@@ -884,7 +887,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["experiment_controls_0"].addWidget(self.progress_bars[name]) for name in ["task", "experiment"]]
         
         [layouts["experiment_controls_1"].addWidget(widget) for widget in [buttons["save"], line_edits["experiment_filename"]]]
-        [layouts["experiment_fields"].addWidget(widget, int(index / 3), index % 3) for index, widget in enumerate(self.experiment_parameter_fields)] # Grid of experiment fields
+        [layouts["experiment_fields"].addWidget(widget, int(index / 3), index % 3) for index, widget in enumerate([line_edits[f"experiment_{i}"] for i in range(9)])] # Grid of experiment fields
         [layouts["experiment_buttons"].addWidget(buttons[f"experiment_{i}"]) for i in range(6)] # Grid of experiment fields
         e_layout = layouts["experiment"]
         e_layout.addLayout(layouts["experiment_controls_0"], 0, 0, 4, 1)

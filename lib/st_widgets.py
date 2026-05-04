@@ -889,6 +889,7 @@ class STWidgets:
             # 1: Create the widgets
             self.slider = STWidgets.Slider(orientation = orientation, tooltip = tooltip)
             self.line_edit = STWidgets.PhysicsLineEdit(max_width = max_width, unit = unit, limits = limits, digits = digits, tooltip = tooltip)
+            if orientation == "v": self.slider.setMinimumHeight(20)
 
             if minmax_buttons:
                 if isinstance(min_button_icon, QtGui.QIcon): self.min_button = STWidgets.MultiStateButton(tooltip = "set slider to minimum", icon = min_button_icon)
