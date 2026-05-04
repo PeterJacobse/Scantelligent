@@ -10,13 +10,14 @@ class MLAAPI(QtCore.QObject):
     frequency = QtCore.pyqtSignal(float)
     parameters = QtCore.pyqtSignal(dict)
 
-    def __init__(self, hw_config: dict = {}, status_callback: object = None, message_callback: object = None):
+    def __init__(self, hw_config: dict = {}, status_callback: object = None, message_callback: object = None, test_mode: bool = False):
         super().__init__()
         
         self.status_callback = print
         if status_callback: self.status_callback = status_callback
         self.message_callback = lambda message, message_type: print(message)
         if message_callback: self.message_callback = message_callback
+        self.test_mode = test_mode
         
         mla_path = False
         if "mla" in hw_config.keys():
@@ -57,6 +58,8 @@ class MLAAPI(QtCore.QObject):
                 self.logprint(f"Error: {e}", message_type = "error")
         except Exception as e:
             self.logprint(f"Error while connecting to the MLA: {e}", message_type = "error")
+            self.logprint(f"Unable to connect to the MLA; switching to test mode", message_type = "error")
+            self.test_mode = True
             self.status = "offline"
             try: self.status_callback(self.status)
             except: pass
@@ -165,7 +168,7 @@ class MLAAPI(QtCore.QObject):
             if len(parameters) > 0: self.logprint(f"mla.time_constant_update({parameters})", message_type = "code")
             else: self.logprint("mla.time_constant_update()", message_type = "code")
             
-            #if not self.status == "running": self.link()
+            if not self.status == "running" and not self.test_mode: self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             tm = parameters.get("tm (ms)", None)
@@ -176,8 +179,9 @@ class MLAAPI(QtCore.QObject):
             elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000) # Default unit in Scantelligent is ms, not s
             
             # Read
-            #self.tm = self.mla.lockin.get_Tm() * 1000 # Default unit in Scantelligent is ms, not s
-            #self.df = self.mla.lockin.get_df()
+            if not self.test_mode:
+                self.tm = self.mla.lockin.get_Tm() * 1000 # Default unit in Scantelligent is ms, not s
+                self.df = self.mla.lockin.get_df()
             
             tc_dict.update({"tm (ms)": self.tm, "df (Hz)": self.df})
             self.parameters.emit(tc_dict)
@@ -196,13 +200,14 @@ class MLAAPI(QtCore.QObject):
             if len(parameters) > 0: self.logprint(f"mla.frequencies_update({parameters})", message_type = "code")
             else: self.logprint("mla.frequencies_update()", message_type = "code")
             
-            #if not self.status == "running": self.link()
+            if not self.status == "running" and not self.test_mode: self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             frequencies = parameters.get("frequencies (Hz)", None)
             numbers = parameters.get("numbers", None)
             
-            old_frequencies = np.random.random(32) * 1000 # self.mla.lockin.get_frequencies()
+            if self.text_mode: old_frequencies = np.random.random(32) * 1000
+            else: self.mla.lockin.get_frequencies()
             new_frequencies = old_frequencies # To be overwritten with user data
             
             # Set
@@ -220,10 +225,11 @@ class MLAAPI(QtCore.QObject):
                     if not isinstance(value, float | int): continue
                     try: new_frequencies[int(key)] = value * self.df
                     except: pass
-            #self.mla.lockin.set_frequencies(new_frequencies, wait_for_effect = True)
+            if not self.test_mode: self.mla.lockin.set_frequencies(new_frequencies, wait_for_effect = True)
             
             # Read
-            read_frequencies = np.random.random(32) * 1000 # np.round(self.mla.lockin.get_frequencies(), 5)
+            if self.test_mode: read_frequencies = np.random.random(32) * 1000
+            else: np.round(self.mla.lockin.get_frequencies(), 5)
             read_numbers = np.round(np.array([frequency / self.df for frequency in read_frequencies]), 5)
             osc_times = np.round(np.array([1000 / frequency if not frequency == 0 else 0 for frequency in read_frequencies]), 5)
 
@@ -244,12 +250,13 @@ class MLAAPI(QtCore.QObject):
             if len(parameters) > 0: self.logprint(f"mla.frequencies_update({parameters})")
             else: self.logprint("mla.frequencies_update()")
             
-            # if not self.status == "running": self.link()
+            if not self.status == "running" and not self.test_mode: self.link()
             
             # Read the time constant and df from the parameter dict. If both are given, df takes precedence
             amplitudes = parameters.get("amplitudes (mV)", None)
             
-            old_amplitudes = np.random.random(32) # self.mla.lockin.get_amplitudes() * 1000 # Scantelligent uses mV by default
+            if self.test_mode: old_amplitudes = np.random.random(32)
+            else: self.mla.lockin.get_amplitudes() * 1000 # Scantelligent uses mV by default
             new_amplitudes = old_amplitudes # To be overwritten with user data
             
             # Set
