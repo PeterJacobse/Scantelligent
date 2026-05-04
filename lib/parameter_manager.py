@@ -21,7 +21,9 @@ class ParameterManager(QtCore.QObject):
                 return
 
         match parameter_type:
-            case "bias": sct.nanonis.bias_update(unlink = True)
+            case "bias":
+                if hasattr(sct, "nanonis"): sct.nanonis.bias_update(unlink = True)
+                if hasattr(sct, "mla"): sct.mla.bias_update(unlink = False)
             case "feedback": sct.nanonis.feedback_update(unlink = True)
             case "frame": sct.nanonis.frame_update(unlink = True, update_new_frame = True)
             case "grid": sct.nanonis.grid_update(unlink = True)
@@ -32,6 +34,9 @@ class ParameterManager(QtCore.QObject):
                 if hasattr(sct, "mla"):
                     sct.mla.time_constant_update(unlink = False)
                     sct.mla.frequencies_update(unlink = False)
+                    sct.mla.amplitudes_update(unlink = False)
+                    sct.mla.phases_update(unlink = False)
+                    sct.mla.outputs_update(unlink = False)
             case "tip_shaper": sct.nanonis.tip_shaper_update(unlink = True)
             case "spectroscopy": sct.nanonis.sts_update(unlink = True)
             case _: pass
@@ -42,10 +47,9 @@ class ParameterManager(QtCore.QObject):
         sct = self.scantelligent
         
         # Abort if the relevant hardware objects are missing
-        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"]:
-            if not hasattr(sct, "nanonis"):
-                sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
-                return
+        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"] and not hasattr(sct, "nanonis"):
+            sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
+            return
 
         match parameter_type:
             case "bias":
@@ -93,26 +97,38 @@ class ParameterManager(QtCore.QObject):
                 sct.nanonis.speeds_update(parameters, unlink = True)
             
             case "lockin":
-                if not hasattr(sct, "nanonis"):
-                    sct.logprint("Cannot set parameters without a Nanonis connection", message_type = "error")
-                    return
-            
-                [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{i + 1}"].state_index) for i in range(2)]
-                mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
-                [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
-                [mod2_f, mod2_mV, mod2_phi] = [sct.gui.line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
-                [mla1_f, mla1_mV, mla1_phi] = [sct.gui.line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "mV", "phi"]]
-                
-                parameters = {"dict_name": "lockin",
-                              "mod1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
-                              "mod2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi},
-                              "mla_mod1": {"on": mla_mod1_on, "frequency (Hz)": mla1_f, "amplitude (mV)": mla1_mV, "phase (deg)": mla1_phi}
-                              }
-                sct.nanonis.lockin_update(parameters, unlink = True)
+                if hasattr(sct, "nanonis"):
+                    [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{index + 1}"].state_index) for index in range(2)]
+                    mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
+                    [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phi"]]
+                    [mod2_f, mod2_mV, mod2_phi] = [sct.gui.line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "amp", "phi"]]
+                    [mla1_f, mla1_mV, mla1_phi] = [sct.gui.line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phi"]]
+                    
+                    parameters = {"dict_name": "lockin",
+                                "mod1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
+                                "mod2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi},
+                                "mla_mod1": {"on": mla_mod1_on, "frequency (Hz)": mla1_f, "amplitude (mV)": mla1_mV, "phase (deg)": mla1_phi}
+                                }
+                    sct.nanonis.lockin_update(parameters, unlink = True)
+                if hasattr(sct, "mla"):
+                    [mod0_on, mod1_on, mod2_on, mod3_on] = [bool(sct.gui.buttons[f"mla_mod{index}"].state_index) for index in range(4)]
+                    [mod0_port, mod1_port, mod2_port, mod3_port] = [sct.gui.comboboxes[f"mla_mod{index}"].currentIndex() + 1 for index in range(4)]
+                    
+                    parameters = {"dict_name": "outputs", "mod0": {"on": mod0_on, "port": mod0_port}, "mod1": {"on": mod1_on, "port": mod1_port},
+                                  "mod2": {"on": mod2_on, "port": mod2_port}, "mod3": {"on": mod3_on, "port": mod3_port}}
+                    sct.mla.outputs_update(parameters, unlink = False)
+                    
+                    [mod0_f, mod1_f, mod2_f, mod3_f] = [sct.gui.line_edits[f"mla_mod{index}_f"].getValue() for index in range(4)]
+                    parameters = {"dict_name": "frequencies", "frequencies (Hz)": [mod0_f, mod1_f, mod2_f, mod3_f]}
+                    sct.mla.frequencies_update(parameters, unlink = False)
+                    
+                    [mod0_amp, mod1_amp, mod2_amp, mod3_amp] = [sct.gui.line_edits[f"mla_mod{index}_amp"].getValue() for index in range(4)]
+                    parameters = {"dict_name": "amplitudes", "amplitudes (mV)": [mod0_amp, mod1_amp, mod2_amp, mod3_amp]}
+                    sct.mla.amplitudes_update(parameters, unlink = False)
             
             case "tip_shaper":
                 sct.nanonis.tip_shaper_update(unlink = True)
-            
+
             case _:
                 pass
 
@@ -182,6 +198,26 @@ class ParameterManager(QtCore.QObject):
                             case "items": sct.gui.comboboxes["direction"].renewItems(values)
                             case _: pass
 
+            case "nanonis_status":
+                status = parameters.get("status")
+                match status:
+                    case "running": sct.status.update({"nanonis": "running"})
+                    case "online" | "idle": sct.status.update({"nanonis": "idle"})
+                    case "offline": sct.status.update({"nanonis": "offline"})
+                    case _: pass
+                try: sct.gui.buttons["nanonis"].setState(status)
+                except: pass
+
+            case "mla_status":
+                status = parameters.get("status")
+                match status:
+                    case "running": sct.status.update({"mla": "running"})
+                    case "online" | "idle": sct.status.update({"mla": "idle"})
+                    case "offline": sct.status.update({"mla": "offline"})
+                    case _: pass
+                try: sct.gui.buttons["nanonis"].setState(status)
+                except: pass
+
             case "keithley_status":
                 status = parameters.get("status")
                 match status:
@@ -210,6 +246,9 @@ class ParameterManager(QtCore.QObject):
 
 
 
+            case "mla_bias":
+                bias = parameters.get("port_1 (V)")
+
             case "pixel":
                 pixel = parameters.get("pixel")
                 abs_values = np.abs(pixel)
@@ -225,16 +264,27 @@ class ParameterManager(QtCore.QObject):
                 freqs = parameters.get("frequencies (Hz)")
                 [line_edits[f"mla_mod{index}_f"].setValue(value) for index, value in enumerate(freqs[:4])]
                 [line_edits[f"demod_frequency_{index}"].setValue(value) for index, value in enumerate(freqs)]
+                df = line_edits["mla_df"].getValue()
+                if df: [line_edits[f"mla_mod{index}_n"].setValue(value / df) for index, value in enumerate(freqs[:4])]
                 sct.frequencies.emit(freqs)
             
             case "amplitudes":
                 amplitudes = parameters.get("amplitudes (mV)")
-                [line_edits[f"mla_mod{index}_mV"].setValue(value) for index, value in enumerate(amplitudes[:4])]
+                [line_edits[f"mla_mod{index}_amp"].setValue(value) for index, value in enumerate(amplitudes[:4])]
             
             case "phases":
                 phases = parameters.get("phases (deg)")
                 [line_edits[f"mla_mod{index}_phi"].setValue(value) for index, value in enumerate(phases[:4])]
             
+            case "outputs":
+                output_mask = parameters.get("output_mask")
+                for mod_index in range(4):
+                    channel_mask = output_mask[mod_index]
+                    if channel_mask[0] + channel_mask[1] > 0:
+                        sct.gui.buttons[f"mla_mod{mod_index}"].setState(1)
+                        if channel_mask[0] == 1: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(0)
+                        else: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(0)
+    
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)
                 
@@ -448,7 +498,7 @@ class ParameterManager(QtCore.QObject):
                 for i, mod_dict in enumerate([parameters.get("mod1"), parameters.get("mod2")]):
                     
                     mod_values = [mod_dict.get(key) for key in ["frequency (Hz)", "amplitude (mV)", "phase (deg)", "time_constant (ms)"]]                    
-                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "mV", "phi"], mod_values)]
+                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "amp", "phi"], mod_values)]
                     
                     if i == 0:
                         df_Hz = mod_values[0] # Measurement resolution is a single cycle of modulator 1

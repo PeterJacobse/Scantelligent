@@ -95,7 +95,7 @@ class Scantelligent(QtCore.QObject):
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
-                        "audio": self.toggle_audio, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
+                        "audio": self.toggle_audio, "zero_volumes": self.zero_volumes, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy
                         }
         
@@ -717,8 +717,12 @@ class Scantelligent(QtCore.QObject):
 
     def send_volumes(self) -> None:
         overal_volume = int(self.gui.sliders["volume"].getValue())
-        volumes = [int(self.gui.sliders[f"f{i}"].getValue() * overal_volume) for i in range(32)]
+        volumes = [int(self.gui.sliders[f"f{index}"].getValue() * overal_volume) for index in range(32)]
         self.volumes.emit(volumes)
+        return
+
+    def zero_volumes(self) -> None:
+        [self.gui.sliders[f"f{index}"].setValue(0) for index in range(32)]
         return
 
 
