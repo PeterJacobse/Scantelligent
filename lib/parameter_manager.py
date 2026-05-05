@@ -251,13 +251,14 @@ class ParameterManager(QtCore.QObject):
 
 
             case "mla_bias":
-                bias = parameters.get("port_1 (V)")
+                biases = [parameters.get(f"port_{index + 1} (V)") for index in range(2)]
+                [line_edits[f"V_mla_port{index + 1}"].setValue(val) for index, val in enumerate(biases)]
 
             case "pixels":
                 pixels = parameters.get("pixels")
                 abs_values = np.abs(pixels[:, 0])
                 #arg_values = np.rad2deg(np.angle(pixel))
-                [line_edits[f"demod_amplitude_{index}"].setValue(value) for index, value in enumerate(abs_values)]
+                [line_edits[f"demod_amplitude_{index}"].setValue(value * 1000) for index, value in enumerate(abs_values)]
                 #[line_edits[f"demod_angle_{index}"].setValue(value) for index, value in enumerate(abs_values)]
                 sct.amplitudes.emit(100 * abs_values)
 
@@ -283,7 +284,7 @@ class ParameterManager(QtCore.QObject):
             case "outputs":
                 output_mask = parameters.get("output_mask")
                 for mod_index in range(4):
-                    channel_mask = output_mask[mod_index] #
+                    channel_mask = output_mask[:, mod_index]
                     if channel_mask[0] + channel_mask[1] > 0:
                         sct.gui.buttons[f"mla_mod{mod_index}"].setState(1)
                         if channel_mask[0] == 1: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(0)

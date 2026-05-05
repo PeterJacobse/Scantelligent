@@ -252,8 +252,8 @@ class Scantelligent(QtCore.QObject):
             except Exception as e:
                 self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
                 #self.gui.buttons["mla"].setState("offline")
-                
-        """
+
+
 
         # Nanonis
         if target.lower() == "nanonis" or target.lower() == "all":
@@ -292,7 +292,7 @@ class Scantelligent(QtCore.QObject):
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
                 self.gui.buttons["nanonis"].setState("offline")
-        """
+
 
         
         # Populate the autocomplete suggestions in the command input
@@ -1048,8 +1048,8 @@ class Scantelligent(QtCore.QObject):
                 self.gui.comboboxes["direction"].renewItems([])
                 for i in range(9):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
-                    self.gui.line_edits[f"experiment_{i}"].setUnit()
-                    self.gui.line_edits[f"experiment_{i}"].setValue("")
+                    #self.gui.line_edits[f"experiment_{i}"].setValue("")
+                    #self.gui.line_edits[f"experiment_{i}"].setUnit()
                     
                 self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])

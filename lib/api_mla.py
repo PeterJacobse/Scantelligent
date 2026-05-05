@@ -101,6 +101,7 @@ class MLAAPI(QtCore.QObject):
         self.reset_outputs()
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
+        self.bias_update()
         self.lockin_update({"df (Hz)": 100, "numbers": np.arange(1, 32), "amplitudes (mV)": [100]})
 
         """
@@ -150,8 +151,9 @@ class MLAAPI(QtCore.QObject):
         parameters_dict = {"dict_name": "parameters"}
         
         try:
-            if len(parameters) > 0: self.logprint(f"mla.lockin_update({parameters})", message_type = "code")
-            else: self.logprint("mla.lockin_update()", message_type = "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.lockin_update({parameters})", message_type = "code")
+                else: self.logprint("mla.lockin_update()", message_type = "code")
             
             if not self.status == "running" and not self.test_mode: self.link()
             
@@ -178,6 +180,14 @@ class MLAAPI(QtCore.QObject):
             if isinstance(amplitudes, list | np.ndarray): (amplitudes_dict, error) = self.amplitudes_update({"frequencies (Hz)": frequencies})
             else: (amplitudes_dict, error) = self.amplitudes_update()
             parameters_dict.update(amplitudes_dict)
+            
+            # phases update
+            phases = parameters.get("phases (deg)", None)
+            if isinstance(phases, list | np.ndarray): (phase_dict, error) = self.phases_update({"phases (deg)": phases})
+            else: (phases_dict, error) = self.phases_update()
+            parameters_dict.update(phases_dict)
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{parameters}", message_type = "result")
         
         except Exception as e: error = e
         finally:
@@ -190,8 +200,9 @@ class MLAAPI(QtCore.QObject):
         tc_dict = {"dict_name": "time_constant"}
         
         try:
-            if len(parameters) > 0: self.logprint(f"mla.time_constant_update({parameters})", message_type = "code")
-            else: self.logprint("mla.time_constant_update()", message_type = "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.time_constant_update({parameters})", message_type = "code")
+                else: self.logprint("mla.time_constant_update()", message_type = "code")
             
             if not self.status == "running" and not self.test_mode: self.link()
             
@@ -210,6 +221,8 @@ class MLAAPI(QtCore.QObject):
             
             tc_dict.update({"tm (ms)": self.tm, "df (Hz)": self.df})
             self.parameters.emit(tc_dict)
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{tc_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:
@@ -222,8 +235,9 @@ class MLAAPI(QtCore.QObject):
         freq_dict = {"dict_name": "frequencies"}
         
         try:
-            if len(parameters) > 0: self.logprint(f"mla.frequencies_update({parameters})", message_type = "code")
-            else: self.logprint("mla.frequencies_update()", message_type = "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.frequencies_update({parameters})", message_type = "code")
+                else: self.logprint("mla.frequencies_update()", message_type = "code")
             
             if not self.status == "running" and not self.test_mode: self.link()
             
@@ -264,6 +278,8 @@ class MLAAPI(QtCore.QObject):
 
             freq_dict.update({"frequencies (Hz)": read_frequencies, "numbers": read_numbers, "times (ms)": osc_times})
             self.parameters.emit(freq_dict)
+            
+            if verbose and len(freq_dict) < 1: self.logprint(f"{freq_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:
@@ -276,8 +292,9 @@ class MLAAPI(QtCore.QObject):
         amp_dict = {"dict_name": "amplitudes"}
         
         try:
-            if len(parameters) > 0: self.logprint(f"mla.amplitudes_update({parameters})", message_type = "code")
-            else: self.logprint("mla.amplitudes_update()", message_type = "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.amplitudes_update({parameters})", message_type = "code")
+                else: self.logprint("mla.amplitudes_update()", message_type = "code")
             
             if not self.status == "running" and not self.test_mode: self.link()
             
@@ -305,6 +322,8 @@ class MLAAPI(QtCore.QObject):
 
             amp_dict.update({"amplitudes (mV)": read_amplitudes})
             self.parameters.emit(amp_dict)
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{amp_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:
@@ -317,8 +336,9 @@ class MLAAPI(QtCore.QObject):
         phase_dict = {"dict_name": "phases"}
         
         try:
-            if len(parameters) > 0: self.logprint(f"mla.phases_update({parameters})", message_type = "code")
-            else: self.logprint("mla.phases_update()", message_type = "code")
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.phases_update({parameters})", message_type = "code")
+                else: self.logprint("mla.phases_update()", message_type = "code")
             
             if not self.status == "running" and not self.test_mode: self.link()
             
@@ -346,6 +366,8 @@ class MLAAPI(QtCore.QObject):
 
             phase_dict.update({"phases (deg)": read_phases})
             self.parameters.emit(phase_dict)
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{phase_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:
@@ -396,6 +418,8 @@ class MLAAPI(QtCore.QObject):
                 self.mla.lockin.set_output_mask(self.output_masks[1], port = 2)
             outputs_dict.update({"output_mask": self.output_masks})
             self.parameters.emit(outputs_dict)
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{outputs_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:

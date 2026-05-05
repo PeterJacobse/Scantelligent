@@ -413,7 +413,7 @@ class STWidgets:
             self.min_width = kwargs.pop("min_width", None)
             self.max_width = kwargs.pop("max_width", None)
             self.style_sheet = kwargs.pop("style_sheet", None)
-            self.digits = kwargs.pop("digits", None)
+            self.digits = kwargs.pop("digits", 2)
             self.block = kwargs.pop("block", False)
             self.base_color = kwargs.pop("base_color", "#101010")
             self.edited_color = kwargs.pop("edited_color", None)
@@ -503,6 +503,7 @@ class STWidgets:
 
         def addUnit(self) -> None:
             number = self.getValue()
+            if not isinstance(number, str | int): return
             
             self.blockSignals(True)
             if isinstance(self.unit, str):
@@ -535,7 +536,7 @@ class STWidgets:
                 # Add the unit to the number
                 if isinstance(self.digits, int):
                     number = round(number, self.digits)
-                if isinstance(self.digits, int) and self.digits < 1 < 1:
+                if isinstance(self.digits, int) and self.digits < 1:
                     number = int(number)
                 
                 return number

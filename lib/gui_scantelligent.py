@@ -222,6 +222,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "tip_shape": MSB(tooltip = "Shape the tip by poking it into the surface", icon = icons.get("tip_shape"), size = 28),
             
             # Lockins
+            "nanonis_mla": MSB(states = [{"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"},
+                                         {"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"}]),
+            
             "nanonis_mod1": MSB(icon = icons.get("nanonis_mod1"),
                                 states = [{"name": "off", "tooltip": "Nanonis modulator 1 OFF", "color": self.colors["off-black"]},
                                           {"name": "on", "tooltip": "Nanonis modulator 1 ON", "color": self.colors["blue"]}]),
@@ -427,9 +430,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "approach_max_percentile": LE(value = 60, tooltip = "maximum percentile of the piezo range\nWithdraw and coarse adjust if the tip lands above this value", unit = "%", digits = 0),
 
             # Parameters
-            "V_nanonis": LE(tooltip = "Nanonis bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
-            "V_mla": LE(tooltip = "MLA bias\n(Ctrl + P) to set", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
-            "V_keithley": LE(tooltip = "Keithley bias\n(Ctrl + P) to set", unit = "V", limits = [-200, 200], digits = 3, edited_color = self.colors["dark_green"]),
+            "V_nanonis": LE(tooltip = "Nanonis bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
+            "V_mla_port1": LE(tooltip = "MLA bias on port 1", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
+            "V_mla_port2": LE(tooltip = "MLA bias on port 2", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
+            "V_keithley": LE(tooltip = "Keithley bias", unit = "V", limits = [-200, 200], digits = 3, edited_color = self.colors["dark_green"]),
 
             "dV_nanonis": LE(tooltip = "voltage step dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
             "dt_nanonis": LE(tooltip = "time step dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
@@ -438,7 +442,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1, edited_color = self.colors["dark_green"]),
             "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0, edited_color = self.colors["dark_green"]),
 
-            "I_fb": LE(tooltip = "feedback current\n(Ctrl + P) to set", unit = "pA", digits = 0, edited_color = self.colors["dark_green"]),
+            "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0, edited_color = self.colors["dark_green"]),
             "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = self.colors["dark_green"]),
             "I_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = self.colors["dark_green"]),
 
@@ -569,7 +573,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
         [line_edits.update({f"demod_amplitude_{i}": LE(value = 100 * i, tooltip = f"amplitude of tone {i}", unit = "mV", digits = 2, min_width = 80)}) for i in range(32)]
-        [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}")}) for i in range(9)]
+        [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}", digits = 2)}) for i in range(9)]
 
         # Named groups
         self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
@@ -930,9 +934,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         b_layout = layouts["bias"]
         [b_layout.addWidget(labels[name], 0, index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
         b_layout.addWidget(make_line("h", 1), 1, 0, 1, 3)
-        [b_layout.addWidget(line_edits[name], 2, index) for index, name in enumerate(["V_nanonis", "V_mla", "V_keithley"])]
+        [b_layout.addWidget(line_edits[name], 2, index) for index, name in enumerate(["V_nanonis", "V_mla_port1", "V_keithley"])]
         buttons["V_swap"].setFixedWidth(50)
-        b_layout.addWidget(buttons["V_swap"], 3, 0, 1, 2, align_center)
+        b_layout.addWidget(buttons["V_swap"], 3, 0, 1, 1, align_center)
+        b_layout.addWidget(line_edits["V_mla_port2"], 3, 1)
         [b_layout.addWidget(line_edits[name], 4 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
         [b_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["dz_nanonis"])]
         [b_layout.addWidget(line_edits[name], 4 + index, 2) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
@@ -988,7 +993,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # STS
         [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
         
-        layouts["spectroscopy"].addWidget(buttons["start_spectrum"], 0, 0, 1, 3, align_center)
+        layouts["spectroscopy"].addWidget(buttons["start_spectrum"], 0, 0, 1, 2, align_center)
+        layouts["spectroscopy"].addWidget(buttons["nanonis_mla"], 0, 2, 1, 1, align_center)
         [layouts["spectroscopy"].addWidget(buttons[f"STS_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
         [layouts["spectroscopy"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["STS_t_int", "STS_t_settle"])]
         for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):

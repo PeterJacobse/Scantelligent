@@ -17,11 +17,32 @@ class Experiment(BaseExperiment):
 
     @BaseExperiment.experiment_handler
     def run(self):
-        self.connect_hardware("nanonis") # Set up the required hardware connections
+        [self.connect_hardware(component) for component in ["nanonis", "mla"]] # Set up the required hardware connections
         
-        nn = self.nanonis # Using nn as an alias for self.nanonis
+        # Aliases
+        nn = self.nanonis
+        mla = self.mla
         nhw = nn.nanonis_hardware
-        # nn.link() # Although NanonisAPI functions will automatically manage TCP connections, NanonisHardware will not work unless a TCP connection is established explicitly
+                
+        x_axis = np.linspace(50, 2000, 50)
+        x_axis_label = "frequencies (Hz)"
+        
+        mla.amplitudes_update({"amplitudes (mV)": {0: 500, 1: 0}}) # Set the amplitude of modulator 0 to 100 mV and that of number 1 to 120 mV
+        mla.outputs_update({"mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
+        mla.start_lockin()
+        
+        for x in x_axis:
+            mla.time_constant_update({"df (Hz)": x}) # Set the measurement resolution to 200 Hz. This corresponds to a primitive time constant or period of 5 ms.
+            mla.frequencies_update({"numbers": [1]}) # Frequencies set in units of numbers of whole oscillations per period
+            pix = mla.get_pixels(4)
+        
+        mla.stop_lockin()
+        
+        
+        
+        
+        
+        
 
         # Read and calculate information
         [t_int_ms, t_settle_ms] = [self.sct.gui.line_edits[name].getValue() for name in ["STS_t_int", "STS_t_settle"]]
@@ -44,9 +65,6 @@ class Experiment(BaseExperiment):
         # Find the LI demodulator channels and put them in slots 20 through 23 so that they can be accessed by nanonis.signals_update
         scan_metadata = self.start_parameters["nanonis"].get("scan_metadata")
         LI_indices = [scan_metadata.get("all_signals", {}).get(parameter_name) for parameter_name in ["LI Demod 1 X (A)", "LI Demod 1 Y (A)", "LI Demod 2 X (A)", "LI Demod 2 Y (A)"]]
-        
-        #for slot_index, LI_index in zip([20, 21, 22, 23], LI_indices):
-        #    nhw.set_signal_in_slot(slot_index, LI_index)
 
         # We first directly pass the parameter names to signals_update. The function will then return the indices it found that correspond to these parameters. Subsequent calls can be done using the indices, which is faster.
         (signals, error) = nn.signals_update(["LI Demod 1 X (A)", "LI Demod 1 Y (A)", "LI Demod 2 X (A)", "LI Demod 2 Y (A)"])

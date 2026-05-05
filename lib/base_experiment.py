@@ -106,7 +106,7 @@ class BaseExperiment(QObject):
                 self.mla = MLAAPI(hw_config = self.hw_config, message_callback = self.logprint)
                 self.mla.parameters.connect(self.parameters.emit)
                 
-                (mla_parameters, error) = self.mla.time_constant_update()                
+                (mla_parameters, error) = self.mla.lockin_update()
                 self.start_parameters.update({"mla": mla_parameters})
 
             case "camera":
@@ -157,7 +157,11 @@ class BaseExperiment(QObject):
             try:
                 self.nanonis.unlink()
             except: pass
-            
+
+        if hasattr(self, "mla"):
+            try: self.mla.unlink()
+            except Exception as e: self.logprint(f"Error while unlinking the MLA: {e}", message_type = "error")
+
         if not self.abort_requested:
             self.logprint("Experiment finished!", message_type = "success")
             self.exp_progress.emit(100)
