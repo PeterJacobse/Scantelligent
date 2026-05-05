@@ -111,6 +111,10 @@ class ParameterManager(QtCore.QObject):
                                 }
                     sct.nanonis.lockin_update(parameters, unlink = True)
                 if hasattr(sct, "mla"):
+                    [tm, df] = [sct.gui.line_edits[quantity].getValue() for quantity in ["mla_t", "mla_df"]]
+                    parameters = {"dict_name": "time_constant", "df (Hz)": df, "tm (ms)": tm}
+                    sct.mla.time_constant_update(parameters, unlink = False)
+                    
                     [mod0_on, mod1_on, mod2_on, mod3_on] = [bool(sct.gui.buttons[f"mla_mod{index}"].state_index) for index in range(4)]
                     [mod0_port, mod1_port, mod2_port, mod3_port] = [sct.gui.comboboxes[f"mla_mod{index}"].currentIndex() + 1 for index in range(4)]
                     
@@ -249,13 +253,13 @@ class ParameterManager(QtCore.QObject):
             case "mla_bias":
                 bias = parameters.get("port_1 (V)")
 
-            case "pixel":
-                pixel = parameters.get("pixel")
-                abs_values = np.abs(pixel)
+            case "pixels":
+                pixels = parameters.get("pixels")
+                abs_values = np.abs(pixels[:, 0])
                 #arg_values = np.rad2deg(np.angle(pixel))
                 [line_edits[f"demod_amplitude_{index}"].setValue(value) for index, value in enumerate(abs_values)]
                 #[line_edits[f"demod_angle_{index}"].setValue(value) for index, value in enumerate(abs_values)]
-                sct.amplitudes.emit(abs_values)
+                sct.amplitudes.emit(100 * abs_values)
 
             case "time_constant":
                 [line_edits[f"mla_{quantity}"].setValue(value) for quantity, value in zip(["t", "df"], [parameters.get(key) for key in ["tm (ms)", "df (Hz)"]])]
@@ -279,11 +283,11 @@ class ParameterManager(QtCore.QObject):
             case "outputs":
                 output_mask = parameters.get("output_mask")
                 for mod_index in range(4):
-                    channel_mask = output_mask[mod_index]
+                    channel_mask = output_mask[mod_index] #
                     if channel_mask[0] + channel_mask[1] > 0:
                         sct.gui.buttons[f"mla_mod{mod_index}"].setState(1)
                         if channel_mask[0] == 1: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(0)
-                        else: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(0)
+                        else: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(1)
     
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)

@@ -252,6 +252,8 @@ class Scantelligent(QtCore.QObject):
             except Exception as e:
                 self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
                 #self.gui.buttons["mla"].setState("offline")
+                
+        """
 
         # Nanonis
         if target.lower() == "nanonis" or target.lower() == "all":
@@ -290,7 +292,7 @@ class Scantelligent(QtCore.QObject):
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
                 self.gui.buttons["nanonis"].setState("offline")
-        
+        """
 
         
         # Populate the autocomplete suggestions in the command input
@@ -1010,7 +1012,9 @@ class Scantelligent(QtCore.QObject):
             case "mla":
                 try:
                     self.mla.frequencies_update()
-                    self.mla.get_pixel()
+                    self.mla.start_lockin()
+                    self.mla.get_pixels(1)
+                    self.mla.stop_lockin()
                 except Exception as e:
                     self.logprint(f"Cannot request a pixel from the MLA: {e}", message_type = "error")
             case _:

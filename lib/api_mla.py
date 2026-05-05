@@ -45,7 +45,7 @@ class MLAAPI(QtCore.QObject):
         self.df = 100 # Defaults, to be overwritten by the first call to time_constant_update()
         self.tm = 10
         self.V = [0, 0]
-        self.output_masks = np.zeros((32, 2), dtype = int)
+        self.output_masks = np.zeros((2, 32), dtype = int)
         self.status = "online"
         self.status_callback(self.status)        
         return
@@ -73,12 +73,11 @@ class MLAAPI(QtCore.QObject):
     def unlink(self) -> None:
         try:
             self.stop_lockin()
-            self.oscillator_on(False)
-            self.set_V(0)
+            self.reset_outputs()
         finally:
             self.mla.disconnect()
             self.status = "idle"
-            try: self.status_callback.setState(self.status)
+            try: self.status_callback(self.status)
             except: pass
         return
 
@@ -99,20 +98,12 @@ class MLAAPI(QtCore.QObject):
 
     # Set and get methods
     def set_defaults(self) -> None:
+        self.reset_outputs()
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
-        
-        self.time_constant_update({"df (Hz)": 100})
-        self.frequencies_update()
+        self.lockin_update({"df (Hz)": 100, "numbers": np.arange(1, 32), "amplitudes (mV)": [100]})
 
         """
-        # Use port 2 for drive waveform (not feedback)
-        mla.lockin.set_output_mode_lockin(two_channels = True)
-
-        # Configure lockin
-        phases = np.random.rand(mla.lockin.nr_output_freq)
-        mla.lockin.set_phases(phases, 'degree')
-
         input_ports= np.ones(mla.lockin.nr_output_freq - 1) + 1
         mla.lockin.set_input_multiplexer(np.insert(input_ports, 0, 1))
         """
@@ -124,13 +115,14 @@ class MLAAPI(QtCore.QObject):
             self.logprint(f"{e}")
         return
 
-    def get_pixel(self) -> np.ndarray:
+    def get_pixels(self, number: int = 1, wait_for_new: bool = True) -> np.ndarray:
         if self.test_mode:
             rng = np.random.default_rng()
             pix = rng.random(32) + 1j * rng.random(32)
         else:
-            (pix, _) = self.mla.lockin.get_pixels(1)
-        self.parameters.emit({"dict_name": "pixel", "pixel": pix})
+            if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
+            (pix, _) = self.mla.lockin.get_pixels(number)
+        self.parameters.emit({"dict_name": "pixels", "pixels": pix})
         return pix
 
     def set_DACs_ADCs_safe_range(self) -> None:
@@ -209,8 +201,8 @@ class MLAAPI(QtCore.QObject):
             
             # Set
             if not self.test_mode:
-                if isinstance(df, float | int): self.mla.lockin.set_df(df)
-                elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000) # Default unit in Scantelligent is ms, not s
+                if isinstance(df, float | int): self.mla.lockin.set_df(df, wait_for_effect = True)
+                elif isinstance(tm, float | int): self.mla.lockin.set_Tm(tm / 1000, wait_for_effect = True) # Default unit in Scantelligent is ms, not s
             
                 # Read            
                 self.tm = self.mla.lockin.get_Tm() * 1000 # Default unit in Scantelligent is ms, not s
@@ -242,7 +234,7 @@ class MLAAPI(QtCore.QObject):
             if isinstance(times, list | np.ndarray) and isinstance(times[0], int | float): numbers = times / self.tm
             
             if self.test_mode: old_frequencies = np.random.random(32) * 1000
-            else: self.mla.lockin.get_frequencies()
+            else: old_frequencies = self.mla.lockin.get_frequencies()
             new_frequencies = old_frequencies # To be overwritten with user data
             
             # Set            
@@ -266,7 +258,7 @@ class MLAAPI(QtCore.QObject):
             
             # Read
             if self.test_mode: read_frequencies = np.random.random(32) * 1000
-            else: np.round(self.mla.lockin.get_frequencies(), 5)
+            else: read_frequencies = np.round(self.mla.lockin.get_frequencies(), 5)
             read_numbers = np.round(np.array([frequency / self.df for frequency in read_frequencies]), 5)
             osc_times = np.round(np.array([1000 / frequency if not frequency == 0 else 0 for frequency in read_frequencies]), 5)
 
@@ -293,7 +285,7 @@ class MLAAPI(QtCore.QObject):
             amplitudes = parameters.get("amplitudes (mV)", None)
             
             if self.test_mode: old_amplitudes = np.random.random(32)
-            else: self.mla.lockin.get_amplitudes() * 1000 # Scantelligent uses mV by default
+            else: old_amplitudes = self.mla.lockin.get_amplitudes() * 1000 # Scantelligent uses mV by default
             new_amplitudes = old_amplitudes # To be overwritten with user data
             
             # Set
@@ -305,7 +297,7 @@ class MLAAPI(QtCore.QObject):
                     if not isinstance(value, float | int): continue
                     try: new_amplitudes[int(key)] = value
                     except: pass
-            if not self.test_mode: self.mla.lockin.set_amplitudes(new_amplitudes / 1000)
+            if not self.test_mode: self.mla.lockin.set_amplitudes(new_amplitudes / 1000, wait_for_effect = True)
             
             # Read
             if self.test_mode: read_amplitudes = np.random.random(32)
@@ -334,7 +326,7 @@ class MLAAPI(QtCore.QObject):
             phases = parameters.get("phases (deg)", None)
             
             if self.test_mode: old_phases = np.random.random(32)
-            else: self.mla.lockin.get_phases() * 1000 # Scantelligent uses mV by default
+            else: old_phases = self.mla.lockin.get_phases() * 1000 # Scantelligent uses mV by default
             new_phases = old_phases # To be overwritten with user data
             
             # Set
@@ -346,7 +338,7 @@ class MLAAPI(QtCore.QObject):
                     if not isinstance(value, float | int): continue
                     try: new_phases[int(key)] = value
                     except: pass
-            if not self.test_mode: self.mla.lockin.set_phases(new_phases / 1000)
+            if not self.test_mode: self.mla.lockin.set_phases(new_phases / 1000, wait_for_effect = True)
             
             # Read
             if self.test_mode: read_phases = np.random.random(32)
@@ -396,9 +388,12 @@ class MLAAPI(QtCore.QObject):
                     continue # 0 means that the modulator signal is not applied to any port, 1 means applied to port 1, and 2 is applied to port 2
 
                 if mod.get("on"):
-                    self.output_masks[index, chan - 1] = 1
+                    self.output_masks[chan - 1, index] = 1
                     outputs_dict.update({f"mod{index}": {"on": True, "port": chan}})
             
+            if not self.test_mode:
+                self.mla.lockin.set_output_mask(self.output_masks[0], port = 1)
+                self.mla.lockin.set_output_mask(self.output_masks[1], port = 2)
             outputs_dict.update({"output_mask": self.output_masks})
             self.parameters.emit(outputs_dict)
         
@@ -421,10 +416,10 @@ class MLAAPI(QtCore.QObject):
             
             [port1, port2] = [parameters.get(f"port_{index + 1} (V)", None) for index in range(2)]
             if isinstance(port1, float | int):
-                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port1)
+                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port1, wait_for_effect = True)
                 self.V[0] = port1
             if isinstance(port2, float | int):
-                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port2)
+                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port2, wait_for_effect = True)
                 self.V[1] = port2
             
             bias_dict.update({"port_1 (V)": self.V[0], "port_2 (V)": self.V[1]})
