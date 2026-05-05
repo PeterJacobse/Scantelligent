@@ -412,6 +412,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         ILE = STWidgets.InputLineEdit
         RG = STWidgets.ReciprocalGroup
         RSG = STWidgets.RangeStepsGroup
+        RGN = STWidgets.ReciprocalGroupNew
         
         line_edits = {
             # Experiment
@@ -482,28 +483,28 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
             
             # STS
-            "STS_t_int": LE(tooltip = "integration time per data point", unit = "ms", limits = [0, 10000], digits = 2),
-            "STS_t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 2),
+            "STS_t_int": LE(tooltip = "integration time per data point", unit = "ms", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
+            "STS_t_settle": LE(tooltip = "settling time per data point", unit = "ms", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
             
-            "STS_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3),
-            "STS_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3),
-            "STS_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 1),
-            "STS_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            "STS_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
+            "STS_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = self.colors["dark_green"]),
+            "STS_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
+            "STS_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
             
-            "STS_f_start": LE(value = 0, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "STS_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "STS_df": LE(value = 100, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
-            "STS_f_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            "STS_f_start": LE(value = 0, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
+            "STS_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
+            "STS_df": LE(value = 100, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = self.colors["dark_green"]),
+            "STS_f_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
             
-            "STS_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2),
-            "STS_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2),
-            "STS_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [0, 200], digits = 2),
-            "STS_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),            
+            "STS_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = self.colors["dark_green"]),
+            "STS_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = self.colors["dark_green"]),
+            "STS_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [0, 200], digits = 2, edited_color = self.colors["dark_green"]),
+            "STS_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),            
 
-            "STS_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1),
-            "STS_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1),
-            "STS_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 1),
-            "STS_amp_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0),
+            "STS_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
+            "STS_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
+            "STS_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 2, edited_color = self.colors["dark_green"]),
+            "STS_amp_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
 
             "STS_V_keithley_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
             "STS_V_keithley_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
@@ -529,22 +530,22 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod0_phi": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], warning_color = self.colors["dark_orange"], max_width = 70),
             
             "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod1_amp": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod1_phi": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], warning_color = self.colors["dark_orange"], max_width = 70),
             
             "mla_mod2_f": LE(tooltip = "MLA modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod2_amp": LE(tooltip = "MLA modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod2_phi": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], warning_color = self.colors["dark_orange"], max_width = 70),
             
             "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod3_amp": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = self.colors["dark_green"]),
             "mla_mod3_phi": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = self.colors["dark_green"]),
-            "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], max_width = 70),
+            "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = self.colors["dark_green"], warning_color = self.colors["dark_orange"], max_width = 70),
 
             # Image processing
             "min_full": LE(tooltip = "minimum value of scan data range", digits = 3, max_width = 70),
@@ -563,12 +564,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Reciprocal pairs and rang-steps groups (inter-line-edit update logic)
-        self.nanonis_t_f = RG([line_edits[name] for name in ["nanonis_t", "nanonis_df"]], factor = 1000)
-        self.mla_t_f = RG([line_edits[name] for name in ["mla_t", "mla_df"]], factor = 1000)
-        self.sts_V_r_s = RSG([line_edits[name] for name in ["STS_V_start", "STS_V_end", "STS_dV", "STS_V_points"]], factor = 1000)
-        self.sts_z_r_s = RSG([line_edits[name] for name in ["STS_z_start", "STS_z_end", "STS_dz", "STS_z_points"]])
-        self.sts_f_r_s = RSG([line_edits[name] for name in ["STS_f_start", "STS_f_end", "STS_df", "STS_f_points"]])
-        self.sts_amp_r_s = RSG([line_edits[name] for name in ["STS_amp_start", "STS_amp_end", "STS_damp", "STS_amp_points"]])
+        self.sts_V_rg = RSG([line_edits[name] for name in ["STS_V_start", "STS_V_end", "STS_dV", "STS_V_points"]], factor = 1000)
+        
+        self.nanonis_rg = RGN(product = 1000, factors = [line_edits["nanonis_t"], line_edits["nanonis_df"]])
+        self.mla_rg = RGN(product = 1000, factors = [line_edits["mla_t"], line_edits["mla_df"]])
+        #self.sts_V_r_s = RGN(product = [line_edits["STS_V_start"], line_edits["STS_V_end"]], factors = [line_edits["STS_V_points"], line_edits["STS_dV"]],
+        #                     lock_preference = "factor0", factor0_warn_if_not_integer = True, factor0_include_endpoint = True)
+        self.sts_z_rg = RGN(product = [line_edits["STS_z_start"], line_edits["STS_z_end"]], factors = [line_edits["STS_z_points"], line_edits["STS_dz"]],
+                             lock_preference = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
+        self.sts_f_rg = RGN(product = [line_edits["STS_f_start"], line_edits["STS_f_end"]], factors = [line_edits["STS_f_points"], line_edits["STS_df"]],
+                             lock_preference = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
+        self.sts_amp_rg = RGN(product = [line_edits["STS_amp_start"], line_edits["STS_amp_end"]], factors = [line_edits["STS_amp_points"], line_edits["STS_damp"]],
+                               lock_preference = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
+        
+        # self.tone0_rg = RGN(product = line_edits["mla_mod0_f"], factors = [line_edits["mla_mod0_n"], line_edits["mla_df"]], lock_preference = "factor1", factor0_warn_if_not_integer = True)
         
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]

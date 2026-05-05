@@ -87,7 +87,7 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             else: parameters.update({tip_status.get("dict_name"): tip_status})
             
-            (lockin_parameters, error) = self.lockin_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            (lockin_parameters, error) = self.lockin_update(name_lookup = True, verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error: raise Exception(error)
             else: parameters.update({lockin_parameters.get("dict_name"): lockin_parameters})
 
@@ -830,11 +830,11 @@ class NanonisAPI(QtCore.QObject):
                 frequency_Hz = nhw.get_mod_freq(mod_number + 1)
                 phase_deg = nhw.get_mod_phase(mod_number + 1)
                 signal_index = nhw.get_mod_signal(mod_number + 1)
+                
                 if frequency_Hz > .01: time_ms = 1000 / frequency_Hz
                 else: time_ms = None
                 
                 mod_new = {"on": mod_on, "signal_index": signal_index, "frequency (Hz)": frequency_Hz, "amplitude (mV)": amplitude_mV, "phase (deg)": phase_deg, "time_constant (ms)": time_ms}
-                
                 if name_lookup:
                     for name, index in signal_dict.items():
                         if index == signal_index: break

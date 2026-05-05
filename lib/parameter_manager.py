@@ -30,13 +30,8 @@ class ParameterManager(QtCore.QObject):
             case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)
             case "gain": sct.nanonis.gains_update(unlink = True)            
             case "lockin":
-                if hasattr(sct, "nanonis"): sct.nanonis.lockin_update(unlink = True)
-                if hasattr(sct, "mla"):
-                    sct.mla.time_constant_update(unlink = False)
-                    sct.mla.frequencies_update(unlink = False)
-                    sct.mla.amplitudes_update(unlink = False)
-                    sct.mla.phases_update(unlink = False)
-                    sct.mla.outputs_update(unlink = False)
+                if hasattr(sct, "nanonis"): sct.nanonis.lockin_update(name_lookup = True, unlink = True)
+                if hasattr(sct, "mla"): sct.mla.lockin_update(unlink = False)
             case "tip_shaper": sct.nanonis.tip_shaper_update(unlink = True)
             case "spectroscopy": sct.nanonis.sts_update(unlink = True)
             case _: pass
@@ -520,6 +515,10 @@ class ParameterManager(QtCore.QObject):
                             sct.frequency.emit(f1)
                             [line_edits[f"demod_frequency_{i}"].setValue(i * f1) for i in range(32)]
                     sct.gui.buttons[f"nanonis_mod{i + 1}"].setState(state)
+                    
+                    if "signal_name" in mod_dict.keys():
+                        try: sct.gui.comboboxes[f"nanonis_mod{i + 1}"].setCurrentText(mod_dict["signal_name"])
+                        except: pass
 
             case "speed" | "speeds":
                 [v_fwd, v_bwd, v_tip] = [parameters.get(quantity) for quantity in ["v_fwd (nm/s)", "v_bwd (nm/s)", "v_tip (nm/s)"]]

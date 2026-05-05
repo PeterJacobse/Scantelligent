@@ -13,7 +13,7 @@ from datetime import datetime
 # Main class
 class Scantelligent(QtCore.QObject):
     volumes = QtCore.pyqtSignal(list)
-    amplitudes = QtCore.pyqtSignal(list)    
+    amplitudes = QtCore.pyqtSignal(list)
     frequencies = QtCore.pyqtSignal(list)
 
     def __init__(self):

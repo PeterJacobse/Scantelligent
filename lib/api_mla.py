@@ -187,6 +187,12 @@ class MLAAPI(QtCore.QObject):
             else: (phases_dict, error) = self.phases_update()
             parameters_dict.update(phases_dict)
             
+            # outputs update
+            outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "mod0", "mod1", "mod2", "mod3"]}
+            if len(outputs_keys) > 0:(outputs_dict, error) = self.outputs_update(outputs_keys)
+            else: (outputs_dict, error) = self.outputs_update()
+            parameters_dict.update(outputs_dict)
+            
             if verbose and len(parameters) < 1: self.logprint(f"{parameters}", message_type = "result")
         
         except Exception as e: error = e
@@ -387,6 +393,9 @@ class MLAAPI(QtCore.QObject):
             if not self.status == "running" and not self.test_mode: self.link()
             
             # Read the modulator data
+            blank = parameters.get("blank", False)
+            if blank: self.output_masks *= 0
+            
             mod0 = parameters.get("mod0", None)
             if not mod0: mod0 = parameters.get("mla_mod0", None)
             mod1 = parameters.get("mod1", None)
@@ -400,7 +409,9 @@ class MLAAPI(QtCore.QObject):
             
             for index, mod in enumerate([mod0, mod1, mod2, mod3]):
                 if not isinstance(mod, dict):
-                    outputs_dict.update({f"mod{index}": {"on": False}})
+                    if self.output_masks[0, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 1}})
+                    elif self.output_masks[1, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 2}})
+                    else: outputs_dict.update({f"mod{index}": {"on": False}})
                     continue
                 chan = mod.get("channel", None) # Channel, signal and port are all considered valid keywords to indicate the output port
                 if not chan: chan = mod.get("signal", None)

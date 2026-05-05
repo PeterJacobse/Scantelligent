@@ -503,7 +503,7 @@ class STWidgets:
 
         def addUnit(self) -> None:
             number = self.getValue()
-            if not isinstance(number, str | int): return
+            if not isinstance(number, str | int | float): return
             
             self.blockSignals(True)
             if isinstance(self.unit, str):
@@ -1253,6 +1253,133 @@ class STWidgets:
             
             if delta < 0: delta = -delta
             self.line_edits[2].setValue(delta * self.factor)
+            return
+
+    class ReciprocalGroupNew(QtCore.QObject): # Attempt to generalize the above two classes. Work in progress.
+        def __init__(self, *args, **kwargs):            
+            
+            self.min = 0
+            self.min_value = 0
+            self.max = 1
+            self.max_value = 1
+            self.product_value = self.max_value - self.min_value
+            product = kwargs.pop("product", None)
+            if isinstance(product, list) and len(product) > 1:
+                if isinstance(product[0], STWidgets.PhysicsLineEdit | float | int): self.min = product[0]
+                if isinstance(product[1], STWidgets.PhysicsLineEdit | float | int): self.max = product[1]
+            elif isinstance(product, STWidgets.PhysicsLineEdit | float | int):
+                self.max = product
+            
+            self.factor0 = 0
+            self.factor0_value = 0
+            self.factor1 = 1
+            self.factor1_value = 1
+            factors = kwargs.pop("factors", None)
+            if isinstance(factors, list) and len(factors) > 1:
+                if isinstance(factors[0], STWidgets.PhysicsLineEdit | float | int): self.factor0 = factors[0]
+                if isinstance(factors[1], STWidgets.PhysicsLineEdit | float | int): self.factor1 = factors[1]
+            elif isinstance(factors, STWidgets.PhysicsLineEdit | float | int):
+                self.factor1 = factors
+            
+            self.lock_preference = "factor0"
+            lock_preference = kwargs.pop("lock_preferences", "factor0")
+            if lock_preference == "factor1": self.lock_preference = "factor1"
+            
+            self.factor0_warn_if_not_integer = False
+            factor0_warn_if_not_integer = kwargs.pop("factor0_warn_if_not_integer", None)
+            if isinstance(factor0_warn_if_not_integer, bool): self.factor0_warn_if_not_integer = factor0_warn_if_not_integer
+            self.factor1_warn_if_not_integer = False
+            factor1_warn_if_not_integer = kwargs.pop("factor1_warn_if_not_integer", None)
+            if isinstance(factor1_warn_if_not_integer, bool): self.factor1_warn_if_not_integer = factor1_warn_if_not_integer
+            
+            self.factor0_enforce_integer = False
+            factor0_enforce_integer = kwargs.pop("factor0_enforce_integer", None)
+            if isinstance(factor0_enforce_integer, bool): self.factor0_enforce_integer = factor0_enforce_integer
+            self.factor1_enforce_integer = False
+            factor1_enforce_integer = kwargs.pop("factor1_enforce_integer", None)
+            if isinstance(factor1_enforce_integer, bool): self.factor1_enforce_integer = factor1_enforce_integer
+            if self.factor1_enforce_integer and self.factor0_enforce_integer: self.factor1_enforce_integer = False
+            
+            self.factor0_include_endpoint = False            
+            factor0_include_endpoint = kwargs.pop("factor0_include_endpoint", None)            
+            if isinstance(factor0_include_endpoint, bool): self.factor0_include_endpoint = factor0_include_endpoint
+            self.factor1_include_endpoint = False
+            factor1_include_endpoint = kwargs.pop("factor1_enforce_endpoint", None)
+            if isinstance(factor1_include_endpoint, bool): self.factor1_include_endpoint = factor1_include_endpoint
+                        
+            super().__init__()
+            
+            if isinstance(self.factor0, STWidgets.PhysicsLineEdit): self.factor0.editingFinished.connect(self.update_factor1)
+            if isinstance(self.factor1, STWidgets.PhysicsLineEdit): self.factor1.editingFinished.connect(self.update_factor0)
+            
+            if self.lock_preference == "factor0":
+                if isinstance(self.min, STWidgets.PhysicsLineEdit): self.min.editingFinished.connect(self.update_factor1)
+                if isinstance(self.max, STWidgets.PhysicsLineEdit): self.max.editingFinished.connect(self.update_factor1)
+            else:
+                if isinstance(self.min, STWidgets.PhysicsLineEdit): self.min.editingFinished.connect(self.update_factor0)
+                if isinstance(self.max, STWidgets.PhysicsLineEdit): self.max.editingFinished.connect(self.update_factor0)
+
+
+
+        def getProduct(self):
+            if isinstance(self.max, STWidgets.PhysicsLineEdit): self.max_value = self.max.getValue() # Get max
+            else: self.max_value = self.max
+            if isinstance(self.min, STWidgets.PhysicsLineEdit): self.min_value = self.min.getValue() # Get min
+            else: self.min_value = self.min
+
+            self.product_value = self.max_value - self.min_value
+            return self.product_value
+
+        def getFactors(self):
+            if isinstance(self.factor0, STWidgets.PhysicsLineEdit): self.factor0_value = self.factor0.getValue() # Get factor0
+            else: self.factor0_value = self.factor0
+            if isinstance(self.factor1, STWidgets.PhysicsLineEdit): self.factor1_value = self.factor1.getValue() # Get factor1
+            else: self.factor1_value = self.factor1
+            
+            return (self.factor0_value, self.factor1_value)
+
+        def update_factor0(self):
+            self.getProduct()
+            self.getFactors()
+            
+            try:
+                if isinstance(self.factor0, STWidgets.PhysicsLineEdit):
+                    if self.factor1_include_endpoint: new_factor0_value = self.product_value / (self.factor1_value - 1)
+                    else: new_factor0_value = self.product_value / self.factor1_value                    
+                    if self.factor0_include_endpoint: new_factor0_value += 1
+                    
+                    if self.factor0_enforce_integer:
+                        new_factor0_value = round(new_factor0_value)                        
+                        self.factor0.setValue(new_factor0_value, edited_color = True)
+                        self.update_factor1()                    
+                    else:
+                        self.factor0.setValue(new_factor0_value, edited_color = True)
+                    
+                    if self.factor0_warn_if_not_integer and not round(new_factor0_value * 10000) % 10000 == 0: self.factor0.setWarning()
+            except:
+                pass
+            return
+
+        def update_factor1(self):
+            self.getProduct()
+            self.getFactors()
+            
+            try:
+                if isinstance(self.factor1, STWidgets.PhysicsLineEdit):
+                    if self.factor0_include_endpoint: new_factor1_value = self.product_value / (self.factor0_value - 1)
+                    else: new_factor1_value = self.product_value / self.factor0_value
+                    if self.factor1_include_endpoint: new_factor1_value += 1
+                    
+                    if self.factor1_enforce_integer:
+                        new_factor1_value = round(new_factor1_value)                        
+                        self.factor1.setValue(new_factor1_value, edited_color = True)
+                        self.update_factor0()
+                    else:
+                        self.factor1.setValue(new_factor1_value, edited_color = True)
+                    
+                    if self.factor1_warn_if_not_integer and not round(new_factor1_value * 10000) % 10000 == 0: self.factor1.setWarning()
+            except:
+                pass
             return
 
 
