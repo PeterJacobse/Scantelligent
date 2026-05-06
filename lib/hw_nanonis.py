@@ -658,6 +658,66 @@ class NanonisHardware:
         
         return I_pA
 
+    def get_I_gain(self) -> dict:
+        command = self.headers["get_I_gain"]
+        self.send_command(command)
+
+        response = self.receive_response()
+        number_of_gains = self.conv.hex_to_int32(response[4 : 8])
+
+        idx = 8
+        gains = []
+        for _ in range(number_of_gains):
+            size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            gains.append(response[idx : idx + size].decode())
+            idx += size
+
+        if len(response) - idx < 4: raise ValueError("New-protocol GainsGet missing gain_index field")
+
+        # defaults
+        filters = []
+        filter_index = None
+
+        #if self.version <= 14000:
+        #    # Old protocol:
+        #    # Remaining bytes = 2, gain index as uint16
+        #    if remaining != 2:
+        #        raise ValueError(f"Unexpected old-protocol GainsGet format, {remaining = }")
+        #    gain_index = self.conv.hex_to_uint16(response[idx : idx + 2])
+        #else:
+        #    pass
+    
+        # --- New protocol (>14000) ---
+        # Expected ordering:
+        #   gain index (int32)
+        #   filters size (int32)
+        #   number of filters (int32)
+        #   filters list (each size:int32 + string)
+        #   filter index (int32)
+
+        gain_index = self.conv.hex_to_int32(response[idx : idx + 4])
+        current_gain = gains[gain_index]
+        
+        output_dict = {"gains": gains, "gain_index": gain_index, "current_gain": current_gain}
+        
+        try:        
+            ten_to_the_power = current_gain.split()[1]
+            exponent = int(ten_to_the_power.split("^")[1])
+            gain_pA_per_V = 10 ** (exponent - 12)
+            output_dict.update({"gain (V/pA)": gain_pA_per_V})
+        except:
+            pass
+        return output_dict
+
+    def set_I_gain(self, gain_index: int) -> None:
+        command = self.headers["set_I_gain_new"] + self.conv.to_hex(gain_index, 4) + self.conv.to_hex(0, 4)
+        self.send_command(command)
+        response = self.receive_response()
+        return
+
+
+
     # ZController
     def get_z(self) -> str:
         command = self.headers["get_z"]
@@ -1242,7 +1302,7 @@ class NanonisHardware:
         return
 
     # Piezo
-    def get_xy_range(self) -> str:
+    def get_xyz_range(self) -> str:
         command = self.headers["get_range"]
         
         self.send_command(command)
@@ -1250,8 +1310,8 @@ class NanonisHardware:
         
         return response
 
-    def get_xy_range_nm(self) -> list:
-        range_str = self.get_xy_range()
+    def get_xyz_range_nm(self) -> list:
+        range_str = self.get_xyz_range()
 
         xyz_nm = [self.conv.hex_to_float32(range_str[i : i + 4]) * 1E9 for i in range(0, 12, 4)]
 

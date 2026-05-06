@@ -5,7 +5,7 @@ import numpy as np
 
 
 # Parameter management (getting from hardware, setting, loading from file and saving)
-class ParameterManager(QtCore.QObject):    
+class ParameterManager(QtCore.QObject):
     def __init__(self, parent):
         super().__init__()
         self.scantelligent = parent # Reference to Scantelligent (parent)
@@ -466,7 +466,7 @@ class ParameterManager(QtCore.QObject):
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "t_const", "i_gain"], [p_gain_ms, t_const_us, i_gain_nm_per_s])]
 
-            case "piezo_range":
+            case "hardware":
                 piezo_roi = sct.gui.piezo_roi
                 try: sct.gui.image_view.view.removeItem(piezo_roi)
                 except: pass

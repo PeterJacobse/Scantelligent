@@ -154,9 +154,8 @@ class BaseExperiment(QObject):
                 self.nanonis.tip_update({"feedback": fb})
             except Exception as e:
                 self.logprint(f"Error while resetting Nanonis: {e}", message_type = "error")
-            try:
-                self.nanonis.unlink()
-            except: pass
+            try: self.nanonis.unlink()
+            except Exception as e: self.logprint(f"Error while unlinking Nanonis: {e}", message_type = "error")
 
         if hasattr(self, "mla"):
             try: self.mla.unlink()

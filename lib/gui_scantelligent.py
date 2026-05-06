@@ -792,7 +792,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
 
         for tone in range(32):
-            value = 100 if tone > 0 else 0
+            value = 100 if tone == 0 else 0
             sle = SLE(tooltip = f"relative volume of tone {tone}", orientation = "v", limits = [0, 100], value = value, digits = 0, unit = "%",
                       minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100"))
             

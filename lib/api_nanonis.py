@@ -79,9 +79,9 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             else: parameters.update({session_path.get("dict_name"): session_path})
             
-            (piezo_range, error) = self.piezo_range_update(verbose = verbose) # Sends piezo range data with "dict_name": "piezo_range"
+            (hardware, error) = self.hardware_update(verbose = verbose) # Piezo range and transimpedance amplifier gain
             if error: raise Exception(error)
-            else: parameters.update({piezo_range.get("dict_name"): piezo_range})
+            else: parameters.update({hardware.get("dict_name"): hardware})
             
             (tip_status, error) = self.tip_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
@@ -210,7 +210,7 @@ class NanonisAPI(QtCore.QObject):
 
 
 
-    # 'update' methods that can only read and not write
+    # 'Update' methods that can only read and not write
     def session_path_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         session_path = {"dict_name": "session_path"}
         error = False
@@ -230,33 +230,6 @@ class NanonisAPI(QtCore.QObject):
             if unlink: self.unlink()
 
         return (session_path, error)
-
-    def piezo_range_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
-        nhw = self.nanonis_hardware
-        piezo_range_dict = {"dict_name": "piezo_range"}
-
-        try:
-            if verbose: self.logprint(f"nanonis.piezo_range_update()", "code")
-            if not self.status == "running": self.link()
-            piezo_range = nhw.get_xy_range_nm()
-            
-            piezo_range_dict.update({
-                "x_min (nm)": -0.5 * piezo_range[0], "x_max (nm)": 0.5 * piezo_range[0],
-                "y_min (nm)": -0.5 * piezo_range[1], "y_max (nm)": 0.5 * piezo_range[1],
-                "z_min (nm)": -0.5 * piezo_range[2], "z_max (nm)": 0.5 * piezo_range[2],
-                "x_range (nm)": piezo_range[0], "y_range (nm)": piezo_range[1], "z_range (nm)": piezo_range[2]
-            })
-            self.parameters.emit(piezo_range_dict)
-            if verbose: self.logprint(f"{piezo_range_dict}", message_type = "result")
-            
-            self.piezo_range = piezo_range_dict
-
-        except Exception as e: error = e
-        finally:
-            if unlink: self.unlink()
-
-        return (piezo_range_dict, error)
 
     def scan_update(self, channel: int | str, backward: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, bool | str]:
         # Initalize outputs
@@ -353,6 +326,54 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Update methods (Gives updates on all parameters and updates those parameters given)
+    def hardware_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        error = False
+        nhw = self.nanonis_hardware
+        hardware_dict = {"dict_name": "hardware"}
+
+        try:
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"nanonis.hardware_update({parameters})", "code")
+                else: self.logprint(f"nanonis.hardware_update()", "code")
+            
+            if not self.status == "running": self.link()
+            
+            piezo_range = nhw.get_xyz_range_nm()
+            current_gain = nhw.get_I_gain()
+            
+            hardware_dict.update({
+                "x_min (nm)": -0.5 * piezo_range[0], "x_max (nm)": 0.5 * piezo_range[0],
+                "y_min (nm)": -0.5 * piezo_range[1], "y_max (nm)": 0.5 * piezo_range[1],
+                "z_min (nm)": -0.5 * piezo_range[2], "z_max (nm)": 0.5 * piezo_range[2],
+                "x_range (nm)": piezo_range[0], "y_range (nm)": piezo_range[1], "z_range (nm)": piezo_range[2]
+            })
+            hardware_dict.update(current_gain)            
+                        
+            if "gain" in parameters.keys(): # A gain is given
+                gain = parameters["gain"]
+                
+                if isinstance(gain, int) and gain < len(current_gain["gains"]): nhw.set_I_gain(gain) # The gain is an integer (index of the gains list)
+                elif isinstance(gain, str):
+                    for index, entry in enumerate(current_gain["gains"]):
+                        if gain == entry:
+                            nhw.set_I_gain(index)
+                            break
+                
+                sleep(.1)
+                new_gain = nhw.get_I_gain()
+                hardware_dict.update(new_gain)
+            
+            self.parameters.emit(hardware_dict)
+            if verbose: self.logprint(f"{hardware_dict}", message_type = "result")
+            
+            self.piezo_range = hardware_dict
+
+        except Exception as e: error = e
+        finally:
+            if unlink: self.unlink()
+
+        return (hardware_dict, error)
+
     def tip_update(self, parameters: dict = {}, wait: bool = False, fast_mode: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, bool | str]:
         """
         Function to both control the tip status and receive it

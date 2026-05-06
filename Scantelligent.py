@@ -399,7 +399,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     @QtCore.pyqtSlot(np.ndarray)
-    def receive_data(self, data_array: np.ndarray, max_length: int = 1000) -> None:
+    def receive_data(self, data_array: np.ndarray, max_length: int = 6000) -> None:
         x_data = None
 
         for index in range(min(len(data_array[0]), 40)):            
@@ -617,7 +617,7 @@ class Scantelligent(QtCore.QObject):
                 
                 [self.gui.image_view.addItem(roi) for roi in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi]]
                 self.gui.image_view.addItem(self.gui.tip_target)
-                self.nanonis.piezo_range_update()
+                self.nanonis.hardware_update()
                 self.nanonis.frame_update(unlink = True)
                 self.set_view_range("full")
 

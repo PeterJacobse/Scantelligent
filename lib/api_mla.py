@@ -37,6 +37,7 @@ class MLAAPI(QtCore.QObject):
         
         settings = mla_globals.read_config()
         self.mla = mla_api.MLA(settings)
+        self.lockin_running = False
         self.parameters_init()
 
 
@@ -71,9 +72,11 @@ class MLAAPI(QtCore.QObject):
         return
 
     def unlink(self) -> None:
-        try:
-            self.stop_lockin()
+        try:            
             self.reset_outputs()
+            if self.lockin_running:
+                self.get_pixels(1)
+                self.stop_lockin()
         finally:
             self.mla.disconnect()
             self.status = "idle"
@@ -82,9 +85,11 @@ class MLAAPI(QtCore.QObject):
         return
 
     def start_lockin(self) -> None:
+        self.lockin_running = True
         return self.mla.lockin.start_lockin()
 
     def stop_lockin(self) -> None:
+        self.lockin_running = False
         return self.mla.lockin.stop_lockin()
 
     def logprint(self, message: str = "", message_type: str = "", append_new_line: bool = False) -> None:
@@ -117,6 +122,7 @@ class MLAAPI(QtCore.QObject):
         return
 
     def get_pixels(self, number: int = 1, wait_for_new: bool = True) -> np.ndarray:
+        if not self.lockin_running: raise Exception("Error. About to wait indefinitely for new lockin data since the lockin is not running")
         if self.test_mode:
             rng = np.random.default_rng()
             pix = rng.random(32) + 1j * rng.random(32)
@@ -141,6 +147,10 @@ class MLAAPI(QtCore.QObject):
     def set_max_downsampling(self) -> None:
         # Typical sample rate is far too high; we do not need to measure in the MHz range
         self.mla.osc.set_downsampling(250)
+        return
+
+    def set_input_multiplexer(self, port_array) -> None:
+        self.mla.lockin.set_input_multiplexer(port_array)
         return
 
 
