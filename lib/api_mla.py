@@ -108,7 +108,6 @@ class MLAAPI(QtCore.QObject):
         self.reset_outputs()
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
-        self.bias_update()
         self.lockin_update({"df (Hz)": 100, "numbers": np.arange(1, 32), "amplitudes (mV)": [100]})
 
         """
@@ -141,15 +140,18 @@ class MLAAPI(QtCore.QObject):
         self.mla.hardware.set_input_relay(2, se = True, nodamp = False, term = False, dc = True, gain = False, bypass = False, gain2 = False, event = True)
         self.mla.hardware.set_input_relay(3, se = True, nodamp = False, term = False, dc = True, gain = False, bypass = False, gain2 = False, event = True)
         self.mla.hardware.set_input_relay(4, se = True, nodamp = False, term = False, dc = True, gain = False, bypass = False, gain2 = False, event = True)
-
-        # Set +-12 V range for all analog outputs
-        self.mla.hardware.set_output_relay(1, bypass = False, event = True)
-        self.mla.hardware.set_output_relay(2, bypass = False, event = True)
+        self.set_12V_output(False)
         return
 
     def set_max_downsampling(self) -> None:
         # Typical sample rate is far too high; we do not need to measure in the MHz range
         self.mla.osc.set_downsampling(250)
+        return
+
+    def set_12V_output(self, value: bool = True):
+        if not isinstance(value, bool): return
+        self.mla.hardware.set_output_relay(1, bypass = not value, event = True)
+        self.mla.hardware.set_output_relay(2, bypass = not value, event = True)
         return
 
     def set_input_multiplexer(self, port_array) -> None:
@@ -173,44 +175,44 @@ class MLAAPI(QtCore.QObject):
             # time_constant_update
             tm = parameters.get("tm (ms)", None)
             df = parameters.get("df (Hz)", None)
-            if isinstance(df, float | int): (time_constant, error) = self.time_constant_update({"df (Hz)": df})
-            elif isinstance(tm, float | int): (time_constant, error) = self.time_constant_update({"tm (ms)": tm})
-            else: (time_constant, error) = self.time_constant_update()
+            if isinstance(df, float | int): (time_constant, error) = self.time_constant_update({"df (Hz)": df}, verbose = verbose)
+            elif isinstance(tm, float | int): (time_constant, error) = self.time_constant_update({"tm (ms)": tm}, verbose = verbose)
+            else: (time_constant, error) = self.time_constant_update(verbose = verbose)
             parameters_dict.update(time_constant)
             
             # frequencies_update
             frequencies = parameters.get("frequencies (Hz)", None)
             numbers = parameters.get("numbers", None)
             times = parameters.get("times (ms)", None)
-            if isinstance(frequencies, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"frequencies (Hz)": frequencies})
-            elif isinstance(numbers, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"numbers": numbers})
-            elif isinstance(times, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"times (ms)": times})
-            else: (frequencies_dict, error) = self.frequencies_update()
+            if isinstance(frequencies, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"frequencies (Hz)": frequencies}, verbose = verbose)
+            elif isinstance(numbers, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"numbers": numbers}, verbose = verbose)
+            elif isinstance(times, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"times (ms)": times}, verbose = verbose)
+            else: (frequencies_dict, error) = self.frequencies_update(verbose = verbose)
             parameters_dict.update(frequencies_dict)
             
             # amplitudes update
             amplitudes = parameters.get("amplitudes (mV)", None)
-            if isinstance(amplitudes, list | np.ndarray): (amplitudes_dict, error) = self.amplitudes_update({"frequencies (Hz)": frequencies})
-            else: (amplitudes_dict, error) = self.amplitudes_update()
+            if isinstance(amplitudes, list | np.ndarray): (amplitudes_dict, error) = self.amplitudes_update({"frequencies (Hz)": frequencies}, verbose = verbose)
+            else: (amplitudes_dict, error) = self.amplitudes_update(verbose = verbose)
             parameters_dict.update(amplitudes_dict)
             
             # phases update
             phases = parameters.get("phases (deg)", None)
-            if isinstance(phases, list | np.ndarray): (phase_dict, error) = self.phases_update({"phases (deg)": phases})
-            else: (phases_dict, error) = self.phases_update()
+            if isinstance(phases, list | np.ndarray): (phase_dict, error) = self.phases_update({"phases (deg)": phases}, verbose = verbose)
+            else: (phases_dict, error) = self.phases_update(verbose = verbose)
             parameters_dict.update(phases_dict)
             
             # outputs update
             outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "mod0", "mod1", "mod2", "mod3"]}
-            if len(outputs_keys) > 0:(outputs_dict, error) = self.outputs_update(outputs_keys)
-            else: (outputs_dict, error) = self.outputs_update()
+            if len(outputs_keys) > 0:(outputs_dict, error) = self.outputs_update(outputs_keys, verbose = verbose)
+            else: (outputs_dict, error) = self.outputs_update(verbose = verbose)
             parameters_dict.update(outputs_dict)
             
             # bias update
-            #
-            #
+            (bias_dict, error) = self.bias_update(verbose = verbose)
+            parameters_dict.update(bias_dict)
             
-            if verbose and len(parameters) < 1: self.logprint(f"{parameters}", message_type = "result")
+            if verbose and len(parameters) < 1: self.logprint(f"{parameters}", message_type = "result", verbose = verbose)
         
         except Exception as e: error = e
         finally:

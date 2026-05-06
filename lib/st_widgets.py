@@ -1149,7 +1149,7 @@ class STWidgets:
                 for widget in self.widgets.values(): state_indices.append(widget.state_index) # Tally the current states
                 if not 1 in state_indices: new_index = 1 # Reset the widget to state_index 1 if it turns out that none of the other widgets is in state 1
             
-            if self.exclusive: [widget.setState(0) for widget in self.widgets.values() if widget.state_index == new_index]
+            if self.exclusive and new_index > 0: [widget.toggleState() for widget in self.widgets.values() if widget.state_index == new_index]
             
             clicked_widget.setState(new_index)
             
@@ -1200,7 +1200,7 @@ class STWidgets:
             self.line_edits[1].setValue(reciprocal_value, edited_color = True)
             return
 
-    class RangeStepsGroup(QtCore.QObject):
+    class RangeStepsGroupOld(QtCore.QObject):
         def __init__(self, *args, **kwargs):
             """
             line_edits[0] = min

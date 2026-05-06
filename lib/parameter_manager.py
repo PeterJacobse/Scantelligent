@@ -24,13 +24,13 @@ class ParameterManager(QtCore.QObject):
             case "bias":
                 if hasattr(sct, "nanonis"): sct.nanonis.bias_update(unlink = True)
                 if hasattr(sct, "mla"): sct.mla.bias_update(unlink = False)
-            case "feedback": sct.nanonis.feedback_update(unlink = True)
+            case "feedback":
+                sct.nanonis.feedback_update(unlink = False)
+                sct.nanonis.hardware_update(unlink = False)
+                sct.nanonis.tip_update(unlink = True)
             case "frame": sct.nanonis.frame_update(unlink = True, update_new_frame = True)
             case "grid": sct.nanonis.grid_update(unlink = True)
-            case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)
-            case "gain":
-                sct.nanonis.feedback_update(unlink = False)
-                sct.nanonis.tip_update(unlink = True)
+            case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)                
             case "lockin":
                 if hasattr(sct, "nanonis"): sct.nanonis.lockin_update(name_lookup = True, unlink = True)
                 if hasattr(sct, "mla"): sct.mla.lockin_update(unlink = False)
@@ -66,8 +66,12 @@ class ParameterManager(QtCore.QObject):
                     quantity = parameter.split()[0]
                     val = sct.gui.line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
-
-                sct.nanonis.feedback_update(parameters, unlink = True)
+                gain = sct.gui.comboboxes["tia_gain"].currentText()
+                
+                print(f"Setting {parameters = }")
+                sct.nanonis.feedback_update(parameters, unlink = False)
+                print(f"Setting {gain = }")
+                sct.nanonis.hardware_update({"dict_name": "hardware", "gain": gain}, unlink = True)                
 
             case "frame":
                 offset = [sct.gui.line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
@@ -276,7 +280,7 @@ class ParameterManager(QtCore.QObject):
             
             case "phases":
                 phases = parameters.get("phases (deg)")
-                [line_edits[f"mla_mod{index}_phi"].setValue(value) for index, value in enumerate(phases[:4])]
+                [line_edits[f"mla_mod{index}_phase"].setValue(value) for index, value in enumerate(phases[:4])]
             
             case "outputs":
                 output_mask = parameters.get("output_mask")
@@ -456,12 +460,12 @@ class ParameterManager(QtCore.QObject):
 
             case "sts":
                 [V_start, V_end] = parameters.get("limits (V)")
-                if V_start: [sct.gui.line_edits[name].setValue(value) for name, value in zip(["STS_V_start", "STS_V_end"], [V_start, V_end])]
+                if V_start: [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_start", "sts_V_end"], [V_start, V_end])]
                 
                 [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (ms)", "t_settle (ms)"]]
                 t_int_ms = t_int_s * 1000
                 t_settle_s = t_settle_s * 1000
-                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["STS_V_points", "STS_t_int", "STS_t_settle"], [n_points, t_int_s, t_settle_s])]
+                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_points", "sts_t_int", "sts_t_settle"], [n_points, t_int_s, t_settle_s])]
                 sct.gui.sts_V_r_s.updateFromSteps()
 
             case "gains":
@@ -521,7 +525,7 @@ class ParameterManager(QtCore.QObject):
                         state = "on"
                         f1 = mod_dict.get("frequency (Hz)", None)
                         if isinstance(f1, float | int):
-                            sct.frequency.emit(f1)
+                            sct.frequencies.emit(f1)
                             [line_edits[f"demod_frequency_{i}"].setValue(i * f1) for i in range(32)]
                     sct.gui.buttons[f"nanonis_mod{i + 1}"].setState(state)
                     

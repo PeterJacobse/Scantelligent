@@ -59,11 +59,10 @@ class BaseExperiment(QObject):
             self.logprint("Starting the experiment", "success")
             self.start_parameters.update({"gui": self.gui_parameters})
             
+            self.logprint(f"I read the following parameters from the GUI:")            
+            self.logprint(f"{self.start_parameters["gui"]}")
+            
             self.output_file = h5py.File(self.experiment_file, "w")
-            try:
-                self.output_file.attrs.update({"mla_parameters": self.start_parameters["mla"]})
-            except Exception as e:
-                self.logprint(f"{e}")
             
             try:
                 run(self)

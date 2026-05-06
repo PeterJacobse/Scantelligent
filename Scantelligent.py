@@ -1081,10 +1081,19 @@ class Scantelligent(QtCore.QObject):
                     start_button.setState("load")
                     return
                 
-                # Pass the parameters entered into the gui
+                # Pass the parameters from the gui to the experiment
+                spec_line_edits = {}
+                [spec_line_edits.update({f"{quantity}_{key}": self.gui.line_edits[f"sts_{quantity}_{key}"].getValue() for key in ["start", "end", "points"]}) for quantity in ["V", "f", "z", "amp", "V_keithley"]]
+                spec_buttons = {}
+                [spec_buttons.update({f"{quantity}": self.gui.buttons[f"sts_{quantity}"].state_name}) for quantity in ["V", "f", "z", "amp", "V_keithley"]]
+                spec_buttons.update({"nanonis_mla": self.gui.buttons["nanonis_mla"].state_name})
+                
                 gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),
                                   "line_edits": [self.gui.line_edits[f"experiment_{index}"].getValue() for index in range(9)],
-                                  "buttons": [self.gui.buttons[f"experiment_{index}"].state for index in range(6)]}                
+                                  "buttons": [self.gui.buttons[f"experiment_{index}"].state_name for index in range(6)],
+                                  "spectroscopy_line_edits": spec_line_edits,
+                                  "spectroscopy_buttons": spec_buttons}
+
                 self.experiment.gui_parameters = copy.deepcopy(gui_parameters)
                 
                 start_button.setState("running")
@@ -1107,7 +1116,7 @@ class Scantelligent(QtCore.QObject):
         return
     
     def start_spectroscopy(self) -> None:
-        self.control_experiment("nn_spectroscopy")
+        self.control_experiment("spectroscopy")
         return
 
 

@@ -23,10 +23,12 @@ class Experiment(BaseExperiment):
         nn = self.nanonis
         mla = self.mla
         
+        # Read parameters from gui
         nanonis_or_mla = self.start_parameters["gui"].get("nanonis_mla")
         if nanonis_or_mla == "nanonis": self.logprint(f"Nanonis sweep not yet implemented. Try setting the spectroscopy to MLA")
-
-
+        spec_button_states = self.start_parameters["gui"].get("spectroscopy_buttons")
+        x_axis_label = "Voltage (V)"
+        self.logprint(f"{spec_button_states = }")
 
         # Frequency sweep
         nn_hardware_dict = self.start_parameters["nanonis"].get("hardware", {})
