@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from . import NanonisAPI, CameraAPI, MLAAPI, KeithleyAPI
 import time
+import h5py
 
 
 
@@ -24,6 +25,7 @@ class BaseExperiment(QObject):
     def __init__(self, *args, **kwargs):
         self.hw_config = kwargs.pop("hw_config", None)
         self.scan_processing_flags = kwargs.pop("scan_processing_flags", None)
+        self.experiment_file = kwargs.pop("experiment_file", None)
 
         self.gui_setup = {}
         self.abort_requested = False
@@ -37,6 +39,14 @@ class BaseExperiment(QObject):
     def logprint(self, message: str = "", message_type: str = "error"):
         return self.message.emit(message, message_type)
 
+    def pass_mla_status(self, status: str) -> None:
+        self.parameters.emit({"dict_name": "mla_status", "status": status})
+        return
+
+    def pass_nanonis_status(self, status: str = "") -> None:
+        self.parameters.emit({"dict_name": "nanonis_status", "status": status})
+        return
+
     def prepare_gui(self) -> None:
         self.gui_setup.update({"dict_name": "gui_setup"})
         self.parameters.emit(self.gui_setup)
@@ -49,6 +59,12 @@ class BaseExperiment(QObject):
             self.logprint("Starting the experiment", "success")
             self.start_parameters.update({"gui": self.gui_parameters})
             
+            self.output_file = h5py.File(self.experiment_file, "w")
+            try:
+                self.output_file.attrs.update({"mla_parameters": self.start_parameters["mla"]})
+            except Exception as e:
+                self.logprint(f"{e}")
+            
             try:
                 run(self)
             except AbortedError:
@@ -57,6 +73,7 @@ class BaseExperiment(QObject):
                 self.logprint(f"Error: {e}", message_type = "error")
                 self.abort_requested = True
             finally:
+                self.output_file.close()
                 self.finish_experiment()
         return wrapper
 
@@ -92,7 +109,7 @@ class BaseExperiment(QObject):
     def connect_hardware(self, target: str = "nanonis") -> None:
         match target:
             case "nanonis":
-                self.nanonis = NanonisAPI(hw_config = self.hw_config, message_callback = self.logprint)
+                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.pass_nanonis_status, message_callback = self.logprint)
                 self.nanonis.parameters.connect(self.parameters.emit)
                 self.nanonis.task_progress.connect(self.task_progress.emit)
                 
@@ -103,7 +120,7 @@ class BaseExperiment(QObject):
                 self.keithley = KeithleyAPI(hw_config = self.hw_config)
 
             case "mla":
-                self.mla = MLAAPI(hw_config = self.hw_config, message_callback = self.logprint)
+                self.mla = MLAAPI(hw_config = self.hw_config, status_callback = self.pass_mla_status, message_callback = self.logprint)
                 self.mla.parameters.connect(self.parameters.emit)
                 
                 (mla_parameters, error) = self.mla.lockin_update()

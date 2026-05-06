@@ -135,6 +135,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     def connect_hardware(self, target: str = "all") -> None:
+        self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
         self.populate_completer()
         
         """
@@ -164,8 +165,6 @@ class Scantelligent(QtCore.QObject):
             try:
                 # Instantiate
                 self.audio = AudioGenerator()
-                # self.audio_thread = QtCore.QThread()
-                # self.audio.moveToThread(self.audio_thread)
 
                 # Set up signal-slot connections
                 self.volumes.connect(self.audio.volumes_update)
@@ -189,19 +188,17 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "camera" or target.lower() == "all":
             try:
                 # Instantiate
-                self.camera = CameraAPI(hw_config = self.hw_config)
+                self.camera = CameraAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["camera"].setState, message_callback = self.logprint)
                 
                 # Set up signal-slot connections
-                self.camera.parameters.connect(self.parameters.receive)
+                self.camera.frame_captured.connect(self.receive_image)
                 
                 # Initialize
                 self.camera.initialize()
-                self.camera_home_thread = self.camera.thread()
+                
                 self.logprint("Camera: Found the camera and instantiated CameraAPI as camera", "success")
-                self.gui.buttons["camera"].setState("online")
             except Exception as e:
                 self.logprint(f"Camera: Unable to connect to camera: {e}", "warning")
-                self.gui.buttons["keithley"].setState("offline")
 
 
 
@@ -210,6 +207,7 @@ class Scantelligent(QtCore.QObject):
             scanalyzer_path = hw_config.get("scanalyzer_path")
             if os.path.isfile(scanalyzer_path):
                 self.paths.update({"scanalyzer": scanalyzer_path})
+                
                 self.logprint(f"Scanalyzer: Scanalyzer found at {self.paths["scanalyzer"]} and linked", message_type = "success")
                 self.gui.buttons["scanalyzer"].setState("online")
             else:
@@ -227,7 +225,8 @@ class Scantelligent(QtCore.QObject):
                 self.keithley.parameters.connect(self.parameters.receive)
                 
                 # Get parameters from Keithley
-                self.keithley.initialize()            
+                self.keithley.initialize()
+                
                 self.logprint("Keithley: Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
                 self.gui.buttons["keithley"].setState("online")
             except Exception as e:
@@ -240,18 +239,13 @@ class Scantelligent(QtCore.QObject):
                 # Instantiate
                 self.mla = MLAAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["mla"].setState, message_callback = self.logprint)
                 
-                # Set up signal-slot connections
-                
+                # Set up signal-slot connections                
                 # MLA -> Scantelligent
-                # self.mla.message.connect(self.receive_message)
                 self.mla.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
 
                 self.logprint("MLA: Found the MLA", "success")
-                self.status.update({"mla": "online"})
-                #self.gui.buttons["mla"].setState("online")
             except Exception as e:
                 self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
-                #self.gui.buttons["mla"].setState("offline")
 
 
 
@@ -268,13 +262,12 @@ class Scantelligent(QtCore.QObject):
 
                 # Nanonis -> Scantelligent
                 self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
-                # self.nanonis.message.connect(self.receive_message)
                 self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
                 self.nanonis.image.connect(self.receive_image)
                 self.nanonis.data_array.connect(self.receive_data)
                 
                 # Get parameters from Nanonis
-                (nanonis_parameters, _) = self.nanonis.nanonis_update()
+                (nanonis_parameters, _) = self.nanonis.initialize()
                 
                 # Populate the input line edit completer
                 nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
@@ -288,16 +281,9 @@ class Scantelligent(QtCore.QObject):
                 completer.setModel(model)
                                 
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
-                self.gui.buttons["nanonis"].setState("online")
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
-                self.gui.buttons["nanonis"].setState("offline")
 
-
-        
-        # Populate the autocomplete suggestions in the command input
-        self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
-        #self.populate_completer()
         return
 
     def dis_reconnect(self, target: str = "nanonis") -> None:
@@ -1051,11 +1037,14 @@ class Scantelligent(QtCore.QObject):
                     #self.gui.line_edits[f"experiment_{i}"].setValue("")
                     #self.gui.line_edits[f"experiment_{i}"].setUnit()
                     
-                self.paths.update({"experiment_filename": self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")})
+                experiment_filename = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
+                self.paths.update({"experiment_filename": experiment_filename})
+                experiment_filepath = os.path.join(self.paths["session_path"], experiment_filename)
+                self.paths.update({"experiment_filepath": experiment_filepath})
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
                 try:
-                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, scan_processing_flags = self.data.scan_processing_flags)
+                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scan_processing_flags = self.data.scan_processing_flags)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
                     

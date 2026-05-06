@@ -86,11 +86,13 @@ class MLAAPI(QtCore.QObject):
 
     def start_lockin(self) -> None:
         self.lockin_running = True
-        return self.mla.lockin.start_lockin()
+        if not self.test_mode: self.mla.lockin.start_lockin()
+        return
 
     def stop_lockin(self) -> None:
         self.lockin_running = False
-        return self.mla.lockin.stop_lockin()
+        if not self.test_mode: self.mla.lockin.stop_lockin()
+        return
 
     def logprint(self, message: str = "", message_type: str = "", append_new_line: bool = False) -> None:
         self.message_callback(message = message, message_type = message_type)
@@ -122,13 +124,14 @@ class MLAAPI(QtCore.QObject):
         return
 
     def get_pixels(self, number: int = 1, wait_for_new: bool = True) -> np.ndarray:
-        if not self.lockin_running: raise Exception("Error. About to wait indefinitely for new lockin data since the lockin is not running")
+        if not self.lockin_running: raise Exception("Error. Requesting locking data while it is not running. Call mla.start_lockin() first.")
         if self.test_mode:
             rng = np.random.default_rng()
-            pix = rng.random(32) + 1j * rng.random(32)
+            pix = rng.random((32, number), dtype = float) + 1j * rng.random((32, number), dtype = float)
         else:
             if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
             (pix, _) = self.mla.lockin.get_pixels(number)
+            pix *= 2
         self.parameters.emit({"dict_name": "pixels", "pixels": pix})
         return pix
 
@@ -202,6 +205,10 @@ class MLAAPI(QtCore.QObject):
             if len(outputs_keys) > 0:(outputs_dict, error) = self.outputs_update(outputs_keys)
             else: (outputs_dict, error) = self.outputs_update()
             parameters_dict.update(outputs_dict)
+            
+            # bias update
+            #
+            #
             
             if verbose and len(parameters) < 1: self.logprint(f"{parameters}", message_type = "result")
         

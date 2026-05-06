@@ -28,7 +28,9 @@ class ParameterManager(QtCore.QObject):
             case "frame": sct.nanonis.frame_update(unlink = True, update_new_frame = True)
             case "grid": sct.nanonis.grid_update(unlink = True)
             case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)
-            case "gain": sct.nanonis.gains_update(unlink = True)            
+            case "gain":
+                sct.nanonis.feedback_update(unlink = False)
+                sct.nanonis.tip_update(unlink = True)
             case "lockin":
                 if hasattr(sct, "nanonis"): sct.nanonis.lockin_update(name_lookup = True, unlink = True)
                 if hasattr(sct, "mla"): sct.mla.lockin_update(unlink = False)
@@ -95,9 +97,9 @@ class ParameterManager(QtCore.QObject):
                 if hasattr(sct, "nanonis"):
                     [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{index + 1}"].state_index) for index in range(2)]
                     mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
-                    [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phi"]]
-                    [mod2_f, mod2_mV, mod2_phi] = [sct.gui.line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "amp", "phi"]]
-                    [mla1_f, mla1_mV, mla1_phi] = [sct.gui.line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phi"]]
+                    [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
+                    [mod2_f, mod2_mV, mod2_phi] = [sct.gui.line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
+                    [mla1_f, mla1_mV, mla1_phi] = [sct.gui.line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
                     
                     parameters = {"dict_name": "lockin",
                                 "mod1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
@@ -332,11 +334,13 @@ class ParameterManager(QtCore.QObject):
                     sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
                     sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
 
-                [x_tip_nm, y_tip_nm, z_tip_nm] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)"]]
+                [x_tip_nm, y_tip_nm, z_tip_nm, I_pA] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
                 sct.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
                 sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
                 sct.gui.sliders["tip"].setValue(int(z_tip_nm))
                 sct.gui.sliders["tip"].changeToolTip(f"Tip height: {z_tip_nm:.2f} nm")
+                
+                line_edits["I_pA"].setValue(I_pA)
 
             case "bias":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
@@ -362,7 +366,7 @@ class ParameterManager(QtCore.QObject):
                 try: sct.gui.image_view.view.removeItem(frame_roi)
                 except: pass
                 
-                if sct.status["view"] == "nanonis":
+                if sct.gui.buttons["view"].state_name == "nanonis":
                     frame_roi.setSize([w_nm, h_nm])
                     frame_roi.setPos([0, 0])
                     frame_roi.setAngle(angle = -angle_deg)
@@ -389,7 +393,7 @@ class ParameterManager(QtCore.QObject):
                 try: sct.gui.image_view.view.removeItem(new_frame_roi)
                 except: pass
                 
-                if sct.status["view"] == "nanonis":
+                if sct.gui.buttons["view"].state_name == "nanonis":
                     new_frame_roi.blockSignals(True)
                     
                     new_frame_roi.setSize([w_nm, h_nm])
@@ -429,7 +433,7 @@ class ParameterManager(QtCore.QObject):
                 try: sct.gui.image_view.view.removeItem(new_frame_roi)
                 except: pass
                 
-                if sct.status["view"] == "nanonis":
+                if sct.gui.buttons["view"].state_name == "nanonis":
                     new_frame_roi.blockSignals(True)
                     
                     new_frame_roi.setSize([w_nm, h_nm])
@@ -478,6 +482,11 @@ class ParameterManager(QtCore.QObject):
 
                 # Add the frame to the ImageView
                 if sct.status["view"] == "nanonis": sct.gui.image_view.addItem(piezo_roi)
+                
+                gains = parameters.get("gains", None)
+                if gains: sct.gui.comboboxes["tia_gain"].renewItems(gains)
+                current_gain = parameters.get("current_gain", None)
+                if current_gain: sct.gui.comboboxes["tia_gain"].selectItem(current_gain)
 
             case "scan_metadata":
                 signals = parameters.get("signal_dict")
@@ -498,7 +507,7 @@ class ParameterManager(QtCore.QObject):
                 for i, mod_dict in enumerate([parameters.get("mod1"), parameters.get("mod2")]):
                     
                     mod_values = [mod_dict.get(key) for key in ["frequency (Hz)", "amplitude (mV)", "phase (deg)", "time_constant (ms)"]]                    
-                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "amp", "phi"], mod_values)]
+                    [line_edits[f"nanonis_mod{i + 1}_{quantity}"].setValue(value) for quantity, value in zip(["f", "amp", "phase"], mod_values)]
                     
                     if i == 0:
                         df_Hz = mod_values[0] # Measurement resolution is a single cycle of modulator 1

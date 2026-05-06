@@ -7,16 +7,17 @@ import cv2
 class CameraAPI(QtCore.QObject):
     frame_captured = QtCore.pyqtSignal(np.ndarray)
     finished = QtCore.pyqtSignal()
-    message = QtCore.pyqtSignal(str, str)
-    parameters = QtCore.pyqtSignal(dict)
 
-    def __init__(self, hw_config: dict = {}):
+    def __init__(self, hw_config: dict = {}, message_callback = None, status_callback = None):
+        self.message_callback = lambda message, message_type: print(message)
+        if message_callback: self.message_callback = message_callback
+        self.status_callback = print
+        if status_callback: self.status_callback = status_callback
+        
         super().__init__()
         self.running = False
+        self.status = "offline"
         self.configure(hw_config)
-        success = self.cap.isOpened()
-        if not success: raise
-        else: pass
 
 
 
@@ -31,26 +32,28 @@ class CameraAPI(QtCore.QObject):
 
         try:
             self.cap = cv2.VideoCapture(index)
-            self.parameters.emit({"dict_name": "camera_status", "status": "running"})
+            if self.cap.isOpened():
+                self.status_callback("online")
+                self.status = "online"
+            else:
+                raise Exception("Unable to open the camera")            
         except:
-            self.parameters.emit({"dict_name": "camera_status", "status": "offline"})
-            raise
-
-    def initialize(self):
-        self.parameters.emit({"dict_name": "camera_status", "status": "online"})
-        return
+            self.status = "offline"
+            self.status_callback("offline")
+        
+        
 
     def run(self):
         self.running = True
         
         if not self.cap.isOpened():
-            self.message.emit(f"Error. Could not open camera.", "error")
+            self.message_callback("Error. Could not open camera.", "error")
             self.running = False
             self.finished.emit()
-            self.parameters.emit({"dict_name": "camera_status", "status": "offline"})
+            self.status_callback("offline")
             return
         
-        self.parameters.emit({"dict_name": "camera_status", "status": "running"})        
+        self.status_callback("running")
         while self.running:
             (ret, frame) = self.cap.read()
             
@@ -59,7 +62,7 @@ class CameraAPI(QtCore.QObject):
                 rgb_frame = cv2.convertScaleAbs(rgb_frame, alpha = 2, beta = -100)
                 self.frame_captured.emit(rgb_frame)
             else:
-                self.message.emit("Warning: Failed to read frame from camera.", "error")
+                self.message_callback("Warning: Failed to read frame from camera.", "error")
                 break
 
             self.check_abort()
@@ -71,8 +74,8 @@ class CameraAPI(QtCore.QObject):
         self.running = False
         
         self.finished.emit() # Notify the main thread that the work is done
-        self.parameters.emit({"dict_name": "camera_status", "status": "idle"})
-        self.message.emit("Camera thread ended", "message")
+        self.status_callback("idle")
+        self.message_callback("Camera thread ended", "message")
         return
 
     def check_abort(self):
