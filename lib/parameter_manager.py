@@ -15,10 +15,9 @@ class ParameterManager(QtCore.QObject):
     def get(self, parameter_type: str = "frame") -> None:
         sct = self.scantelligent
         
-        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain", "tip_shaper"]:
-            if not hasattr(sct, "nanonis"):
-                sct.logprint("Cannot get parameters without a Nanonis connection", message_type = "error")
-                return
+        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain", "tip_shaper"] and not hasattr(sct, "nanonis"):
+            sct.logprint("Cannot get parameters without a Nanonis connection", message_type = "error")
+            return
 
         match parameter_type:
             case "bias":
@@ -50,14 +49,18 @@ class ParameterManager(QtCore.QObject):
 
         match parameter_type:
             case "bias":
-                parameters = {"dict_name": "bias"}
-                
-                for parameter in ["V_nanonis (V)", "V_mla (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
-                    quantity = parameter.split()[0]
-                    val = sct.gui.line_edits[quantity].getValue()
-                    if isinstance(val, int | float): parameters.update({parameter: val})
+                [port1, port2] = [sct.gui.line_edits[name].getValue() for name in ["V_mla_port1", "V_mla_port2"]]
+                if hasattr(sct, "nanonis"):
+                    parameters = {"dict_name": "bias"}
+                    
+                    for parameter in ["V_nanonis (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
+                        quantity = parameter.split()[0]
+                        val = sct.gui.line_edits[quantity].getValue()
+                        if isinstance(val, int | float): parameters.update({parameter: val})
 
-                sct.nanonis.bias_update(parameters, unlink = True)
+                    sct.nanonis.bias_update(parameters, unlink = True)
+                
+                if hasattr(sct, "mla"): sct.mla.bias_update({"dict_name": "bias", "port_1 (V)": port1, "port_2 (V)": port2})
 
             case "feedback":
                 parameters = {"dict_name": "feedback"}
@@ -68,9 +71,7 @@ class ParameterManager(QtCore.QObject):
                     if isinstance(val, int | float): parameters.update({parameter: val})
                 gain = sct.gui.comboboxes["tia_gain"].currentText()
                 
-                print(f"Setting {parameters = }")
                 sct.nanonis.feedback_update(parameters, unlink = False)
-                print(f"Setting {gain = }")
                 sct.nanonis.hardware_update({"dict_name": "hardware", "gain": gain}, unlink = True)                
 
             case "frame":
@@ -349,6 +350,7 @@ class ParameterManager(QtCore.QObject):
             case "bias":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
                                                                                  [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
+                [port1, port2] = [parameters.get(key) for key in ["port_1 (V)", "port_2 (V)"]]
 
             case "feedback":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "i_gain", "t_const"], [parameters.get(name) for name in ["p_gain (pm)", "i_gain (nm/s)", "t_const (us)"]])]
@@ -464,9 +466,9 @@ class ParameterManager(QtCore.QObject):
                 
                 [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (ms)", "t_settle (ms)"]]
                 t_int_ms = t_int_s * 1000
-                t_settle_s = t_settle_s * 1000
-                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_points", "sts_t_int", "sts_t_settle"], [n_points, t_int_s, t_settle_s])]
-                sct.gui.sts_V_r_s.updateFromSteps()
+                t_settle_ms = t_settle_s * 1000
+                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_points", "sts_t_int", "sts_t_settle"], [n_points, t_int_ms, t_settle_ms])]
+                sct.gui.sts_V_rg.update_factor1()
 
             case "gains":
                 [p_gain_ms, t_const_us, i_gain_nm_per_s] = [parameters.get(parameter) for parameter in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
@@ -525,7 +527,7 @@ class ParameterManager(QtCore.QObject):
                         state = "on"
                         f1 = mod_dict.get("frequency (Hz)", None)
                         if isinstance(f1, float | int):
-                            sct.frequencies.emit(f1)
+                            # sct.frequencies.emit(f1)
                             [line_edits[f"demod_frequency_{i}"].setValue(i * f1) for i in range(32)]
                     sct.gui.buttons[f"nanonis_mod{i + 1}"].setState(state)
                     

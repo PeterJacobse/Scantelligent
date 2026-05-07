@@ -1365,7 +1365,6 @@ class STWidgets:
             else: self.min_value = self.min
 
             self.product_value = (self.max_value - self.min_value) * self.factor
-            print(f"{self.product_value = }")
             return self.product_value
 
         def getFactors(self):

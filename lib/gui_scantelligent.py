@@ -493,10 +493,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 2, edited_color = self.colors["dark_green"]),
             "sts_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
             
-            "sts_f_start": LE(value = 0, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
+            "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
             "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
-            "sts_df": LE(value = 100, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = self.colors["dark_green"]),
-            "sts_f_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
+            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = self.colors["dark_green"]),
+            "sts_f_points": LE(value = 1001, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
             
             "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = self.colors["dark_green"]),
             "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = self.colors["dark_green"]),
@@ -506,7 +506,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "sts_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
             "sts_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = self.colors["dark_green"]),
             "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 2, edited_color = self.colors["dark_green"]),
-            "sts_amp_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
+            "sts_amp_points": LE(value = 101, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 10000], digits = 0, edited_color = self.colors["dark_green"]),
 
             "sts_V_keithley_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
             "sts_V_keithley_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),

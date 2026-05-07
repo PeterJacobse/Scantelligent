@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from . import NanonisAPI, CameraAPI, MLAAPI, KeithleyAPI
+from datetime import datetime
 import time
 import h5py
 
@@ -63,6 +64,7 @@ class BaseExperiment(QObject):
             self.logprint(f"{self.start_parameters["gui"]}")
             
             self.output_file = h5py.File(self.experiment_file, "w")
+            self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S")})
             
             try:
                 run(self)

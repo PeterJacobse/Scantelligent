@@ -1081,6 +1081,13 @@ class Scantelligent(QtCore.QObject):
                     start_button.setState("load")
                     return
                 
+                if hasattr(self, "nanonis") and self.nanonis.status == "running":
+                    try: self.nanonis.unlink()
+                    except: pass
+                if hasattr(self, "mla") and self.mla.status == "running":
+                    try: self.mla.unlink()
+                    except: pass
+                
                 # Pass the parameters from the gui to the experiment
                 spec_line_edits = {}
                 [spec_line_edits.update({f"{quantity}_{key}": self.gui.line_edits[f"sts_{quantity}_{key}"].getValue() for key in ["start", "end", "points"]}) for quantity in ["V", "f", "z", "amp", "V_keithley"]]

@@ -108,10 +108,10 @@ class MLAAPI(QtCore.QObject):
         self.reset_outputs()
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
-        self.lockin_update({"df (Hz)": 100, "numbers": np.arange(1, 32), "amplitudes (mV)": [100]})
+        self.lockin_update({"df (Hz)": 100, "numbers": np.arange(1, 32), "amplitudes (mV)": [100]}, verbose = False)
 
         """
-        input_ports= np.ones(mla.lockin.nr_output_freq - 1) + 1
+        input_ports = np.ones(mla.lockin.nr_output_freq - 1) + 1
         mla.lockin.set_input_multiplexer(np.insert(input_ports, 0, 1))
         """
         return
@@ -470,10 +470,10 @@ class MLAAPI(QtCore.QObject):
             
             [port1, port2] = [parameters.get(f"port_{index + 1} (V)", None) for index in range(2)]
             if isinstance(port1, float | int):
-                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port1, wait_for_effect = True)
+                if not self.test_mode: self.mla.lockin.set_dc_offset(port = 1, value = port1)
                 self.V[0] = port1
             if isinstance(port2, float | int):
-                if not self.test_mode: self.mla.lockin.set_dc(port = 1, value = port2, wait_for_effect = True)
+                if not self.test_mode: self.mla.lockin.set_dc_offset(port = 2, value = port2)
                 self.V[1] = port2
             
             bias_dict.update({"port_1 (V)": self.V[0], "port_2 (V)": self.V[1]})
