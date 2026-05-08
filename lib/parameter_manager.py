@@ -221,7 +221,7 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"mla": "idle"})
                     case "offline": sct.status.update({"mla": "offline"})
                     case _: pass
-                try: sct.gui.buttons["nanonis"].setState(status)
+                try: sct.gui.buttons["mla"].setState(status)
                 except: pass
 
             case "keithley_status":
@@ -256,9 +256,10 @@ class ParameterManager(QtCore.QObject):
                 biases = [parameters.get(f"port_{index + 1} (V)") for index in range(2)]
                 [line_edits[f"V_mla_port{index + 1}"].setValue(val) for index, val in enumerate(biases)]
 
-            case "pixels":
-                pixels = parameters.get("pixels")
-                abs_values = np.abs(pixels[:, 0])
+            case "pixel":
+                pixel = parameters.get("pixel")
+                if pixel.ndim > 1: pixel = pixel[:, 0]
+                abs_values = np.abs(pixel)
                 #arg_values = np.rad2deg(np.angle(pixel))
                 [line_edits[f"demod_amplitude_{index}"].setValue(value * 1000) for index, value in enumerate(abs_values)]
                 #[line_edits[f"demod_angle_{index}"].setValue(value) for index, value in enumerate(abs_values)]
@@ -304,7 +305,7 @@ class ParameterManager(QtCore.QObject):
                     if key == "dict_name": continue
 
                     channel_index = int(key)
-                    if channel_index < 0 or channel_index > 40: continue
+                    if channel_index < 0 or channel_index > 39: continue
 
                     sct.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}: {value}")
                     sct.gui.checkboxes[f"channel_{channel_index}"].setChecked(True)

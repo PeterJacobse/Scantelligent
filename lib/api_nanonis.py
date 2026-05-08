@@ -15,14 +15,14 @@ class NanonisAPI(QtCore.QObject):
     finished = QtCore.pyqtSignal() # Signal to indicate an experiment is finished
     data_array = QtCore.pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, hw_config: dict, status_callback: object = None, message_callback: object = None):        
+    def __init__(self, hw_config: dict, message_callback: object = None, status_callback: object = None):
         super().__init__()
-        
-        self.status_callback = print
-        if status_callback: self.status_callback = status_callback
-        self.message_callback = lambda message, message_type: print(message)
-        if message_callback: self.message_callback = message_callback
-        
+
+        self.status_callback = lambda status: self.send_status(status) # Use a parameter dict to signal the status to ParameterManager
+        if status_callback: self.status_callback = status_callback # If the user provides a callback function, use that instead
+        self.message_callback = lambda message_str, message_type: self.logprint(message_str = message_str, message_type = message_type) # Default to PyQt signal-slot signaling
+        if message_callback: self.message_callback = message_callback # For testing, e.g. in Jupyter, the user can pass a message_callback
+
         self.nanonis_hardware = NanonisHardware(hw_config = hw_config)
         # nanonis_hardware methods are low-level methods performing direct communication to the Nanonis FPGA over TCP-IP
         # nanonisAPI methods are higher-level methods that incorporate these methods, but provide a friendlier interface
@@ -36,7 +36,7 @@ class NanonisAPI(QtCore.QObject):
 
 
 
-    def link(self, verbose: str = False) -> None:
+    def link(self, verbose: str = False) -> str:
         nhw = self.nanonis_hardware
         if self.status == "running":
             self.logprint("Attempting to connect to Nanonis while it is already running. Operation aborted.", message_type = "error")
@@ -54,7 +54,7 @@ class NanonisAPI(QtCore.QObject):
         except Exception as e: print(f"{e}")
         return f"Nanonis status: {self.status}"
 
-    def unlink(self, verbose: str = False) -> None:
+    def unlink(self, verbose: str = False) -> str:
         nhw = self.nanonis_hardware
         if verbose: self.logprint("nanonis.unlink()", message_type = "code")
         nhw.unlink()
@@ -137,7 +137,7 @@ class NanonisAPI(QtCore.QObject):
             error = e
             self.logprint(f"Initialization failed: {e}", "error")
             self.status == "offline"
-            self.parameters.emit({"dict_name": "nanonis_status", "status": self.status})
+            self.status_callback(self.status)
         finally:
             if unlink: self.unlink()
 
@@ -146,8 +146,13 @@ class NanonisAPI(QtCore.QObject):
 
 
     # Misc
-    def logprint(self, message: str, message_type: str = "error") -> None:
-        self.message_callback(message = message, message_type = message_type)
+    def logprint(self, message_str: str = "", message_type: str = "error") -> None:
+        self.message.emit(message_str, message_type)
+        return
+
+    def send_status(self, status: str = "") -> None:
+        status_dict = {"dict_name": "nanonis_status", "status": status}
+        self.parameters.emit(status_dict)
         return
 
     def grids_to_lists(self, grid_dict: dict = {}, direction: str = "up") -> tuple[dict, bool | str]:
@@ -264,7 +269,7 @@ class NanonisAPI(QtCore.QObject):
             completed_percentage = int(100 * (1 - n_nans / n_scan_image))
             self.task_progress.emit(completed_percentage)
             
-            self.image.emit(scan_image)
+            self.image.emit(np.flipud(scan_image))
 
         except Exception as e: error = e
         finally:
@@ -715,8 +720,10 @@ class NanonisAPI(QtCore.QObject):
 
             # Save the data to a dictionary
             [width, height, angle] = [frame.get(key) for key in ["width (nm)", "height (nm)", "angle (deg)"]]
-            [pixels, lines] = [buffer.get(key) for key in ["pixels", "lines"]]            
-            grid = frame | buffer | {"pixel_width (nm)": width / pixels, "pixel_height (nm)": height / lines, "dict_name": "grid"}
+            [pixels, lines] = [buffer.get(key) for key in ["pixels", "lines"]]
+            pix_width = pixels / width
+            pix_height = pixels / height
+            grid = frame | buffer | {"pixel_width (nm)": pix_width, "pixel_height (nm)": pix_height, "dict_name": "grid"}
 
         except Exception as e: error = e
         finally:
@@ -726,7 +733,7 @@ class NanonisAPI(QtCore.QObject):
         
         # Append the grid data with calculated information
         try:
-            # Construct a local grid with the same size as the Nanonis grid, with center is at (0, 0)
+            # Construct a local grid with the same size as the Nanonis grid, with center is at (0, 0)            
             x_coords_local = np.linspace(-width / 2, width / 2, pixels)
             y_coords_local = np.linspace(-height / 2, height / 2, lines)
             x_grid_local, y_grid_local = np.meshgrid(x_coords_local, y_coords_local)

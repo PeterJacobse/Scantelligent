@@ -6,17 +6,19 @@ import asyncio
 
 
 class MLAAPI(QtCore.QObject):
+    message = QtCore.pyqtSignal(str, str)
+    parameters = QtCore.pyqtSignal(dict)    
     amplitudes = QtCore.pyqtSignal(list)
     frequency = QtCore.pyqtSignal(float)
-    parameters = QtCore.pyqtSignal(dict)
 
-    def __init__(self, hw_config: dict = {}, status_callback: object = None, message_callback: object = None, test_mode: bool = False):
+    def __init__(self, hw_config: dict = {}, message_callback: object = None, status_callback: object = None, test_mode: bool = False):
         super().__init__()
-        
-        self.status_callback = print
-        if status_callback: self.status_callback = status_callback
-        self.message_callback = lambda message, message_type: print(message)
-        if message_callback: self.message_callback = message_callback
+
+        self.status_callback = lambda status: self.send_status(status) # Use a parameter dict to signal the status to ParameterManager
+        if status_callback: self.status_callback = status_callback # If the user provides a callback function, use that instead
+        self.message_callback = lambda message_str, message_type: self.logprint(message_str = message_str, message_type = message_type) # Default to PyQt signal-slot signaling
+        if message_callback: self.message_callback = message_callback # For testing, e.g. in Jupyter, the user can pass a message_callback
+
         self.test_mode = test_mode
         
         mla_path = False
@@ -69,7 +71,7 @@ class MLAAPI(QtCore.QObject):
             self.status = "offline"
             try: self.status_callback(self.status)
             except: pass
-        return
+        return f"MLA status: {self.status}"
 
     def unlink(self) -> None:
         try:            
@@ -82,7 +84,7 @@ class MLAAPI(QtCore.QObject):
             self.status = "idle"
             try: self.status_callback(self.status)
             except: pass
-        return
+        return f"MLA status: {self.status}"
 
     def start_lockin(self) -> None:
         self.lockin_running = True
@@ -94,12 +96,14 @@ class MLAAPI(QtCore.QObject):
         if not self.test_mode: self.mla.lockin.stop_lockin()
         return
 
-    def logprint(self, message: str = "", message_type: str = "", append_new_line: bool = False) -> None:
-        self.message_callback(message = message, message_type = message_type)
+    def logprint(self, message_str: str = "", message_type: str = "error") -> None:
+        self.message.emit(message_str, message_type)
         return
 
-    def unwrap(self) -> object:
-        return self.mla
+    def send_status(self, status: str = "") -> None:
+        status_dict = {"dict_name": "mla_status", "status": status}
+        self.parameters.emit(status_dict)
+        return
 
 
 
@@ -122,8 +126,8 @@ class MLAAPI(QtCore.QObject):
             self.logprint(f"{e}")
         return
 
-    def get_pixels(self, number: int = 1, wait_for_new: bool = True) -> np.ndarray:
-        if not self.lockin_running: raise Exception("Error. Requesting locking data while it is not running. Call mla.start_lockin() first.")
+    def get_pixels(self, number: int = 1, average: bool = False, wait_for_new: bool = True) -> np.ndarray:
+        if not self.lockin_running: raise Exception("Requesting locking data while it is not running. Call mla.start_lockin() first.")
         if self.test_mode:
             rng = np.random.default_rng()
             pix = rng.random((32, number), dtype = float) + 1j * rng.random((32, number), dtype = float)
@@ -131,7 +135,8 @@ class MLAAPI(QtCore.QObject):
             if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
             (pix, _) = self.mla.lockin.get_pixels(number)
             pix *= 2
-        self.parameters.emit({"dict_name": "pixels", "pixels": pix})
+            if average: pix = np.average(pix, axis = 1)
+        self.parameters.emit({"dict_name": "pixel", "pixel": pix})
         return pix
 
     def set_DACs_ADCs_safe_range(self) -> None:
@@ -277,7 +282,7 @@ class MLAAPI(QtCore.QObject):
             new_frequencies = old_frequencies # To be overwritten with user data
             
             # Set            
-            if isinstance(frequencies, list | np.ndarray) and isinstance(frequencies[0], int | float):
+            if isinstance(frequencies, list | np.ndarray):
                 if not self.test_mode:
                     for idx in range(min(self.mla.lockin.nr_input_freq, len(frequencies))): new_frequencies[idx] = frequencies[idx]
             elif isinstance(frequencies, dict):
@@ -285,7 +290,7 @@ class MLAAPI(QtCore.QObject):
                     if not isinstance(value, float | int): continue
                     try: new_frequencies[int(key)] = value
                     except: pass
-            elif isinstance(numbers, list | np.ndarray) and isinstance(numbers[0], int | float):
+            elif isinstance(numbers, list | np.ndarray):
                 for idx in range(min(self.mla.lockin.nr_input_freq, len(numbers))): new_frequencies[idx] = numbers[idx] * self.df
             elif isinstance(numbers, dict) and isinstance(numbers[0], int | float):
                 for key, value in numbers.items():
@@ -331,7 +336,7 @@ class MLAAPI(QtCore.QObject):
             new_amplitudes = old_amplitudes # To be overwritten with user data
             
             # Set
-            if isinstance(amplitudes, list | np.ndarray) and isinstance(amplitudes[0], int | float):
+            if isinstance(amplitudes, list | np.ndarray):
                 if not self.test_mode:
                     for idx in range(min(self.mla.lockin.nr_input_freq, len(amplitudes))): new_amplitudes[idx] = amplitudes[idx]
             elif isinstance(amplitudes, dict):
@@ -375,7 +380,7 @@ class MLAAPI(QtCore.QObject):
             new_phases = old_phases # To be overwritten with user data
             
             # Set
-            if isinstance(phases, list | np.ndarray) and isinstance(phases[0], int | float):
+            if isinstance(phases, list | np.ndarray):
                 if not self.test_mode:
                     for idx in range(min(self.mla.lockin.nr_input_freq, len(phases))): new_phases[idx] = phases[idx]
             elif isinstance(phases, dict):

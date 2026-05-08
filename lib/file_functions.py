@@ -1,4 +1,4 @@
-import re, os, yaml, pint
+import re, os, sys, yaml, pint
 import importlib.util
 import numpy as np
 import nanonispy2 as nap
@@ -100,7 +100,7 @@ class FileFunctions():
                 
         return found_files
 
-    def load_experiment_from_file(self, file_path: str, hw_config: dict = {}, experiment_file: str = "", scan_processing_flags = None):
+    def load_experiment_from_file(self, file_path: str, hw_config: dict = {}, experiment_file: str = "", scan_processing_flags = None, nanonis: object = None, mla: object = None):
         """
         Finds and instantiates the 'Experiment' class from a specific file.
         """
@@ -110,11 +110,12 @@ class FileFunctions():
         # 1. Load the module dynamically
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
         spec.loader.exec_module(module)
 
         # 2. Get the 'Experiment' class and instantiate it
-        experiment = getattr(module, "Experiment")
-        return experiment(hw_config = hw_config, experiment_file = experiment_file, scan_processing_flags = scan_processing_flags)
+        experiment = getattr(module, "Experiment")        
+        return experiment(hw_config = hw_config, experiment_file = experiment_file, scan_processing_flags = scan_processing_flags, nanonis = nanonis, mla = mla)
 
 
 

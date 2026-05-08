@@ -237,13 +237,15 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "mla" or target.lower() == "all":
             try:
                 # Instantiate
-                self.mla = MLAAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["mla"].setState, message_callback = self.logprint)
+                self.mla = MLAAPI(hw_config = self.hw_config)
                 
                 # Set up signal-slot connections                
                 # MLA -> Scantelligent
                 self.mla.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
+                self.mla.message.connect(self.logprint)
 
                 self.logprint("MLA: Found the MLA", "success")
+                self.gui.buttons["mla"].setState("online")
             except Exception as e:
                 self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
 
@@ -253,7 +255,7 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "nanonis" or target.lower() == "all":
             try:
                 # Instantiate
-                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["nanonis"].setState, message_callback = self.logprint)
+                self.nanonis = NanonisAPI(hw_config = self.hw_config)
                 
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
@@ -263,6 +265,7 @@ class Scantelligent(QtCore.QObject):
                 # Nanonis -> Scantelligent
                 self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
                 self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
+                self.nanonis.message.connect(self.logprint)
                 self.nanonis.image.connect(self.receive_image)
                 self.nanonis.data_array.connect(self.receive_data)
                 
@@ -337,7 +340,7 @@ class Scantelligent(QtCore.QObject):
             
             match self.gui.buttons["view"].state_name:
                 case "nanonis":
-                    flipped_image = np.fliplr(np.flipud(image)).T
+                    flipped_image = np.fliplr(image).T
                     (processed_scan, statistics, limits, error) = self.data.process_scan(flipped_image)
                     [self.gui.line_edits[f"{side}_full"].setValue(statistics[f"{side}"]) for side in ["min", "max"]]
                     
@@ -387,6 +390,7 @@ class Scantelligent(QtCore.QObject):
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data_array: np.ndarray, max_length: int = 6000) -> None:
         x_data = None
+        if data_array.ndim < 2: data_array = np.array([data_array])
 
         for index in range(min(len(data_array[0]), 40)):            
             new_data = data_array[:, index]
@@ -1044,7 +1048,8 @@ class Scantelligent(QtCore.QObject):
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
                 try:
-                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scan_processing_flags = self.data.scan_processing_flags)
+                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath,
+                                                                                    scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis, mla = self.mla)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
                     
@@ -1081,16 +1086,10 @@ class Scantelligent(QtCore.QObject):
                     start_button.setState("load")
                     return
                 
-                if hasattr(self, "nanonis") and self.nanonis.status == "running":
-                    try: self.nanonis.unlink()
-                    except: pass
-                if hasattr(self, "mla") and self.mla.status == "running":
-                    try: self.mla.unlink()
-                    except: pass
-                
                 # Pass the parameters from the gui to the experiment
                 spec_line_edits = {}
                 [spec_line_edits.update({f"{quantity}_{key}": self.gui.line_edits[f"sts_{quantity}_{key}"].getValue() for key in ["start", "end", "points"]}) for quantity in ["V", "f", "z", "amp", "V_keithley"]]
+                [spec_line_edits.update({f"t_{key}": self.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})]
                 spec_buttons = {}
                 [spec_buttons.update({f"{quantity}": self.gui.buttons[f"sts_{quantity}"].state_name}) for quantity in ["V", "f", "z", "amp", "V_keithley"]]
                 spec_buttons.update({"nanonis_mla": self.gui.buttons["nanonis_mla"].state_name})

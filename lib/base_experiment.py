@@ -24,12 +24,16 @@ class BaseExperiment(QObject):
     data_array = pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
 
     def __init__(self, *args, **kwargs):
-        self.hw_config = kwargs.pop("hw_config", None)
+        self.hw_config = kwargs.pop("hw_config", None) # Will become redundant again
         self.scan_processing_flags = kwargs.pop("scan_processing_flags", None)
         self.experiment_file = kwargs.pop("experiment_file", None)
+        
+        self.mla = kwargs.pop("mla", None)
+        self.nanonis = kwargs.pop("nanonis", None)
 
         self.gui_setup = {}
         self.abort_requested = False
+        self.current_spikes = 0
         self.start_parameters = {}
         self.gui_parameters = {"combobox": None, "line_edits": [None], "buttons": [None]}
         
@@ -60,8 +64,13 @@ class BaseExperiment(QObject):
             self.logprint("Starting the experiment", "success")
             self.start_parameters.update({"gui": self.gui_parameters})
             
-            self.logprint(f"I read the following parameters from the GUI:")            
-            self.logprint(f"{self.start_parameters["gui"]}")
+            if hasattr(self, "nanonis"):
+                (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
+                self.start_parameters.update({"nanonis": nanonis_parameters})
+            
+            if hasattr(self, "mla"):
+                (mla_parameters, error) = self.mla.lockin_update()
+                self.start_parameters.update({"mla": mla_parameters})
             
             self.output_file = h5py.File(self.experiment_file, "w")
             self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S")})
@@ -107,34 +116,6 @@ class BaseExperiment(QObject):
         
         return scan_image
 
-    def connect_hardware(self, target: str = "nanonis") -> None:
-        match target:
-            case "nanonis":
-                self.nanonis = NanonisAPI(hw_config = self.hw_config, status_callback = self.pass_nanonis_status, message_callback = self.logprint)
-                self.nanonis.parameters.connect(self.parameters.emit)
-                self.nanonis.task_progress.connect(self.task_progress.emit)
-                
-                (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
-                self.start_parameters.update({"nanonis": nanonis_parameters})
-            
-            case "keithley":
-                self.keithley = KeithleyAPI(hw_config = self.hw_config)
-
-            case "mla":
-                self.mla = MLAAPI(hw_config = self.hw_config, status_callback = self.pass_mla_status, message_callback = self.logprint)
-                self.mla.parameters.connect(self.parameters.emit)
-                
-                (mla_parameters, error) = self.mla.lockin_update()
-                self.start_parameters.update({"mla": mla_parameters})
-
-            case "camera":
-                self.camera = CameraAPI(hw_config = self.hw_config)
-
-            case _:
-                pass
-        
-        return
-
     def check_abort_request(self) -> None:
         if self.thread().isInterruptionRequested():
             self.abort_requested = True
@@ -168,16 +149,16 @@ class BaseExperiment(QObject):
                 self.nanonis.speeds_update(speed_parameters)
 
                 tip_parameters = nanonis_parameters.get("tip_status", {})
-                fb = tip_parameters.get("feedback")
-                self.nanonis.tip_update({"feedback": fb})
+                #fb = tip_parameters.get("feedback")
+                #self.nanonis.tip_update({"feedback": fb})
             except Exception as e:
                 self.logprint(f"Error while resetting Nanonis: {e}", message_type = "error")
-            try: self.nanonis.unlink()
-            except Exception as e: self.logprint(f"Error while unlinking Nanonis: {e}", message_type = "error")
-
+        
         if hasattr(self, "mla"):
-            try: self.mla.unlink()
-            except Exception as e: self.logprint(f"Error while unlinking the MLA: {e}", message_type = "error")
+            try:
+                self.mla.outputs_update({"blank": True})
+            except:
+                pass
 
         if not self.abort_requested:
             self.logprint("Experiment finished!", message_type = "success")

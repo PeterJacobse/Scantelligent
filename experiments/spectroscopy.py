@@ -18,7 +18,7 @@ class Experiment(BaseExperiment):
 
     @BaseExperiment.experiment_handler
     def run(self):
-        [self.connect_hardware(component) for component in ["nanonis", "mla"]] # Set up the required hardware connections
+        #[self.connect_hardware(component) for component in ["nanonis", "mla"]] # Set up the required hardware connections
         
         # Aliases
         nn = self.nanonis
@@ -31,8 +31,8 @@ class Experiment(BaseExperiment):
         if nanonis_or_mla == "nanonis": self.logprint(f"Nanonis sweep not yet implemented. Try setting the spectroscopy to MLA")
         
         mod_voltage_mV = 500
-        pixels_per_datapoint = 4
-        
+        pixels_per_datapoint = 6
+
         # Read what kind of spectroscopic axes are requested
         if spec_button_states.get("V") == "x":
             x_axis_label = "voltage (V)"
@@ -71,10 +71,19 @@ class Experiment(BaseExperiment):
         mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
         
         # Perform the sweep
-        self.frequency_sweep(x_values, pixels_per_datapoint = pixels_per_datapoint, mod_voltage_mV = mod_voltage_mV)
+        channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (rad)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (rad)"]
+        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+        channels_ds.make_scale("channels")
+        frequency_ds = self.output_file.create_dataset("frequency axis", data = x_values)
+        frequency_ds.make_scale("frequency (Hz)")
+        
+        measurement_array = self.frequency_sweep(x_values, pixels_per_datapoint = pixels_per_datapoint, mod_voltage_mV = mod_voltage_mV) # Perform the measurement and retrieve the data as a numpy array
+        measurement_ds = self.output_file.create_dataset("sweep", data = measurement_array, dtype = float)
+        measurement_ds.dims[0].attach_scale(channels_ds)
+        measurement_ds.dims[1].attach_scale(frequency_ds)
 
 
-   
+
     def frequency_sweep(self, frequencies = np.ndarray, pixels_per_datapoint: int = 4, mod_voltage_mV: float = 500):
         (hardware_dict, error) = self.nanonis.hardware_update()
         tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
@@ -83,15 +92,11 @@ class Experiment(BaseExperiment):
         channels_dict = {i: name for i, name in enumerate(channel_names)} | {"dict_name": "channels"} # Prepare the GUI for plotting these channels
         self.parameters.emit(channels_dict)
         
-        measurement_ds = self.output_file.create_dataset("sweep", (len(channel_names), 0), maxshape = (len(channel_names), None), chunks = True, dtype = float)
-        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        channels_ds.make_scale("channels")
-        frequency_ds = self.output_file.create_dataset("frequency axis", data = frequencies)
-        frequency_ds.make_scale("frequency (Hz)")        
+        measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = float)
 
         # Main loop
         self.mla.start_lockin()
-        for f in frequencies:
+        for index, f in enumerate(frequencies):
             self.check_abort_request()
             w = 2 * np.pi * int(f)
             self.mla.time_constant_update({"df (Hz)": int(f)}, verbose = False) # Set the measurement resolution to 200 Hz. This corresponds to a primitive time constant or period of 5 ms.
@@ -105,19 +110,17 @@ class Experiment(BaseExperiment):
             
             a1abs_mV = 1000 * np.abs(np.average(pix[1])) # Displacement currents measured through the TIA
             a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA)
-            a1abs_fF = 1000 * a1abs_pA / (w * mod_voltage_mV)
+            a1abs_fF = 1000000 * a1abs_pA / (w * mod_voltage_mV)
             a1arg = np.angle(np.average(pix[1]))
             
             a2abs_mV = 1000 * np.abs(np.average(pix[2]))
             a2abs_pA = a2abs_mV / (1000 * tia_gain_V_per_pA)
-            a2abs_fF = 1000 * a2abs_pA / (w * mod_voltage_mV)
+            a2abs_fF = 1000000 * a2abs_pA / (w * mod_voltage_mV)
             a2arg = np.angle(np.average(pix[2]))
             
-            data_chunk = np.array([[f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg]], dtype = float)
+            data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = float)
             self.data_array.emit(data_chunk)
-            measurement_ds.resize((measurement_ds.shape[0], measurement_ds.shape[1] + 1))
-            measurement_ds[:, -1] = data_chunk        
+            measurement_array[index] = data_chunk
         
-        measurement_ds.dims[0].attach_scale(channels_ds)
-        measurement_ds.dims[1].attach_scale(frequency_ds)
-        return
+        return measurement_array
+
