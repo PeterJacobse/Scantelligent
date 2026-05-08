@@ -115,5 +115,6 @@ class Experiment(BaseExperiment):
                 self.check_abort_request()
 
         mla.stop_lockin()
+        nn.tip_update({"withdraw": True})
 
 

@@ -126,14 +126,15 @@ class MLAAPI(QtCore.QObject):
             self.logprint(f"{e}")
         return
 
-    def get_pixels(self, number: int = 1, average: bool = False, wait_for_new: bool = True) -> np.ndarray:
+    def get_pixels(self, number: int = 1, average: bool = False, data_format: str = "IQ", wait_for_new: bool = True) -> np.ndarray:
         if not self.lockin_running: raise Exception("Requesting locking data while it is not running. Call mla.start_lockin() first.")
         if self.test_mode:
             rng = np.random.default_rng()
             pix = rng.random((32, number), dtype = float) + 1j * rng.random((32, number), dtype = float)
         else:
             if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
-            (pix, _) = self.mla.lockin.get_pixels(number)
+            if data_format == "phase": (pix, _) = self.mla.lockin.get_pixels(number, data_format == "phase", unit = "deg")
+            else: (pix, _) = self.mla.lockin.get_pixels(number)
             pix *= 2
             if average: pix = np.average(pix, axis = 1)
         self.parameters.emit({"dict_name": "pixel", "pixel": pix})
@@ -161,6 +162,21 @@ class MLAAPI(QtCore.QObject):
 
     def set_input_multiplexer(self, port_array) -> None:
         self.mla.lockin.set_input_multiplexer(port_array)
+        return
+
+    def autophase(self, drive_port: int = 1, measure_port: int = 1) -> None:
+        phases_old = self.mla.lockin.get_phases(unit = "degree") # Read the phases
+        
+        self.mla.lockin.set_phases(np.zeros(32), unit = "degree", idx = "all") # Zero
+        self.start_lockin()
+            
+        (pix, meta) = self.get_pixels(3, data_format = "phase", average = True)
+        angle0 = pix[measure_port - 1]
+        self.mla.lockin.set_phases(-angle0, unit = "degree", idx = drive_port - 1, event = True, correct_phases = True, wait_for_effect = True) # Phase update number 1
+        self.get_pixels(1)
+        (pix, meta) = self.get_pixels(3, data_format = "phase", average = True)
+        angle1 = pix[measure_port - 1]
+        self.mla.lockin.set_phases(90 - angle0 - angle1, unit = "degree", idx = 0, event = True, correct_phases = True, wait_for_effect = True) # Phase update number 2
         return
 
 
