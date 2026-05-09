@@ -3,7 +3,7 @@ from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
 import pyqtgraph as pg
-from lib import STWidgets, ScantelligentGUI
+from lib import SCTWidgets, ScantelligentGUI
 from lib import DataProcessing, FileFunctions, ParameterManager, UserData, AudioGenerator
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
@@ -74,12 +74,11 @@ class Scantelligent(QtCore.QObject):
             "experiment": {"name": None, "status": "idle"},
             "view": "none"
         }
-
         return
 
     def connect_console(self) -> None:
         # Redirect output to the console
-        self.stdout_redirector = STWidgets.StreamRedirector()
+        self.stdout_redirector = SCTWidgets.StreamRedirector()
         self.stdout_redirector.output_written.connect(lambda text: self.gui.consoles["output"].append(text))
         sys.stdout = self.stdout_redirector
         #sys.stderr = self.stdout_redirector
@@ -100,7 +99,7 @@ class Scantelligent(QtCore.QObject):
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
-        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["bg_none", "bg_plane", "bg_linewise", "sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
+        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
         
         for parameter_type in ["bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
             button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
@@ -116,7 +115,6 @@ class Scantelligent(QtCore.QObject):
 
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
-        [self.gui.line_edits[name].editingFinished.connect(self.update_processing_flags) for name in ["min_full", "min_percentiles", "min_deviations", "min_absolute", "max_full", "max_percentiles", "max_deviations", "max_absolute"]]
         
         # Comboboxes
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
@@ -130,7 +128,8 @@ class Scantelligent(QtCore.QObject):
         
         # Checkboxes and button groups
         #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
-        [self.gui.button_groups[name].clicked.connect(self.update_processing_flags) for name in ["min", "max", "background"]]
+        self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
+        self.gui.limits_widget.stateChanged.connect(self.update_processing_flags)
         self.gui.button_groups["channels"].clicked.connect(lambda index_str: self.set_pdi_visible(int(index_str)))
         return
 
@@ -286,7 +285,6 @@ class Scantelligent(QtCore.QObject):
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
-
         return
 
     def dis_reconnect(self, target: str = "nanonis") -> None:
@@ -342,7 +340,7 @@ class Scantelligent(QtCore.QObject):
                 case "nanonis":
                     flipped_image = np.fliplr(image).T
                     (processed_scan, statistics, limits, error) = self.data.process_scan(flipped_image)
-                    [self.gui.line_edits[f"{side}_full"].setValue(statistics[f"{side}"]) for side in ["min", "max"]]
+                    [self.gui.limits_widget.setValue("full", side, statistics[f"{side}"]) for side in ["min", "max"]]
                     
                     self.gui.image_view.setImage(processed_scan, autoRange = False)
 
@@ -480,9 +478,9 @@ class Scantelligent(QtCore.QObject):
         if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.camera.__dict__ if not attr.startswith("_")]
         
         [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes, file_function_attributes, parameters_attributes, user_attributes, mla_analog_attributes, mla_lockin_attributes, mla_osc_attributes, mla_attributes, keithley_attributes, camera_attributes]]
-        completer = STWidgets.Completer(self.all_attributes, self.gui)
+        completer = SCTWidgets.Completer(self.all_attributes, self.gui)
         completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        completer.setCompletionMode(STWidgets.Completer.CompletionMode.PopupCompletion)
+        completer.setCompletionMode(SCTWidgets.Completer.CompletionMode.PopupCompletion)
         self.gui.line_edits["input"].setCompleter(completer)
         return
 
@@ -693,7 +691,7 @@ class Scantelligent(QtCore.QObject):
     def exit(self) -> None:
         self.cleanup()
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
-        STWidgets.Application.instance().quit()
+        SCTWidgets.Application.instance().quit()
 
     def closeEvent(self, event) -> None:
         self.exit()
@@ -722,65 +720,43 @@ class Scantelligent(QtCore.QObject):
     # Read the GUI to set processing flags for image/spectrum processing
     def update_processing_flags(self) -> None:
         flags = {}
-              
-        checkboxes = self.gui.checkboxes
-        buttons = self.gui.buttons
-        comboboxes = self.gui.comboboxes
-        line_edits = self.gui.line_edits
 
-        # Background
-        bg_methods = ["none", "plane", "linewise"]
-        for method in bg_methods:
-            if buttons[f"bg_{method}"].isChecked(): flags.update({"background": f"{method}"})
-
-        if buttons["rot_trans"].isChecked(): flags.update({"rotation": True, "offset": True})
-        else: flags.update({"rotation": False, "offset": False})
-        
-        # Limits
-        lim_methods = ["full", "percentiles", "deviations", "absolute"]
-        for method in lim_methods:
-            if checkboxes[f"min_{method}"].isChecked():
-                min_value = 0
-                try:
-                    min_str = line_edits[f"min_{method}"].text()
-                    numbers = self.data.extract_numbers_from_str(min_str)
-                    if len(numbers) > 0: min_value = numbers[0]
-                except:
-                    pass
-                flags.update({"min_method": f"{method}", "min_method_value": f"{min_value}"})
-            if checkboxes[f"max_{method}"].isChecked():
-                max_value = 1
-                try:
-                    max_str = line_edits[f"max_{method}"].text()
-                    numbers = self.data.extract_numbers_from_str(max_str)
-                    if len(numbers) > 0: max_value = numbers[0]
-                    else: max_value = 0
-                except: pass
-                flags.update({"max_method": f"{method}", "max_method_value": f"{max_value}"})
-
-        # Channel, direction, projection
         try:
-            selected_channel = comboboxes["channels"].currentText()
-            (quantity, unit, backward, error) = self.file_functions.split_physical_quantity(selected_channel)
-            if isinstance(unit, str): [line_edits[f"{side}_full"].setUnit(unit) for side in ["min", "max"]]
+            # Background
+            bg_method = self.gui.button_groups["background"].getSelectedWidget()
+            self.logprint(f"{bg_method = }")
+            flags.update({"background": f"{bg_method}", "rotation": True, "offset": True})        
             
-            backward = bool(buttons["direction"].state_index)
-            projection = comboboxes["projection"].currentText()
+            # Limits
+            [min_method, min_value] = self.gui.limits_widget.getMin()
+            [max_method, max_value] = self.gui.limits_widget.getMax()
+            flags.update({"min_method": f"{min_method}", "min_method_value": f"{min_value}", "max_method": f"{max_method}", "max_method_value": f"{max_value}"})
+
+            # Channel, direction, projection
+            selected_channel = self.gui.comboboxes["channels"].currentText()
+            (quantity, unit, backward, error) = self.file_functions.split_physical_quantity(selected_channel)
+            if isinstance(unit, str):
+                self.gui.limits_widget.setUnit("full", unit)
+                self.gui.limits_widget.setUnit("absolute", unit)
+            
+            backward = bool(self.gui.buttons["direction"].state_index)
+            projection = self.gui.comboboxes["projection"].currentText()
             flags.update({"backward": backward, "projection": projection})
-        except:
-            print("Error updating the image processing flags.")
+            
+            # Operations
+            [flags.update({operation: self.gui.buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
+            
+            phase = self.gui.sliders["phase"].getValue()
+            flags.update({"phase (deg)": phase})        
+        except Exception as e:
+            self.logprint(f"Error updating the image processing flags: {e}", message_type = "error")
 
-        # Operations
-        try: [flags.update({operation: buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
-        except: pass
-        phase = self.gui.sliders["phase"].getValue()
-        flags.update({"phase (deg)": phase})
-
+        # Channels
         channels = self.data.scan_processing_flags.get("channels")
         if channels:
             channel_index = channels.get(selected_channel, None)
             if isinstance(channel_index, int): flags.update({"channel": selected_channel, "channel_index": channel_index})
-                
+
         self.data.scan_processing_flags.update(flags)
         return
 
@@ -1129,6 +1105,6 @@ class Scantelligent(QtCore.QObject):
 
 # Main program
 if __name__ == "__main__":
-    app = STWidgets.Application(sys.argv)
+    app = SCTWidgets.Application(sys.argv)
     logic_app = Scantelligent()
     sys.exit(app.exec())

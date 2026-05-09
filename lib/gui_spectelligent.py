@@ -5,7 +5,7 @@ from . import SCTWidgets, rotate_icon, make_layout, make_line
 
 
 
-class ScantelligentGUI(QtWidgets.QMainWindow):
+class SpectelligentGUI(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         

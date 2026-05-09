@@ -60,7 +60,8 @@ class NanonisHardware:
         self.headers = self.prepare_headers() # Make the headers
         connected = self.link()
         if not connected == True: raise Exception(connected)
-        else: self.unlink()
+        self.check_version()    
+        self.unlink()
 
 
 
@@ -71,7 +72,7 @@ class NanonisHardware:
         
         self.ip = False
         self.port = False
-        self.version = False
+        self.version = 13000
         self.max_buf_size = 200
 
         if "nanonis" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["nanonis"], dict): nn_config = hw_config.get("nanonis")
@@ -79,17 +80,15 @@ class NanonisHardware:
 
         ip_tags = ["tcp_ip", "ip", "ip_address", "nanonis_ip"]
         port_tags = ["tcp_port", "port", "nanonis_port"]
-        version_tags = ["version", "nanonis_version", "version_number"]
         for key, value in nn_config.items():
             if key.lower() in ip_tags: self.ip = value
             if key.lower() in port_tags: self.port = value
-            if key.lower() in version_tags: self.version = value
         
         if not (self.ip and self.port and self.version):
             raise Exception("Could not extract the required TCP-IP parameters from the provided hardware dictionary")
         
         return
-    
+
     def prepare_headers(self) -> dict:
         make_header = self.conv.make_header
 
@@ -282,6 +281,13 @@ class NanonisHardware:
             return
                                # raise the exception
 
+    def check_version(self):
+        try:
+            self.get_signals_in_slots()
+        except:
+            self.version = 15000 # Newer Nanonis versions do not work with this function
+        return
+
     def link(self) -> bool | Exception:
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Re-establish the socket object if it was lost
@@ -448,10 +454,33 @@ class NanonisHardware:
         back_sweep = self.conv.hex_to_int16(response[6 : 8])
         num_points = self.conv.hex_to_int32(response[8 : 12])
         
-        parameters = {"save_all": save_all, "num_sweeps": num_sweeps, "back_sweep": back_sweep, "num_points": num_points}
+        sts_parameters = {"save_all": save_all, "num_sweeps": num_sweeps, "back_sweep": back_sweep, "num_points": num_points}
+
+        # More properties
+        idx = 16
+        parameters = []
+        num_parameters = self.conv.hex_to_int32(response[idx : idx + 4])
+        idx += 4
+        for _ in range(num_parameters):
+            parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            parameters.append(response[idx : idx + parameter_size].decode())
+            idx += parameter_size
+
+        idx += 4
+        fixed_parameters = []
+        num_fixed_parameters  = self.conv.hex_to_int32(response[idx : idx + 4])
+        idx += 4
+        for _ in range(num_fixed_parameters):
+            fixed_parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
+            idx += 4
+            fixed_parameters.append(response[idx : idx + fixed_parameter_size].decode())
+            idx += fixed_parameter_size
         
-        if(self.version < 11798): parameters.update(self.append_sts_properties_old(response))
-        if(self.version >= 11798): parameters.update(self.append_sts_properties_new(response))
+        autosave = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
+        save_dialog = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
+        
+        sts_parameters.update({"parameters": parameters, "fixed_parameters": fixed_parameters, "autosave": autosave, "save_dialog": save_dialog})
         
         # 'Advanced' properties
         command = self.headers["get_STS_advanced_properties"]
@@ -463,7 +492,7 @@ class NanonisHardware:
         record_final_z = self.conv.hex_to_int16(response[4 : 6])
         lockin_run = self.conv.hex_to_int16(response[6 : 8])
         
-        parameters.update({"reset_bias": reset_bias, "z_controller_hold": z_controller_hold, "record_final_z": record_final_z, "run_lockin": lockin_run})
+        sts_parameters.update({"reset_bias": reset_bias, "z_controller_hold": z_controller_hold, "record_final_z": record_final_z, "run_lockin": lockin_run})
         
         # Limits
         command = self.headers["get_STS_limits"]
@@ -473,11 +502,11 @@ class NanonisHardware:
         start_value = self.conv.hex_to_float32(response[0 : 4])
         end_value = self.conv.hex_to_float32(response[4 : 8])
         
-        parameters.update({"limits (V)": [start_value, end_value]})
+        sts_parameters.update({"limits (V)": [start_value, end_value]})
         
         # Channel indices
         channel_indices = self.get_sts_channels()
-        parameters.update({"channel_indices": channel_indices})
+        sts_parameters.update({"channel_indices": channel_indices})
         
         # Timing
         command = self.headers["get_STS_timing"]
@@ -493,68 +522,10 @@ class NanonisHardware:
         t_settle_end_ms = self.conv.hex_to_float32(response[24 : 28]) * 1000
         t_control_z_ms = self.conv.hex_to_float32(response[28 : 32]) * 1000
         
-        parameters.update({"t_avg_z (ms)": t_averaging_z_ms, "z_offset (nm)": z_offset_nm, "t_settle_begin (ms)": t_settle_begin_ms, "slew_rate (V/s)": slew_rate_max_V_per_s,
-                           "t_settle (ms)": t_settle_ms, "t_integration (ms)": t_integration_ms, "t_settle_end (ms)": t_settle_end_ms, "t_z_control (ms)": t_control_z_ms})
+        sts_parameters.update({"t_avg_z (ms)": t_averaging_z_ms, "z_offset (nm)": z_offset_nm, "t_settle_begin (ms)": t_settle_begin_ms, "slew_rate (V/s)": slew_rate_max_V_per_s,
+                               "t_settle (ms)": t_settle_ms, "t_integration (ms)": t_integration_ms, "t_settle_end (ms)": t_settle_end_ms, "t_z_control (ms)": t_control_z_ms})
         
-        return parameters
-        
-    def append_sts_properties_old(self, response: str) -> dict:
-        idx = 20
-        channels = []
-        num_channels = self.conv.hex_to_int32(response[16 : 20])
-        for channel in range(num_channels):
-            channel_size = self.conv.hex_to_int32(response[idx : idx + 4])
-            idx += 4
-            channels.append(response[idx : idx + channel_size].decode())
-            idx += channel_size
-        
-        idx += 4
-        parameters = []
-        num_parameters  = self.conv.hex_to_int32(response[idx : idx + 4])
-        idx += 4
-        for parameter in range(num_parameters):
-            parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
-            idx += 4
-            parameters.append(response[idx:idx+parameter_size].decode())
-            idx += parameter_size
-
-        idx += 4
-        fixed_parameters = []
-        num_fixed_parameters  = self.conv.hex_to_int32(response[idx : idx + 4])
-        idx += 4
-        for fixed_parameter in range(num_fixed_parameters):
-            fixed_parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
-            idx += 4
-            fixed_parameters.append(response[idx : idx + fixed_parameter_size].decode())
-            idx += fixed_parameter_size
-        
-        return {"channels": channels, "parameters": parameters, "fixed_parameters": fixed_parameters}
-    
-    def append_sts_properties_new(self, response: str) -> dict:
-        idx = 16
-        parameters = []
-        num_parameters = self.conv.hex_to_int32(response[idx : idx + 4])
-        idx += 4
-        for parameter in range(num_parameters):
-            parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
-            idx += 4
-            parameters.append(response[idx : idx + parameter_size].decode())
-            idx += parameter_size
-
-        idx += 4
-        fixed_parameters = []
-        num_fixed_parameters  = self.conv.hex_to_int32(response[idx : idx + 4])
-        idx += 4
-        for fixed_parameter in range(num_fixed_parameters):
-            fixed_parameter_size = self.conv.hex_to_int32(response[idx : idx + 4])
-            idx += 4
-            fixed_parameters.append(response[idx : idx + fixed_parameter_size].decode())
-            idx += fixed_parameter_size
-        
-        autosave = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
-        save_dialog = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
-
-        return {"parameters": parameters, "fixed_parameters": fixed_parameters, "autosave": autosave, "save_dialog": save_dialog}
+        return sts_parameters
 
     def get_sts_channels(self) -> list:
         """
@@ -674,27 +645,6 @@ class NanonisHardware:
             idx += size
 
         if len(response) - idx < 4: raise ValueError("New-protocol GainsGet missing gain_index field")
-
-        # defaults
-        filters = []
-        filter_index = None
-
-        #if self.version <= 14000:
-        #    # Old protocol:
-        #    # Remaining bytes = 2, gain index as uint16
-        #    if remaining != 2:
-        #        raise ValueError(f"Unexpected old-protocol GainsGet format, {remaining = }")
-        #    gain_index = self.conv.hex_to_uint16(response[idx : idx + 2])
-        #else:
-        #    pass
-    
-        # --- New protocol (>14000) ---
-        # Expected ordering:
-        #   gain index (int32)
-        #   filters size (int32)
-        #   number of filters (int32)
-        #   filters list (each size:int32 + string)
-        #   filter index (int32)
 
         gain_index = self.conv.hex_to_int32(response[idx : idx + 4])
         current_gain = gains[gain_index]
@@ -1064,25 +1014,8 @@ class NanonisHardware:
         
         index = 16 + series_name_size + 4 + comment_size
         modules_names = []
-        auto_paste = 0
-        
-        if(self.version > 14000):
-            modules_names_total = self.conv.hex_to_int32(response[index : index+4])
-            index += 4
-
-            modules_count = self.conv.hex_to_int32(response[index : index + 4])
-            index += 4
-
-            for _ in range(modules_count):
-                name_size = self.conv.hex_to_int32(response[index : index + 4])
-                index += 4
-                modules_names.append(response[index : index + name_size].decode())
-                index += name_size
-
-            # auto_paste = self.conv.hex_to_int32(response[index : index + 4])
-            auto_paste = 1
             
-        parameters = {"continuous": bool(continuous_scan), "bouncy": bool(bouncy_scan), "auto_save": bool(auto_save), "series_name": series_name, "comment": comment, "modules_names": modules_names, "auto_paste": bool(auto_paste)}
+        parameters = {"continuous": bool(continuous_scan), "bouncy": bool(bouncy_scan), "auto_save": bool(auto_save), "series_name": series_name, "comment": comment, "modules_names": modules_names}
 
         return parameters
 
@@ -1174,7 +1107,7 @@ class NanonisHardware:
         command = self.headers["get_signals_in_slots"]
         
         self.send_command(command)
-        response = self.receive_response()        
+        response = self.receive_response()
         signals_names_num = self.conv.hex_to_int32(response[4 : 8])
         
         index = 8

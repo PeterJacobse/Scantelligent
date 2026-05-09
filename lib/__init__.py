@@ -1,4 +1,4 @@
-from .st_widgets import STWidgets, rotate_icon, make_layout, make_line
+from .sct_widgets import SCTWidgets, rotate_icon, make_layout, make_line
 from .gui_scantelligent import ScantelligentGUI
 from .hw_nanonis import NanonisHardware, Conversions
 from .api_nanonis import NanonisAPI

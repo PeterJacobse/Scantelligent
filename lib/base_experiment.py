@@ -1,9 +1,7 @@
+import time, h5py
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
-from . import NanonisAPI, CameraAPI, MLAAPI, KeithleyAPI
 from datetime import datetime
-import time
-import h5py
 
 
 
@@ -14,7 +12,6 @@ class AbortedError(Exception):
 
 
 class BaseExperiment(QObject):
-    connection = pyqtSignal(str) # This signal emits 'running' on connect, 'idle' after disconnect and 'offline' after an error to indicate the TCP connection status to the gui/program
     task_progress = pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of a task
     exp_progress = pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of the experiment
     message = pyqtSignal(str, str) # First argument is the message string, sedond argument is the message type, like 'warning', 'code', 'result', 'message', or 'error'

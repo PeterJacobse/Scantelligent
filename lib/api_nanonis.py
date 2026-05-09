@@ -344,7 +344,6 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             
             piezo_range = nhw.get_xyz_range_nm()
-            current_gain = nhw.get_I_gain()
             
             hardware_dict.update({
                 "x_min (nm)": -0.5 * piezo_range[0], "x_max (nm)": 0.5 * piezo_range[0],
@@ -352,21 +351,27 @@ class NanonisAPI(QtCore.QObject):
                 "z_min (nm)": -0.5 * piezo_range[2], "z_max (nm)": 0.5 * piezo_range[2],
                 "x_range (nm)": piezo_range[0], "y_range (nm)": piezo_range[1], "z_range (nm)": piezo_range[2]
             })
-            hardware_dict.update(current_gain)            
-                        
-            if "gain" in parameters.keys(): # A gain is given
-                gain = parameters["gain"]
-                
-                if isinstance(gain, int) and gain < len(current_gain["gains"]): nhw.set_I_gain(gain) # The gain is an integer (index of the gains list)
-                elif isinstance(gain, str):
-                    for index, entry in enumerate(current_gain["gains"]):
-                        if gain == entry:
-                            nhw.set_I_gain(index)
-                            break
-                
-                sleep(.1)
-                new_gain = nhw.get_I_gain()
-                hardware_dict.update(new_gain)
+            
+            try: # This may fail if the TIA settings are not known
+                current_gain = nhw.get_I_gain()
+                hardware_dict.update(current_gain)          
+                            
+                if "gain" in parameters.keys(): # A gain is given
+                    gain = parameters["gain"]
+                    
+                    if isinstance(gain, int) and gain < len(current_gain["gains"]): nhw.set_I_gain(gain) # The gain is an integer (index of the gains list)
+                    elif isinstance(gain, str):
+                        for index, entry in enumerate(current_gain["gains"]):
+                            if gain == entry:
+                                nhw.set_I_gain(index)
+                                break
+                    
+                    sleep(.1)
+                    new_gain = nhw.get_I_gain()
+                    hardware_dict.update(new_gain)
+            
+            except:
+                pass
             
             self.parameters.emit(hardware_dict)
             if verbose: self.logprint(f"{hardware_dict}", message_type = "result")
@@ -969,7 +974,7 @@ class NanonisAPI(QtCore.QObject):
             all_signals = {signal_name: index for index, signal_name in enumerate(signal_names)} # All signals gives the 128 signals available internally in the Nanonis NI daq
             scan_metadata.update({"all_signals": all_signals})
 
-            if nhw.version > 14000: # Newer versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
+            if nhw.version < 14000: # Older versions of Nanonis work with signals in slots, meaning that a small subset of the total of 128 channels is put into numbered 'slots', which are available for data acquisition
                 sig_in_slots = nhw.get_signals_in_slots()
                 signal_names = sig_in_slots["names"]
 
