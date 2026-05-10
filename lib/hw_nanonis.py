@@ -477,8 +477,8 @@ class NanonisHardware:
             fixed_parameters.append(response[idx : idx + fixed_parameter_size].decode())
             idx += fixed_parameter_size
         
-        autosave = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
-        save_dialog = self.conv.hex_to_int16(response[idx : idx + 4]); idx += 4
+        autosave = self.conv.hex_to_int16(response[idx : idx + 2])
+        save_dialog = self.conv.hex_to_int16(response[idx : idx + 2])
         
         sts_parameters.update({"parameters": parameters, "fixed_parameters": fixed_parameters, "autosave": autosave, "save_dialog": save_dialog})
         

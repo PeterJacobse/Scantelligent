@@ -177,7 +177,10 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "info": MSB(tooltip = "Info", icon = icons.get("i")),
             
             # Experiment
-            "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy")),
+            "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy"), click_to_toggle = False,
+                        states = [{"name": "idle", "color": sct_black, "tooltip": "Click this button to save experiment data"},
+                                  {"name": "data_present", "color": sct_blue, "tooltip": "Experiment data is present. Click to save"},
+                                  {"name": "data_saved", "color": self.colors["dark_green"], "tooltip": "Experiment data was saved"}]),
             "start_stop": MSB(click_to_toggle = False, size = 28,
                               states = [{"name": "load", "color": self.colors["dark_red"], "tooltip": "Load/reset experiment", "icon": icons.get("start")},
                                         {"name": "ready", "color": self.colors["dark_green"], "tooltip": "Start experiment", "icon": icons.get("start")},
@@ -533,14 +536,14 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
 
             "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             
-            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_phase": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
             
-            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod1_amp": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod1_phase": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
@@ -550,7 +553,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "mla_mod2_phase": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
             
-            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod3_amp": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod3_phase": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),

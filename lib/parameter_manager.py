@@ -259,7 +259,7 @@ class ParameterManager(QtCore.QObject):
             case "pixel":
                 pixel = parameters.get("pixel")
                 if pixel.ndim > 1: pixel = pixel[:, 0]
-                abs_values = np.abs(pixel)
+                abs_values = np.abs(2 * pixel)
                 #arg_values = np.rad2deg(np.angle(pixel))
                 [line_edits[f"demod_amplitude_{index}"].setValue(value * 1000) for index, value in enumerate(abs_values)]
                 #[line_edits[f"demod_angle_{index}"].setValue(value) for index, value in enumerate(abs_values)]
@@ -504,7 +504,7 @@ class ParameterManager(QtCore.QObject):
                 [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (ms)", "t_settle (ms)"]]
                 t_int_ms = t_int_s * 1000
                 t_settle_ms = t_settle_s * 1000
-                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_points", "sts_t_int", "sts_t_settle"], [n_points, t_int_ms, t_settle_ms])]
+                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_points"], [n_points])]
                 sct.gui.sts_V_rg.updateFactor1()
 
             case "gains":

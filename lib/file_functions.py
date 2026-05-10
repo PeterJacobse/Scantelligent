@@ -166,23 +166,20 @@ class FileFunctions():
         matching_indices = []
         for filename in files:
             match = re.match(pattern, filename)
-            if match:
-                # Extract the index and convert to int (int() handles leading zeros automatically)
-                index = int(match.group(1))
-                matching_indices.append(index)
+            if match: matching_indices.append(int(match.group(1)))
 
+        max_index = 0
+        next_index = 0
         if matching_indices:
             # If files were found, find the highest index
             max_index = max(matching_indices)
             next_index = max_index + 1
-        else:
-            # If no matching files were found, start with index 0
-            next_index = 0
             
         # Format the next index to be a 3-digit string with leading zeros if necessary
-        formatted_index = f"{next_index:03d}"
+        current_formatted_index = f"{max_index:03d}"
+        next_formatted_index = f"{next_index:03d}"
         
-        return f"{base_name}_{formatted_index}{extension}"
+        return [f"{base_name}_{current_formatted_index}{extension}", f"{base_name}_{next_formatted_index}{extension}"]
 
 
 

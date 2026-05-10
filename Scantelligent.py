@@ -95,7 +95,7 @@ class Scantelligent(QtCore.QObject):
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
                         "audio": self.toggle_audio, "zero_volumes": self.zero_volumes, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
-                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy
+                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "save": self.save_experiment
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
@@ -643,9 +643,7 @@ class Scantelligent(QtCore.QObject):
         image_item = self.gui.image_view.imageItem
         self.gui.view.clear()
         self.gui.view.addItem(image_item)
-        
-        #for item in self.gui.view.allChildItems():
-        #    if isinstance(item, (pg.ROI, pg.TargetItem)): self.gui.view.removeItem(item)
+        self.gui.image_view.ui.histogram.setImageItem(image_item)
 
         match new_view:
             case "camera":
@@ -683,14 +681,13 @@ class Scantelligent(QtCore.QObject):
                 
                 # self.draw_saved_images(new_image = False)
                 # self.gui.image_item = self.gui.image_view.imageItem
-                self.gui.image_view.setImage(np.zeros((2, 2)))
-                self.nanonis.frame_update(unlink = True, update_new_frame = True)
+                #self.nanonis.frame_update(unlink = True, update_new_frame = True)
                 self.gui.view.addItem(self.gui.image_item)
-                #self.gui.image_item.setImage(np.zeros((2, 2)))
-                self.nanonis.frame_update(unlink = True, update_new_frame = True)
+                self.gui.image_item.setImage(np.random.random((21, 21)))
+                #self.nanonis.frame_update(unlink = True, update_new_frame = True)
                 
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target]]
-                self.nanonis.hardware_update()                
+                #self.nanonis.hardware_update()                
                 self.set_view_range("full")
 
             case _:
@@ -1027,8 +1024,11 @@ class Scantelligent(QtCore.QObject):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
                     #self.gui.line_edits[f"experiment_{i}"].setValue("")
                     #self.gui.line_edits[f"experiment_{i}"].setUnit()
-                    
-                experiment_filename = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
+                
+                [previous_filename, next_filename] = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
+                
+                experiment_filename = next_filename
+                if self.gui.buttons["save"].state_name == "data_present": experiment_filename = previous_filename # Overwrite the previous file if it was not saved
                 self.paths.update({"experiment_filename": experiment_filename})
                 experiment_filepath = os.path.join(self.paths["session_path"], experiment_filename)
                 self.paths.update({"experiment_filepath": experiment_filepath})
@@ -1036,8 +1036,7 @@ class Scantelligent(QtCore.QObject):
                 
                 try:
                     mla_pointer = None
-                    if hasattr(self, "mla") and hasattr(self.mla, "lockin"): mla_pointer = self.mla
-                    
+                    if hasattr(self, "mla") and hasattr(self.mla.mla, "lockin"): mla_pointer = self.mla                    
                     self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath,
                                                                                     scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis, mla = mla_pointer)
                     self.experiment_thread = QtCore.QThread()
@@ -1048,6 +1047,7 @@ class Scantelligent(QtCore.QObject):
                     self.experiment.finished.connect(self.experiment_thread.quit)
                     #if self.gui.buttons["auto_paste"].isChecked(): self.experiment.finished.connect(self.draw_saved_images)
                     self.experiment_thread.finished.connect(self.experiment.deleteLater)
+                    #self.experiment_thread.finished.connect(lambda: self.gui.buttons["save"].setState("data_saved"))
                     self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
                     self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
                     
@@ -1094,6 +1094,7 @@ class Scantelligent(QtCore.QObject):
                 self.experiment.gui_parameters = copy.deepcopy(gui_parameters)
                 
                 start_button.setState("running")
+                self.gui.buttons["save"].setState("data_present")
                 self.experiment_thread.start()
             
             case "running":
@@ -1108,14 +1109,20 @@ class Scantelligent(QtCore.QObject):
                 
         return True
 
+    def save_experiment(self) -> None:
+        if self.gui.buttons["save"].state_name == "data_present":
+            self.gui.buttons["save"].setState("data_saved")
+        return
+
     def quick_scan(self) -> bool:
         experiment_loaded = self.control_experiment("scan")
         if not experiment_loaded: return False
         return self.control_experiment("scan")
     
     def start_spectroscopy(self) -> None:
-        self.control_experiment("spectroscopy")
-        return
+        experiment_loaded = self.control_experiment("spectroscopy")
+        if not experiment_loaded: return False
+        return self.control_experiment("spectroscopy")
 
 
 

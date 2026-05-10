@@ -112,15 +112,17 @@ class MLAAPI(QtCore.QObject):
         self.reset_outputs()
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
-        self.lockin_update({"df (Hz)": 100, "numbers": np.arange(1, 32), "amplitudes (mV)": [100]}, verbose = False)
-
-        """
-        input_ports = np.ones(mla.lockin.nr_output_freq - 1) + 1
-        mla.lockin.set_input_multiplexer(np.insert(input_ports, 0, 1))
-        """
+        
+        numbers = np.arange(0, self.mla.lockin.nr_input_freq - 1)
+        numbers[0] = 1
+        input_mask = 2 * np.ones(self.mla.lockin.nr_input_freq)
+        input_mask[0] = 1
+        self.lockin_update({"df (Hz)": 220, "numbers": numbers, "amplitudes (mV)": {0: 100}}, verbose = False)
+        self.set_input_multiplexer(input_mask)
+        self.autophase()
         return
 
-    def reset_outputs(self):
+    def reset_outputs(self) -> None:
         try: self.mla.lockin.reset_outputs()
         except Exception as e:
             self.logprint(f"{e}")
@@ -128,17 +130,22 @@ class MLAAPI(QtCore.QObject):
 
     def get_pixels(self, number: int = 1, average: bool = False, data_format: str = "IQ", wait_for_new: bool = True) -> np.ndarray:
         if not self.lockin_running: raise Exception("Requesting locking data while it is not running. Call mla.start_lockin() first.")
+        
         if self.test_mode:
             rng = np.random.default_rng()
             pix = rng.random((32, number), dtype = float) + 1j * rng.random((32, number), dtype = float)
-        else:
-            if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
-            if data_format == "phase": (pix, _) = self.mla.lockin.get_pixels(number, data_format == "phase", unit = "deg")
-            else: (pix, _) = self.mla.lockin.get_pixels(number)
-            pix *= 2
             if average: pix = np.average(pix, axis = 1)
+            return pix
+        
+        if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
+        if data_format == "phase": (pix, _) = self.mla.lockin.get_pixels(number, data_format == "phase", unit = "deg")
+        else: (pix, _) = self.mla.lockin.get_pixels(number)
+        if average: pix = np.average(pix, axis = 1)
         self.parameters.emit({"dict_name": "pixel", "pixel": pix})
         return pix
+    
+    def get_phases(self, number_pixels: int = 1) -> np.ndarray:
+        return self.get_pixels(number = number_pixels, average = True, data_format = "phase")
 
     def set_DACs_ADCs_safe_range(self) -> None:
         # Set all analog inputs to the correct configuration (range = +-20 V)
@@ -164,19 +171,23 @@ class MLAAPI(QtCore.QObject):
         self.mla.lockin.set_input_multiplexer(port_array)
         return
 
-    def autophase(self, drive_port: int = 1, measure_port: int = 1) -> None:
-        phases_old = self.mla.lockin.get_phases(unit = "degree") # Read the phases
-        
-        self.mla.lockin.set_phases(np.zeros(32), unit = "degree", idx = "all") # Zero
+    def autophase(self, amplitude_mV: float = 500) -> None:
+        if isinstance(amplitude_mV, float | int): self.amplitudes_update({"amplitudes (mV)": {0: amplitude_mV}})
+        self.outputs_update({"mod0": {"port": 1, "on": True}})
+
+        (phase_dict, error) = self.phases_update()
+        phases = phase_dict.get("phases (deg)")
+
         self.start_lockin()
-            
-        (pix, meta) = self.get_pixels(3, data_format = "phase", average = True)
-        angle0 = pix[measure_port - 1]
-        self.mla.lockin.set_phases(-angle0, unit = "degree", idx = drive_port - 1, event = True, correct_phases = True, wait_for_effect = True) # Phase update number 1
-        self.get_pixels(1)
-        (pix, meta) = self.get_pixels(3, data_format = "phase", average = True)
-        angle1 = pix[measure_port - 1]
-        self.mla.lockin.set_phases(90 - angle0 - angle1, unit = "degree", idx = 0, event = True, correct_phases = True, wait_for_effect = True) # Phase update number 2
+        for iteration in range(3):
+            pix = self.get_pixels(12, average = True, wait_for_new = True)
+            measured_phases = np.rad2deg(np.angle(pix))
+            delta_phase = 90 - measured_phases[1]
+            drive_phase = phases[0] + delta_phase
+            (phase_dict, error) = self.phases_update({"phases (deg)": {0: drive_phase}})
+            phases = phase_dict.get("phases (deg)")
+        self.stop_lockin()
+        self.outputs_update({"blank": True})
         return
 
 
@@ -392,7 +403,7 @@ class MLAAPI(QtCore.QObject):
             phases = parameters.get("phases (deg)", None)
             
             if self.test_mode: old_phases = np.random.random(32)
-            else: old_phases = self.mla.lockin.get_phases() * 1000 # Scantelligent uses mV by default
+            else: old_phases = self.mla.lockin.get_phases(unit = "degree") # Scantelligent uses degree instead of radians
             new_phases = old_phases # To be overwritten with user data
             
             # Set
@@ -404,11 +415,11 @@ class MLAAPI(QtCore.QObject):
                     if not isinstance(value, float | int): continue
                     try: new_phases[int(key)] = value
                     except: pass
-            if not self.test_mode: self.mla.lockin.set_phases(new_phases / 1000, wait_for_effect = True)
+            if not self.test_mode: self.mla.lockin.set_phases(new_phases, unit = "degree", wait_for_effect = True)
             
             # Read
             if self.test_mode: read_phases = np.random.random(32)
-            else: read_phases = np.round(self.mla.lockin.get_phases() * 1000, 5)
+            else: read_phases = self.mla.lockin.get_phases(unit = "degree")
 
             phase_dict.update({"phases (deg)": read_phases})
             self.parameters.emit(phase_dict)
