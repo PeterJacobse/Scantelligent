@@ -1,5 +1,5 @@
 import os, yaml
-from PyQt6 import QtCore
+from PyQt6 import QtCore, QtGui
 import numpy as np
 
 
@@ -389,13 +389,20 @@ class ParameterManager(QtCore.QObject):
                 # Renew the image_item
                 sct.gui.image_item = sct.gui.image_view.getImageItem()
                 
+                pw = sct.gui.image_item.width()
+                ph = sct.gui.image_item.height()
+                
+                if pw == 0 or ph == 0:
+                    sct.gui.image_view.setImage(np.random.random(7, 7))
+                    sct.gui.image_item = sct.gui.image_view.getImageItem()
+                
                 box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
                 sct.gui.image_item.setRect(box)    
                 
                 center = sct.gui.image_item.boundingRect().center()
                 sct.gui.image_item.setTransformOriginPoint(center)
                 sct.gui.image_item.setRotation(90 - angle_deg)
-                sct.gui.image_item.setPos(x_0_nm, y_0_nm)                  
+                sct.gui.image_item.setPos(x_0_nm, y_0_nm)
 
             case "new_frame":
                 [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
@@ -470,6 +477,13 @@ class ParameterManager(QtCore.QObject):
 
                 # Renew the image_item
                 sct.gui.image_item = sct.gui.image_view.getImageItem()
+                
+                pw = sct.gui.image_item.width()
+                ph = sct.gui.image_item.height()
+                
+                if pw == 0 or ph == 0:
+                    sct.gui.image_view.setImage(np.random.random(7, 7))
+                    sct.gui.image_item = sct.gui.image_view.getImageItem()
                 
                 box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
                 sct.gui.image_item.setRect(box)    

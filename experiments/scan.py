@@ -33,7 +33,7 @@ class Experiment(BaseExperiment):
         # z_channel_index = list(sig_dict.keys())
 
         [recorded_channel_indices.append(channel_index) for channel_index in feedback_channel_indices if channel_index not in recorded_channel_indices] # Add the z channel to the list of recorded channels
-        nn.scan_metadata_update({"channel_indices": recorded_channel_indices}) # Make sure the correct channel is being recorded
+        nn.scan_metadata_update({"channel_indices": recorded_channel_indices}, verbose = False) # Make sure the correct channel is being recorded
         
         graph_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
         self.prepare_graph(graph_channels) # This triggers the GUI to start graphing data

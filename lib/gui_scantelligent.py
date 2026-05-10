@@ -186,8 +186,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop"), size = 28),
             
             # Parameters
-            "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": sct_black}, {"color": sct_blue}]),
+            "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
+            "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
             
             "tip": MSB(click_to_toggle = False, size = 28,
                        states = [{"name": "unknown", "tooltip": "Tip status\nUnknown / withdrawn", "icon": icons.get("tip_unknown"), "color": sct_black},
@@ -245,6 +245,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                       {"name": "on", "tooltip": "MLA modulator 3 ON", "color": sct_blue}]),
 
             "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28),
+            "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
@@ -301,7 +302,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
 
         # Initialize
-        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none"]]
+        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste"]]
 
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
@@ -416,6 +417,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         RG = SCTWidgets.ReciprocalGroup
         
         sct_green = self.colors["dark_green"]
+        scanalyzer_blue = "#2020C0"
         
         line_edits = {
             # Experiment
@@ -435,82 +437,82 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             # Parameters
             # Bias
-            "V_nanonis": LE(tooltip = "Nanonis bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = sct_green),
-            "V_mla_port1": LE(tooltip = "MLA bias on port 1", unit = "V", limits = [-10, 10], digits = 3, edited_color = sct_green),
-            "V_mla_port2": LE(tooltip = "MLA bias on port 2", unit = "V", limits = [-10, 10], digits = 3, edited_color = sct_green),
-            "V_keithley": LE(tooltip = "Keithley bias", unit = "V", limits = [-200, 200], digits = 3, edited_color = sct_green),
+            "V_nanonis": LE(tooltip = "Nanonis bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
+            "V_mla_port1": LE(tooltip = "MLA bias on port 1", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
+            "V_mla_port2": LE(tooltip = "MLA bias on port 2", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
+            "V_keithley": LE(tooltip = "Keithley bias", unit = "V", limits = [-200, 200], digits = 3, edited_color = scanalyzer_blue),
 
             "dV_nanonis": LE(tooltip = "voltage step dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
             "dt_nanonis": LE(tooltip = "time step dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
             "dz_nanonis": LE(tooltip = "height step dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
 
-            "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1, edited_color = sct_green),
-            "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0, edited_color = sct_green),
+            "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1, edited_color = scanalyzer_blue),
+            "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0, edited_color = scanalyzer_blue),
             
             # Feedback
-            "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0, edited_color = sct_green),
-            "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = sct_green),
-            "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = sct_green),
+            "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
+            "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
+            "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
             "I_pA": LE(tooltip = "most recent current measurement", unit = "pA", digits = 0),
 
-            "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0, edited_color = sct_green),
-            "t_const": LE(tooltip = "time constant", unit = "us", digits = 0, edited_color = sct_green),
-            "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0, edited_color = sct_green),
+            "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0, edited_color = scanalyzer_blue),
+            "t_const": LE(tooltip = "time constant", unit = "us", digits = 0, edited_color = scanalyzer_blue),
+            "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0, edited_color = scanalyzer_blue),
             
-            "v_fwd": LE(tooltip = "forward scan speed", unit = "nm/s", digits = 2, edited_color = sct_green),
-            "v_bwd": LE(tooltip = "backward scan speed", unit = "nm/s", digits = 2, edited_color = sct_green),
-            "v_tip": LE(tooltip = "tip move speed", unit = "nm/s", digits = 2, edited_color = sct_green),
+            "v_fwd": LE(tooltip = "forward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
+            "v_bwd": LE(tooltip = "backward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
+            "v_tip": LE(tooltip = "tip move speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
             
             # Frame
-            "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1, edited_color = sct_green),
-            "frame_width": LE(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1, edited_color = sct_green),
-            "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = sct_green),
-            "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = sct_green),
-            "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1, edited_color = sct_green),
-            "frame_aspect": LE(tooltip = "frame aspect ratio (height / width)", digits = 4, edited_color = sct_green),
+            "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1, edited_color = scanalyzer_blue),
+            "frame_width": LE(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1, edited_color = scanalyzer_blue),
+            "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
+            "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
+            "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1, edited_color = scanalyzer_blue),
+            "frame_aspect": LE(tooltip = "frame aspect ratio (height / width)", digits = 4, edited_color = scanalyzer_blue),
 
             # Grid
-            "grid_pixels": LE(tooltip = "number of pixels", unit = "px", limits = [1, 10000], digits = 0, edited_color = sct_green),
-            "grid_lines": LE(tooltip = "number of lines", unit = "px", limits = [1, 10000], digits = 0, edited_color = sct_green),
-            "grid_aspect": LE(tooltip = "grid aspect ratio (lines / pixels)", digits = 4, edited_color = sct_green),
-            "pixel_width": LE(tooltip = "pixel width", unit = "nm", digits = 4, edited_color = sct_green),
-            "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4, edited_color = sct_green),
+            "grid_pixels": LE(tooltip = "number of pixels", unit = "px", limits = [1, 10000], digits = 0, edited_color = scanalyzer_blue),
+            "grid_lines": LE(tooltip = "number of lines", unit = "px", limits = [1, 10000], digits = 0, edited_color = scanalyzer_blue),
+            "grid_aspect": LE(tooltip = "grid aspect ratio (lines / pixels)", digits = 4, edited_color = scanalyzer_blue),
+            "pixel_width": LE(tooltip = "pixel width", unit = "nm", digits = 4, edited_color = scanalyzer_blue),
+            "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4, edited_color = scanalyzer_blue),
             
             # Tip shaper
             "pulse_voltage": LE(value = 6, tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
             "pulse_duration": LE(value = 300, tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
             
-            "poke_voltage": LE(tooltip = "poke voltage (bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = sct_green),
-            "poke_depth": LE(tooltip = "poke depth (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = sct_green),
-            "poke_time": LE(tooltip = "poke time (duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = sct_green),
+            "poke_voltage": LE(tooltip = "poke voltage (bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
+            "poke_depth": LE(tooltip = "poke depth (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "poke_time": LE(tooltip = "poke time (duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
-            "lift_voltage": LE(tooltip = "lift voltage (bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = sct_green),
-            "lift_height": LE(tooltip = "lift height (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = sct_green),
-            "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = sct_green),
+            "lift_voltage": LE(tooltip = "lift voltage (bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
+            "lift_height": LE(tooltip = "lift height (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
             # STS
-            "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [0, 10000], digits = 2, edited_color = sct_green),
-            "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 2, edited_color = sct_green),
+            "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
-            "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = sct_green),
-            "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = sct_green),
-            "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 2, edited_color = sct_green),
-            "sts_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = sct_green),
+            "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
+            "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
+            "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            "sts_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
             
-            "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = sct_green),
-            "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = sct_green),
-            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = sct_green),
-            "sts_f_points": LE(value = 1001, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = sct_green),
+            "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
+            "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
+            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = scanalyzer_blue),
+            "sts_f_points": LE(value = 1001, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
             
-            "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = sct_green),
-            "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = sct_green),
-            "sts_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [0, 200], digits = 2, edited_color = sct_green),
-            "sts_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = sct_green),            
+            "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
+            "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
+            "sts_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [0, 200], digits = 2, edited_color = scanalyzer_blue),
+            "sts_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),            
 
-            "sts_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = sct_green),
-            "sts_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = sct_green),
-            "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 2, edited_color = sct_green),
-            "sts_amp_points": LE(value = 101, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = sct_green),
+            "sts_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
+            "sts_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
+            "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "sts_amp_points": LE(value = 101, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
 
             "sts_V_keithley_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
             "sts_V_keithley_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
@@ -518,40 +520,40 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "sts_V_keithley_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
             
             # Lockins
-            "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = sct_green),
-            "nanonis_df": LE(tooltip = "Nanonis frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
+            "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_df": LE(tooltip = "Nanonis frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             
-            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
-            "nanonis_mod1_amp": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = sct_green),
-            "nanonis_mod1_phase": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = sct_green),
-            "nanonis_mod1_n": LE(tooltip = "Nanonis modulator 1 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = sct_green, max_width = 70),
-            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
-            "nanonis_mod2_amp": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = sct_green),
-            "nanonis_mod2_phase": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = sct_green),
-            "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = sct_green, max_width = 70),
+            "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_mod1_amp": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_mod1_phase": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_mod1_n": LE(tooltip = "Nanonis modulator 1 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
+            "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_mod2_amp": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_mod2_phase": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
 
-            "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = sct_green),
-            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
+            "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             
-            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod0_phase": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = sct_green),
-            "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = sct_green, warning_color = self.colors["dark_orange"], max_width = 70),
+            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod0_phase": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
             
-            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod1_amp": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod1_phase": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = sct_green),
-            "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = sct_green, warning_color = self.colors["dark_orange"], max_width = 70),
+            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod1_amp": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod1_phase": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
             
-            "mla_mod2_f": LE(tooltip = "MLA modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod2_amp": LE(tooltip = "MLA modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod2_phase": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = sct_green),
-            "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = sct_green, warning_color = self.colors["dark_orange"], max_width = 70),
+            "mla_mod2_f": LE(tooltip = "MLA modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod2_amp": LE(tooltip = "MLA modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod2_phase": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
             
-            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod3_amp": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = sct_green),
-            "mla_mod3_phase": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = sct_green),
-            "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = sct_green, warning_color = self.colors["dark_orange"], max_width = 70),
+            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod3_amp": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod3_phase": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
 
             "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
             
@@ -666,7 +668,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             
             # Scan
             "scan": make_layout("v"),
-            "quick_scan": make_layout("h"),
+            "scan_control": make_layout("g"),
+            "paste_scan": make_layout("h"),
             "navigation": make_layout("h"),
             "background": make_layout("h"),
             "operations": make_layout("g"),
@@ -697,14 +700,17 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         plot_item = pg.PlotItem()
         im_view = SCTWidgets.ImageView(view = plot_item)
-        im_view.view.invertY(False)
+        view = im_view.getView()
         hist_widget = im_view.getHistogramWidget()
+        view.invertY(False)
+        self.view = view.getViewBox()
         self.hist_item = hist_widget.item
         
         # Make a tip target item in the image_view
-        self.tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = True)
-        im_view.view.addItem(self.tip_target)
+        self.tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
+        self.target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
         
+        self.saved_scans = []        
         return im_view
 
     def make_rois(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
@@ -1055,7 +1061,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["demodulators"].addWidget(self.demod_scroller)
         
         # Scan
-        layouts["quick_scan"].addWidget(buttons["start_scan"])
+        [layouts["scan_control"].addWidget(buttons[name], 0, index) for index, name in enumerate(["start_scan", "auto_paste"])]
         
         n_layout = layouts["navigation"]
         n_layout.addWidget(comboboxes["channels"], 4)
@@ -1103,7 +1109,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "waveforms": SGB(title = "waveforms", tooltip = "waveforms"),
             "demodulators": SGB(title = "demodulators", tooltip = "demodulators"),
             
-            "quick_scan": SGB(title = "quick scan", tooltip = "quick scan"),
+            "scan_control": SGB(title = "scan control", tooltip = "scan control"),
             "navigation": SGB(title = "navigation", tooltip = "navigation"),
             "background": SGB(title = "background subtraction", tooltip = "background subtraction"),
             "operations": SGB(title = "image processing operations", tooltip = "image processing operations"),
@@ -1126,7 +1132,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
         [layouts["osc"].addWidget(groupboxes[name]) for name in ["modulators", "waveforms"]]
         [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "demodulators"]]
-        [layouts["scan"].addWidget(groupboxes[name]) for name in ["quick_scan", "navigation", "operations", "limits"]]
+        [layouts["scan"].addWidget(groupboxes[name]) for name in ["scan_control", "navigation", "operations", "limits"]]
         [layouts[name].addStretch(1) for name in ["parameters", "sts", "osc", "coarse_prep", "scan"]]
 
         return groupboxes

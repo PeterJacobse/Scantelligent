@@ -24,7 +24,7 @@ class Scantelligent(QtCore.QObject):
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
-        self.toggle_view("nanonis")
+        #self.toggle_view("nanonis")
 
 
 
@@ -342,10 +342,9 @@ class Scantelligent(QtCore.QObject):
                     (processed_scan, statistics, limits, error) = self.data.process_scan(flipped_image)
                     [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
                     
-                    if hasattr(self.gui, "image_item"): self.gui.image_item.setImage(processed_scan)
-                    else:
-                        self.gui.image_view.setImage(processed_scan, autoRange = False)
-                        self.nanonis.frame_update() # Incoming frame data will trigger the recalculation of the ImageItem corresponding to the ImageView above
+                    #if not hasattr(self.gui, "image_item"): self.nanonis.frame_update()
+                    #else:
+                    self.gui.image_item.setImage(processed_scan)
                     
                     self.gui.hist_item.setLevels(limits[0], limits[1])
                 
@@ -466,21 +465,6 @@ class Scantelligent(QtCore.QObject):
         self.gui.line_edits["input"].setCompleter(completer)
         return
 
-    def set_view_range(self, obj: str = "full") -> None:
-        match obj:            
-            case "frame":
-                roi_rect = self.gui.frame_roi.boundingRect()
-                mapped_rect = self.gui.frame_roi.mapRectToParent(roi_rect)
-                self.gui.image_view.view.setRange(mapped_rect)
-            case _:
-                self.gui.image_view.view.autoRange(item = self.gui.piezo_roi)
-        return
-
-    def set_pdi_visible(self, index: int = 0) -> None:
-        checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
-        self.gui.pdis[index].setVisible(checked)
-        return
-
     def execute_command(self) -> None:
         input_le = self.gui.line_edits["input"]
         input_le.blockSignals(True)
@@ -518,91 +502,6 @@ class Scantelligent(QtCore.QObject):
                 self.logprint(f"{e}", message_type = "error")
         except Exception as e:
             self.logprint(f"{e}", message_type = "error")        
-        return
-
-    def toggle_view(self, view: str = None, verbose: bool = True):
-        if self.gui.buttons["view"].state_name == view: return # Return if the view is not changed
-
-        # Determine the new view mode
-        if isinstance(view, str) and view in ["nanonis", "camera", "none"]: # Explicit selection
-            new_view = view
-        else:
-            match self.status["view"]: # Toggling to the next view mode
-                # Set to Camera
-                case "none": new_view = "camera"
-                case "camera": new_view = "nanonis"
-                case "nanonis": new_view = "none"
-                case _: pass
-
-        # Clean up old processes and the imageview
-        if hasattr(self, "camera_thread"):
-            try: self.camera_thread.requestInterruption()
-            except: pass
-
-        view_box = self.gui.image_view.getView()
-        for item in view_box.allChildItems():
-            if isinstance(item, (pg.ROI, pg.TargetItem)): view_box.removeItem(item)
-
-        if new_view == "camera": new_view = "nanonis"
-        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
-
-
-
-        match new_view:
-            case "camera":
-                self.status.update({"view": "camera"})
-                self.gui.buttons["view"].setState("camera")
-
-                image_item = self.gui.image_view.getImageItem()
-                image_item.setImage(np.zeros((2, 2)))
-                image_item.setRotation(0)
-                image_item.setPos(0, 0)
-
-                try:
-                    # Instantiate
-                    self.camera = CameraAPI(self.hw_config)
-                    self.camera_thread = QtCore.QThread()
-                    self.camera.moveToThread(self.camera_thread)
-
-                    # Set up signal-slot connections
-                    # Camera -> Scantelligent
-                    self.camera.frame_captured.connect(self.receive_image)
-                    self.camera.message.connect(self.receive_message)
-                    self.camera.finished.connect(self.camera_thread.quit)
-                    
-                    self.camera_thread.started.connect(self.camera.run)
-                    self.camera_thread.finished.connect(self.camera_thread.deleteLater)                    
-                    self.camera_thread.destroyed.connect(self.camera_finished)
-                    
-                    self.camera_thread.start()
-                except:
-                    pass
-
-            case "nanonis":
-                self.status.update({"view": "nanonis"})
-                self.gui.buttons["view"].setState("nanonis")
-
-                image_item = self.gui.image_view.getImageItem()
-                image_item.setImage(np.zeros((2, 2)))
-                
-                [self.gui.image_view.addItem(roi) for roi in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi]]
-                self.gui.image_view.addItem(self.gui.tip_target)
-                self.nanonis.hardware_update()
-                self.nanonis.frame_update(unlink = True)
-                self.set_view_range("full")
-
-            case _:
-                self.status.update({"view": "none"})
-                self.gui.buttons["view"].setState("none")
-                
-                image_item = self.gui.image_view.getImageItem()
-                image_item.setImage(self.splash_screen)                
-                image_item.setRotation(0)
-                image_item.setPos(0, 0)
-                
-                view_box.autoRange()
-
-        if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
         return
 
     def camera_finished(self):
@@ -678,6 +577,137 @@ class Scantelligent(QtCore.QObject):
     def closeEvent(self, event) -> None:
         self.exit()
 
+
+
+    # Visual stuff: scan/spectroscopy/graphing
+    def set_view_range(self, obj: str = "full") -> None:
+        match obj:            
+            case "frame":
+                roi_rect = self.gui.frame_roi.boundingRect()
+                mapped_rect = self.gui.frame_roi.mapRectToParent(roi_rect)
+                self.gui.image_view.view.setRange(mapped_rect)
+            case _:
+                self.gui.image_view.view.autoRange(item = self.gui.piezo_roi)
+        return
+
+    def set_pdi_visible(self, index: int = 0) -> None:
+        checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
+        self.gui.pdis[index].setVisible(checked)
+        return
+
+    def draw_saved_images(self, new_image: bool = True) -> None:
+        if new_image:
+            try:
+                image_item = self.gui.image_item
+                image_item.setTransform(self.gui.image_item.transform())
+                self.gui.saved_scans.insert(0, image_item)
+                if len(self.gui.saved_scans) > 6: self.gui.saved_scans = self.gui.saved_scans[:5]
+                self.gui.image_view.setImage(np.zeros((2, 2)))
+            except:
+                pass
+
+        view_items = self.gui.view.addedItems
+        [self.gui.view.removeItem(item) for item in view_items if isinstance(item, pg.ImageItem)] # Remove old scans
+        try:
+            if len(self.gui.saved_scans) > 0: [self.gui.view.addItem(item) for item in self.gui.saved_scans]
+        except Exception as e:
+            self.logprint(f"{e}")
+        return
+
+    def toggle_view(self, view: str = None, verbose: bool = True):
+        old_view = self.gui.buttons["view"].state_name
+        if old_view == view: return # Return if the view is not changed
+
+        # Determine the new view mode
+        if isinstance(view, str) and view in ["nanonis", "camera", "none"]: # Explicit selection
+            new_view = view
+        else:
+            match old_view: # Toggling to the next view mode
+                # Set to Camera
+                case "none": new_view = "camera"
+                case "camera": new_view = "nanonis"
+                case "nanonis": new_view = "none"
+                case _: pass
+
+        # Clean up old processes
+        if hasattr(self, "camera_thread"):
+            try: self.camera_thread.requestInterruption()
+            except: pass
+
+        if new_view == "camera": new_view = "nanonis"
+        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
+
+
+
+        # Reset ImageView
+        image_item = self.gui.image_view.imageItem
+        self.gui.view.clear()
+        self.gui.view.addItem(image_item)
+        
+        #for item in self.gui.view.allChildItems():
+        #    if isinstance(item, (pg.ROI, pg.TargetItem)): self.gui.view.removeItem(item)
+
+        match new_view:
+            case "camera":
+                self.gui.buttons["view"].setState("camera")
+                self.gui.main_image.setImage(np.zeros((2, 2)))
+                self.gui.main_image.resetTransform()
+                """
+                image_item = self.gui.image_view.getImageItem()
+                image_item.setImage(np.zeros((2, 2)))
+                image_item.setRotation(0)
+                image_item.setPos(0, 0)
+                """
+
+                try:
+                    # Instantiate
+                    self.camera = CameraAPI(self.hw_config)
+                    self.camera_thread = QtCore.QThread()
+                    self.camera.moveToThread(self.camera_thread)
+
+                    # Set up signal-slot connections
+                    # Camera -> Scantelligent
+                    self.camera.frame_captured.connect(self.receive_image)
+                    self.camera.finished.connect(self.camera_thread.quit)
+                    
+                    self.camera_thread.started.connect(self.camera.run)
+                    self.camera_thread.finished.connect(self.camera_thread.deleteLater)                    
+                    self.camera_thread.destroyed.connect(self.camera_finished)
+                    
+                    self.camera_thread.start()
+                except:
+                    pass
+
+            case "nanonis":
+                self.gui.buttons["view"].setState("nanonis")
+                
+                # self.draw_saved_images(new_image = False)
+                # self.gui.image_item = self.gui.image_view.imageItem
+                self.gui.image_view.setImage(np.zeros((2, 2)))
+                self.nanonis.frame_update(unlink = True, update_new_frame = True)
+                self.gui.view.addItem(self.gui.image_item)
+                #self.gui.image_item.setImage(np.zeros((2, 2)))
+                self.nanonis.frame_update(unlink = True, update_new_frame = True)
+                
+                [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target]]
+                self.nanonis.hardware_update()                
+                self.set_view_range("full")
+
+            case _:
+                self.gui.buttons["view"].setState("none")
+
+                self.gui.image_view.setImage(self.splash_screen)
+                self.gui.image_item = self.gui.image_view.getImageItem()
+                self.gui.image_item.setRotation(0)
+                self.gui.image_item.setPos(0, 0)
+                self.gui.view.autoRange()
+
+        if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
+        return
+
+
+
+    # Audio
     def toggle_audio(self) -> None:
         if not hasattr(self, "audio"): return
 
@@ -971,10 +1001,10 @@ class Scantelligent(QtCore.QObject):
 
 
     # Experiments
-    def control_experiment(self, experiment_name = None) -> None:
+    def control_experiment(self, experiment_name = None) -> bool:
         if not "session_path" in list(self.paths.keys()) or not os.path.isdir(self.paths["session_path"]):
             self.logprint(f"Error. No session folder loaded. Either select one manually or get it from a Nanonis connection", message_type = "error")
-            return
+            return False
         
         start_button = self.gui.buttons["start_stop"]
         
@@ -987,7 +1017,7 @@ class Scantelligent(QtCore.QObject):
                 experiment_path = os.path.join(self.paths["experiments_folder"], experiment_name + ".py")
                 if not os.path.isfile(experiment_path):
                     self.logprint(f"The selected experiment was not found in {self.paths["experiments_folder"]}", "error")
-                    return
+                    return False
 
                 self.logprint(f"Loading/resetting experiment {experiment_name}", message_type = "message")
                 [self.gui.progress_bars[name].setValue(0) for name in ["task", "experiment"]]
@@ -1016,6 +1046,7 @@ class Scantelligent(QtCore.QObject):
                     # Worker-thread connections
                     self.experiment_thread.started.connect(self.experiment.run)
                     self.experiment.finished.connect(self.experiment_thread.quit)
+                    #if self.gui.buttons["auto_paste"].isChecked(): self.experiment.finished.connect(self.draw_saved_images)
                     self.experiment_thread.finished.connect(self.experiment.deleteLater)
                     self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
                     self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
@@ -1035,7 +1066,7 @@ class Scantelligent(QtCore.QObject):
                 
                 except Exception as e:
                     self.logprint(f"Unable to load the experiment. {e}", message_type = "error")
-                    return
+                    return False
                 
                 self.status["experiment"].update({"name": experiment_name})
                 start_button.setState("ready")
@@ -1044,7 +1075,7 @@ class Scantelligent(QtCore.QObject):
                 if not hasattr(self, "experiment") or not hasattr(self, "experiment_thread"):
                     self.logprint("Error. No experiment object or thread initialized", message_type = "error")
                     start_button.setState("load")
-                    return
+                    return False
                 
                 # Pass the parameters from the gui to the experiment
                 spec_line_edits = {}
@@ -1068,18 +1099,19 @@ class Scantelligent(QtCore.QObject):
             case "running":
                 start_button.setState("aborted")
                 if hasattr(self, "experiment_thread"):
-                    if not self.experiment_thread.isRunning(): return
+                    if not self.experiment_thread.isRunning(): return False
                     else:
                         self.experiment_thread.requestInterruption()
             
             case _:
                 pass
                 
-        return
+        return True
 
-    def quick_scan(self) -> None:
-        self.control_experiment("scan")
-        return
+    def quick_scan(self) -> bool:
+        experiment_loaded = self.control_experiment("scan")
+        if not experiment_loaded: return False
+        return self.control_experiment("scan")
     
     def start_spectroscopy(self) -> None:
         self.control_experiment("spectroscopy")
