@@ -58,9 +58,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # 5: Set up the main window layout
         self.setup_main_window()
 
-        # 6: Interconnect mutually interdependent signals and slots
-        self.interconnect()
-
 
 
     # 1: Read icons from file.
@@ -562,7 +559,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "input": ILE(tooltip = "Enter a command\n(Enter to evaluate)")
         }
         
-        # Reciprocal pairs and rang-steps groups (inter-line-edit update logic)
+        # Reciprocal groups (inter-line-edit update logic)
         self.sts_V_rg = RG(product = [line_edits["sts_V_start"], line_edits["sts_V_end"]], factors = [line_edits["sts_V_points"], line_edits["sts_dV"]], factor = 1000,
                            lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
         self.nanonis_rg = RG(product = 1000, factors = [line_edits["nanonis_t"], line_edits["nanonis_df"]])
@@ -575,9 +572,12 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                              lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)        
         self.tone_rgs = [RG(product = line_edits[f"mla_mod{index}_f"], factors = [line_edits["mla_df"], line_edits[f"mla_mod{index}_n"]],
                             lock = "factor0", try_to_retain = "product", factor1_warn_if_not_integer = True) for index in range(4)]
-        self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "product")
-        self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "product",
+        self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "factor0")
+        self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "factor0",
                           factor0_constraint = lambda value: int(round(value / 16) * 16))
+        
+        self.buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
+        self.buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
         
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
@@ -590,6 +590,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
         
+        # Frame
+        [line_edits[f"frame_{key}"].editingFinished.connect(self.update_frame_from_fields) for key in ["x", "y", "width", "height", "angle", "aspect"]]
         return line_edits
 
     def make_progress_bars(self) -> dict:
@@ -712,8 +714,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         new_frame_roi.addScaleHandle([1, 0], [0, 1])
         new_frame_roi.addRotateHandle([0.5, 0], [0.5, 0.5])
-        new_frame_roi.sigRegionChanged.connect(self.limit_roi_angle)
         
+        new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)        
         return (piezo_roi, frame_roi, new_frame_roi)
 
     def make_plot_widgets(self) -> tuple[pg.PlotWidget, list[pg.PlotDataItem], pg.PlotWidget, list[pg.PlotDataItem]]:
@@ -1189,44 +1191,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
 
     # 6: Interconnect interdependent widgets
-    def interconnect(self) -> None:
-        #self.line_edits["grid_pixels"].editingFinished.connect(lambda: self.line_edits["grid_pixels"].setValue(int(round(self.line_edits["grid_pixels"].getValue() / 16) * 16)))
-        self.line_edits["grid_pixels"].editingFinished.connect(self.set_pixels_to_multiple_of_16)
-        self.buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
-        self.buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
-        
-        self.new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
-        [self.line_edits[f"frame_{key}"].editingFinished.connect(self.update_frame_from_fields) for key in ["x", "y", "width", "height", "angle", "aspect"]]
-        return
-
     def update_lock(self, name: str = "frame") -> None:
         if bool(self.buttons[f"{name}_aspect"].state_index): self.frame_rg.setLock("factor1") # Lock the aspect ratio
         else: self.frame_rg.setLock("factor0") # Lock the width
         return
 
-    def set_pixels_to_multiple_of_16(self) -> None:
-        value = self.line_edits["grid_pixels"].getValue()
-        new_value = int(16 * round(value / 16))
-        
-        self.line_edits["grid_pixels"].setValue(new_value, edited_color = True)
-        
-        if bool(self.buttons["grid_aspect"].state_index):
-            grid_aspect = self.line_edits["grid_aspect"].getValue()
-            lines = int(grid_aspect * new_value)
-            self.line_edits["grid_lines"].setValue(lines, edited_color = True)
-        else:
-            lines = self.line_edits["grid_lines"].getValue()
-            grid_aspect = lines / new_value
-            self.line_edits["grid_aspect"].setValue(grid_aspect)        
-        return
-
-    def limit_roi_angle(self, roi) -> None:
-        angle = roi.angle()
+    def limit_roi_angle(self) -> None:
+        angle = self.new_frame_roi.angle()
         new_angle = (angle + 180) % 360 - 180
 
-        roi.blockSignals(True)
-        roi.setAngle(new_angle)
-        roi.blockSignals(False)
+        self.new_frame_roi.blockSignals(True)
+        self.new_frame_roi.setAngle(new_angle)
+        self.new_frame_roi.blockSignals(False)
         return
 
     def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
@@ -1286,6 +1262,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
     def update_fields_from_frame_change(self) -> None:
         [self.line_edits[name].blockSignals(True) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
+        
+        self.limit_roi_angle()
         
         new_width = self.new_frame_roi.size().x()
         self.line_edits["frame_width"].setValue(new_width, edited_color = True)

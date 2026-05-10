@@ -385,6 +385,17 @@ class ParameterManager(QtCore.QObject):
                     abs_center = frame_roi.mapToParent(local_center)
                     
                     frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                
+                # Renew the image_item
+                sct.gui.image_item = sct.gui.image_view.getImageItem()
+                
+                box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
+                sct.gui.image_item.setRect(box)    
+                
+                center = sct.gui.image_item.boundingRect().center()
+                sct.gui.image_item.setTransformOriginPoint(center)
+                sct.gui.image_item.setRotation(90 - angle_deg)
+                sct.gui.image_item.setPos(x_0_nm, y_0_nm)                  
 
             case "new_frame":
                 [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
@@ -457,6 +468,17 @@ class ParameterManager(QtCore.QObject):
                     
                     new_frame_roi.blockSignals(False)
 
+                # Renew the image_item
+                sct.gui.image_item = sct.gui.image_view.getImageItem()
+                
+                box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
+                sct.gui.image_item.setRect(box)    
+                
+                center = sct.gui.image_item.boundingRect().center()
+                sct.gui.image_item.setTransformOriginPoint(center)
+                sct.gui.image_item.setRotation(90 - angle_deg)
+                sct.gui.image_item.setPos(x_0_nm, y_0_nm)
+
             case "signal":
                 if "Current (A)" in parameters.keys():
                     current_value = parameters["Current (A)"]
@@ -469,7 +491,7 @@ class ParameterManager(QtCore.QObject):
                 t_int_ms = t_int_s * 1000
                 t_settle_ms = t_settle_s * 1000
                 [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_points", "sts_t_int", "sts_t_settle"], [n_points, t_int_ms, t_settle_ms])]
-                sct.gui.sts_V_rg.update_factor1()
+                sct.gui.sts_V_rg.updateFactor1()
 
             case "gains":
                 [p_gain_ms, t_const_us, i_gain_nm_per_s] = [parameters.get(parameter) for parameter in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]

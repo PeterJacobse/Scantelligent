@@ -340,30 +340,12 @@ class Scantelligent(QtCore.QObject):
                 case "nanonis":
                     flipped_image = np.fliplr(image).T
                     (processed_scan, statistics, limits, error) = self.data.process_scan(flipped_image)
-                    [self.gui.limits_widget.setValue("full", side, statistics[f"{side}"]) for side in ["min", "max"]]
+                    [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
                     
-                    self.gui.image_view.setImage(processed_scan, autoRange = False)
-
-                    # Use the frame to update the imageitem box
-                    frame = self.user.frames[0]
-
-                    scan_range_nm = frame.get("scan_range (nm)", [100, 100])
-                    angle_deg = frame.get("angle (deg)", 0)
-                    offset_nm = frame.get("offset (nm)", [0, 0])
-
-                    w = scan_range_nm[0]
-                    h = scan_range_nm[1]
-                    x = offset_nm[0]
-                    y = offset_nm[1]
-                
-                    image_item = self.gui.image_view.getImageItem()
-                    box = QtCore.QRectF(- w / 2, - h / 2, w, h)
-                    image_item.setRect(box)
-                    
-                    center = image_item.boundingRect().center()
-                    image_item.setTransformOriginPoint(center)
-                    image_item.setRotation(90 - angle_deg)
-                    image_item.setPos(x, y)
+                    if hasattr(self.gui, "image_item"): self.gui.image_item.setImage(processed_scan)
+                    else:
+                        self.gui.image_view.setImage(processed_scan, autoRange = False)
+                        self.nanonis.frame_update() # Incoming frame data will trigger the recalculation of the ImageItem corresponding to the ImageView above
                     
                     self.gui.hist_item.setLevels(limits[0], limits[1])
                 
@@ -724,8 +706,7 @@ class Scantelligent(QtCore.QObject):
         try:
             # Background
             bg_method = self.gui.button_groups["background"].getSelectedWidget()
-            self.logprint(f"{bg_method = }")
-            flags.update({"background": f"{bg_method}", "rotation": True, "offset": True})        
+            flags.update({"background": f"{bg_method[3:]}", "rotation": True, "offset": True})        
             
             # Limits
             [min_method, min_value] = self.gui.limits_widget.getMin()
@@ -1024,8 +1005,11 @@ class Scantelligent(QtCore.QObject):
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
                 try:
+                    mla_pointer = None
+                    if hasattr(self, "mla") and hasattr(self.mla, "lockin"): mla_pointer = self.mla
+                    
                     self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath,
-                                                                                    scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis, mla = self.mla)
+                                                                                    scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis, mla = mla_pointer)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
                     
@@ -1094,7 +1078,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     def quick_scan(self) -> None:
-        self.control_experiment("nn_scan")
+        self.control_experiment("scan")
         return
     
     def start_spectroscopy(self) -> None:

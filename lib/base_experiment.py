@@ -31,6 +31,7 @@ class BaseExperiment(QObject):
         self.gui_setup = {}
         self.abort_requested = False
         self.current_spikes = 0
+        self.feedback_changed = False
         self.start_parameters = {}
         self.gui_parameters = {"combobox": None, "line_edits": [None], "buttons": [None]}
         
@@ -54,6 +55,61 @@ class BaseExperiment(QObject):
         self.parameters.emit(self.gui_setup)
         return
 
+    def prepare_graph(self, entries: list = []) -> None:
+        channels_dict = {i: name for i, name in enumerate(entries)} | {"dict_name": "channels"}
+        self.parameters.emit(channels_dict)
+
+    def prepare_scan_channels(self, entries: list = []) -> None:
+        channels_dict = {name: i for i, name in enumerate(entries)} | {"dict_name": "channels"}
+        self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
+        return
+
+    def mla_frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4) -> np.ndarray:
+        # Read the TIA gain and oscillator amplitude to be able to convert values
+        (hardware_dict, error) = self.nanonis.hardware_update()
+        tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
+        
+        (amplitudes, error) = self.mla.amplitudes_update()
+        mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
+        
+        # Prepare to plot these channels
+        channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (rad)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (rad)"]
+        self.prepare_graph(channel_names)
+        #channels_dict = {i: name for i, name in enumerate(channel_names)} | {"dict_name": "channels"} # Prepare the GUI for plotting these channels
+        #self.parameters.emit(channels_dict)
+        
+        measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = float)
+        
+        # Main loop
+        self.mla.start_lockin()
+        for index, f in enumerate(frequencies):
+            self.check_abort_request()
+            w = 2 * np.pi * int(f)
+            self.mla.time_constant_update({"df (Hz)": int(f)}, verbose = False) # Set the measurement resolution to 200 Hz. This corresponds to a primitive time constant or period of 5 ms.
+            self.mla.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False) # Frequencies set in units of numbers of whole oscillations per period
+            
+            self.mla.get_pixels(settle_pixels) # Throw away 1 pixel (settling)
+            pix = self.mla.get_pixels(pixels_per_datapoint)
+            
+            a1refabs = 1000 * np.abs(np.average(pix[0])) # Output directly copied to the MLA port 1 in
+            a1refarg = np.angle(np.average(pix[0]))
+            
+            a1abs_mV = 1000 * np.abs(np.average(pix[1])) # Displacement currents measured through the TIA
+            a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA)
+            a1abs_fF = 1000000 * a1abs_pA / (w * mod_voltage_mV)
+            a1arg = np.angle(np.average(pix[1]))
+            
+            a2abs_mV = 1000 * np.abs(np.average(pix[2]))
+            a2abs_pA = a2abs_mV / (1000 * tia_gain_V_per_pA)
+            a2abs_fF = 1000000 * a2abs_pA / (w * mod_voltage_mV)
+            a2arg = np.angle(np.average(pix[2]))
+            
+            data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = float)
+            self.data_array.emit(data_chunk)
+            measurement_array[index] = data_chunk
+        
+        return (measurement_array, channel_names)
+
 
 
     def experiment_handler(run):
@@ -65,7 +121,7 @@ class BaseExperiment(QObject):
                 (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
                 self.start_parameters.update({"nanonis": nanonis_parameters})
             
-            if hasattr(self, "mla"):
+            if hasattr(self, "mla") and hasattr(self.mla, "lockin"):
                 (mla_parameters, error) = self.mla.lockin_update()
                 self.start_parameters.update({"mla": mla_parameters})
             
@@ -84,9 +140,9 @@ class BaseExperiment(QObject):
                 self.finish_experiment()
         return wrapper
 
-    def monitor_scan(self, channel, timeout_s: int = 100000) -> np.ndarray:
-        channels_dict = {i: name for i, name in enumerate(["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"])} | {"dict_name": "channels"}
-        self.parameters.emit(channels_dict) # This triggers the GUI to start graphing data
+    def monitor_scan(self, output_channel = None, timeout_s: int = 100000) -> np.ndarray:
+        (scan_metadata, error) = self.nanonis.scan_metadata_update() # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
+        channel_dict = scan_metadata.get("channel_dict")
 
         # Loop to check scan progress
         t_start = time.time()
@@ -94,6 +150,8 @@ class BaseExperiment(QObject):
 
         while t_elapsed < timeout_s:
             t_elapsed = time.time() - t_start
+            
+            # Monitor and emit data while scanning
             (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)
             [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
             self.data_array.emit(np.array([[t_elapsed, x_nm, y_nm, z_nm, I_pA]]))
@@ -111,6 +169,10 @@ class BaseExperiment(QObject):
                 self.logprint("Scan finished", message_type = "message")
                 break
         
+        # When the scan is finished, return the scan image
+        if isinstance(output_channel, str) and output_channel in channel_dict.keys(): channel_index = channel_dict[output_channel]
+        if isinstance(output_channel, int) and output_channel in channel_dict.values(): (scan_image, error) = self.nanonis.scan_update(channel = output_channel, backward = backward, verbose = False)
+    
         return scan_image
 
     def check_abort_request(self) -> None:
@@ -124,30 +186,21 @@ class BaseExperiment(QObject):
         
         if hasattr(self, "nanonis"):
             try:
-                nanonis_parameters = self.start_parameters.get("nanonis", {})
-                
                 self.nanonis.scan_action({"action": "stop"})
+                if self.feedback_changed: self.nanonis.tip_update({"z_rel (nm)": 1})
                 
-                grid = nanonis_parameters.get("grid", None)
+                # Read the start parameters and try to reset all of them
+                nanonis_parameters = self.start_parameters.get("nanonis", {})
+                [grid, lockin_parameters, feedback_parameters, speed_parameters, bias, tip_status] = [nanonis_parameters.get(key, None) for key in ["grid", "lockin", "feedback", "speeds", "bias", "tip_status"]]
                 if grid: self.nanonis.grid_update(grid)
-
-                self.nanonis.tip_update({"z_rel (nm)": 1})
-                
-                lockin_parameters = nanonis_parameters.get("lockin", {})
-                self.nanonis.lockin_update(lockin_parameters)
-                
-                V_nanonis = round(nanonis_parameters.get("bias", {}).get("V_nanonis (V)", None), 2)
+                if lockin_parameters: self.nanonis.lockin_update(lockin_parameters)
+                V_nanonis = round(bias.get("V_nanonis (V)", None), 2)
                 if isinstance(V_nanonis, float | int): self.nanonis.bias_update({"V_nanonis (V)": V_nanonis})
-
-                feedback_parameters = nanonis_parameters.get("feedback", {})
                 self.nanonis.feedback_update(feedback_parameters)
-
-                speed_parameters = nanonis_parameters.get("speeds", {})
                 self.nanonis.speeds_update(speed_parameters)
-
-                tip_parameters = nanonis_parameters.get("tip_status", {})
-                #fb = tip_parameters.get("feedback")
-                #self.nanonis.tip_update({"feedback": fb})
+                
+                fb = tip_status.get("feedback")
+                self.nanonis.tip_update({"feedback": fb})
             except Exception as e:
                 self.logprint(f"Error while resetting Nanonis: {e}", message_type = "error")
         

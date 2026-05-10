@@ -1238,62 +1238,17 @@ class SCTWidgets:
             if isinstance(factor1_include_endpoint, bool): self.factor1_include_endpoint = factor1_include_endpoint
 
             super().__init__()
-            
-            self.interconnect()
+
+            if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit): self.factor0.editingFinished.connect(self.factor0Changed)
+            if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): self.factor1.editingFinished.connect(self.factor1Changed)
+            if isinstance(self.min, SCTWidgets.PhysicsLineEdit): self.min.editingFinished.connect(self.productChanged)
+            if isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.max.editingFinished.connect(self.productChanged)
 
 
-
-        def interconnect(self):
-            # Determine what to change in response to what edit
-            match self.lock:
-                case "product": # Try to always keep the product the same. So when factor 0 is edited, factor 1 changes in response, and vice versa
-                    if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit): self.factor0.editingFinished.connect(self.update_factor1)
-                    if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): self.factor1.editingFinished.connect(self.update_factor0)
-                    
-                    # What happens when the min or max themselves are edited depends on which parameter is attempted to be retained
-                    if self.try_to_retain == "factor0": # When the min or max are edited, the preference is to first edit factor 1 accordingly
-                        if isinstance(self.min, SCTWidgets.PhysicsLineEdit): self.min.editingFinished.connect(self.update_factor1)
-                        if isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.max.editingFinished.connect(self.update_factor1)
-                    else: # When the min or max are edited, the preference is to first edit factor 0 accordingly
-                        if isinstance(self.min, SCTWidgets.PhysicsLineEdit): self.min.editingFinished.connect(self.update_factor0)
-                        if isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.max.editingFinished.connect(self.update_factor0)
-                
-                case "factor0": # Try to always keep factor 0 the same. So when factor 1 is edited, the product changes in response, and vice versa             
-                    if isinstance(self.min, SCTWidgets.PhysicsLineEdit): self.min.editingFinished.connect(self.update_factor1)
-                    if isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.max.editingFinished.connect(self.update_factor1)
-                    if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): self.factor1.editingFinished.connect(self.update_product)
-                    
-                    # What happens when the min or max themselves are edited depends on which parameter is attempted to be retained
-                    if self.try_to_retain == "product": # When factor 0 itself is edited, the preference is to first edit factor 1 ratehr than the product
-                        if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit): self.factor0.editingFinished.connect(self.update_factor1)
-                    else:
-                        if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit): self.factor0.editingFinished.connect(self.update_product)
-                
-                case _: # Try to always keep factor 1 the same
-                    if isinstance(self.min, SCTWidgets.PhysicsLineEdit): self.min.editingFinished.connect(self.update_factor0)
-                    if isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.max.editingFinished.connect(self.update_factor0)
-                    if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit): self.factor0.editingFinished.connect(self.update_product)
-                    
-                    # What happens when the min or max themselves are edited depends on which parameter is attempted to be retained
-                    if self.try_to_retain == "product":
-                        if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): self.factor1.editingFinished.connect(self.update_factor1)
-                    else:
-                        if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): self.factor1.editingFinished.connect(self.update_product)
-            return
 
         def setLock(self, lock: str = "factor0") -> None:
             if not lock in ["factor0", "factor1", "product"]: return
-
-            for line_edit in [self.factor0, self.factor1, self.min, self.max]:
-                try: line_edit.editingFinished.disconnect(self.update_factor0)
-                except: pass
-                try: line_edit.editingFinished.disconnect(self.update_factor1)
-                except: pass
-                try: line_edit.editingFinished.disconnect(self.update_product)
-                except: pass
-                        
             self.lock = lock
-            self.interconnect()
             return
 
         def getProduct(self) -> float:
@@ -1320,76 +1275,117 @@ class SCTWidgets:
             
             return (self.factor0_value, self.factor1_value)
 
-        def update_factor0(self) -> None:
+        def factor0Changed(self) -> None:
+            factor0_value = self.factor0.getValue() # Get the new value
+            factor0_value = self.factor0_constraint(factor0_value) # Apply the constraint, e.g. an integer value or a multiple of 16
+            self.factor0.setValue(factor0_value)
+            
+            match self.lock:
+                case "factor0":
+                    if self.try_to_retain == "factor1" and isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.updateProduct()
+                    else: self.updateFactor1()
+                case "factor1": self.updateProduct()
+                case "product": self.updateFactor1()
+                case _: pass
+            return
+
+        def factor1Changed(self) -> None:
+            factor1_value = self.factor1.getValue() # Get the new value
+            factor1_value = self.factor1_constraint(factor1_value) # Apply the constraint, e.g. an integer value or a multiple of 16
+            self.factor1.setValue(factor1_value)
+            
+            match self.lock:
+                case "factor0": self.updateProduct()
+                case "factor1":
+                    if self.try_to_retain == "factor0" and isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.updateProduct()
+                    else: self.updateFactor0()
+                case "product": self.updateFactor0()
+                case _: pass
+            return
+
+        def productChanged(self) -> None:            
+            match self.lock:
+                case "factor0": self.updateFactor1()
+                case "factor1": self.updateFactor0()
+                case "product":
+                    if self.try_to_retain == "factor0" and isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): self.updateFactor1()
+                    else: self.updateFactor0()
+                case _: pass
+            return
+
+        def updateFactor0(self) -> None:
+            if not isinstance(self.factor0, SCTWidgets.PhysicsLineEdit): return
+            
             if self.bounce > 4: self.bounceWarning()
             self.getProduct()
             self.getFactors()
             
             try:
-                if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit):
-                    if self.factor1_include_endpoint: new_factor0_value = self.product_value / (self.factor1_value - 1)
-                    else: new_factor0_value = self.product_value / self.factor1_value                    
-                    if self.factor0_include_endpoint: new_factor0_value += 1
-                    
-                    """
-                    if self.factor0_enforce_integer:
-                        new_factor0_value = round(new_factor0_value)                        
-                        self.factor0.setValue(new_factor0_value, edited_color = True)
-                        self.update_factor1()
-                    else:
-                        self.factor0.setValue(new_factor0_value, edited_color = True)
-                    """
-                    print(f"{self.factor0_constraint = }")
-                    constrained_factor0_value = self.factor0_constraint(new_factor0_value)
-                    self.factor0.setValue(constrained_factor0_value)
-                    if not constrained_factor0_value == new_factor0_value:
-                        self.bounce += 1
-                        self.update_factor1()
-                    else:
-                        self.bounce = 0
-                    
-                    if self.factor0_warn_if_not_integer and not round(new_factor0_value * 10000) % 10000 == 0: self.factor0.setWarning()
-                    else: self.factor0.resetWarning()
+                # Calculate factor 0 on the basis of the other values, taking possible end points into account
+                if self.factor1_include_endpoint: new_factor0_value = self.product_value / (self.factor1_value - 1)
+                else: new_factor0_value = self.product_value / self.factor1_value                    
+                if self.factor0_include_endpoint: new_factor0_value += 1
+                
+                # Apply a constraint if it is there. If the constraint changes the value, this needs to be bounced back
+                constrained_factor0_value = self.factor0_constraint(new_factor0_value)
+                self.factor0.setValue(constrained_factor0_value)
+                if not constrained_factor0_value == new_factor0_value:
+                    self.bounce += 1
+                    if self.lock == "factor1" and isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.updateProduct()
+                    else: self.updateFactor1()
+                else:
+                    self.bounce = 0
+                
+                # Set a warning if requested
+                if self.factor0_warn_if_not_integer and not round(new_factor0_value * 10000) % 10000 == 0: self.factor0.setWarning()
+                else: self.factor0.resetWarning()
             except:
                 pass
             return
 
-        def update_factor1(self) -> None:
-            self.getProduct()
-            self.getFactors()
-                        
-            try:
-                if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit):
-                    if self.factor0_include_endpoint: new_factor1_value = self.product_value / (self.factor0_value - 1)
-                    else: new_factor1_value = self.product_value / self.factor0_value
-                    if self.factor1_include_endpoint: new_factor1_value += 1
-                    
-                    constrained_factor1_value = self.factor1_constraint(new_factor1_value)
-                    self.factor1.setValue(constrained_factor1_value)
-                    if not constrained_factor1_value == new_factor1_value:
-                        self.bounce += 1
-                        self.update_factor0()
-                    else:
-                        self.bounce = 0
-
-                    if self.factor1_warn_if_not_integer and not round(new_factor1_value * 10000) % 10000 == 0: self.factor1.setWarning()
-                    else: self.factor1.resetWarning()
-            except:
-                pass
-            return
-        
-        def update_product(self) -> None:
+        def updateFactor1(self) -> None:
+            if not isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): return
+            
+            if self.bounce > 4: self.bounceWarning()
             self.getProduct()
             self.getFactors()
             
             try:
-                if isinstance(self.max, SCTWidgets.PhysicsLineEdit):
-                    if self.factor0_include_endpoint: self.factor0_value -= 1
-                    if self.factor1_include_endpoint: self.factor1_value -= 1
-                    
-                    new_product = self.factor0_value * self.factor1_value
-                    new_max_value = new_product + self.min_value
-                    self.max.setValue(new_max_value, edited_color = True)
+                # Calculate factor 0 on the basis of the other values, taking possible end points into account
+                if self.factor0_include_endpoint: new_factor1_value = self.product_value / (self.factor0_value - 1)
+                else: new_factor1_value = self.product_value / self.factor0_value
+                if self.factor1_include_endpoint: new_factor1_value += 1
+                
+                # Apply a constraint if it is there. If the constraint changes the value, this needs to be bounced back
+                constrained_factor1_value = self.factor1_constraint(new_factor1_value)
+                self.factor1.setValue(constrained_factor1_value)
+                if not constrained_factor1_value == new_factor1_value:
+                    self.bounce += 1
+                    if self.lock == "factor0" and isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.updateProduct()
+                    else: self.updateFactor0()
+                else:
+                    self.bounce = 0
+                
+                # Set a warning if requested
+                if self.factor1_warn_if_not_integer and not round(new_factor1_value * 10000) % 10000 == 0: self.factor1.setWarning()
+                else: self.factor1.resetWarning()
+            except:
+                pass
+            return
+
+        def updateProduct(self) -> None:
+            if not isinstance(self.max, SCTWidgets.PhysicsLineEdit): return
+            
+            self.getProduct()
+            self.getFactors()
+            
+            try:
+                if self.factor0_include_endpoint: self.factor0_value -= 1
+                if self.factor1_include_endpoint: self.factor1_value -= 1
+
+                new_product = self.factor0_value * self.factor1_value
+                new_max_value = new_product + self.min_value
+                self.max.setValue(new_max_value, edited_color = True)
             except:
                 pass
             return
