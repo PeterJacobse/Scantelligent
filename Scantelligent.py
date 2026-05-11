@@ -1,4 +1,4 @@
-import os, sys, html, atexit, re, copy
+import os, sys, html, atexit, re, copy, time
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
@@ -89,7 +89,7 @@ class Scantelligent(QtCore.QObject):
 
     def connect_buttons(self) -> None:
         button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
-                        "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.on_approach,
+                        "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.start_auto_approach,
                         
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
@@ -808,7 +808,9 @@ class Scantelligent(QtCore.QObject):
                 (tip_status, error) = self.nanonis.tip_update({"feedback": True}, unlink = True)
                 if error: raise
             else:
-                (tip_status, error) = self.nanonis.tip_update({"withdraw": True}, unlink = True)
+                (tip_status, error) = self.nanonis.tip_update({"withdraw": True}, unlink = False)
+                time.sleep(.2)
+                (tip_status, error) = self.nanonis.tip_update(unlink = True, verbose = False)
                 if error: raise
 
         except Exception as e:
@@ -862,7 +864,7 @@ class Scantelligent(QtCore.QObject):
             retract = checkboxes["retract"].isChecked()
             advance = checkboxes["advance"].isChecked()
             approach = checkboxes["approach"].isChecked()
-            composite = checkboxes["composite_motion"].isChecked()
+            composite = self.gui.buttons["composite_motion"].isChecked()
 
             # Retrieve the line_edit values
             [V_hor, V_ver, f_motor] = [line_edits[name].getValue() for name in ["V_hor", "V_ver", "f_motor"]] # Frequency and amplitude
@@ -898,7 +900,7 @@ class Scantelligent(QtCore.QObject):
             """
 
             # Toggle the view feed
-            if not self.status["view"] == "camera": self.toggle_view("camera")
+            if hasattr(self, "camera"): self.toggle_view("camera")
 
             # Perform simple vertical motions if requested
             match direction:
@@ -940,22 +942,14 @@ class Scantelligent(QtCore.QObject):
             
             self.nanonis.coarse_move(motions, unlink = True)
             
+            if approach: self.start_auto_approach()
+            
             return True
         
         except Exception as e:
             self.logprint("Error. Unable to execute tip move.", message_type = "error")
 
             return False
-
-    def on_approach(self) -> None:
-        if not hasattr(self, "nanonis"): return
-        
-        numbers = self.data.extract_numbers_from_str(self.gui.line_edits["V_ver"].text())
-        if len(numbers) > 0: V_ver = float(numbers[0])
-        else: V_ver = None
-
-        self.nanonis.auto_approach(True, V_motor = V_ver)
-        return
 
 
 
@@ -1050,6 +1044,7 @@ class Scantelligent(QtCore.QObject):
                     #self.experiment_thread.finished.connect(lambda: self.gui.buttons["save"].setState("data_saved"))
                     self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
                     self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
+                    [self.experiment_thread.finished.connect(lambda: self.gui.buttons[name].setState(0)) for name in ["start_scan", "start_spectrum", "approach"]]
                     
                     # Progress
                     self.experiment.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
@@ -1117,13 +1112,21 @@ class Scantelligent(QtCore.QObject):
     def quick_scan(self) -> bool:
         experiment_loaded = self.control_experiment("scan")
         if not experiment_loaded: return False
+        self.gui.buttons["start_scan"].setState(1)
         return self.control_experiment("scan")
     
     def start_spectroscopy(self) -> None:
         experiment_loaded = self.control_experiment("spectroscopy")
         if not experiment_loaded: return False
-        return self.control_experiment("spectroscopy")
+        self.gui.buttons["start_spectrum"].setState(1)
+        return self.control_experiment("spectroscopy")        
 
+    def start_auto_approach(self) -> None:
+        experiment_loaded = self.control_experiment("auto_approach")
+        if not experiment_loaded: return False
+        self.gui.buttons["approach"].setState(1)
+        return self.control_experiment("auto_approach")
+        
 
 
 # Main program

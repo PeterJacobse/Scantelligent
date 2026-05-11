@@ -247,9 +247,9 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                             states = [{"name": "off", "tooltip": "MLA modulator 3 OFF", "color": sct_black},
                                       {"name": "on", "tooltip": "MLA modulator 3 ON", "color": sct_blue}]),
 
-            "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28),
+            "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28),
+            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 2, states = [{"color": sct_black}, {"color": sct_blue}]),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                    {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
@@ -327,7 +327,6 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "retract": CB(tooltip = "Include retracting the tip during a tip move"),
             "advance": CB(tooltip = "Include advancing the tip during a move"),
             "approach": CB(tooltip = "End the tip move with an auto approach"),
-            "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion")),
             
             # STS
             "voltage_sweep": CB(tooltip = "Perform STS in voltage sweep mode"),

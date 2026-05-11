@@ -2,7 +2,7 @@ import numpy as np
 from PyQt6 import QtCore
 from . import NanonisHardware
 from .data_processing import DataProcessing
-from time import sleep, time
+import time
 
 
 
@@ -366,7 +366,7 @@ class NanonisAPI(QtCore.QObject):
                                 nhw.set_I_gain(index)
                                 break
                     
-                    sleep(.1)
+                    time.sleep(.1)
                     new_gain = nhw.get_I_gain()
                     hardware_dict.update(new_gain)
             
@@ -417,13 +417,13 @@ class NanonisAPI(QtCore.QObject):
             
             if z_nm:
                 nhw.set_fb(False)
-                sleep(.2)
+                time.sleep(.2)
                 nhw.set_z_nm(z_nm)
             z_nm = nhw.get_z_nm()
             if z_rel_nm:
                 z_nm += z_rel_nm
                 nhw.set_fb(False)
-                sleep(.2)
+                time.sleep(.2)
                 nhw.set_z_nm(z_nm)
             if not fast_mode: [z_min, z_max] = nhw.get_z_limits_nm()
 
@@ -433,7 +433,7 @@ class NanonisAPI(QtCore.QObject):
             if not fast_mode:
                 if type(feedback) == bool:
                     nhw.set_fb(feedback)
-                    sleep(.1)
+                    time.sleep(.1)
 
                 withdrawn = False
                 if not feedback and np.abs(z_nm - z_max) < 1E-11: # Tip is already withdrawn
@@ -441,7 +441,7 @@ class NanonisAPI(QtCore.QObject):
                 if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
                     nhw.withdraw(wait = True)
                     withdrawn = True
-                    sleep(.2)
+                    time.sleep(.2)
             
                 # Retrieve the feedback status
                 feedback_new = nhw.get_fb()
@@ -457,7 +457,7 @@ class NanonisAPI(QtCore.QObject):
                     [x_nm, y_nm] = xy_nm
                     tip_status.update({"x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6)})
                     self.parameters.emit(tip_status)
-                    sleep(.05)
+                    time.sleep(.05)
             
             tip_status.update({"x (nm)": round(xy_target_nm[0], 6), "y (nm)": round(xy_target_nm[1], 6)})
             self.parameters.emit(tip_status)
@@ -815,12 +815,12 @@ class NanonisAPI(QtCore.QObject):
 
             if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
                 nhw.set_fb(False)
-                sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
+                time.sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
                 nhw.set_z_nm(tip_height + dz_nm)
 
             for V_t in slew: # Perform the slew to the new bias voltage
                 nhw.set_V(V_t)
-                sleep(dt)
+                time.sleep(dt)
             nhw.set_V(V) # Final bias value
         
             if bool(feedback) and bool(polarity_difference):
@@ -863,6 +863,7 @@ class NanonisAPI(QtCore.QObject):
                 frequency_Hz = nhw.get_mod_freq(mod_number + 1)
                 phase_deg = nhw.get_mod_phase(mod_number + 1)
                 signal_index = nhw.get_mod_signal(mod_number + 1)
+                time.sleep(.1)
                 
                 if frequency_Hz > .01: time_ms = 1000 / frequency_Hz
                 else: time_ms = None
@@ -878,6 +879,7 @@ class NanonisAPI(QtCore.QObject):
                     if isinstance(mod_on, bool):
                         try:
                             nhw.set_mod_on(mod_number + 1, mod_on)
+                            time.sleep(.1)
                             mod_new.update({"on": mod_on})
                         except:
                             pass
@@ -886,6 +888,7 @@ class NanonisAPI(QtCore.QObject):
                     if isinstance(amp, float) or isinstance(amp, int):
                         try:
                             nhw.set_mod_amp(mod_number + 1, amp)
+                            time.sleep(.1)
                             mod_new.update({"amplitude (mV)": amp})
                         except:
                             pass
@@ -894,9 +897,8 @@ class NanonisAPI(QtCore.QObject):
                     if isinstance(freq, float) or isinstance(freq, int):
                         try:
                             nhw.set_mod_freq(mod_number + 1, freq)
-                            mod_new.update({"frequency (Hz)": freq})
-                            
-                            mod_new.update({"time_constant (ms)": 1000 / freq})
+                            time.sleep(.1)
+                            mod_new.update({"frequency (Hz)": freq, "time_constant (ms)": 1000 / freq})
                         except:
                             pass
                     
@@ -904,10 +906,12 @@ class NanonisAPI(QtCore.QObject):
                     if isinstance(phase, float) or isinstance(phase, int):
                         try:
                             nhw.set_mod_phase(mod_number + 1, phase)
+                            time.sleep(.1)
                             mod_new.update({"phase (deg)": phase})
                         except:
                             pass
-                    
+                
+                time.sleep(.2)
                 lockin_parameters.update({f"mod{mod_number + 1}": mod_new})
         
             self.parameters.emit(lockin_parameters)
@@ -1195,12 +1199,12 @@ class NanonisAPI(QtCore.QObject):
         try:
             if not self.status == "running": self.link()
             
-            t0 = time() # Start time            
+            t0 = time.time() # Start time
             
             for iteration in range(100):
                 mod_iteration = iteration % chunk_size
                 
-                t = time() - t0
+                t = time.time() - t0
                 xy_nm = nhw.get_xy_nm()
                 z_nm = nhw.get_z_nm()
                 I_pA = nhw.get_I_pA()
