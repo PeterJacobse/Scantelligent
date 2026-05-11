@@ -90,9 +90,11 @@ class BaseExperiment(QObject):
         
         
         # Main loop
+        n_total = len(frequencies)
         self.mla.start_lockin()
         for index, f in enumerate(frequencies):
             self.check_abort_request()
+            self.task_progress.emit(int(100 * index / n_total))
             w = 2 * np.pi * int(f)
             self.mla.time_constant_update({"df (Hz)": int(f)}, verbose = False) # Set the measurement resolution to 200 Hz. This corresponds to a primitive time constant or period of 5 ms.
             self.mla.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False) # Frequencies set in units of numbers of whole oscillations per period
@@ -117,6 +119,7 @@ class BaseExperiment(QObject):
             self.data_array.emit(data_chunk)
             measurement_array[index] = data_chunk
         
+        self.task_progress.emit(100)
         return (measurement_array, channel_names)
 
     def mla_amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
@@ -148,9 +151,11 @@ class BaseExperiment(QObject):
 
 
         # Main loop
+        n_total = len(amplitudes)
         self.mla.start_lockin()
         for index, amp_mV in enumerate(amplitudes):
             self.check_abort_request()
+            self.task_progress.emit(int(100 * index / n_total))
             self.mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
             
             self.mla.get_pixels(settle_pixels)
@@ -168,6 +173,7 @@ class BaseExperiment(QObject):
             self.data_array.emit(data_chunk)
             measurement_array[index] = data_chunk
         
+        self.task_progress.emit(100)
         return (measurement_array, channel_names)
 
     def mla_voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
@@ -190,7 +196,9 @@ class BaseExperiment(QObject):
         tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
         (amplitudes_dict, error) = self.mla.amplitudes_update()
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
-        if mod_voltage_mV < .001: (amplitudes_dict, error) = self.mla.amplitudes_update({"amplitudes (mV)": {0: .5}}) # Default to 500 uV amplitude if the amplitude is too close to zero
+        if mod_voltage_mV < .001:
+            (amplitudes_dict, error) = self.mla.amplitudes_update({"amplitudes (mV)": {0: .05}}) # Default to a minimum of 50 uV amplitude if the amplitude is too close to zero
+            self.logprint(f"Warning. Very low modulation amplitude set. Calculated conductance values may diverge.")
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
 
         # Prepare to plot these channels
@@ -205,7 +213,9 @@ class BaseExperiment(QObject):
         # Main loop
         self.mla.start_lockin()
         for index, voltage in enumerate(voltages):
+            n_total = len(voltages)
             self.check_abort_request()
+            self.task_progress.emit(int(100 * index / n_total))
             self.mla.bias_update({"port_1 (V)": voltage}, verbose = False)
             
             self.mla.get_pixels(settle_pixels)
@@ -222,6 +232,7 @@ class BaseExperiment(QObject):
             self.data_array.emit(data_chunk)
             measurement_array[index] = data_chunk
         
+        self.task_progress.emit(100)
         return (measurement_array, channel_names)
 
 

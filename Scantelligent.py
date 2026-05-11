@@ -599,7 +599,7 @@ class Scantelligent(QtCore.QObject):
         # Replace the old item with a new item and relink the new item
         old_item = self.gui.image_view.getImageItem()
         
-        (grid, error) = self.nanonis.grid_update()
+        (grid, error) = self.nanonis.grid_update(verbose = False)
         [pixels, lines] = [grid.get(key) for key in ["pixels", "lines"]]
         
         # Make a new image with a target at its center
@@ -612,7 +612,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.image_view.imageItem = new_item
         self.gui.image_item = self.gui.image_view.getImageItem()
         self.gui.image_view.getHistogramWidget().setImageItem(self.gui.image_item)
-        self.nanonis.grid_update()
+        self.nanonis.grid_update(verbose = False)
         
         # Save the old item if desired
         self.gui.view.addItem(old_item)

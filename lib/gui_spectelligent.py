@@ -5,7 +5,7 @@ from . import SCTWidgets, rotate_icon, make_layout, make_line
 
 
 
-class SpectelligentGUI(QtWidgets.QMainWindow):
+class ScantelligentGUI(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         
@@ -57,9 +57,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # 5: Set up the main window layout
         self.setup_main_window()
-
-        # 6: Interconnect mutually interdependent signals and slots
-        self.interconnect()
 
 
 
@@ -145,86 +142,23 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         sivr = "Set the image value range "
 
         buttons = {
-            # Connections
-            "scanalyzer": MSB(icon = icons.get("scanalyzer"), click_to_toggle = False,
-                              states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Scanalyzer: not found"},
-                                        {"name": "online", "color": self.colors["dark_green"], "tooltip": "Launch Scanalyzer"}]),
-            "nanonis": MSB(icon = icons.get("nanonis"), click_to_toggle = False,
-                           states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Nanonis: offline"},
-                                     {"name": "online", "color": self.colors["dark_green"], "tooltip": "Nanonis: online (idle)"},
-                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Nanonis: online (idle)"},
-                                     {"name": "running", "color": sct_blue, "tooltip": "Nanonis: running"}]),
-            "mla": MSB(icon = icons.get("imp"), click_to_toggle = False,
-                       states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Multifrequency Lockin Amplifier: offline"},
-                                 {"name": "online", "color": self.colors["dark_green"], "tooltip": "Multifrequency Lockin Amplifier: online (idle)"},
-                                 {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Multifrequency Lockin Amplifier: online (idle)"},
-                                 {"name": "running", "color": sct_blue, "tooltip": "Multifrequency Lockin Amplifier: running"}]),
-            "keithley": MSB(icon = icons.get("keithley"), click_to_toggle = False,
-                            states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Keithley source meter: offline"},
-                                      {"name": "online", "color": self.colors["dark_green"], "tooltip": "Keithley source meter: online (idle)"},
-                                      {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Keithley source meter: online (idle)"},
-                                      {"name": "running", "color": sct_blue, "tooltip": "Keithley source meter: running"}]),
-            "camera": MSB(icon = icons.get("camera"), click_to_toggle = False,
-                          states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Camera: offline"},
-                                    {"name": "online", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
-                                    {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
-                                    {"name": "running", "color": sct_blue, "tooltip": "Camera: running"}]),
-            "view": MSB(click_to_toggle = False, size = 28,
-                        states = [{"name": "none", "tooltip": "Toggle the active view", "icon": icons.get("eye"), "color": sct_black},
-                                  {"name": "camera", "tooltip": "Active view: Camera", "icon": icons.get("view_camera"), "color": sct_black},
-                                  {"name": "nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("view_nanonis"), "color": sct_black}]),
-            "exit": MSB(tooltip = "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape"), size = 28),
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
                                             {"name": "online", "color": self.colors["dark_green"], "tooltip": "Open the session folder"}]),
             "info": MSB(tooltip = "Info", icon = icons.get("i")),
             
             # Experiment
-            "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy")),
+            "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy"), click_to_toggle = False,
+                        states = [{"name": "idle", "color": sct_black, "tooltip": "Click this button to save experiment data"},
+                                  {"name": "data_present", "color": sct_blue, "tooltip": "Experiment data is present. Click to save"},
+                                  {"name": "data_saved", "color": self.colors["dark_green"], "tooltip": "Experiment data was saved"}]),
             "start_stop": MSB(click_to_toggle = False, size = 28,
                               states = [{"name": "load", "color": self.colors["dark_red"], "tooltip": "Load/reset experiment", "icon": icons.get("start")},
                                         {"name": "ready", "color": self.colors["dark_green"], "tooltip": "Start experiment", "icon": icons.get("start")},
                                         {"name": "running", "color": sct_blue, "tooltip": "Experiment running", "icon": icons.get("stop")},
                                         {"name": "aborted", "color": self.colors["orange"], "tooltip": "Abort requested", "icon": icons.get("stop")}]),
             "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop"), size = 28),
-            
-            # Parameters
-            "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", icon = icons.get("lock_aspect"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            
-            "tip": MSB(click_to_toggle = False, size = 28,
-                       states = [{"name": "unknown", "tooltip": "Tip status\nUnknown / withdrawn", "icon": icons.get("tip_unknown"), "color": sct_black},
-                                 {"name": "feedback", "tooltip": "Tip status\nIn feedback", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]},
-                                 {"name": "constant_height", "tooltip": "Tip status\nConstant height", "icon": icons.get("constant_height"), "color": self.colors["orange"]}]),
-            "V_swap": MSB(tooltip = "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
-            
-            # Coarse vertical
-            "withdraw": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": sct_blue},
-                                                               {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": sct_black}]),
-            "retract": MSB(tooltip = "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
-            "advance": MSB(tooltip = "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
-            "approach": MSB(size = 28,
-                            states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": sct_black},
-                                      {"name": "running", "tooltip": "Stop auto approach", "icon": icons.get("stop_approach"), "color": sct_blue}]),
-
-            # Coarse horizontal
-            "n": MSB(tooltip = mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = rotate_icon(arrow, angle = 270)),
-            "ne": MSB(tooltip = mtt + "northeast\n(Ctrl + 9)", icon = rotate_icon(arrow45, angle = 0)),
-            "e": MSB(tooltip = mtt + "east\n(Ctrl + → / Ctrl + 6)", icon = rotate_icon(arrow, angle = 0)),
-            "se": MSB(tooltip = mtt + "southeast\n(Ctrl + 3)", icon = rotate_icon(arrow45, angle = 90)),
-            "s": MSB(tooltip = mtt + "south\n(Ctrl + ↓ / Ctrl + 2)", icon = rotate_icon(arrow, angle = 90)),
-            "sw": MSB(tooltip = mtt + "southwest\n(Ctrl + 1)", icon = rotate_icon(arrow45, angle = 180)),
-            "w": MSB(tooltip = mtt + "west\n(Ctrl + ← / Ctrl + 4)", icon = rotate_icon(arrow, angle = 180)),
-            "nw": MSB(tooltip = mtt + "northwest\n(Ctrl + 7)", icon = rotate_icon(arrow45, angle = 270)),
-            
-            "composite_motion": MSB(icon = self.icons.get("composite_motion"), size = 28,
-                                    states = [{"tooltip": "Composite motion OFF\nThe horizontal motion is carried out without vertical motion", "color": sct_black},
-                                              {"tooltip": "Composite motion ON\nAll checked vertical motions are combined with the horizontal motion in a composite pattern", "color": sct_blue}]),
-
-            # Tip prep
-            "bias_pulse": MSB(tooltip = "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse"), size = 28),
-            "tip_shape": MSB(tooltip = "Shape the tip by poking it into the surface", icon = icons.get("tip_shape"), size = 28),
-            
+                        
             # Lockins
             "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
                                          {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),            
@@ -247,8 +181,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                             states = [{"name": "off", "tooltip": "MLA modulator 3 OFF", "color": sct_black},
                                       {"name": "on", "tooltip": "MLA modulator 3 ON", "color": sct_blue}]),
 
-            "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28),
-            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28),
+            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                    {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
@@ -269,51 +202,13 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "get_pixel_nanonis": MSB(tooltip = "Click to receive a pixel from Nanonis", icon = icons.get("nanonis")),
             "get_pixel_mla": MSB(tooltip = "Click to receive a pixel from the MLA", icon = icons.get("imp")),
             
-            # Processing
-            "direction": MSB(tooltip = "Change scan direction\n(X)",
-                             states = [{"name": "forward", "icon": icons.get("triple_arrow"), "color": sct_black},
-                                       {"name": "backward", "icon": rotate_icon(icons.get("triple_arrow"), angle = 180), "color": sct_blue}]),
-            "fit_to_frame": MSB(tooltip = "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
-            "fit_to_range": MSB(tooltip = "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
-            
-            "full_data_range": MSB(tooltip = sivr + "to the full data range\n(U)", icon = icons.get("100")),
-            "percentiles": MSB(tooltip = sivr + "by percentiles\n(R)", icon = icons.get("percentiles")),
-            "standard_deviation": MSB(tooltip = sivr + "by standard deviations\n(D)", icon = icons.get("deviation")),
-            "absolute_values": MSB(tooltip = sivr + "by absolute values\n(A)", icon = icons.get("numbers")),
-            
-            "bg_none": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": sct_black}, {"color": sct_blue}]),
-            "bg_plane": MSB(states = [{"tooltip": "Plane\n(0)", "icon": self.icons.get("plane_subtract"), "color": sct_black}, {"color": sct_blue}]),
-            "bg_linewise": MSB(states = [{"tooltip": "Linewise\n(0)", "icon": self.icons.get("lines"), "color": sct_black}, {"color": sct_blue}]),
-            "bg_inferred": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": sct_black}, {"color": sct_blue}]),
-            
-            "sobel": MSB(tooltip = "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", icon = self.icons.get("sobel"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "laplace": MSB(tooltip = "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + L)", icon = self.icons.get("laplacian"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "fft": MSB(tooltip = "Compute the 2D Fourier transform\n(Shift + F)", icon = self.icons.get("fourier"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "normal": MSB(tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "gaussian": MSB(tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "rot_trans": MSB(tooltip = "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", icon = self.icons.get("rot_trans"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
             "zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes")
         }
         
-        for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
-            buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
-            buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))})
-        [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
-
-        # Initialize
-        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none"]]
-
-        # Named groups
-        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
-        self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
-        self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
-
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
-
         return buttons
 
     def make_checkboxes(self) -> tuple[dict, dict]:
@@ -321,13 +216,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         BG = SCTWidgets.ButtonGroup
 
         checkboxes = {
-            # Coarse
-            "withdraw": CB(tooltip = "Include withdrawing of the tip during a tip move"),
-            "retract": CB(tooltip = "Include retracting the tip during a tip move"),
-            "advance": CB(tooltip = "Include advancing the tip during a move"),
-            "approach": CB(tooltip = "End the tip move with an auto approach"),
-            "composite_motion": CB(tooltip = "Composite motion:\nWhen checked, combine all checked vertical motions with the horizontal motion in a composite pattern", icon = self.icons.get("composite_motion")),
-            
             # STS
             "voltage_sweep": CB(tooltip = "Perform STS in voltage sweep mode"),
             "frequency_sweep": CB(tooltip = "Perform STS in frequency sweep mode"),
@@ -335,17 +223,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             
             "single_sweep": CB(tooltip = "Perform single sweep"),
             "amplitude_sweep": CB(tooltip = "Perform iterative STS in amplitude sweep mode"),
-            "line_spectroscopy": CB(tooltip = "Perform iterative STS over a line"),
-            
-            # Limits
-            "min_full": CB(tooltip = "Set to minimum value of scan data range"),
-            "max_full": CB(tooltip = "Set to maximum value of scan data range"),
-            "min_percentiles": CB(tooltip = "Set to minimum percentile of data range"),
-            "max_percentiles": CB(tooltip = "Set to maximum percentile of data range"),
-            "min_deviations": CB(tooltip = "Set to minimum = mean - n * standard deviation"),
-            "max_deviations": CB(tooltip = "Set to maximum = mean + n * standard deviation"),
-            "min_absolute": CB(tooltip = "Set minimum to an absolute value"),
-            "max_absolute": CB(tooltip = "Set maximum to an absolute value"),
+            "line_spectroscopy": CB(tooltip = "Perform iterative STS over a line")
         }        
         [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(40)] # Channels
 
@@ -417,7 +295,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         LE = SCTWidgets.PhysicsLineEdit
         ILE = SCTWidgets.InputLineEdit
         RG = SCTWidgets.ReciprocalGroup
-
+        
+        sct_green = self.colors["dark_green"]
         scanalyzer_blue = "#2020C0"
         
         line_edits = {
@@ -534,14 +413,14 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
 
             "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             
-            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_phase": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
             
-            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod1_amp": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod1_phase": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
@@ -551,7 +430,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "mla_mod2_phase": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
             
-            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod3_amp": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod3_phase": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
@@ -562,7 +441,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "input": ILE(tooltip = "Enter a command\n(Enter to evaluate)")
         }
         
-        # Reciprocal pairs and rang-steps groups (inter-line-edit update logic)
+        # Reciprocal groups (inter-line-edit update logic)
         self.sts_V_rg = RG(product = [line_edits["sts_V_start"], line_edits["sts_V_end"]], factors = [line_edits["sts_V_points"], line_edits["sts_dV"]], factor = 1000,
                            lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
         self.nanonis_rg = RG(product = 1000, factors = [line_edits["nanonis_t"], line_edits["nanonis_df"]])
@@ -575,9 +454,12 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                              lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)        
         self.tone_rgs = [RG(product = line_edits[f"mla_mod{index}_f"], factors = [line_edits["mla_df"], line_edits[f"mla_mod{index}_n"]],
                             lock = "factor0", try_to_retain = "product", factor1_warn_if_not_integer = True) for index in range(4)]
-        self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "product")
-        self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "product",
+        self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "factor0")
+        self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "factor0",
                           factor0_constraint = lambda value: int(round(value / 16) * 16))
+        
+        self.buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
+        self.buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
         
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
@@ -590,6 +472,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         # Add the button handles to the tooltips
         [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
         
+        # Frame
+        [line_edits[f"frame_{key}"].editingFinished.connect(self.update_frame_from_fields) for key in ["x", "y", "width", "height", "angle", "aspect"]]
         return line_edits
 
     def make_progress_bars(self) -> dict:
@@ -664,7 +548,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             
             # Scan
             "scan": make_layout("v"),
-            "quick_scan": make_layout("h"),
+            "scan_control": make_layout("g"),
+            "paste_scan": make_layout("h"),
             "navigation": make_layout("h"),
             "background": make_layout("h"),
             "operations": make_layout("g"),
@@ -693,17 +578,20 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
     def make_image_view(self) -> SCTWidgets.ImageView:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
-        plot_item = pg.PlotItem()
-        im_view = SCTWidgets.ImageView(view = plot_item)
-        im_view.view.invertY(False)
-        hist_widget = im_view.getHistogramWidget()
+        image_view = SCTWidgets.ImageView(view = pg.PlotItem())
+        view = image_view.getView()
+        hist_widget = image_view.getHistogramWidget()
+        view.invertY(False) # y increases towards the top of the screen
+        self.view = view.getViewBox() # Since view = pg.PlotItem instead of ViewBox, the ViewBox is actually accessed by view.getViewBox()
+        self.image_item = image_view.imageItem
         self.hist_item = hist_widget.item
         
-        # Make a tip target item in the image_view
-        self.tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = True)
-        im_view.view.addItem(self.tip_target)
+        # Make target item
+        self.tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
+        self.target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
         
-        return im_view
+        self.saved_scans = []        
+        return image_view
 
     def make_rois(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
         piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
@@ -712,8 +600,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         new_frame_roi.addScaleHandle([1, 0], [0, 1])
         new_frame_roi.addRotateHandle([0.5, 0], [0.5, 0.5])
-        new_frame_roi.sigRegionChanged.connect(self.limit_roi_angle)
         
+        new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)        
         return (piezo_roi, frame_roi, new_frame_roi)
 
     def make_plot_widgets(self) -> tuple[pg.PlotWidget, list[pg.PlotDataItem], pg.PlotWidget, list[pg.PlotDataItem]]:
@@ -1053,7 +941,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["demodulators"].addWidget(self.demod_scroller)
         
         # Scan
-        layouts["quick_scan"].addWidget(buttons["start_scan"])
+        [layouts["scan_control"].addWidget(buttons[name], 0, index) for index, name in enumerate(["start_scan", "auto_paste"])]
         
         n_layout = layouts["navigation"]
         n_layout.addWidget(comboboxes["channels"], 4)
@@ -1101,7 +989,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "waveforms": SGB(title = "waveforms", tooltip = "waveforms"),
             "demodulators": SGB(title = "demodulators", tooltip = "demodulators"),
             
-            "quick_scan": SGB(title = "quick scan", tooltip = "quick scan"),
+            "scan_control": SGB(title = "scan control", tooltip = "scan control"),
             "navigation": SGB(title = "navigation", tooltip = "navigation"),
             "background": SGB(title = "background subtraction", tooltip = "background subtraction"),
             "operations": SGB(title = "image processing operations", tooltip = "image processing operations"),
@@ -1124,7 +1012,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
         [layouts["osc"].addWidget(groupboxes[name]) for name in ["modulators", "waveforms"]]
         [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "demodulators"]]
-        [layouts["scan"].addWidget(groupboxes[name]) for name in ["quick_scan", "navigation", "operations", "limits"]]
+        [layouts["scan"].addWidget(groupboxes[name]) for name in ["scan_control", "navigation", "operations", "limits"]]
         [layouts[name].addStretch(1) for name in ["parameters", "sts", "osc", "coarse_prep", "scan"]]
 
         return groupboxes
@@ -1189,44 +1077,18 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
 
 
     # 6: Interconnect interdependent widgets
-    def interconnect(self) -> None:
-        #self.line_edits["grid_pixels"].editingFinished.connect(lambda: self.line_edits["grid_pixels"].setValue(int(round(self.line_edits["grid_pixels"].getValue() / 16) * 16)))
-        self.line_edits["grid_pixels"].editingFinished.connect(self.set_pixels_to_multiple_of_16)
-        self.buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
-        self.buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
-        
-        self.new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
-        [self.line_edits[f"frame_{key}"].editingFinished.connect(self.update_frame_from_fields) for key in ["x", "y", "width", "height", "angle", "aspect"]]
-        return
-
     def update_lock(self, name: str = "frame") -> None:
         if bool(self.buttons[f"{name}_aspect"].state_index): self.frame_rg.setLock("factor1") # Lock the aspect ratio
         else: self.frame_rg.setLock("factor0") # Lock the width
         return
 
-    def set_pixels_to_multiple_of_16(self) -> None:
-        value = self.line_edits["grid_pixels"].getValue()
-        new_value = int(16 * round(value / 16))
-        
-        self.line_edits["grid_pixels"].setValue(new_value, edited_color = True)
-        
-        if bool(self.buttons["grid_aspect"].state_index):
-            grid_aspect = self.line_edits["grid_aspect"].getValue()
-            lines = int(grid_aspect * new_value)
-            self.line_edits["grid_lines"].setValue(lines, edited_color = True)
-        else:
-            lines = self.line_edits["grid_lines"].getValue()
-            grid_aspect = lines / new_value
-            self.line_edits["grid_aspect"].setValue(grid_aspect)        
-        return
-
-    def limit_roi_angle(self, roi) -> None:
-        angle = roi.angle()
+    def limit_roi_angle(self) -> None:
+        angle = self.new_frame_roi.angle()
         new_angle = (angle + 180) % 360 - 180
 
-        roi.blockSignals(True)
-        roi.setAngle(new_angle)
-        roi.blockSignals(False)
+        self.new_frame_roi.blockSignals(True)
+        self.new_frame_roi.setAngle(new_angle)
+        self.new_frame_roi.blockSignals(False)
         return
 
     def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
@@ -1287,8 +1149,10 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
     def update_fields_from_frame_change(self) -> None:
         [self.line_edits[name].blockSignals(True) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
         
+        self.limit_roi_angle()
+        
         new_width = self.new_frame_roi.size().x()
-        self.line_edits["frame_width"].setValue(new_width, edited_color = True)
+        self.line_edits["frame_width"].setValue(new_width, edited_color = False)
         
         if bool(self.buttons["frame_aspect"].state_index):
             new_height = new_width * self.line_edits["frame_aspect"].getValue()
@@ -1298,18 +1162,18 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             self.new_frame_roi.blockSignals(False)
         else:
             new_height = self.new_frame_roi.size().y()
-            self.line_edits["frame_aspect"].setValue(new_height / new_width, edited_color = True)
+            self.line_edits["frame_aspect"].setValue(new_height / new_width, edited_color = False)
         
-        self.line_edits["frame_height"].setValue(new_height, edited_color = True)
+        self.line_edits["frame_height"].setValue(new_height, edited_color = False)
                 
         bounding_rect = self.new_frame_roi.boundingRect()
         local_center = bounding_rect.center()
         abs_center = self.new_frame_roi.mapToParent(local_center)
         
-        self.line_edits["frame_x"].setValue(abs_center.x(), edited_color = True)
-        self.line_edits["frame_y"].setValue(abs_center.y(), edited_color = True)
+        self.line_edits["frame_x"].setValue(abs_center.x(), edited_color = False)
+        self.line_edits["frame_y"].setValue(abs_center.y(), edited_color = False)
         
-        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle(), edited_color = True)
+        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle(), edited_color = False)
         
         [self.line_edits[name].blockSignals(False) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
         return

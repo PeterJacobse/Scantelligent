@@ -196,7 +196,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                        states = [{"name": "unknown", "tooltip": "Tip status\nUnknown / withdrawn", "icon": icons.get("tip_unknown"), "color": sct_black},
                                  {"name": "feedback", "tooltip": "Tip status\nIn feedback", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]},
                                  {"name": "constant_height", "tooltip": "Tip status\nConstant height", "icon": icons.get("constant_height"), "color": self.colors["orange"]}]),
-            "V_swap": MSB(tooltip = "Swap the bias between Nanonis and the MLA", icon = icons.get("swap")),
+            "copy_bias": MSB(tooltip = "Copy the dc bias from Nanonis to the MLA", icon = icons.get("swap"), states = [{"color": sct_black}, {"color": sct_blue}]),
             
             # Coarse vertical
             "withdraw": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": sct_blue},
@@ -963,8 +963,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [b_layout.addWidget(labels[name], 0, index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
         b_layout.addWidget(make_line("h", 1), 1, 0, 1, 3)
         [b_layout.addWidget(line_edits[name], 2, index) for index, name in enumerate(["V_nanonis", "V_mla_port1", "V_keithley"])]
-        buttons["V_swap"].setFixedWidth(50)
-        b_layout.addWidget(buttons["V_swap"], 3, 0, 1, 1, align_center)
+        buttons["copy_bias"].setFixedWidth(50)
+        b_layout.addWidget(buttons["copy_bias"], 3, 0, 1, 1, align_center)
         b_layout.addWidget(line_edits["V_mla_port2"], 3, 1)
         [b_layout.addWidget(line_edits[name], 4 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
         [b_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["dz_nanonis"])]
