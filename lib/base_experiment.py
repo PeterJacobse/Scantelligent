@@ -1,4 +1,4 @@
-import time, h5py
+import time, h5py, types
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from datetime import datetime
@@ -64,90 +64,161 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
         return
 
-    def mla_frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4) -> np.ndarray:
-        print("0")
+    def mla_frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
+        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
+        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
+        measurement = lambda: 2 * self.mla.get_pixels(pixels_per_datapoint, average = True)
+        
+        if setup_defaults:
+            self.mla.set_input_multiplexer([1, 2, 2])
+            self.mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
+        
         # Read the TIA gain and oscillator amplitude to be able to convert values
         (hardware_dict, error) = self.nanonis.hardware_update()
         tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
         
-        print("1")
-        (amplitudes, error) = self.mla.amplitudes_update()
-        mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
+        (amplitudes_dict, error) = self.mla.amplitudes_update()
+        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
+        if mod_voltage_mV < .001: (amplitudes_dict, error) = self.mla.amplitudes_update({"amplitudes (mV)": {0: 500}}) # Default to 500 mV amplitude if the amplitude is too close to zero
+        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
         
         # Prepare to plot these channels
         channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (rad)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (rad)"]
         self.prepare_graph(channel_names)
-        print("2")
         measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = float)
+        
+        
         
         # Main loop
         self.mla.start_lockin()
         for index, f in enumerate(frequencies):
-            print("3")
             self.check_abort_request()
             w = 2 * np.pi * int(f)
             self.mla.time_constant_update({"df (Hz)": int(f)}, verbose = False) # Set the measurement resolution to 200 Hz. This corresponds to a primitive time constant or period of 5 ms.
             self.mla.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False) # Frequencies set in units of numbers of whole oscillations per period
             
-            print("4")
             self.mla.get_pixels(settle_pixels)
-            pix = 2 * self.mla.get_pixels(pixels_per_datapoint)
+            pix = measurement()
             
-            a1refabs = 1000 * np.abs(np.average(pix[0])) # Output directly copied to the MLA port 1 in
-            a1refarg = np.angle(np.average(pix[0]))
-            print("5")
-            a1abs_mV = 1000 * np.abs(np.average(pix[1])) # Displacement currents measured through the TIA
+            a1refabs = 1000 * np.abs(pix[0]) # Output directly copied to the MLA port 1 in
+            a1refarg = np.angle(pix[0])
+            
+            a1abs_mV = 1000 * np.abs(pix[1]) # Displacement currents measured through the TIA
             a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA)
             a1abs_fF = 1000000 * a1abs_pA / (w * mod_voltage_mV)
-            a1arg = np.angle(np.average(pix[1]))
+            a1arg = np.angle(pix[1])
             
-            a2abs_mV = 1000 * np.abs(np.average(pix[2]))
+            a2abs_mV = 1000 * np.abs(pix[2])
             a2abs_pA = a2abs_mV / (1000 * tia_gain_V_per_pA)
             a2abs_fF = 1000000 * a2abs_pA / (w * mod_voltage_mV)
-            a2arg = np.angle(np.average(pix[2]))
-            print("6")
+            a2arg = np.angle(pix[2])
+            
             data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = float)
             self.data_array.emit(data_chunk)
             measurement_array[index] = data_chunk
         
         return (measurement_array, channel_names)
 
-    def mla_amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4) -> np.ndarray:
+    def mla_amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
+        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
+        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
+        measurement = lambda: 2 * self.mla.get_pixels(pixels_per_datapoint, average = True)
+        
+        # Initialize the MLA.
+        if setup_defaults:
+            input_mask = 2 * np.ones(32)
+            input_mask[0] = 1
+            self.mla.set_input_multiplexer(input_mask)
+            numbers = np.arange(0, 32)
+            numbers[0] = 1
+            self.mla.frequencies_update({"numbers": numbers})
+            self.mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
+        
         # Read the TIA gain and oscillator amplitude to be able to convert values
         (hardware_dict, error) = self.nanonis.hardware_update()
         tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
-        
-        (frequencies, error) = self.mla.frequencies_update()
-        (amplitudes, error) = self.mla.amplitudes_update()
-        mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
-        
+                
         # Prepare to plot these channels
-        channel_names = ["amp (mV)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (rad)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (rad)"]
+        channel_names = ["amp (mV)", "|a1_ref| (mV)", "Re(a1) (nS)"]
+        [channel_names.append(f"|a{i}| (nS)") for i in range (30)]
         self.prepare_graph(channel_names)
         
         measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = float)
-        
+
+
+
         # Main loop
         self.mla.start_lockin()
-        for index, amp in enumerate(amplitudes):
+        for index, amp_mV in enumerate(amplitudes):
             self.check_abort_request()
-            self.mla.amplitudes_update({"amplitudes (mV)": {0: amp}}, verbose = False) # Frequencies set in units of numbers of whole oscillations per period
+            self.mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
             
             self.mla.get_pixels(settle_pixels)
-            pix = self.mla.get_pixels(pixels_per_datapoint)
+            pix_V = measurement()
             
-            a1refabs = 1000 * np.abs(np.average(pix[0])) # Output directly copied to the MLA port 1 in
-            a1refarg = np.angle(np.average(pix[0]))
+            pix_pA = pix_V / tia_gain_V_per_pA
+            pix_nS = pix_pA / amp_mV
             
-            a1abs_mV = 1000 * np.abs(np.average(pix[1])) # Displacement currents measured through the TIA
-            a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA)
-            a1arg = np.angle(np.average(pix[1]))
+            data_chunk = np.zeros((len(channel_names)), dtype = float)
+            data_chunk[0] = amp_mV
+            data_chunk[1] = np.abs(pix_nS[0])
+            data_chunk[2] = np.real(pix_nS[1])
+            data_chunk[3:] = np.abs(pix_nS[2:])
             
-            a2abs_mV = 1000 * np.abs(np.average(pix[2]))
-            a2abs_pA = a2abs_mV / (1000 * tia_gain_V_per_pA)
-            a2arg = np.angle(np.average(pix[2]))
+            self.data_array.emit(data_chunk)
+            measurement_array[index] = data_chunk
+        
+        return (measurement_array, channel_names)
+
+    def mla_voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
+        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
+        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
+        measurement = lambda: 2 * self.mla.get_pixels(pixels_per_datapoint, average = True)
+        
+        # Initialize the MLA.
+        if setup_defaults:
+            input_mask = 2 * np.ones(32)
+            input_mask[0] = 1
+            self.mla.set_input_multiplexer(input_mask)
+            numbers = np.arange(0, 32)
+            numbers[0] = 1
+            self.mla.frequencies_update({"numbers": numbers})
+            self.mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
+        
+        # Read the TIA gain and oscillator amplitude to be able to convert values
+        (hardware_dict, error) = self.nanonis.hardware_update()
+        tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
+        (amplitudes_dict, error) = self.mla.amplitudes_update()
+        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
+        if mod_voltage_mV < .001: (amplitudes_dict, error) = self.mla.amplitudes_update({"amplitudes (mV)": {0: .5}}) # Default to 500 uV amplitude if the amplitude is too close to zero
+        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
+
+        # Prepare to plot these channels
+        channel_names = ["V_port1 (V)", "Re(a1) (nS)"]
+        [channel_names.append(f"|a{i}| (nS)") for i in range (31)]
+        self.prepare_graph(channel_names)
+        
+        measurement_array = np.empty((len(voltages), len(channel_names)), dtype = float)
+
+
+
+        # Main loop
+        self.mla.start_lockin()
+        for index, voltage in enumerate(voltages):
+            self.check_abort_request()
+            self.mla.bias_update({"port_1 (V)": voltage}, verbose = False)
             
-            data_chunk = np.array([amp, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1arg, a2abs_mV, a2abs_pA, a2arg], dtype = float)
+            self.mla.get_pixels(settle_pixels)
+            pix_V = measurement()
+            
+            pix_pA = pix_V / tia_gain_V_per_pA
+            pix_nS = pix_pA / mod_voltage_mV
+            
+            data_chunk = np.zeros((len(channel_names)), dtype = float)
+            data_chunk[0] = voltage
+            data_chunk[1] = np.real(pix_nS[0])
+            data_chunk[2:] = np.abs(pix_nS[1:])
+            
             self.data_array.emit(data_chunk)
             measurement_array[index] = data_chunk
         

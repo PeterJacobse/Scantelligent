@@ -53,11 +53,14 @@ class Experiment(BaseExperiment):
 
         # Read what kind of spectroscopic axes are requested
         x_values = None
+        x_axis_label = ""
         y_values = None
+        y_axis_label = ""
 
         if spec_button_states.get("V") == "x":
             x_axis_label = "voltage (V)"
             x_values = V_linspace
+            x_values = np.concatenate((x_values, x_values[::-1]))
             self.output_file.attrs.update({"V start (V)": V_start_V, "V end (V)": V_end_V, "dV (V)": dV, "steps": n_steps})
         
         elif spec_button_states.get("z") == "x":
@@ -79,6 +82,7 @@ class Experiment(BaseExperiment):
         if spec_button_states.get("V") == "y":
             y_axis_label = "voltage (V)"
             y_values = V_linspace
+            y_values = np.concatenate((y_values, y_values[::-1]))
             self.output_file.attrs.update({"V start (V)": V_start_V, "V end (V)": V_end_V, "dV (V)": dV, "steps": n_steps})
         
         elif spec_button_states.get("z") == "y":
@@ -98,62 +102,63 @@ class Experiment(BaseExperiment):
 
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         self.output_file.attrs.update({"x axis": x_axis_label})
-        if isinstance(y_values, np.ndarray): self.output_file.attrs.update({"y-axis": y_axis_label})
+        if isinstance(y_values, np.ndarray): self.output_file.attrs.update({"y axis": y_axis_label})
 
 
 
         # Perform the sweep
-        match x_axis_label:
-            case "frequency (Hz)":
-                """
-                Frequency sweeps are assumed to target the tip-sample capacitance.
-                A pure tone is set on port 1, and the response is converted into capacitance in femtoFarad using the calculated displacement current (from the TIA gain setting) and the frequency.
-                This measurement uses a reference of the applied tone on input 1 and measures the response from the STM on input 2.
-                The response of the second harmonic is captured as well.
-                """
-                
-                # Initialize the MLA.
-                mla.set_input_multiplexer([1, 2, 2])
-                mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
-                if mod_voltage_mV < .01: mla.amplitudes_update({"amplitudes (mV)": {0: 500}}) # If the amplitude was not yet set, default to 500 mV
-                        
-                (measurement_array, channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = 1, pixels_per_datapoint = t_int) # Perform the measurement and retrieve the data as a numpy array
-                measurement_ds = self.output_file.create_dataset("sweep", data = measurement_array, dtype = float)
-                channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-                channels_ds.make_scale("channels")
-                frequency_ds = self.output_file.create_dataset("frequency axis", data = x_values)
-                frequency_ds.make_scale("frequency (Hz)")                
-                measurement_ds.dims[0].attach_scale(channels_ds)
-                measurement_ds.dims[1].attach_scale(frequency_ds)
-            
-            case "amplitude (mV)":
-                """
-                Amplitude sweeps show how the higher harmonic peaks increase in amplitude with increasing drive.
-                The responses are converted to conductances.
-                A pure tone is set on port 1, a reference of the applied tone is measured on input 1, and the response from the STM is measured on input 2.
-                """
-                
-                # Initialize the MLA
-                mla.set_input_multiplexer([1, 2, 2])
-                mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
-                        
-                (measurement_array, channel_names) = self.mla_amplitude_sweep(x_values, settle_pixels = 1, pixels_per_datapoint = t_int) # Perform the measurement and retrieve the data as a numpy array
-                measurement_ds = self.output_file.create_dataset("sweep", data = measurement_array, dtype = float)
-                channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-                channels_ds.make_scale("channels")
-                amplitude_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
-                amplitude_ds.make_scale("frequency (Hz)")
-                measurement_ds.dims[0].attach_scale(channels_ds)
-                measurement_ds.dims[1].attach_scale(amplitude_ds)
-            
+        match y_axis_label:
             case "voltage (V)":
-                self.logprint("Performing a voltage sweep")
-            
-            case "tip height (nm)":
-                self.logprint("Performing a z sweep")
-            
-            case _:
                 pass
+                
+            case _: # Pure x-axis measurements
+                match x_axis_label:
+                    case "frequency (Hz)":
+                        """
+                        Frequency sweeps are assumed to target the tip-sample capacitance.
+                        A pure tone is set on port 1, and the response is converted into capacitance in femtoFarad using the calculated displacement current (from the TIA gain setting) and the frequency.
+                        This measurement uses a reference of the applied tone on input 1 and measures the response from the STM on input 2.
+                        The response of the second harmonic is captured as well.
+                        """                                                       
+                        (measurement_array, channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = 1, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
+                        measurement_ds = self.output_file.create_dataset("sweep", data = measurement_array, dtype = float)
+                        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+                        channels_ds.make_scale("channels")
+                        frequency_ds = self.output_file.create_dataset("frequency axis", data = x_values)
+                        frequency_ds.make_scale("frequency (Hz)")                
+                        measurement_ds.dims[0].attach_scale(channels_ds)
+                        measurement_ds.dims[1].attach_scale(frequency_ds)
+                    
+                    case "amplitude (mV)":
+                        """
+                        Amplitude sweeps show how the higher harmonic peaks increase in amplitude with increasing drive.
+                        The responses are converted to conductances.
+                        A pure tone is set on port 1, a reference of the applied tone is measured on input 1, and the response from the STM is measured on input 2.
+                        """        
+                        (measurement_array, channel_names) = self.mla_amplitude_sweep(x_values, settle_pixels = 1, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
+                        measurement_ds = self.output_file.create_dataset("sweep", data = measurement_array, dtype = float)
+                        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+                        channels_ds.make_scale("channels")
+                        amplitude_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
+                        amplitude_ds.make_scale("frequency (Hz)")
+                        measurement_ds.dims[0].attach_scale(channels_ds)
+                        measurement_ds.dims[1].attach_scale(amplitude_ds)
+                    
+                    case "voltage (V)":
+                        (measurement_array, channel_names) = self.mla_voltage_sweep(x_values, settle_pixels = 1, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
+                        measurement_ds = self.output_file.create_dataset("sweep", data = measurement_array, dtype = float)
+                        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+                        channels_ds.make_scale("channels")
+                        amplitude_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
+                        amplitude_ds.make_scale("frequency (Hz)")
+                        measurement_ds.dims[0].attach_scale(channels_ds)
+                        measurement_ds.dims[1].attach_scale(amplitude_ds)
+                    
+                    case "tip height (nm)":
+                        self.logprint("Performing a z sweep")
+                    
+                    case _:
+                        pass
 
 
 
