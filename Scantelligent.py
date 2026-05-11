@@ -24,7 +24,7 @@ class Scantelligent(QtCore.QObject):
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
-        #self.toggle_view("nanonis")
+        self.toggle_view("none")
 
 
 
@@ -595,23 +595,30 @@ class Scantelligent(QtCore.QObject):
         self.gui.pdis[index].setVisible(checked)
         return
 
-    def draw_saved_images(self, new_image: bool = True) -> None:
-        if new_image:
-            try:
-                image_item = self.gui.image_item
-                image_item.setTransform(self.gui.image_item.transform())
-                self.gui.saved_scans.insert(0, image_item)
-                if len(self.gui.saved_scans) > 6: self.gui.saved_scans = self.gui.saved_scans[:5]
-                self.gui.image_view.setImage(np.zeros((2, 2)))
-            except:
-                pass
-
-        view_items = self.gui.view.addedItems
-        [self.gui.view.removeItem(item) for item in view_items if isinstance(item, pg.ImageItem)] # Remove old scans
-        try:
-            if len(self.gui.saved_scans) > 0: [self.gui.view.addItem(item) for item in self.gui.saved_scans]
-        except Exception as e:
-            self.logprint(f"{e}")
+    def refresh_image(self, save: bool = True) -> None:
+        # Replace the old item with a new item and relink the new item
+        old_item = self.gui.image_view.getImageItem()
+        
+        (grid, error) = self.nanonis.grid_update()
+        [pixels, lines] = [grid.get(key) for key in ["pixels", "lines"]]
+        
+        # Make a new image with a target at its center
+        new_img = np.full((pixels, lines), np.nan)
+        for i in range(3): new_img[int((pixels - 1) / 2) + i - 1, int((lines - 1) / 2)] = 0
+        for i in range(3): new_img[int((pixels - 1) / 2), int((lines - 1) / 2) + i - 1] = 0
+        new_img[int((pixels - 1) / 2), int((lines - 1) / 2)] = 1
+        new_item = pg.ImageItem(new_img)
+        self.gui.image_view.addItem(new_item)
+        self.gui.image_view.imageItem = new_item
+        self.gui.image_item = self.gui.image_view.getImageItem()
+        self.gui.image_view.getHistogramWidget().setImageItem(self.gui.image_item)
+        self.nanonis.grid_update()
+        
+        # Save the old item if desired
+        self.gui.view.addItem(old_item)
+        if save: self.gui.saved_scans.insert(0, old_item)
+        if len(self.gui.saved_scans) > 6: self.gui.saved_scans = self.gui.saved_scans[:5]
+        for index, scan in enumerate(self.gui.saved_scans): scan.setZValue(-1 - index)
         return
 
     def toggle_view(self, view: str = None, verbose: bool = True):
@@ -634,16 +641,13 @@ class Scantelligent(QtCore.QObject):
             try: self.camera_thread.requestInterruption()
             except: pass
 
-        if new_view == "camera": new_view = "nanonis"
+        if new_view == "camera": new_view = "nanonis" # Skip camera view for now
         if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
 
 
 
-        # Reset ImageView
-        image_item = self.gui.image_view.imageItem
-        self.gui.view.clear()
-        self.gui.view.addItem(image_item)
-        self.gui.image_view.ui.histogram.setImageItem(image_item)
+        # Reset ImageView. Remove old items
+        [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
 
         match new_view:
             case "camera":
@@ -679,24 +683,20 @@ class Scantelligent(QtCore.QObject):
             case "nanonis":
                 self.gui.buttons["view"].setState("nanonis")
                 
-                # self.draw_saved_images(new_image = False)
-                # self.gui.image_item = self.gui.image_view.imageItem
-                #self.nanonis.frame_update(unlink = True, update_new_frame = True)
-                self.gui.view.addItem(self.gui.image_item)
-                self.gui.image_item.setImage(np.random.random((21, 21)))
-                #self.nanonis.frame_update(unlink = True, update_new_frame = True)
+                #self.gui.image_view.setImage(np.zeros((2, 2)))
+                self.refresh_image()
                 
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target]]
-                #self.nanonis.hardware_update()                
+                self.nanonis.hardware_update()
                 self.set_view_range("full")
 
             case _:
                 self.gui.buttons["view"].setState("none")
 
                 self.gui.image_view.setImage(self.splash_screen)
-                self.gui.image_item = self.gui.image_view.getImageItem()
-                self.gui.image_item.setRotation(0)
-                self.gui.image_item.setPos(0, 0)
+                image_item = self.gui.image_view.imageItem
+                image_item.setRotation(0)
+                image_item.setPos(0, 0)
                 self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
@@ -1039,12 +1039,12 @@ class Scantelligent(QtCore.QObject):
                     # Worker-thread connections
                     self.experiment_thread.started.connect(self.experiment.run)
                     self.experiment.finished.connect(self.experiment_thread.quit)
-                    #if self.gui.buttons["auto_paste"].isChecked(): self.experiment.finished.connect(self.draw_saved_images)
+                    self.experiment.finished.connect(self.refresh_image)
                     self.experiment_thread.finished.connect(self.experiment.deleteLater)
                     #self.experiment_thread.finished.connect(lambda: self.gui.buttons["save"].setState("data_saved"))
                     self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
                     self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
-                    [self.experiment_thread.finished.connect(lambda: self.gui.buttons[name].setState(0)) for name in ["start_scan", "start_spectrum", "approach"]]
+                    [self.experiment_thread.finished.connect(lambda name0 = name: self.gui.buttons[name0].setState(0)) for name in ["start_scan", "start_spectrum", "approach"]]
                     
                     # Progress
                     self.experiment.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))

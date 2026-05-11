@@ -257,6 +257,7 @@ class BaseExperiment(QObject):
     def monitor_scan(self, output_channel = None, timeout_s: int = 100000) -> np.ndarray:
         (scan_metadata, error) = self.nanonis.scan_metadata_update() # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
         channel_dict = scan_metadata.get("channel_dict")
+        (frame, error) = self.nanonis.frame_update() # Calling frame_update refreshes the frame
 
         # Loop to check scan progress
         t_start = time.time()
@@ -285,7 +286,7 @@ class BaseExperiment(QObject):
         
         # When the scan is finished, return the scan image
         if isinstance(output_channel, str) and output_channel in channel_dict.keys(): channel_index = channel_dict[output_channel]
-        if isinstance(output_channel, int) and output_channel in channel_dict.values(): (scan_image, error) = self.nanonis.scan_update(channel = output_channel, backward = backward, verbose = False)
+        if isinstance(output_channel, int) and output_channel in channel_dict.values(): (scan_image, error) = self.nanonis.scan_update(channel = output_channel, send_data = False, backward = backward, verbose = False)
     
         return scan_image
 

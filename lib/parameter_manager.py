@@ -369,26 +369,16 @@ class ParameterManager(QtCore.QObject):
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
 
                 # Update the frame 'roi' in the ImageView
-                frame_roi = sct.gui.frame_roi
-                try: sct.gui.image_view.view.removeItem(frame_roi)
-                except: pass
-                
-                if sct.gui.buttons["view"].state_name == "nanonis":
-                    frame_roi.setSize([w_nm, h_nm])
-                    frame_roi.setPos([0, 0])
-                    frame_roi.setAngle(angle = -angle_deg)
+                sct.gui.frame_roi.setSize([w_nm, h_nm])
+                sct.gui.frame_roi.setPos([0, 0])
+                sct.gui.frame_roi.setAngle(angle = -angle_deg)
 
-                    sct.gui.image_view.addItem(frame_roi)
-
-                    bounding_rect = frame_roi.boundingRect()
-                    local_center = bounding_rect.center()
-                    abs_center = frame_roi.mapToParent(local_center)
-                    
-                    frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                bounding_rect = sct.gui.frame_roi.boundingRect()
+                local_center = bounding_rect.center()
+                abs_center = sct.gui.frame_roi.mapToParent(local_center)                
+                sct.gui.frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
                 
-                # Renew the image_item
-                sct.gui.image_item = sct.gui.image_view.getImageItem()
-                
+                # Refresh the transformations on the image_item
                 pw = sct.gui.image_item.width()
                 ph = sct.gui.image_item.height()
                 
@@ -453,38 +443,29 @@ class ParameterManager(QtCore.QObject):
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
                 
+                
+                
                 # Update the frame 'roi' in the ImageView
-                new_frame_roi = sct.gui.new_frame_roi
-                try: sct.gui.image_view.view.removeItem(new_frame_roi)
-                except: pass
-                
-                if sct.gui.buttons["view"].state_name == "nanonis":
-                    new_frame_roi.blockSignals(True)
-                    
-                    new_frame_roi.setSize([w_nm, h_nm])
-                    new_frame_roi.setPos([0, 0])
-                    new_frame_roi.setAngle(angle = -angle_deg)
+                sct.gui.frame_roi.setSize([w_nm, h_nm])
+                sct.gui.frame_roi.setPos([0, 0])
+                sct.gui.frame_roi.setAngle(angle = -angle_deg)
 
-                    sct.gui.image_view.addItem(new_frame_roi)
-                    
-                    bounding_rect = new_frame_roi.boundingRect()
-                    local_center = bounding_rect.center()
-                    abs_center = new_frame_roi.mapToParent(local_center)
-                    
-                    new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-                    
-                    new_frame_roi.blockSignals(False)
+                bounding_rect = sct.gui.frame_roi.boundingRect()
+                local_center = bounding_rect.center()
+                abs_center = sct.gui.frame_roi.mapToParent(local_center)
+                sct.gui.frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                
+                # Update the new frame 'roi' in the ImageView
+                sct.gui.new_frame_roi.setSize([w_nm, h_nm])
+                sct.gui.new_frame_roi.setPos([0, 0])
+                sct.gui.new_frame_roi.setAngle(angle = -angle_deg)
 
-                # Renew the image_item
-                sct.gui.image_item = sct.gui.image_view.getImageItem()
-                
-                pw = sct.gui.image_item.width()
-                ph = sct.gui.image_item.height()
-                
-                if pw == 0 or ph == 0:
-                    sct.gui.image_view.setImage(np.random.random(7, 7))
-                    sct.gui.image_item = sct.gui.image_view.getImageItem()
-                
+                bounding_rect = sct.gui.new_frame_roi.boundingRect()
+                local_center = bounding_rect.center()
+                abs_center = sct.gui.new_frame_roi.mapToParent(local_center)
+                sct.gui.new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+
+                # Refresh the transformations on the image_item                
                 box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
                 sct.gui.image_item.setRect(box)    
                 

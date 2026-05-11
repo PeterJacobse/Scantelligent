@@ -27,10 +27,6 @@ class Experiment(BaseExperiment):
         
         feedback_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]] # Retrieve the channel indices from the signal_dict
         feedback_channel_indices = [index for index in feedback_channel_indices if index is not None]
-        
-        # (sig_dict, error) = nn.signals_update("Z (m)") Another valid way to retrieve the scan channel index is by requesting a signals_update and passing the name of the channel
-        # sig_dict.pop("dict_name")
-        # z_channel_index = list(sig_dict.keys())
 
         [recorded_channel_indices.append(channel_index) for channel_index in feedback_channel_indices if channel_index not in recorded_channel_indices] # Add the z channel to the list of recorded channels
         nn.scan_metadata_update({"channel_indices": recorded_channel_indices}, verbose = False) # Make sure the correct channel is being recorded
@@ -51,6 +47,8 @@ class Experiment(BaseExperiment):
             if dist_to_tlc < dist_to_blc: direction = "down"
 
         self.output_file.attrs.update({"frame_offset_x (nm)": 100})
+        
+        time.sleep(2)
 
 
         # Starting the scan

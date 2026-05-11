@@ -724,18 +724,23 @@ class DataProcessing:
         try:
             # Unfinished scans: remove NaN rows
             num_rows = len(image)
-            nan_mask = np.isnan(image).any(axis = 1)
+            nan_mask = np.isnan(image).any(axis = 1)            
+            non_nan_rows_count = np.sum(~np.isnan(image).any(axis = 0))
             #image = image[~nan_mask]
             #non_nan_rows = len(image)
 
             #if non_nan_rows < 3: # Do not perform data processing if the scan is all NaNs
             #    return (input_image, error)
 
-            avg_image = np.nanmean(image.flatten()) # The average value of the image, or the offset
-            (gradient_image, error) = self.image_gradient(image) # The (complex) gradient of the image
-            if error: return (image, error)
-            avg_gradient = np.nanmean(gradient_image.flatten()) # The average value of the gradient
-            if not isinstance(avg_gradient, complex):
+            try:
+                avg_image = np.nanmean(image.flatten()) # The average value of the image, or the offset
+                (gradient_image, error) = self.image_gradient(image) # The (complex) gradient of the image
+                if error: return (image, error)
+                avg_gradient = np.nanmean(gradient_image.flatten()) # The average value of the gradient
+                if not isinstance(avg_gradient, complex):
+                    error = "Error. Could not compute average gradient for background subtraction."
+                    return (input_image, error)
+            except:
                 error = "Error. Could not compute average gradient for background subtraction."
                 return (input_image, error)
 

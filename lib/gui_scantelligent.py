@@ -249,7 +249,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
             "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 2, states = [{"color": sct_black}, {"color": sct_blue}]),
+            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                    {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
@@ -305,7 +305,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
 
         # Initialize
-        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste"]]
+        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view"]]
 
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
@@ -700,20 +700,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
     def make_image_view(self) -> SCTWidgets.ImageView:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
-        plot_item = pg.PlotItem()
-        im_view = SCTWidgets.ImageView(view = plot_item)
-        view = im_view.getView()
-        hist_widget = im_view.getHistogramWidget()
-        view.invertY(False)
-        self.view = view.getViewBox()
+        image_view = SCTWidgets.ImageView(view = pg.PlotItem())
+        view = image_view.getView()
+        hist_widget = image_view.getHistogramWidget()
+        view.invertY(False) # y increases towards the top of the screen
+        self.view = view.getViewBox() # Since view = pg.PlotItem instead of ViewBox, the ViewBox is actually accessed by view.getViewBox()
+        self.image_item = image_view.imageItem
         self.hist_item = hist_widget.item
         
-        # Make a tip target item in the image_view
+        # Make target item
         self.tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
         self.target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
         
         self.saved_scans = []        
-        return im_view
+        return image_view
 
     def make_rois(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
         piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
@@ -1274,7 +1274,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.limit_roi_angle()
         
         new_width = self.new_frame_roi.size().x()
-        self.line_edits["frame_width"].setValue(new_width, edited_color = True)
+        self.line_edits["frame_width"].setValue(new_width, edited_color = False)
         
         if bool(self.buttons["frame_aspect"].state_index):
             new_height = new_width * self.line_edits["frame_aspect"].getValue()
@@ -1284,18 +1284,18 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             self.new_frame_roi.blockSignals(False)
         else:
             new_height = self.new_frame_roi.size().y()
-            self.line_edits["frame_aspect"].setValue(new_height / new_width, edited_color = True)
+            self.line_edits["frame_aspect"].setValue(new_height / new_width, edited_color = False)
         
-        self.line_edits["frame_height"].setValue(new_height, edited_color = True)
+        self.line_edits["frame_height"].setValue(new_height, edited_color = False)
                 
         bounding_rect = self.new_frame_roi.boundingRect()
         local_center = bounding_rect.center()
         abs_center = self.new_frame_roi.mapToParent(local_center)
         
-        self.line_edits["frame_x"].setValue(abs_center.x(), edited_color = True)
-        self.line_edits["frame_y"].setValue(abs_center.y(), edited_color = True)
+        self.line_edits["frame_x"].setValue(abs_center.x(), edited_color = False)
+        self.line_edits["frame_y"].setValue(abs_center.y(), edited_color = False)
         
-        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle(), edited_color = True)
+        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle(), edited_color = False)
         
         [self.line_edits[name].blockSignals(False) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
         return
