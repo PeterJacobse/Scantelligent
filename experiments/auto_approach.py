@@ -73,7 +73,9 @@ class Experiment(BaseExperiment):
                 self.check_abort_request()
         
             nn.tip_update({"withdraw": True})
-            if surface_reached == 1: break
+            if surface_reached == 1:
+                self.parameters.emit({"dict_name": "view_request", "view": "nanonis"})
+                break
             
             nn.coarse_move({"minus_z_steps": 1})
             

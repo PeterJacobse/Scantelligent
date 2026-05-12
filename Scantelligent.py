@@ -257,7 +257,16 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "nanonis" or target.lower() == "all":
             try:
                 # Instantiate
-                self.nanonis = NanonisAPI(hw_config = self.hw_config)
+                nanonis_config = self.hw_config.get("nanonis")
+                nanonis_ports = nanonis_config.get("tcp_ports")
+                
+                nanonis_config0 = nanonis_config.copy()
+                nanonis_config0.update({"tcp_port": nanonis_ports[0]})
+                nanonis_config1 = nanonis_config.copy()
+                nanonis_config1.update({"tcp_port": nanonis_ports[1]})
+                
+                # First port
+                self.nanonis = NanonisAPI(hw_config = nanonis_config0)
                 
                 # Set up signal-slot connections
                 # Scantelligent -> Nanonis
@@ -273,6 +282,24 @@ class Scantelligent(QtCore.QObject):
                 
                 # Get parameters from Nanonis
                 (nanonis_parameters, _) = self.nanonis.initialize()
+                
+                
+                
+                # Second port
+                self.nanonis1 = NanonisAPI(hw_config = nanonis_config1)
+                
+                # Set up signal-slot connections
+                # Nanonis -> Scantelligent
+                self.nanonis1.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
+                self.nanonis1.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
+                self.nanonis1.message.connect(self.logprint)
+                self.nanonis1.image.connect(self.receive_image)
+                self.nanonis1.data_array.connect(self.receive_data)
+                
+                # Get parameters from Nanonis
+                (nanonis_parameters1, _) = self.nanonis1.initialize(verbose = False)
+                
+                
                 
                 # Populate the input line edit completer
                 nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
@@ -1018,7 +1045,7 @@ class Scantelligent(QtCore.QObject):
                     mla_pointer = None
                     if hasattr(self, "mla") and hasattr(self.mla.mla, "lockin"): mla_pointer = self.mla                    
                     self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath,
-                                                                                    scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis, mla = mla_pointer)
+                                                                                    scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis1, mla = mla_pointer)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
                     

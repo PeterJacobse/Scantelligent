@@ -50,6 +50,11 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "nanonis_status", "status": status})
         return
 
+    def set_view(self, view_name: str = "none") -> None:
+        if view_name in ["none", "nanonis", "camera"]:
+            self.parameters.emit({"dict_name": "view_request", "view": view_name})
+        return
+
     def prepare_gui(self) -> None:
         self.gui_setup.update({"dict_name": "gui_setup"})
         self.parameters.emit(self.gui_setup)

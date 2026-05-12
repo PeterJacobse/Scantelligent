@@ -1,6 +1,7 @@
 nanonis:
  tcp_ip: "127.0.0.1"
  tcp_port: 6501
+ tcp_ports: [6501, 6502]
 camera:
  argument: 0
 keithley:

@@ -249,6 +249,10 @@ class ParameterManager(QtCore.QObject):
                 sct.paths.update({"session_path": session_path})
                 try: sct.gui.buttons["session_folder"].setState("online")
                 except: pass
+            
+            case "view_request":
+                new_view = parameters.get("view")
+                if new_view in ["none", "camera", "nanonis"]: sct.toggle_view(new_view)
 
 
 

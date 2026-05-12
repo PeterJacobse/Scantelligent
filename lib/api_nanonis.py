@@ -436,12 +436,13 @@ class NanonisAPI(QtCore.QObject):
                     time.sleep(.1)
 
                 withdrawn = False
-                if not feedback and np.abs(z_nm - z_max) < 1E-11: # Tip is already withdrawn
+                if not feedback and np.abs(z_nm - z_max) < 1E-2: # Tip is already withdrawn
                     withdrawn = True
                 if withdraw and not withdrawn: # Tip is not yet withdrawn, but a withdraw request is made
                     nhw.withdraw(wait = True)
                     withdrawn = True
                     time.sleep(.2)
+                if withdrawn: self.parameters.emit({"dict_name": "view_request", "view": "camera"})
             
                 # Retrieve the feedback status
                 feedback_new = nhw.get_fb()
@@ -1111,7 +1112,9 @@ class NanonisAPI(QtCore.QObject):
             if verbose: self.logprint(f"nanonis.scan_action({parameters})", "code")
             if not self.status == "running": self.link()
             
-            if "start" in parameters.values(): nhw.start_scan(direction)
+            if "start" in parameters.values():
+                self.parameters.emit({"dict_name": "view_request", "view": "nanonis"})
+                nhw.start_scan(direction)
             elif "stop" in parameters.values(): nhw.stop_scan()
             elif "resume" in parameters.values(): nhw.resume_scan()
             else: nhw.pause_scan()
