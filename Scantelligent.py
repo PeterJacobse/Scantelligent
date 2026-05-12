@@ -187,17 +187,20 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "camera" or target.lower() == "all":
             try:
                 # Instantiate
-                self.camera = CameraAPI(hw_config = self.hw_config, status_callback = self.gui.buttons["camera"].setState, message_callback = self.logprint)
+                self.camera = CameraAPI(hw_config = self.hw_config)
                 
                 # Set up signal-slot connections
-                self.camera.frame_captured.connect(self.receive_image)
+                self.camera.parameters.connect(self.parameters.receive)
+                self.camera.captured_frame.connect(self.receive_image)
                 
                 # Initialize
                 self.camera.initialize()
                 
                 self.logprint("Camera: Found the camera and instantiated CameraAPI as camera", "success")
+                self.gui.buttons["camera"].setState("online")
             except Exception as e:
                 self.logprint(f"Camera: Unable to connect to camera: {e}", "warning")
+                self.gui.buttons["camera"].setState("offline")
 
 
 
@@ -342,22 +345,12 @@ class Scantelligent(QtCore.QObject):
                     (processed_scan, statistics, limits, error) = self.data.process_scan(flipped_image)
                     [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
                     
-                    #if not hasattr(self.gui, "image_item"): self.nanonis.frame_update()
-                    #else:
-                    self.gui.image_item.setImage(processed_scan)
-                    
+                    self.gui.image_item.setImage(processed_scan)                    
                     self.gui.hist_item.setLevels(limits[0], limits[1])
                 
                 case "camera":
-                    self.gui.image_view.setImage(np.flipud(image), autoRange = False)
-
-                    image_item = self.gui.image_view.getImageItem()
-                    identity_transform = QtGui.QTransform()
-                    image_item.setTransform(identity_transform)
-                    
-                    view_box = self.gui.image_view.getView()
-                    view_box.autoRange()
-                
+                    self.gui.image_item.setImage(np.flipud(image), autoRange = False)
+                                    
                 case _:
                     pass
 
@@ -505,12 +498,8 @@ class Scantelligent(QtCore.QObject):
         return
 
     def camera_finished(self):
-        self.camera.message.disconnect()
-        self.camera.frame_captured.disconnect()
-        self.camera.finished.disconnect()
-
-        delattr(self, "camera_thread")
-        delattr(self, "camera")
+        try: self.camera_thread = None
+        except: pass
         return
 
     def launch_scanalyzer(self) -> None:
@@ -553,17 +542,16 @@ class Scantelligent(QtCore.QObject):
 
     def cleanup(self) -> None:
         self.user.save_parameter_sets()
-        try:
-            self.nanonis.unlink()
+        try: self.experiment_thread.requestInterruption()
         except: pass
-        try:
-            self.experiment.disconnect()
-            self.experiment.deleteLater()
+        try: self.camera_thread.requestInterruption()
         except: pass
-        try:
-            self.mla.unlink()
+        
+        try: self.nanonis.unlink()
+        except: pass        
+        try: self.mla.unlink()
         except: pass
-
+        
         for attribute_name in ["nanonis", "mla", "experiment", "experiment_thread", "camera", "camera_thread"]:
             try: delattr(self, attribute_name)
             except: pass
@@ -613,6 +601,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.image_item = self.gui.image_view.getImageItem()
         self.gui.image_view.getHistogramWidget().setImageItem(self.gui.image_item)
         self.nanonis.grid_update(verbose = False)
+        self.gui.view = self.gui.image_view.getView().getViewBox()
         
         # Save the old item if desired
         self.gui.view.addItem(old_item)
@@ -638,10 +627,12 @@ class Scantelligent(QtCore.QObject):
 
         # Clean up old processes
         if hasattr(self, "camera_thread"):
-            try: self.camera_thread.requestInterruption()
-            except: pass
+            try:
+                self.camera_thread.requestInterruption()
+                time.sleep(.5)
+            except:
+                pass
 
-        if new_view == "camera": new_view = "nanonis" # Skip camera view for now
         if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
 
 
@@ -652,51 +643,46 @@ class Scantelligent(QtCore.QObject):
         match new_view:
             case "camera":
                 self.gui.buttons["view"].setState("camera")
-                self.gui.main_image.setImage(np.zeros((2, 2)))
-                self.gui.main_image.resetTransform()
-                """
-                image_item = self.gui.image_view.getImageItem()
-                image_item.setImage(np.zeros((2, 2)))
-                image_item.setRotation(0)
-                image_item.setPos(0, 0)
-                """
-
-                try:
-                    # Instantiate
-                    self.camera = CameraAPI(self.hw_config)
-                    self.camera_thread = QtCore.QThread()
-                    self.camera.moveToThread(self.camera_thread)
-
-                    # Set up signal-slot connections
-                    # Camera -> Scantelligent
-                    self.camera.frame_captured.connect(self.receive_image)
-                    self.camera.finished.connect(self.camera_thread.quit)
-                    
-                    self.camera_thread.started.connect(self.camera.run)
-                    self.camera_thread.finished.connect(self.camera_thread.deleteLater)                    
-                    self.camera_thread.destroyed.connect(self.camera_finished)
-                    
-                    self.camera_thread.start()
-                except:
-                    pass
+                self.refresh_image(save = False)
+                
+                camera_frame = self.camera.grab_frame()
+                self.gui.image_item.setImage(camera_frame)
+                self.gui.image_item.resetTransform()
+                self.gui.image_item.setRotation(0)
+                self.gui.image_item.setPos(0, 0)
+                self.gui.view.autoRange()
+                
+                self.camera_thread = QtCore.QThread()
+                self.camera.moveToThread(self.camera_thread)
+                self.camera_thread.finished.connect(self.camera_thread.deleteLater)
+                self.camera_thread.finished.connect(self.camera_finished)
+                
+                if not self.camera.thread() == self.camera_thread:
+                    self.logprint(f"Error moving the camera to the camera thread", message_type = "error")
+                    self.camera_thread.quit()
+                    return
+                
+                self.camera_thread.started.connect(self.camera.run)
+                self.camera.finished.connect(self.camera_thread.quit)
+                self.camera_thread.start()
 
             case "nanonis":
                 self.gui.buttons["view"].setState("nanonis")
-                
-                #self.gui.image_view.setImage(np.zeros((2, 2)))
-                self.refresh_image()
+                self.refresh_image(save = False)
                 
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target]]
                 self.nanonis.hardware_update()
                 self.set_view_range("full")
 
             case _:
-                self.gui.buttons["view"].setState("none")
-
-                self.gui.image_view.setImage(self.splash_screen)
-                image_item = self.gui.image_view.imageItem
-                image_item.setRotation(0)
-                image_item.setPos(0, 0)
+                self.gui.buttons["view"].setState("none")                
+                self.refresh_image(save = False)
+                
+                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
+                self.gui.image_item.setImage(self.splash_screen)
+                self.gui.image_item.resetTransform()
+                self.gui.image_item.setRotation(0)
+                self.gui.image_item.setPos(0, 0)                
                 self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
