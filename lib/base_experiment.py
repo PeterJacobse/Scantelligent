@@ -69,6 +69,88 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
         return
 
+    def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, verbose: bool = True, autophase: bool = True) -> str:
+        """
+        Returns which device the STM bias cable is connected to, and autophases the lockin amplifier for the corresponding device
+        """
+        nn = self.nanonis
+        mla = self.mla
+        if verbose: self.logprint(f"Testing and autophasing the lock-in amplifier, starting with Nanonis", message_type = "message")
+        
+        lockin_signal_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)"]
+        (signal_dict, error) = nn.signals_update(lockin_signal_names, verbose = verbose) # Retrieve the signal indices for more efficient lookup
+        lockin_signal_indices = [signal_dict.get(signal)[0] for signal in lockin_signal_names]        
+        (lockin, error) = nn.lockin_update({"mod1": {"on": True, "amplitude (mV)": amplitude_mV, "frequency (Hz)": frequency_Hz, "phase (deg)": 0}, "mod2": {"on": True}}, verbose = verbose)
+        (signal_dict, error) = nn.signals_update(lockin_signal_indices, verbose = False)
+        [li_x_pA, li_y_pA] = [signal_dict[index][1] * 1E12 for index in lockin_signal_indices]
+        li_complex_pA = (li_x_pA + 1j * li_y_pA)
+        
+        if np.abs(li_complex_pA) < 10:
+            if verbose: self.logprint(f"I cannot measure a response from Nanonis from the applied modulation. I will check if the cable is connected to the MLA instead.", message_type = "warning")
+            
+            try:
+                if not mla.status == "running": mla.link()
+                
+                mla.time_constant_update({"df (Hz)": 600}, verbose = verbose)
+                output_numbers = np.arange(0, 32)
+                output_numbers[0] = 1
+                mla.frequencies_update({"numbers": output_numbers}, verbose = verbose)
+                input_multiplexer = np.full((32), 2, dtype = int)
+                input_multiplexer[0] = 1
+                mla.set_input_multiplexer(input_multiplexer)
+                amplitudes = np.zeros((32), dtype = float)
+                amplitudes[0] = 200
+                mla.amplitudes_update({"amplitudes (mV)": 200}, verbose = verbose)
+                mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}, verbose = verbose)
+                
+                mla.start_lockin()
+                mla.get_pixels(1)
+                pix = mla.get_pixels(10, average = True)
+                mla.stop_lockin()
+                li_complex_V = pix[1] / 2
+                
+                mla.outputs_update({"blank": True}, verbose = verbose)
+                
+                if np.abs(li_complex_V) < .01:
+                    if verbose: self.logprint(f"I cannot measure a response from the MLA either!", message_type = "error")
+                    return "none"
+                
+                if autophase:
+                    li_phase = np.rad2deg(np.angle(li_complex_V))
+                    phases = np.zeros((32), dtype = float)
+                    phases[0] = 90 - li_phase
+                    mla.phases_update({"phases (deg)": phases}, verbose = verbose)
+                    if verbose: self.logprint(f"The MLA seems to be connected. I autophased the lockin amplifier to {phases[0]:.4f} degree", message_type = "message")
+                
+                # Calculate the capacitance
+                if verbose:
+                    (hardware, error) = nn.hardware_update()
+                    if "gain (V/pA)" in hardware.keys():
+                        li_complex_pA = li_complex_V / hardware["gain (V/pA)"]
+                        cap_fC = np.abs(1000 * li_complex_pA / (2 * np.pi * frequency_Hz * amplitude_mV))
+                        self.logprint(f"The tip-sample capacitance as measured by the MLA is {cap_fC:.4f} fC", message_type = "message")
+                    else:
+                        self.logprint(f"I could not read the tia gain and therefore I do not know the tip-sample capacitance, but the voltage amplitude response is {np.abs(li_complex_V):.4f} V", message_type = "message")
+                return "mla"
+            
+            except:
+                try: mla.outputs_update({"blank": True}, verbose = verbose)
+                except: pass
+                self.logprint("Problem ancountered while trying to run the MLA.", message_type = "error")
+                return "none"
+        
+        if autophase:
+            li_phase = np.rad2deg(np.angle(li_complex_pA))
+            new_phase = li_phase - 90
+            (lockin, error) = nn.lockin_update({"mod1": {"on": True, "amplitude (mV)": amplitude_mV, "frequency (Hz)": frequency_Hz, "phase (deg)": new_phase}, "mod2": {"on": False}}, verbose = verbose)
+            if verbose: self.logprint(f"Nanonis lockin amplifier autophased to {new_phase:.4f} degree", message_type = "message")
+        nn.lockin_update({"mod1": {"on": False}}, verbose = verbose)
+        
+        if verbose:
+            cap_fC = np.abs(1000 * li_complex_pA / (2 * np.pi * frequency_Hz * amplitude_mV))
+            self.logprint(f"The tip-sample capacitance as measured by Nanonis is {cap_fC:.4f} fC", message_type = "message")
+        return "nanonis"
+
     def mla_frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
@@ -335,9 +417,10 @@ class BaseExperiment(QObject):
             except Exception as e:
                 self.logprint(f"Error while resetting Nanonis: {e}", message_type = "error")
         
-        if hasattr(self, "mla"):
+        if hasattr(self, "mla") and self.mla.status == "running":
             try:
-                self.mla.outputs_update({"blank": True})
+                pass
+                #self.mla.outputs_update({"blank": True})
             except:
                 pass
 

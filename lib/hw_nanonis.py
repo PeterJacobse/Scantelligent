@@ -209,6 +209,8 @@ class NanonisHardware:
             "set_mod_phase": make_header('LockIn.ModPhasSet', body_size = 8),
             
             "get_demod_signal": make_header('LockIn.DemodSignalGet', body_size = 4),
+            "get_demod_phase": make_header('LockIn.DemodPhasGet', body_size = 4),
+            "set_demod_phase": make_header('LockIn.DemodPhasSet', body_size = 8),
 
             # Booleans
             "True": self.conv.to_hex(True, 4),
@@ -1174,7 +1176,7 @@ class NanonisHardware:
         self.send_command(command)
         response = self.receive_response(4)
 
-        signal_value = self.conv.hex_to_float32(response[0 : 4])
+        signal_value = float(self.conv.hex_to_float32(response[0 : 4]))
 
         return signal_value        
 
@@ -1332,8 +1334,7 @@ class NanonisHardware:
         
         self.send_command(command)
         response = self.receive_response(0)
-
-        return response
+        return
 
     def get_mod_signal(self, mod_number: int = 1) -> None:
         command = self.headers["get_mod_signal"] + self.conv.to_hex(mod_number, 4)
@@ -1374,6 +1375,7 @@ class NanonisHardware:
         command = self.headers["set_mod_amp"] + self.conv.to_hex(mod_number, 4) + self.conv.float32_to_hex(amplitude_mV / 1000)
         
         self.send_command(command)
+        self.receive_response()
         return
 
     def get_mod_freq(self, mod_number: int = 1) -> float:        
@@ -1388,6 +1390,7 @@ class NanonisHardware:
         command = self.headers["set_mod_freq"] + self.conv.to_hex(mod_number, 4) + self.conv.float64_to_hex(frequency)
         
         self.send_command(command)
+        self.receive_response()
         return
 
     def get_mod_phase(self, mod_number: int = 1) -> float:
@@ -1402,6 +1405,19 @@ class NanonisHardware:
         command = self.headers["set_mod_phase"] + self.conv.to_hex(mod_number, 4) + self.conv.float32_to_hex(phase_deg)
         
         self.send_command(command)
+        self.receive_response()
         return
 
+    def get_demod_phase(self, demod_number: int = 1) -> float:
+        command = self.headers["get_demod_phase"] + self.conv.to_hex(demod_number, 4)
+        self.send_command(command)
+        response = self.receive_response()
+        phase_deg = self.conv.hex_to_float32(response[0 : 4])        
+        return phase_deg
+
+    def set_demod_phase(self, demod_number: int = 1, phase_deg: float = 0) -> None:
+        command = self.headers["set_demod_phase"] + self.conv.to_hex(demod_number, 4) + self.conv.float32_to_hex(phase_deg)
+        self.send_command(command)
+        self.receive_response()
+        return
 

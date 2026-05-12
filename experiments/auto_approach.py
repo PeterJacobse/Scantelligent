@@ -19,17 +19,56 @@ class Experiment(BaseExperiment):
     def run(self):
         # Aliases
         nn = self.nanonis
+        mla = self.mla
+        
+        # Read parameters
+        [bias, feedback, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "hardware"]]
+        V_start = bias.get("V_nanonis (V)")
+        
+        # Testing the lock-in amplifier
+        connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = False)
+        
+        self.logprint(f"I noticed you connected the sample bias to: {connected_device}. Now plug it into Nanonis", message_type = "warning")
+
+        iterations = 0
+        while iterations < 20:
+            iterations += 1
+            self.check_abort_request()
+            connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = False)
+            self.logprint(f"{connected_device = }")
+            if connected_device == "nanonis": break
+        
+        self.logprint(f"I noticed you connected the sample bias to: {connected_device}. Please connect it to the MLA", message_type = "warning")
+        
+        iterations = 0
+        while iterations < 20:
+            iterations += 1
+            self.check_abort_request()
+            connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = False)
+            if connected_device == "mla": break
+
+        self.logprint(f"Thank you for obeying my demands", message_type = "success")
+        
+        time.sleep(2)
+
+                
+        if np.abs(V_start) < .5:
+            self.logprint(f"Warning. Attempting to approach while applying a very low bias voltage ({V_start} V). Risk of tip crash. I suggest to abort the approach and change the bias.", message_type = "warning")
+            t0 = time.time()
+            t_elapsed = 0
+            while t_elapsed < 3:
+                self.check_abort_request()
+                time.sleep(.01)
+                t_elapsed = time.time() - t0
+        
+        raise Exception("END")
         
         (bias, error) = nn.bias_update({"V_nanonis (V)": -2})
         (tip_status, error) = nn.tip_update(fast_mode = False)
         (signal_dict, error) = nn.signals_update(["LI Demod 1 X (A)", "LI Demod 1 Y (A)"])
         (lockin, error) = nn.lockin_update({"mod1": {"on": True, "amplitude (mV)": 2, "frequency (Hz)": 600}})
         
-        LI_X_index = 0
-        LI_Y_index = 0
-        for key, value in signal_dict.items():
-            if value[0] == "LI Demod 1 X (A)": LI_X_index = key
-            if value[0] == "LI Demod 1 Y (A)": LI_Y_index = key
+        
 
         
         
@@ -48,7 +87,7 @@ class Experiment(BaseExperiment):
         t0 = time.time()
         t_elapsed = 0
         
-        for step in range(10):
+        for step in range(1000):
             self.logprint(f"Auto approach step {step}", message_type = "message")
             counter = 0
             
@@ -74,6 +113,7 @@ class Experiment(BaseExperiment):
         
             nn.tip_update({"withdraw": True})
             if surface_reached == 1:
+                self.logprint(f"Surface detected!", message_type = "message")
                 self.parameters.emit({"dict_name": "view_request", "view": "nanonis"})
                 break
             

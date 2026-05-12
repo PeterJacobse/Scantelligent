@@ -56,6 +56,7 @@ class MLAAPI(QtCore.QObject):
     def link(self) -> None:
         try:
             self.logprint("mla.link()", message_type = "code")
+            time.sleep(.2)
             self.mla.connect(server_text_callback = lambda text: self.logprint(text, message_type = "result"), ping_attempts = 4)
             self.status = "running"
             self.set_defaults()

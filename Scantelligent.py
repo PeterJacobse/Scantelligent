@@ -568,15 +568,15 @@ class Scantelligent(QtCore.QObject):
         return
 
     def cleanup(self) -> None:
-        self.user.save_parameter_sets()
+        #self.user.save_parameter_sets()
         try: self.experiment_thread.requestInterruption()
-        except: pass
-        try: self.camera_thread.requestInterruption()
         except: pass
         
         try: self.nanonis.unlink()
         except: pass        
         try: self.mla.unlink()
+        except: pass
+        try: self.toggle_view("none")
         except: pass
         
         for attribute_name in ["nanonis", "mla", "experiment", "experiment_thread", "camera", "camera_thread"]:
@@ -1043,7 +1043,7 @@ class Scantelligent(QtCore.QObject):
                 
                 try:
                     mla_pointer = None
-                    if hasattr(self, "mla") and hasattr(self.mla.mla, "lockin"): mla_pointer = self.mla                    
+                    if hasattr(self, "mla"): mla_pointer = self.mla                    
                     self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath,
                                                                                     scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis1, mla = mla_pointer)
                     self.experiment_thread = QtCore.QThread()

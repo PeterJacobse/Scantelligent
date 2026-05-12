@@ -277,47 +277,56 @@ class NanonisAPI(QtCore.QObject):
 
         return (scan_image, error)
 
-    def signals_update(self, signals: str | list, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def signals_update(self, signals: str | list, samples: int = 1, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         nhw = self.nanonis_hardware
         parameter_values = {"dict_name": "signals"}
         signal_dict = {}
 
-        # If only a single signal is provided, turn it into a list (needs to be subscriptable)
-        if isinstance(signals, str | int): signals = [signals]
-
+        if isinstance(signals, str | int): signals = [signals] # If only a single signal is provided, turn it into a list (needs to be subscriptable)
         try:
             if verbose: self.logprint(f"nanonis.signals_update({signals})", "code")
             if not self.status == "running": self.link()
             
-            if isinstance(signals[0], str) or name_lookup: # The parameters given are strings. Use the scan_metadata signal_dict to extract the signal_indices
+            if name_lookup: # Use the scan_metadata signal_dict to find the signal names tied to the signal_indices
                 (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
                 if error: raise Exception(error)
                 signal_dict = scan_metadata.get("signal_dict", {})
-
-            for signal in signals: # Iterate over the requested signals
+            
+            signal_indices = []
+            for signal in signals: # Loop over all entries of signals and find the signal index whether that entry is a str (signal name) or index
                 if isinstance(signal, str):
-                    signal_name = signal
-                    signal_index = signal_dict.get(signal_name, None)
+                    if not signal_dict: # If name_lookup was not requested, but channel names are present in the list
+                        (scan_metadata, error) = self.scan_metadata_update(verbose = False, unlink = False)
+                        if error: raise Exception(error)
+                        signal_dict = scan_metadata.get("signal_dict", {})
 
-                    # The parameter name is found in the dict and has a corresponding index
-                    if isinstance(signal_index, int):
-                        signal_value = nhw.get_signal_value(signal_index)
-                        parameter_values.update({signal_index: (signal_name, signal_value)})
-                    
-                    else:
-                        parameter_values.update({signal_name: (signal_name, f"signal not found")})
-
+                    signal_index = signal_dict.get(signal, -1)
+                    signal_indices.append(signal_index)
                 elif isinstance(signal, int):
                     signal_index = signal
+                    signal_indices.append(signal_index)
+            
+            # Now loop over the signal indices and find the values
+            signal_values = np.zeros((len(signal_indices)), dtype = float)
+            for sample in range(samples):
+                for list_index, signal_index in enumerate(signal_indices): # Iterate over the requested signals
+                    if signal_index < 0 or signal_index > 127: continue
                     signal_value = nhw.get_signal_value(signal_index)
-                    
-                    if name_lookup:
-                        for name, index in signal_dict.items():
-                            if index == signal_index: break
-                        parameter_values.update({name: (signal_index, signal_value)})
-                    else:
-                        parameter_values.update({signal_index: (signal_index, signal_value)})
+                    signal_values[list_index] += float(signal_value / samples)
+
+            # Compile the output dict
+            for signal_index, signal_value, signal in zip(signal_indices, signal_values, signals):
+                if signal_index < 0 or signal_index > 127: parameter_values.update({signal: (-1, 0, "signal not found")})
+                else:
+                    if isinstance(signal_dict, dict):
+                        signal_name = ""
+                        for key, value in signal_dict.items():
+                            if value == signal_index:
+                                signal_name = key
+                                break
+                        parameter_values.update({signal: (signal_index, signal_value, signal_name)})                    
+                    else: parameter_values.update({signal: (signal_index, signal_value, "")})
 
             self.parameters.emit(parameter_values)
             if verbose: self.logprint(f"{parameter_values}", message_type = "result")
@@ -862,7 +871,7 @@ class NanonisAPI(QtCore.QObject):
                 mod_on = nhw.get_mod_on(mod_number + 1)
                 amplitude_mV = nhw.get_mod_amp(mod_number + 1)
                 frequency_Hz = nhw.get_mod_freq(mod_number + 1)
-                phase_deg = nhw.get_mod_phase(mod_number + 1)
+                phase_deg = nhw.get_demod_phase(mod_number + 1)
                 signal_index = nhw.get_mod_signal(mod_number + 1)
                 time.sleep(.1)
                 
@@ -906,7 +915,7 @@ class NanonisAPI(QtCore.QObject):
                     phase = mod.get("phase (deg)", None)
                     if isinstance(phase, float) or isinstance(phase, int):
                         try:
-                            nhw.set_mod_phase(mod_number + 1, phase)
+                            nhw.set_demod_phase(mod_number + 1, phase)
                             time.sleep(.1)
                             mod_new.update({"phase (deg)": phase})
                         except:
