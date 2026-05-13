@@ -22,6 +22,11 @@ class Experiment(BaseExperiment):
         nn = self.nanonis
         mla = self.mla
         
+        #connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
+        #self.logprint(f"{connected_device = }")
+        #if not connected_device == "mla":
+        #    raise Exception("The bias cable does not seem to be connected to the MLA. This experiment requires the MLA. Please connect the bias cable to the MLA first")
+        
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]

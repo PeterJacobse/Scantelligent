@@ -216,7 +216,7 @@ class BaseExperiment(QObject):
         
         # Initialize the MLA.
         if setup_defaults:
-            input_mask = 2 * np.ones(32)
+            input_mask = np.full((32), 2, dtype = int)
             input_mask[0] = 1
             self.mla.set_input_multiplexer(input_mask)
             numbers = np.arange(0, 32)
@@ -230,7 +230,7 @@ class BaseExperiment(QObject):
                 
         # Prepare to plot these channels
         channel_names = ["amp (mV)", "|a1_ref| (mV)", "Re(a1) (nS)"]
-        [channel_names.append(f"|a{i}| (nS)") for i in range (30)]
+        [channel_names.append(f"|a{i + 2}| (nS)") for i in range (30)]
         self.prepare_graph(channel_names)
         
         measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = float)
@@ -270,7 +270,7 @@ class BaseExperiment(QObject):
         
         # Initialize the MLA.
         if setup_defaults:
-            input_mask = 2 * np.ones(32)
+            input_mask = np.full((32), 2, dtype = int)
             input_mask[0] = 1
             self.mla.set_input_multiplexer(input_mask)
             numbers = np.arange(0, 32)
@@ -290,7 +290,7 @@ class BaseExperiment(QObject):
 
         # Prepare to plot these channels
         channel_names = ["V_port1 (V)", "Re(a1) (nS)"]
-        [channel_names.append(f"|a{i}| (nS)") for i in range (31)]
+        [channel_names.append(f"|a{i + 2}| (nS)") for i in range (31)]
         self.prepare_graph(channel_names)
         
         measurement_array = np.empty((len(voltages), len(channel_names)), dtype = float)
