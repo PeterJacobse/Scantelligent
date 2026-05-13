@@ -322,35 +322,35 @@ class ParameterManager(QtCore.QObject):
                 sct.status.update({"tip": tip_status})
                 
                 # Update the position visible in the image_view
-                # sct.gui.image_view.view.removeItem(sct.gui.tip_target)
                 if "feedback" in tip_status.keys():
                     feedback = tip_status.get("feedback")
                     if feedback:
                         sct.gui.tip_target.setPen(sct.gui.colors["green"])
-                        sct.gui.buttons["tip"].setState("feedback")
+                        sct.gui.current_height_widget.feedback_button.setState("feedback")
                         sct.gui.buttons["withdraw"].setState("landed")
                     else:
                         withdrawn = tip_status.get("withdrawn")
                         if withdrawn:
                             sct.gui.tip_target.setPen(sct.gui.colors["red"])
-                            sct.gui.buttons["tip"].setState("unknown")
+                            sct.gui.current_height_widget.feedback_button.setState("unknown")
                             sct.gui.buttons["withdraw"].setState("withdrawn")
                         else:
                             sct.gui.tip_target.setPen(sct.gui.colors["orange"])
-                            sct.gui.buttons["tip"].setState("constant_height")
+                            sct.gui.current_height_widget.feedback_button.setState("constant_height")
                     
                     # Update the slider
                     z_limits_nm = tip_status.get("z_limits (nm)")
                     sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
                     sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
+                    sct.gui.current_height_widget.setHeightLimits(z_limits_nm)
 
                 [x_tip_nm, y_tip_nm, z_tip_nm, I_pA] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
                 sct.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
                 sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
-                sct.gui.sliders["tip"].setValue(int(z_tip_nm))
-                sct.gui.sliders["tip"].changeToolTip(f"Tip height: {z_tip_nm:.2f} nm")
                 
-                line_edits["I_pA"].setValue(I_pA)
+                #sct.gui.current_height_widget.changeToolTip(f"Tip height: {z_tip_nm:.2f} nm")
+                sct.gui.current_height_widget.setCurrent(I_pA)
+                sct.gui.current_height_widget.setHeight(z_tip_nm)
 
             case "bias":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
@@ -362,7 +362,9 @@ class ParameterManager(QtCore.QObject):
 
             case "feedback":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "i_gain", "t_const"], [parameters.get(name) for name in ["p_gain (pm)", "i_gain (nm/s)", "t_const (us)"]])]
-                line_edits["I_fb"].setValue(parameters.get("I_fb (pA)"))
+                I_fb_pA = parameters.get("I_fb (pA)")
+                line_edits["I_fb"].setValue(I_fb_pA)
+                sct.gui.current_height_widget.setCurrentTick(I_fb_pA)
 
             case "frame":
                 sct.user.frames[0].update(parameters)

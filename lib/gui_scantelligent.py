@@ -1,11 +1,12 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from . import SCTWidgets, rotate_icon, make_layout, make_line
+import numpy as np
+from .sct_widgets import SCTWidgets, CurrentHeightIndicatorWidget, rotate_icon, make_layout, make_line
 
 
 
-class ScantelligentGUI(QtWidgets.QMainWindow):
+class ScantelligentGUI(SCTWidgets.MainWindow):
     def __init__(self):
         super().__init__()
         
@@ -38,8 +39,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.image_view = self.make_image_view()
         (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
         (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
-        self.limits_widget = self.make_limits_widget()
-        self.widgets = self.make_widgets()
+        self.widgets = self.make_custom_widgets()
         self.consoles = self.make_consoles()
         self.sliders = self.make_sliders()
         self.shortcuts = self.make_shortcuts()
@@ -188,15 +188,23 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
                                         {"name": "aborted", "color": self.colors["orange"], "tooltip": "Abort requested", "icon": icons.get("stop")}]),
             "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop"), size = 28),
             
-            # Parameters
+            # Locks
             "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
             "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
+            "speed_lock": MSB(tooltip = "Lock the scan speed ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
+            "voltage_lock": MSB(tooltip = "Tie the MLA voltage to the Nanonis bias", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
             
+            # Parameters
             "tip": MSB(click_to_toggle = False, size = 28,
                        states = [{"name": "unknown", "tooltip": "Tip status\nUnknown / withdrawn", "icon": icons.get("tip_unknown"), "color": sct_black},
                                  {"name": "feedback", "tooltip": "Tip status\nIn feedback", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]},
                                  {"name": "constant_height", "tooltip": "Tip status\nConstant height", "icon": icons.get("constant_height"), "color": self.colors["orange"]}]),
-            "copy_bias": MSB(tooltip = "Copy the dc bias from Nanonis to the MLA", icon = icons.get("swap"), states = [{"color": sct_black}, {"color": sct_blue}]),
+            "intermediate_feedback": MSB(click_to_toggle = False, size = 28,
+                                         states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
+                                                   {"name": "on", "tooltip": "Return to intermediate feedback\nafter every sweep in x", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]}]),
+            "reference_height": MSB(click_to_toggle = False, size = 28,
+                                    states = [{"name": "off", "tooltip": "Do not use a different height\nrelative to the feedback setpoint", "icon": icons.get("constant_height"), "color": sct_black},
+                                              {"name": "on", "tooltip": "After intermediate feedback,\nadjust the tip height", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]}]),
             
             # Coarse vertical
             "withdraw": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": sct_blue},
@@ -305,7 +313,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
 
         # Initialize
-        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view"]]
+        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view", "voltage_lock", "speed_lock"]]
 
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
@@ -407,10 +415,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         }
         
         # Add the button handles to the tooltips
-        [comboboxes[name].changeToolTip(f"gui.comboboxes[\"{name}\"]", line = 10) for name in comboboxes.keys()]
-        
-        comboboxes["experiment"].setSizeAdjustPolicy(CB.SizeAdjustPolicy.AdjustToContents)
-        
+        [comboboxes[name].changeToolTip(f"gui.comboboxes[\"{name}\"]", line = 10) for name in comboboxes.keys()]        
         return comboboxes
 
     def make_line_edits(self) -> dict:
@@ -451,11 +456,13 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1, edited_color = scanalyzer_blue),
             "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0, edited_color = scanalyzer_blue),
             
+            "I": LE(tooltip = "most recent current measurement", unit = "pA", digits = 1),
+            "z": LE(tooltip = "most recent tip height measurement", unit = "nm", digits = 2),
+            
             # Feedback
             "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
             "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
             "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
-            "I_pA": LE(tooltip = "most recent current measurement", unit = "pA", digits = 0),
 
             "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0, edited_color = scanalyzer_blue),
             "t_const": LE(tooltip = "time constant", unit = "us", digits = 0, edited_color = scanalyzer_blue),
@@ -746,18 +753,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         
         return (waveform_widget, waveforms, plot_widget, pdis)
 
-    def make_limits_widget(self) -> SCTWidgets.MinMaxMethods:
-        sivr = "Set the image value range "
-        limits_widget = SCTWidgets.MinMaxMethods()
-
-        limits_widget.addMethod("full", 0, 1, digits = 4, unit = "nm", icon = self.icons.get("100"), tooltip = sivr + "to the full data range")
-        limits_widget.addMethod("percentiles", 1, 99, digits = 1, limits = [0, 100], unit = "%", icon = self.icons.get("percentiles"), tooltip = sivr + "by percentiles")
-        limits_widget.addMethod("deviations", 2, 2, digits = 1, limits = [0, 100], unit = "\u03C3", icon = self.icons.get("deviation"), tooltip = sivr + "by standard deviations")
-        limits_widget.addMethod("absolute", 0, 1, digits = 4, limits = [-10000, 10000], unit = "nm", icon = self.icons.get("numbers"), tooltip = sivr + "by absolute values")
-        
-        return limits_widget
-
-    def make_widgets(self) -> dict:
+    def make_custom_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget
         
         widgets = {
@@ -780,7 +776,16 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
             "lockins": QWgt(),
             "demodulators": QWgt()
         }
+               
+        self.current_height_widget = CurrentHeightIndicatorWidget(feedback_button = self.buttons["tip"], current_le = self.line_edits["I"], height_le = self.line_edits["z"], color = self.colors["blue"])
         
+        sivr = "Set the image value range "
+        self.limits_widget = SCTWidgets.MinMaxMethods()
+
+        self.limits_widget.addMethod("full", 0, 1, digits = 4, unit = "nm", icon = self.icons.get("100"), tooltip = sivr + "to the full data range")
+        self.limits_widget.addMethod("percentiles", 1, 99, digits = 1, limits = [0, 100], unit = "%", icon = self.icons.get("percentiles"), tooltip = sivr + "by percentiles")
+        self.limits_widget.addMethod("deviations", 2, 2, digits = 1, limits = [0, 100], unit = "\u03C3", icon = self.icons.get("deviation"), tooltip = sivr + "by standard deviations")
+        self.limits_widget.addMethod("absolute", 0, 1, digits = 4, limits = [-10000, 10000], unit = "nm", icon = self.icons.get("numbers"), tooltip = sivr + "by absolute values")        
         return widgets
 
     def make_consoles(self) -> dict:        
@@ -913,24 +918,25 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [layouts["connections"].addWidget(button, 0, i + 1) for i, button in enumerate(self.connection_buttons[:4])]
         [layouts["connections"].addWidget(button, 1, i + 1) for i, button in enumerate(self.connection_buttons[4:])]
         layouts["connections"].addWidget(buttons["exit"], 0, 5, 2, 1)
+        
+        layouts["connections"].addWidget(self.current_height_widget, 2, 0, 1, 2)
 
         # Experiment
-        layouts["experiment_controls_0"].addWidget(buttons["start_stop"])
-        [layouts["experiment_controls_0"].addWidget(self.progress_bars[name]) for name in ["task", "experiment"]]
+        #layouts["experiment_controls_0"].addWidget(buttons["start_stop"])
+        [layouts["experiment_controls_0"].addWidget(self.comboboxes[name]) for name in ["experiment", "direction"]]
         
-        [layouts["experiment_controls_1"].addWidget(widget) for widget in [buttons["save"], line_edits["experiment_filename"]]]
+        [layouts["experiment_controls_1"].addWidget(widget) for widget in [line_edits["experiment_filename"], buttons["save"]]]
         [layouts["experiment_fields"].addWidget(widget, int(index / 3), index % 3) for index, widget in enumerate([line_edits[f"experiment_{i}"] for i in range(9)])] # Grid of experiment fields
         [layouts["experiment_buttons"].addWidget(buttons[f"experiment_{i}"]) for i in range(6)] # Grid of experiment fields
         e_layout = layouts["experiment"]
-        e_layout.addLayout(layouts["experiment_controls_0"], 0, 0, 4, 1)
-        e_layout.addWidget(self.sliders["tip"], 0, 1, 4, 1)
-        e_layout.addWidget(self.comboboxes["experiment"], 0, 2)
-        e_layout.addWidget(self.comboboxes["direction"], 0, 3)
-        e_layout.addLayout(layouts["experiment_controls_1"], 1, 2, 1, 2)
-        e_layout.addWidget(self.line_edits["experiment_filename"], 2, 3)
-        e_layout.addWidget(buttons["tip"], 0, 4, 2, 1)
-        e_layout.addLayout(layouts["experiment_fields"], 2, 2, 1, 3)
-        e_layout.addLayout(layouts["experiment_buttons"], 3, 2, 1, 3)
+        
+        e_layout.addWidget(self.current_height_widget, 0, 0, 5, 1)
+        [e_layout.addWidget(widget, 0, index + 1) for index, widget in enumerate([buttons["start_stop"], self.progress_bars["task"], self.progress_bars["experiment"]])]
+        #e_layout.addLayout(layouts["experiment_controls_0"], 0, 0, 4, 1)
+        e_layout.addLayout(layouts["experiment_controls_1"], 1, 1, 1, 3)
+        e_layout.addLayout(layouts["experiment_controls_0"], 2, 1, 1, 3)
+        e_layout.addLayout(layouts["experiment_fields"], 3, 1, 1, 3)
+        e_layout.addLayout(layouts["experiment_buttons"], 4, 1, 1, 3)
         
         # Coarse
         [layouts["approach_percentiles"].addWidget(line_edits[f"approach_{name}_percentile"]) for name in ["min", "max"]]
@@ -960,19 +966,20 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         # Bias
         [layouts["bias_getset"].addWidget(widget) for widget in [buttons["get_bias_parameters"], buttons["set_bias_parameters"], comboboxes["bias"]]]
         b_layout = layouts["bias"]
-        [b_layout.addWidget(labels[name], 0, index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
-        b_layout.addWidget(make_line("h", 1), 1, 0, 1, 3)
-        [b_layout.addWidget(line_edits[name], 2, index) for index, name in enumerate(["V_nanonis", "V_mla_port1", "V_keithley"])]
-        buttons["copy_bias"].setFixedWidth(50)
-        b_layout.addWidget(buttons["copy_bias"], 3, 0, 1, 1, align_center)
-        b_layout.addWidget(line_edits["V_mla_port2"], 3, 1)
+        b_layout.addWidget(labels["nanonis"])
+        [b_layout.addWidget(labels[name], 0, index + 2) for index, name in enumerate(["mla", "keithley"])]
+        b_layout.addWidget(make_line("h", 1), 1, 0, 1, 4)
+        
+        
+        [b_layout.addWidget(widget, 2, index) for index, widget in enumerate([line_edits["V_nanonis"], buttons["voltage_lock"], line_edits["V_mla_port1"], line_edits["V_keithley"]])]
+        b_layout.addWidget(line_edits["V_mla_port2"], 3, 2)
         [b_layout.addWidget(line_edits[name], 4 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
-        [b_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["dz_nanonis"])]
-        [b_layout.addWidget(line_edits[name], 4 + index, 2) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
-        b_layout.addLayout(layouts["bias_getset"], 6, 0, 1, 3)
+        b_layout.addWidget(line_edits["dz_nanonis"], 5, 2)
+        [b_layout.addWidget(line_edits[name], 4 + index, 3) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
+        b_layout.addLayout(layouts["bias_getset"], 6, 0, 1, 4)
         
         # Feedback
-        [layouts["currents"].addWidget(line_edits[name]) for name in ["I_fb", "I_pA", "I_keithley_limit"]]
+        [layouts["currents"].addWidget(line_edits[name]) for name in ["I_fb", "I_keithley_limit"]]
         [layouts["feedback_gains"].addWidget(line_edits[name]) for name in ["p_gain", "t_const", "i_gain"]]
         layouts["feedback_gains"].addWidget(comboboxes["tia_gain"])
         [layouts["feedback_getset"].addWidget(widget) for widget in [buttons["get_feedback_parameters"], buttons["set_feedback_parameters"], comboboxes["feedback"]]]
@@ -983,10 +990,11 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
         # Speeds
         [layouts["speeds_getset"].addWidget(widget) for widget in [buttons["get_speed_parameters"], buttons["set_speed_parameters"], comboboxes["speeds"]]]
-        [layouts["speeds"].addWidget(labels[name], 0, index) for index, name in enumerate(["forward", "backward", "tip"])]
-        [layouts["speeds"].addWidget(make_line("h", 1), 1, index) for index in range(3)]
-        [layouts["speeds"].addWidget(line_edits[name], 2, index) for index, name in enumerate(["v_fwd", "v_bwd", "v_tip"])]
-        layouts["speeds"].addLayout(layouts["speeds_getset"], 3, 0, 1, 3)
+        layouts["speeds"].addWidget(labels["forward"])
+        [layouts["speeds"].addWidget(labels[name], 0, index + 2) for index, name in enumerate(["backward", "tip"])]
+        [layouts["speeds"].addWidget(make_line("h", 1), 1, index) for index in range(4)]
+        [layouts["speeds"].addWidget(widget, 2, index) for index, widget in enumerate([line_edits["v_fwd"], buttons["speed_lock"], line_edits["v_bwd"], line_edits["v_tip"]])]
+        layouts["speeds"].addLayout(layouts["speeds_getset"], 3, 0, 1, 4)
 
 
         

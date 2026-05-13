@@ -1,11 +1,11 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from . import SCTWidgets, rotate_icon, make_layout, make_line
+from .sct_widgets import SCTWidgets, rotate_icon, make_layout, make_line
 
 
 
-class ScantelligentGUI(QtWidgets.QMainWindow):
+class SpectelligentGUI(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         
@@ -28,32 +28,32 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         self.icons = self.get_icons()
         
         # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
-        self.labels = self.make_labels()
-        self.buttons = self.make_buttons()
-        self.checkboxes = self.make_checkboxes()
-        self.comboboxes = self.make_comboboxes()
-        self.line_edits = self.make_line_edits()
-        self.progress_bars = self.make_progress_bars()
-        self.layouts = self.make_layouts()
-        self.image_view = self.make_image_view()
-        (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
-        (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
-        self.limits_widget = self.make_limits_widget()
-        self.widgets = self.make_widgets()
-        self.consoles = self.make_consoles()
-        self.sliders = self.make_sliders()
-        self.shortcuts = self.make_shortcuts()
-        self.dialogs = self.make_dialogs()
-        (self.info_box, self.message_box) = self.make_boxes()
+        #self.labels = self.make_labels()
+        #self.buttons = self.make_buttons()
+        #self.checkboxes = self.make_checkboxes()
+        #self.comboboxes = self.make_comboboxes()
+        #self.line_edits = self.make_line_edits()
+        #self.progress_bars = self.make_progress_bars()
+        #self.layouts = self.make_layouts()
+        #self.image_view = self.make_image_view()
+        #(self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
+        #(self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
+        #self.limits_widget = self.make_limits_widget()
+        #self.widgets = self.make_widgets()
+        #self.consoles = self.make_consoles()
+        #self.sliders = self.make_sliders()
+        #self.shortcuts = self.make_shortcuts()
+        #self.dialogs = self.make_dialogs()
+        #(self.info_box, self.message_box) = self.make_boxes()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
-        self.populate_layouts()
+        #self.populate_layouts()
         
         # 4: Make groupboxes and set their layouts. Requires populated layouts.
-        self.groupboxes = self.make_groupboxes()
+        #self.groupboxes = self.make_groupboxes()
         
         # 5: Make the tab widget
-        self.tab_widget = self.make_tab_widget()
+        #self.tab_widget = self.make_tab_widget()
         
         # 5: Set up the main window layout
         self.setup_main_window()

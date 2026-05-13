@@ -1064,6 +1064,118 @@ class SCTWidgets:
             self.line_edit.blockSignals(False)
             self.slider.setValue(180)
 
+    class LevelIndicator(QtWidgets.QWidget):
+        def __init__(self, parent = None, color: str = "#4080FF", limits: list = [0, 100], tooltip: str = "", show_tick: bool = True):
+            super().__init__(parent)
+            
+            self.setToolTip(tooltip)
+            self.show_tick = show_tick
+            self.min = limits[0]
+            self.max = limits[1]
+            self.total = self.max - self.min
+            self.level = 0
+            self.tick_level = 0
+            self.color = color
+            #self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+            self.setFixedWidth(20)
+            self.setMinimumHeight(80)
+
+
+
+        def setLimits(self, values: list) -> None:
+            self.setMin(values[0])
+            self.setMax(values[1])
+            return
+
+        def setMin(self, value: float) -> None:
+            self.min = value
+            self.total = self.max - self.min
+            return
+
+        def setMax(self, value: float) -> None:
+            self.max = value
+            self.total = self.max - self.min
+            return
+
+        def getValue(self) -> float:
+            return self.level
+
+        def setValue(self, value: float = 0) -> None:
+            self.level = max(self.min, min(value, self.max))
+            self.update() # Triggers repaint
+            return
+        
+        def getTickValue(self) -> float:
+            return self.tick_level
+
+        def setTickValue(self, value: float = 0) -> None:
+            self.tick_level = max(self.min, min(value, self.max))
+            self.update() # Triggers repaint
+            return
+
+        def paintEvent(self, event):
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            
+            width = self.width()
+            height = self.height()
+            
+            cyl_width = width * 0.6
+            cyl_height = height * 0.9
+            x_offset = (width - cyl_width) / 2
+            y_offset = (height - cyl_height) / 2
+            
+            # Draw Liquid
+            cylinder_fraction = (self.level - self.min) / (self.total)            
+            liquid_height = int(cylinder_fraction * cyl_height)
+            liquid_rect = QtCore.QRectF(x_offset, y_offset + (cyl_height - liquid_height), cyl_width, liquid_height)
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(self.color)))
+            painter.drawRect(liquid_rect)
+            
+            # Draw Cylinder Outline
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.gray, 2))
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.drawRect(int(x_offset), int(y_offset), int(cyl_width), int(cyl_height + 1))
+            
+            # Draw Graduations
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.gray, 2))
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            num_marks = 5
+            for i in range(num_marks + 1):
+                y = y_offset + (i * (cyl_height / num_marks))
+                painter.drawLine(int(x_offset + cyl_width), int(y), int(x_offset + cyl_width - 4), int(y))
+            
+            # Draw tick
+            if not self.show_tick: return
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.red, 2))
+            tick_height = cyl_height * (self.tick_level - self.min) / (self.total)
+            painter.drawLine(int(x_offset + cyl_width), int(y_offset - tick_height), int(x_offset + cyl_width - 6), int(y_offset - tick_height))
+            return
+
+        def changeToolTip(self, text: str, line: int = 0) -> None:
+            """
+            Function to change just a single line of a multiline tooltip, instead of the entire tooltip message
+            """
+            try:
+                old_tooltip = self.toolTip()
+                tooltip_list = old_tooltip.split("\n")
+                
+                if line > len(tooltip_list) - 1: # Add a line to the end if the line number is too big
+                    tooltip_list.append(text)
+                    new_tooltip = "\n".join(tooltip_list)
+                elif line < 0: # Add a line to the front if the line number is negative
+                    new_tooltip_list = [text]
+                    [new_tooltip_list.append(item) for item in tooltip_list]
+                    new_tooltip = "\n".join(new_tooltip_list)
+                else: # Replace a line
+                    tooltip_list[line] = text
+                    new_tooltip = "\n".join(tooltip_list)
+
+                self.setToolTip(new_tooltip)
+            except:
+                pass
+
     class StreamRedirector(QtCore.QObject):
         output_written = QtCore.pyqtSignal(str)
 
@@ -1395,7 +1507,9 @@ class SCTWidgets:
             print("Warning. Factor0 and factor 1 cannot be updated in a mutually consistent way")
             return
 
-
+    class MainWindow(QtWidgets.QMainWindow):
+        def __init__(self):
+            super().__init__()
 
     class MinMaxMethods(QtWidgets.QWidget):
         stateChanged = QtCore.pyqtSignal()
@@ -1489,6 +1603,75 @@ class SCTWidgets:
             except:
                 print(f"Error retrieving the minimum value")
                 return False
+
+
+
+class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
+    def __init__(self, feedback_button: SCTWidgets.MultiStateButton, current_le: SCTWidgets.PhysicsLineEdit, height_le: SCTWidgets.PhysicsLineEdit, color: str = "#A0A0A0", show_height_tick: bool = True):
+        super().__init__()
+        
+        self.color = color
+        self.current_le = current_le
+        self.height_le = height_le
+        self.height_le.setMinimumWidth(70)
+        self.current_le.setMinimumWidth(70)
+        
+        self.current_indicator = SCTWidgets.LevelIndicator(color = color)
+        self.height_indicator = SCTWidgets.LevelIndicator(color = color, show_tick = False)
+        self.feedback_button = feedback_button
+        
+        layout = make_layout("g")                
+        layout.addWidget(self.feedback_button, 0, 0, 1, 2, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.height_le, 1, 0, 1, 2)
+        layout.addWidget(self.height_indicator, 2, 1, 3, 1)
+        layout.addWidget(self.current_indicator, 3, 0, 3, 1)
+        layout.addWidget(self.current_le, 6, 0, 1, 2)
+        self.setLayout(layout)
+        
+        self.current_indicator.setLimits([-1, 4])
+        self.current_le.editingFinished.connect(self.currentChanged)
+        self.height_le.editingFinished.connect(self.heightChanged)
+    
+    def setHeightLimits(self, limits: list = []) -> None:
+        return self.height_indicator.setLimits(limits)
+    
+    def setCurrentLimits(self, limits: list = []) -> None:
+        return self.current_indicator.setLimits(limits)
+    
+    def setHeight(self, value: float = 0) -> None:
+        self.height_le.setValue(value)
+        self.height_le.setValue(value)
+        self.heightChanged()
+        return
+    
+    def setCurrent(self, value: float = 0) -> None:
+        abs_value = np.abs(value)
+        self.current_le.setValue(abs_value)
+        self.currentChanged()
+        return
+
+    def heightChanged(self) -> None:
+        value = self.height_le.getValue()
+        if isinstance(value, float | int): self.height_indicator.setValue(value)
+        return
+    
+    def currentChanged(self) -> None:
+        value = self.current_le.getValue()
+        if isinstance(value, float | int):
+            indicator_level = np.log10(np.abs(value))
+            self.current_indicator.setValue(indicator_level)
+        return
+    
+    def setCurrentTick(self, value) -> None:
+        if isinstance(value, float | int):
+            tick_level = np.log10(np.abs(value))
+            self.current_indicator.setTickValue(tick_level)
+        return
+
+    def setHeightTick(self) -> None:
+        value = self.height_le.getValue()
+        if isinstance(value, float | int): self.height_indicator.setValue(value)
+        return
 
 
 

@@ -1,6 +1,6 @@
 import numpy as np
 from PyQt6 import QtCore
-from . import NanonisHardware
+from .hw_nanonis import NanonisHardware
 from .data_processing import DataProcessing
 import time
 
@@ -451,7 +451,7 @@ class NanonisAPI(QtCore.QObject):
                     nhw.withdraw(wait = True)
                     withdrawn = True
                     time.sleep(.2)
-                if withdrawn: self.parameters.emit({"dict_name": "view_request", "view": "camera"})
+                #if withdrawn: self.parameters.emit({"dict_name": "view_request", "view": "camera"})
             
                 # Retrieve the feedback status
                 feedback_new = nhw.get_fb()

@@ -3,29 +3,35 @@ from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
 import pyqtgraph as pg
-from lib import Spectelligent, SCTWidgets, ScantelligentGUI
-from lib import DataProcessing, FileFunctions, ParameterManager, UserData, AudioGenerator
-from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
+from .gui_spectelligent import SpectelligentGUI
+from .sct_widgets import SCTWidgets
+from .data_processing import DataProcessing
+from .file_functions import FileFunctions
+from .parameter_manager import ParameterManager, UserData
+from .audio_generator import AudioGenerator
+from .api_nanonis import NanonisAPI
+from .api_keithley import KeithleyAPI
+from .api_camera import CameraAPI
+from .api_mla import MLAAPI
 from datetime import datetime
 
 
 
 # Main class
-class Scantelligent(QtCore.QObject):
+class Spectelligent(QtCore.QObject):
     volumes = QtCore.pyqtSignal(list)
     amplitudes = QtCore.pyqtSignal(list)
     frequencies = QtCore.pyqtSignal(list)
 
     def __init__(self):
         super().__init__()
-        self.parameters_init()
-        self.gui = ScantelligentGUI()
+        #self.parameters_init()
+        self.gui = SCTWidgets.MainWindow()
+        #self.gui = SpectelligentGUI()
         self.gui.show()
-        # self.spt = Spectelligent()
-        self.connect_console()
-        self.connect_buttons()
-        self.connect_hardware()
-        self.toggle_view("none")
+        #self.connect_buttons()
+        #self.connect_hardware()
+        #self.toggle_view("none")
 
 
 
@@ -85,6 +91,7 @@ class Scantelligent(QtCore.QObject):
         #sys.stderr = self.stdout_redirector
         now = datetime.now()
         self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
+
         return
 
     def connect_buttons(self) -> None:
@@ -447,99 +454,9 @@ class Scantelligent(QtCore.QObject):
         print(final, flush = True)
         return
 
-    def populate_completer(self) -> None:
-        # Populate the command input completer with all attributes and methods of self and self.gui
-        self.all_attributes = dir(self)
-        gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
-        
-        nanonis_attributes = []
-        nanonis_hw_attributes = []
-        keithley_attributes = []
-        camera_attributes = []
-        mla_attributes = []
-        mla_analog_attributes = []
-        mla_osc_attributes = []
-        mla_lockin_attributes = []
-        user_attributes = []
-        parameters_attributes = []
-
-        if hasattr(self, "mla"):
-            mla_attributes = ["mla." + attr for attr in self.mla.__dict__ if not attr.startswith("_")]
-            try:
-                mla_lockin_attributes = ["mla.lockin." + attr for attr in self.mla.lockin.__dict__ if not attr.startswith("_")]
-                mla_osc_attributes = ["mla.osc." + attr for attr in self.mla.osc.__dict__ if not attr.startswith("_")]
-                mla_analog_attributes = ["mla.analog." + attr for attr in self.mla.analog.__dict__ if not attr.startswith("_")]
-            except:
-                pass
-        if hasattr(self, "parameters"): parameters_attributes = ["parameters." + attr for attr in self.parameters.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "user"): user_attributes = ["user." + attr for attr in self.user.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "data"): data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "file_functions"): file_function_attributes = ["file_functions." + attr for attr in self.file_functions.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "keithley"): keithley_attributes = ["keithley." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.camera.__dict__ if not attr.startswith("_")]
-        
-        [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes, file_function_attributes, parameters_attributes, user_attributes, mla_analog_attributes, mla_lockin_attributes, mla_osc_attributes, mla_attributes, keithley_attributes, camera_attributes]]
-        completer = SCTWidgets.Completer(self.all_attributes, self.gui)
-        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        completer.setCompletionMode(SCTWidgets.Completer.CompletionMode.PopupCompletion)
-        self.gui.line_edits["input"].setCompleter(completer)
-        return
-
-    def execute_command(self) -> None:
-        input_le = self.gui.line_edits["input"]
-        input_le.blockSignals(True)
-        text = input_le.text()
-        input_le.clear()
-        input_le.blockSignals(False)
-        
-        # Add "self." to attributes that are instances of the main Scantelligent class
-        self_objects = [attribute for attribute in dir(self) if not attribute.startswith("_")]
-        split_text = re.split(r"(\s+|,|\(|\)|:|\w+)", text)
-        for index, substring in enumerate(split_text):
-            if substring in self_objects:
-                if index < 2:
-                    split_text[index] = "self." + substring
-                if split_text[index - 2] == "self":
-                    pass
-                else:
-                    split_text[index] = "self." + substring
-        command = "".join(split_text)
-        
-        try: # Attempt to evaluate
-            self.logprint(f"{text}", message_type = "code")
-            compile(command, "<string>", "eval")
-
-            result = eval(command)
-            self.logprint(f"{result}", message_type = "result")
-        except SyntaxError:
-            try: # Attempt to execute
-                compile(command, "<string>", "exec")
-
-                exec(command)
-            except SyntaxError:
-                self.logprint("Invalid code.", message_type = "error")
-            except Exception as e:
-                self.logprint(f"{e}", message_type = "error")
-        except Exception as e:
-            self.logprint(f"{e}", message_type = "error")        
-        return
-
     def camera_finished(self):
         try: self.camera_thread = None
         except: pass
-        return
-
-    def launch_scanalyzer(self) -> None:
-        if "scanalyzer" in list(self.paths.keys()):
-            try:
-                scanalyzer_path = self.paths["scanalyzer"]
-                self.logprint("Launching Scanalyzer:", message_type = "message")
-                self.logprint(f"{sys.executable} {scanalyzer_path}", message_type = "code")
-                self.process.start(sys.executable, [self.paths["scanalyzer"]])
-            except Exception as e:
-                self.logprint(f"Failed to launch Scanalyzer: {e}", message_type = "error")
-        else:
-            self.logprint("Error. Scanalyzer path unknown.", message_type = "error")
         return
 
     def open_session_folder(self) -> None:
@@ -861,110 +778,6 @@ class Scantelligent(QtCore.QObject):
 
         return True
 
-    def coarse_move(self, direction: str = "n") -> bool:
-        if not hasattr(self, "nanonis"): return
-        
-        checkboxes = self.gui.checkboxes
-        line_edits = self.gui.line_edits
-        motions = {}
-
-        if direction not in ["n", "ne", "e", "se", "s", "sw", "w", "nw", "up", "down"]:
-            self.logprint("Error. Unknown tip direction requested.", message_type = "error")
-            return False
-
-        try:
-            # Retrieve the checkbox states
-            withdraw = checkboxes["withdraw"].isChecked()
-            retract = checkboxes["retract"].isChecked()
-            advance = checkboxes["advance"].isChecked()
-            approach = checkboxes["approach"].isChecked()
-            composite = self.gui.buttons["composite_motion"].isChecked()
-
-            # Retrieve the line_edit values
-            [V_hor, V_ver, f_motor] = [line_edits[name].getValue() for name in ["V_hor", "V_ver", "f_motor"]] # Frequency and amplitude
-            [z_steps, h_steps, minus_z_steps] = [line_edits[name].getValue() for name in ["z_steps", "h_steps", "minus_z_steps"]] # Steps
-            """
-            numbers = self.data.extract_numbers_from_str(line_edits["V_hor"].text())
-            if len(numbers) > 0: V_hor = float(numbers[0])
-            else: V_hor = None
-            numbers = self.data.extract_numbers_from_str(line_edits["V_ver"].text())
-            if len(numbers) > 0: V_ver = float(numbers[0])
-            else: V_ver = None
-            numbers = self.data.extract_numbers_from_str(line_edits["f_motor"].text())
-            if len(numbers) > 0: f_motor = float(numbers[0])
-            else: f_motor = None
-            
-            # The number of steps up
-            numbers = self.data.extract_numbers_from_str(line_edits["z_steps"].text())
-            if len(numbers) > 0: z_steps = int(numbers[0])
-            else: z_steps = 0
-            if z_steps < 1: retract = False
-           
-            # The number of steps horizontally
-            numbers = self.data.extract_numbers_from_str(line_edits["h_steps"].text())
-            if len(numbers) > 0: h_steps = int(numbers[0])
-            else: h_steps = 0
-            if h_steps < 1: move = False
-
-            # The number of steps down
-            numbers = self.data.extract_numbers_from_str(line_edits["minus_z_steps"].text())
-            if len(numbers) > 0: minus_z_steps = int(numbers[0])
-            else: minus_z_steps = 0
-            if minus_z_steps < 1: advance = False
-            """
-
-            # Toggle the view feed
-            if hasattr(self, "camera"): self.toggle_view("camera")
-
-            # Perform simple vertical motions if requested
-            match direction:
-                case "up":
-                    if z_steps > 0:
-                        motions = {"withdraw": withdraw, "direction": "up", "z_steps": z_steps, "V_motor (V)": V_ver, "f_motor (Hz)": f_motor}           
-                        self.nanonis.coarse_move(motions)
-                        return True
-                    else:
-                        return False
-                case "down":
-                    if minus_z_steps > 0:
-                        motions = {"withdraw": withdraw, "direction": "down", "minus_z_steps": minus_z_steps, "V_motor (V)": V_ver, "f_motor (Hz)": f_motor}           
-                        self.nanonis.coarse_move(motions)
-                        return True
-                    else:
-                        return False
-                case _:
-                    if not composite: # Disable the vertical motions if a horizontal motion is requested but 'composite' is unchecked
-                        approach = False
-                        retract = False
-                        advance = False
-                    pass
-
-
-
-            # Horizontal (composite) motion
-            motions = {
-                "withdraw": withdraw,
-                "approach": approach,
-                "V_hor (V)": V_hor,
-                "V_ver (V)": V_ver,
-                "f_motor (Hz)": f_motor
-            }
-            
-            if retract and (z_steps > 0) and composite: motions.update({"z_steps": z_steps})
-            if advance and (minus_z_steps > 0) and composite: motions.update({"minus_z_steps": minus_z_steps})
-            if (h_steps > 0): motions.update({"h_steps": h_steps, "direction": direction})
-            
-            self.nanonis.coarse_move(motions, unlink = True)
-            
-            if approach: self.start_auto_approach()
-            
-            return True
-        
-        except Exception as e:
-            self.logprint("Error. Unable to execute tip move.", message_type = "error")
-
-            return False
-
 
 
     # Nanonis/MLA functions
@@ -1122,12 +935,6 @@ class Scantelligent(QtCore.QObject):
         if self.gui.buttons["save"].state_name == "data_present":
             self.gui.buttons["save"].setState("data_saved")
         return
-
-    def quick_scan(self) -> bool:
-        experiment_loaded = self.control_experiment("scan")
-        if not experiment_loaded: return False
-        self.gui.buttons["start_scan"].setState(1)
-        return self.control_experiment("scan")
     
     def start_spectroscopy(self) -> None:
         experiment_loaded = self.control_experiment("spectroscopy")
@@ -1135,16 +942,3 @@ class Scantelligent(QtCore.QObject):
         self.gui.buttons["start_spectrum"].setState(1)
         return self.control_experiment("spectroscopy")        
 
-    def start_auto_approach(self) -> None:
-        experiment_loaded = self.control_experiment("auto_approach")
-        if not experiment_loaded: return False
-        self.gui.buttons["approach"].setState(1)
-        return self.control_experiment("auto_approach")
-        
-
-
-# Main program
-if __name__ == "__main__":
-    app = SCTWidgets.Application(sys.argv)
-    logic_app = Scantelligent()
-    sys.exit(app.exec())
