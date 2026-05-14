@@ -356,9 +356,9 @@ class ParameterManager(QtCore.QObject):
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
                                                                                  [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
                 [port1, port2] = [parameters.get(key) for key in ["port_1 (V)", "port_2 (V)"]]
-                if sct.gui.buttons["copy_bias"].isChecked() and hasattr(sct, "mla") and hasattr(sct.mla, "mla"):
+                if sct.gui.buttons["voltage_lock"].isChecked() and hasattr(sct, "mla") and hasattr(sct.mla, "mla"):
                     V_nanonis = parameters.get("V_nanonis (V)")
-                    if isinstance(V_nanonis, float | int): sct.mla.bias_update({"port_1 (V)": V_nanonis, "port_2 (V)": V_nanonis})
+                    # if isinstance(V_nanonis, float | int): sct.mla.bias_update({"port_1 (V)": V_nanonis, "port_2 (V)": V_nanonis})
 
             case "feedback":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "i_gain", "t_const"], [parameters.get(name) for name in ["p_gain (pm)", "i_gain (nm/s)", "t_const (us)"]])]

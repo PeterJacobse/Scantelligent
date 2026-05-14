@@ -21,7 +21,7 @@ class Scantelligent(QtCore.QObject):
         self.parameters_init()
         self.gui = ScantelligentGUI()
         self.gui.show()
-        # self.spt = Spectelligent()
+        self.spt = Spectelligent()
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
@@ -95,7 +95,7 @@ class Scantelligent(QtCore.QObject):
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
                         "audio": self.toggle_audio, "zero_volumes": self.zero_volumes, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
-                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "save": self.save_experiment
+                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "save": self.open_spectelligent
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
@@ -717,6 +717,16 @@ class Scantelligent(QtCore.QObject):
         return
 
 
+
+    # Spectelligent
+    def open_spectelligent(self) -> None:
+        screens = QtGui.QGuiApplication.screens()
+        if len(screens) > 1:
+            screen_1_geom = screens[1].geometry()
+            self.spt.gui.move(screen_1_geom.topLeft())
+        
+        self.spt.gui.show()
+        return
 
     # Audio
     def toggle_audio(self) -> None:

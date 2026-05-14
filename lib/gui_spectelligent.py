@@ -1,7 +1,7 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from .sct_widgets import SCTWidgets, rotate_icon, make_layout, make_line
+from .sct_widgets import SCTWidgets, OscillatorWidget, rotate_icon, make_layout, make_line
 
 
 
@@ -29,28 +29,24 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
         #self.labels = self.make_labels()
-        #self.buttons = self.make_buttons()
+        self.buttons = self.make_buttons()
         #self.checkboxes = self.make_checkboxes()
-        #self.comboboxes = self.make_comboboxes()
-        #self.line_edits = self.make_line_edits()
+        self.comboboxes = self.make_comboboxes()
+        self.line_edits = self.make_line_edits()
         #self.progress_bars = self.make_progress_bars()
-        #self.layouts = self.make_layouts()
+        self.layouts = self.make_layouts()
         #self.image_view = self.make_image_view()
         #(self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
-        #(self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
-        #self.limits_widget = self.make_limits_widget()
-        #self.widgets = self.make_widgets()
+        (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
+        self.widgets = self.make_widgets()
         #self.consoles = self.make_consoles()
         #self.sliders = self.make_sliders()
-        #self.shortcuts = self.make_shortcuts()
-        #self.dialogs = self.make_dialogs()
-        #(self.info_box, self.message_box) = self.make_boxes()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
-        #self.populate_layouts()
+        self.populate_layouts()
         
         # 4: Make groupboxes and set their layouts. Requires populated layouts.
-        #self.groupboxes = self.make_groupboxes()
+        self.groupboxes = self.make_groupboxes()
         
         # 5: Make the tab widget
         #self.tab_widget = self.make_tab_widget()
@@ -168,18 +164,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod2": MSB(icon = icons.get("nanonis_mod2"),
                                 states = [{"name": "off", "tooltip": "Nanonis modulator 2 OFF", "color": sct_black},
                                           {"name": "on", "tooltip": "Nanonis modulator 2 ON", "color": sct_blue}]),
-            "mla_mod0": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 0 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 0 ON", "color": sct_blue}]),
-            "mla_mod1": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 1 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 1 ON", "color": sct_blue}]),
-            "mla_mod2": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 2 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 2 ON", "color": sct_blue}]),
-            "mla_mod3": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 3 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 3 ON", "color": sct_blue}]),
 
             "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             
@@ -206,6 +190,14 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
             "zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes")
         }
+        
+        [buttons.update({f"mla_mod{mod_number}": MSB(icon = icons.get("mla_oscillator"), states = [{"name": "off", "tooltip": f"MLA modulator {mod_number} OFF", "color": sct_black}, {"name": "on", "tooltip": f"MLA modulator {mod_number} ON", "color": sct_blue}])}) for mod_number in range (32)]
+        
+        
+        for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
+            buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
+            buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))})
+        [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
         
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
@@ -278,11 +270,15 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                         
             "nanonis_mod1": CB(tooltip = "Add Nanonis modulator 1 to this channel"),
             "nanonis_mod2": CB(tooltip = "Add Nanonis modulator 2 to this channel"),
-            "mla_mod0": CB(tooltip = "Add MLA modulator 0 to this output port", items = ["port 1", "port 2"]),
+            
             "mla_mod1": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             "mla_mod2": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             "mla_mod3": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
         }
+        
+        for mod_number in range(32):
+            comboboxes.update({f"mla_mod{mod_number}": CB(tooltip = f"Add MLA modulator {mod_number} to this output port", items = ["port 1", "port 2"]),
+                               f"mla_demod{mod_number}": CB(tooltip = f"Add MLA demodulator {mod_number} to this input port", items = ["port 1", "port 2", "port 3", "port 4"])})
         
         # Add the button handles to the tooltips
         [comboboxes[name].changeToolTip(f"gui.comboboxes[\"{name}\"]", line = 10) for name in comboboxes.keys()]
@@ -293,7 +289,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
 
     def make_line_edits(self) -> dict:
         LE = SCTWidgets.PhysicsLineEdit
-        ILE = SCTWidgets.InputLineEdit
         RG = SCTWidgets.ReciprocalGroup
         
         sct_green = self.colors["dark_green"]
@@ -414,32 +409,18 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
 
             "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
             "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            
-            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod0_phase": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-            
-            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod1_amp": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod1_phase": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-            
-            "mla_mod2_f": LE(tooltip = "MLA modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod2_amp": LE(tooltip = "MLA modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod2_phase": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-            
-            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod3_amp": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod3_phase": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-
-            "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
-            
-            # Console
-            "input": ILE(tooltip = "Enter a command\n(Enter to evaluate)")
+                        
         }
+        
+        for mod_number in range(30):
+            line_edits.update({
+                f"mla_mod{mod_number}_f": LE(tooltip = f"MLA modulator {mod_number} frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+                f"mla_mod{mod_number}_n": LE(tooltip = f"MLA modulator {mod_number} number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
+                f"mla_mod{mod_number}_amp": LE(tooltip = f"MLA modulator {mod_number} amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+                f"mla_demod{mod_number}_amp": LE(tooltip = f"MLA demodulator {mod_number} measured amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
+                f"mla_mod{mod_number}_phase": LE(tooltip = f"MLA modulator {mod_number} phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
+                f"mla_demod{mod_number}_phase": LE(tooltip = f"MLA demodulator {mod_number} measured phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue)
+                })
         
         # Reciprocal groups (inter-line-edit update logic)
         self.sts_V_rg = RG(product = [line_edits["sts_V_start"], line_edits["sts_V_end"]], factors = [line_edits["sts_V_points"], line_edits["sts_dV"]], factor = 1000,
@@ -457,9 +438,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "factor0")
         self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "factor0",
                           factor0_constraint = lambda value: int(round(value / 16) * 16))
-        
-        self.buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
-        self.buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
         
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
@@ -497,6 +475,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts = {
             # Main
             "main": make_layout("h"),
+            "lockin": make_layout("v"),
+            
             "left_side": make_layout("v"),
             "toolbar": make_layout("v"),
             "empty": make_layout("v"),            
@@ -659,9 +639,14 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "demodulators": QWgt()
         }
         
+        mod_number = 0
+        [mod_amp, demod_amp, mod_phase, demod_phase, freq, num] = [self.line_edits[f"mla_{key}"] for key in ["mod0_amp", "demod0_amp", "mod0_phase", "demod0_phase", "mod0_f", "mod0_n"]]
+        self.mla_mod0 = OscillatorWidget(state_button = self.buttons["mla_mod0"], input_cb = self.comboboxes["mla_demod0"], output_cb = self.comboboxes["mla_mod0"],
+                                         mod_amplitude_le = mod_amp, demod_amplitude_le = demod_amp, mod_phase_le = mod_phase, demod_phase_le = demod_phase, frequency_le = freq, number_le = num)
+        
         return widgets
 
-    def make_consoles(self) -> dict:        
+    def make_consoles(self) -> dict:
         consoles = {
             "output": SCTWidgets.Console(tooltip = "Output console"),
             "input": SCTWidgets.Console(tooltip = "Input console")
@@ -709,64 +694,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
 
         return sliders
 
-    def make_shortcuts(self) -> dict:
-        QKey = QtCore.Qt.Key
-        QMod = QtCore.Qt.Modifier
-        QSeq = QtGui.QKeySequence
-        
-        shortcuts = {
-            "scanalyzer": QSeq(QKey.Key_S),
-            "nanonis": QSeq(QMod.CTRL | QKey.Key_C),
-            "oscillator": QSeq(QKey.Key_O),
-            "view": QSeq(QKey.Key_V),
-            "exit": QSeq(QKey.Key_Escape),
-            
-            "withdraw": QSeq(QMod.CTRL | QKey.Key_W),
-            "retract": QSeq(QMod.CTRL | QKey.Key_PageUp),
-            "advance": QSeq(QMod.CTRL | QKey.Key_PageDown),
-            "approach": QSeq(QMod.CTRL | QKey.Key_A),
-            
-            "tip": QSeq(QMod.CTRL | QKey.Key_Space),
-            "set": QSeq(QMod.CTRL | QKey.Key_P),
-            "get": QSeq(QKey.Key_P),
-            "scan_parameters_0": QSeq(QMod.CTRL | QKey.Key_0),
-            "scan_parameters_1": QSeq(QMod.CTRL | QKey.Key_1),
-            "scan_parameters_2": QSeq(QMod.CTRL | QKey.Key_2),
-            "scan_parameters_3": QSeq(QMod.CTRL | QKey.Key_3),            
-            
-            "direction": QSeq(QKey.Key_X),            
-            "full_data_range": QSeq(QMod.SHIFT | QKey.Key_U),
-            "percentiles": QSeq(QMod.SHIFT | QKey.Key_R),
-            "standard_deviation": QSeq(QMod.SHIFT | QKey.Key_D),
-            "absolute_values": QSeq(QMod.SHIFT | QKey.Key_A)
-        }
-        
-        # Add keys for moving in directions
-        direction_keys = {"n": QKey.Key_Up, "e": QKey.Key_Right, "s": QKey.Key_Down, "w": QKey.Key_Left}
-        [shortcuts.update({direction: QSeq(QMod.CTRL | keystroke)}) for direction, keystroke in direction_keys.items()]
-        
-        return shortcuts
-
-    def make_dialogs(self) -> dict:
-        dialogs = {
-            "parameters": QtWidgets.QInputDialog(),
-            "info": QtWidgets.QInputDialog(),
-            "open_file": QtWidgets.QFileDialog()
-                   }
-        return dialogs
-
-    def make_boxes(self) -> tuple[QtWidgets.QMessageBox, QtWidgets.QMessageBox]:
-        info_box = QtWidgets.QMessageBox(self)
-        info_box.setWindowTitle("Info")
-        info_box.setText("Scanalyzer (2026)\nby Peter H. Jacobse\nRice University; Lawrence Berkeley National Lab")
-        info_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
-        info_box.setWindowIcon(self.icons.get("i"))
-        
-        message_box = QtWidgets.QMessageBox(self)
-        message_box.setWindowTitle("Success")
-        message_box.setText("png file saved")
-        return (info_box, message_box)
-
 
 
     # 3: Populate layouts with GUI items. Requires GUI items.
@@ -775,9 +702,23 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         align_center = QtCore.Qt.AlignmentFlag.AlignCenter
         buttons = self.buttons
         line_edits = self.line_edits
-        labels = self.labels
+        #labels = self.labels
         comboboxes = self.comboboxes
         
+        layouts["lockin"].addWidget(self.mla_mod0)
+        
+        # STS
+        [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
+        
+        layouts["spectroscopy"].addWidget(buttons["start_spectrum"], 0, 0, 1, 2, align_center)
+        layouts["spectroscopy"].addWidget(buttons["nanonis_mla"], 0, 2, 1, 1, align_center)
+        [layouts["spectroscopy"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
+        [layouts["spectroscopy"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
+        for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):
+            [layouts["spectroscopy"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+        
+        #layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 11, 0, 1, 3)
+        """
         # Graphing
         [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], i % 8, int(i / 8)) for i in range(40)]
         
@@ -900,17 +841,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         [tp_layout.addWidget(line_edits[name], 3 + index, 3) for index, name in enumerate(["lift_height", "lift_voltage", "lift_time"])]
         tp_layout.addLayout(layouts["shaper_getset"], 6, 2, 1, 3)
         
-        # STS
-        [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
         
-        layouts["spectroscopy"].addWidget(buttons["start_spectrum"], 0, 0, 1, 2, align_center)
-        layouts["spectroscopy"].addWidget(buttons["nanonis_mla"], 0, 2, 1, 1, align_center)
-        [layouts["spectroscopy"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
-        [layouts["spectroscopy"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
-        for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):
-            [layouts["spectroscopy"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
-        
-        # layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 11, 0, 1, 3)
 
         # Modulators
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
@@ -962,6 +893,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # Input console
         layouts["input"].addWidget(self.consoles["input"])
+        """
         return
 
 
@@ -996,8 +928,15 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "limits": SGB(title = "limits", tooltip = "limits"),
 
             "speeds": SGB(title = "speeds", tooltip = "speeds"),
-            "experiment": SGB(title = "experiment", tooltip = "Perform experiment")
+            "experiment": SGB(title = "experiment", tooltip = "Perform experiment"),
+            
+            "lockin": SGB(title = "lockin controls", tooltip = "Set up the lockin amplifiers")
         }
+        
+        [layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupboxes.keys()]
+        [groupboxes[name].setLayout(layouts[name]) for name in ["lockin", "spectroscopy"]]
+        
+        """
 
         # Set layouts for the groupboxes
         #groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "spectroscopy", "modulators", "demodulators", "experiment", "limits"]
@@ -1014,6 +953,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "demodulators"]]
         [layouts["scan"].addWidget(groupboxes[name]) for name in ["scan_control", "navigation", "operations", "limits"]]
         [layouts[name].addStretch(1) for name in ["parameters", "sts", "osc", "coarse_prep", "scan"]]
+        """
 
         return groupboxes
 
@@ -1039,24 +979,26 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         groupboxes = self.groupboxes
 
         # Aesthetics
-        layouts["left_side"].setContentsMargins(0, 0, 0, 0)
-        layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
+        #layouts["left_side"].setContentsMargins(0, 0, 0, 0)
+        #layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
         
         # Create the toolbar
-        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "experiment"]]
-        self.layouts["toolbar"].addWidget(self.tab_widget)
-        layouts["toolbar"].addStretch(1)
+        #[self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "experiment"]]
+        #self.layouts["toolbar"].addWidget(self.tab_widget)
+        #layouts["toolbar"].addStretch(1)
         
         # Compose the image_view plus consoles layout
-        layouts["left_side"].addWidget(self.image_view, stretch = 4)
-        layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
-        layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
-        layouts["left_side"].addWidget(self.line_edits["input"])
-        self.widgets["left_side"].setLayout(layouts["left_side"])
+        #layouts["left_side"].addWidget(self.image_view, stretch = 4)
+        #layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
+        #layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
+        #layouts["left_side"].addWidget(self.line_edits["input"])
+        #self.widgets["left_side"].setLayout(layouts["left_side"])
         
         # Attach the toolbar
-        layouts["main"].addWidget(self.widgets["left_side"], stretch = 4)
-        layouts["main"].addLayout(layouts["toolbar"], 1)
+        #layouts["main"].addWidget(self.widgets["left_side"], stretch = 4)
+        #layouts["main"].addLayout(layouts["toolbar"], 1)
+        
+        [layouts["main"].addWidget(groupboxes[name]) for name in ["lockin", "spectroscopy"]]
         
         # Set the central widget of the QMainWindow
         widgets["central"].setLayout(layouts["main"])
@@ -1065,7 +1007,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # Finish the setup
         self.setCentralWidget(widgets["central"])
-        self.setWindowTitle("Scantelligent")
+        self.setWindowTitle("Spectelligent @ Scantelligent")
         self.setGeometry(100, 50, 1400, 800) # x, y, width, height
         self.setWindowIcon(self.icons.get("scanalyzer"))
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
@@ -1089,61 +1031,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         self.new_frame_roi.blockSignals(True)
         self.new_frame_roi.setAngle(new_angle)
         self.new_frame_roi.blockSignals(False)
-        return
-
-    def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
-        """
-        [self.line_edits[name].blockSignals(True) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
-
-        match line_edit_name:
-            case "grid_pixels":
-                pixels = self.line_edits["grid_pixels"].getValue()
-                if not isinstance(pixels, float) and not isinstance(pixels, int): return
-
-                if bool(self.buttons["grid_aspect"].state_index):
-                    grid_aspect = self.line_edits["grid_aspect"].getValue()
-
-                    if isinstance(grid_aspect, float) or isinstance(grid_aspect, int):
-                        lines = int(pixels * grid_aspect)
-                        self.line_edits["grid_lines"].setValue(lines, edited_color = True)
-                else:
-                    lines = self.line_edits["grid_lines"].getValue()
-
-                    if isinstance(lines, float) or isinstance(lines, int):
-                        grid_aspect = lines / pixels
-                        self.line_edits["grid_aspect"].setValue(grid_aspect, edited_color = True)
-
-            case "grid_lines":
-                lines = self.line_edits["grid_lines"].getValue()
-                if not isinstance(lines, float) and not isinstance(lines, int): return
-
-                if bool(self.buttons["grid_aspect"].state_index):
-                    grid_aspect = self.line_edits["grid_aspect"].getValue()
-
-                    if isinstance(grid_aspect, float) or isinstance(frame_aspect, int):
-                        pixels = int(lines / grid_aspect)
-                        self.line_edits["grid_pixels"].setValue(pixels, edited_color = True)
-                else:
-                    pixels = self.line_edits["grid_pixels"].getValue()
-                    
-                    if isinstance(pixels, float) or isinstance(pixels, int):
-                        grid_aspect = lines / pixels
-                        self.line_edits["grid_aspect"].setValue(grid_aspect, edited_color = True)
-
-            case "grid_aspect":
-                grid_aspect = self.line_edits["grid_aspect"].getValue()
-                if not isinstance(grid_aspect, float) and not isinstance(grid_aspect, int): return
-
-                pixels = self.line_edits["grid_pixels"].getValue()
-                if isinstance(pixels, float) or isinstance(pixels, int):
-                    lines = int(pixels * grid_aspect)
-                    self.line_edits["grid_lines"].setValue(lines, edited_color = True)
-
-            case _:
-                pass
-
-        [self.line_edits[name].blockSignals(False) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
-        """
         return
 
     def update_fields_from_frame_change(self) -> None:

@@ -1,7 +1,6 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-import numpy as np
 from .sct_widgets import SCTWidgets, CurrentHeightIndicatorWidget, rotate_icon, make_layout, make_line
 
 
@@ -314,6 +313,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         # Initialize
         [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view", "voltage_lock", "speed_lock"]]
+        buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
+        buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
 
         # Named groups
         self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
@@ -587,9 +588,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "factor0",
                           factor0_constraint = lambda value: int(round(value / 16) * 16))
         
-        self.buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
-        self.buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
-        
         # Extra line edits
         [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
         [line_edits.update({f"demod_amplitude_{i}": LE(value = 100 * i, tooltip = f"amplitude of tone {i}", unit = "mV", digits = 2, min_width = 80)}) for i in range(32)]
@@ -788,7 +786,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.limits_widget.addMethod("absolute", 0, 1, digits = 4, limits = [-10000, 10000], unit = "nm", icon = self.icons.get("numbers"), tooltip = sivr + "by absolute values")        
         return widgets
 
-    def make_consoles(self) -> dict:        
+    def make_consoles(self) -> dict:
         consoles = {
             "output": SCTWidgets.Console(tooltip = "Output console"),
             "input": SCTWidgets.Console(tooltip = "Input console")

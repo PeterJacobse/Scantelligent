@@ -1307,12 +1307,8 @@ class SCTWidgets:
             factor = kwargs.pop("factor", None)
             if isinstance(factor, float | int): self.factor = factor
             
-            self.lock = "product"
-            self.try_to_retain = "factor0"
-            lock = kwargs.pop("lock", None)
-            if lock: self.lock = lock
-            try_to_retain = kwargs.pop("try_to_retain", None)
-            if try_to_retain: self.try_to_retain = try_to_retain
+            self.lock = kwargs.pop("lock", "product")
+            self.try_to_retain = kwargs.pop("try_to_retain", "factor0")
             
             if not isinstance(self.factor0, SCTWidgets.PhysicsLineEdit | float | int): self.lock = "factor0"
             if not isinstance(self.factor1, SCTWidgets.PhysicsLineEdit | float | int): self.lock = "factor1"
@@ -1672,6 +1668,30 @@ class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
         value = self.height_le.getValue()
         if isinstance(value, float | int): self.height_indicator.setValue(value)
         return
+
+
+
+class OscillatorWidget(QtWidgets.QWidget):
+    def __init__(self, state_button: SCTWidgets.MultiStateButton, input_cb: SCTWidgets.ComboBox, output_cb: SCTWidgets.ComboBox,
+                 mod_amplitude_le: SCTWidgets.PhysicsLineEdit, demod_amplitude_le: SCTWidgets.PhysicsLineEdit, mod_phase_le: SCTWidgets.PhysicsLineEdit, demod_phase_le: SCTWidgets.PhysicsLineEdit,
+                 frequency_le: SCTWidgets.PhysicsLineEdit, number_le: SCTWidgets.PhysicsLineEdit):
+        
+        super().__init__()
+        
+        self.state_button = state_button
+        self.input_cb = input_cb
+        self.output_cb = output_cb
+        self.frequency_le = frequency_le
+        self.number_le = number_le
+        
+        self.mod_amplitude_le = mod_amplitude_le
+        self.mod_phase_le = mod_phase_le
+        self.demod_amplitude_le = demod_amplitude_le
+        self.demod_phase_le = demod_phase_le
+        
+        layout = make_layout("g")
+        [layout.addWidget(widget) for widget in [self.state_button, self.demod_phase_le, self.demod_amplitude_le, self.frequency_le]]
+        self.setLayout(layout)
 
 
 
