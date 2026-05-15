@@ -49,6 +49,7 @@ class MLAAPI(QtCore.QObject):
         self.tm = 10
         self.V = [0, 0]
         self.output_masks = np.zeros((2, 32), dtype = int)
+        self.input_mask = np.zeros((32), dtype = int)
         self.status = "online"
         self.status_callback(self.status)        
         return
@@ -114,9 +115,9 @@ class MLAAPI(QtCore.QObject):
         self.set_DACs_ADCs_safe_range()
         self.set_max_downsampling()
         
-        numbers = np.arange(0, self.mla.lockin.nr_input_freq - 1)
+        numbers = np.arange(0, self.mla.lockin.nr_input_freq, dtype = int)
         numbers[0] = 1
-        input_mask = 2 * np.ones(self.mla.lockin.nr_input_freq)
+        input_mask = np.full((self.mla.lockin.nr_input_freq), 2, dtype = int)
         input_mask[0] = 1
         self.lockin_update({"df (Hz)": 220, "numbers": numbers, "amplitudes (mV)": {0: 100}}, verbose = False)
         self.set_input_multiplexer(input_mask)
@@ -489,6 +490,50 @@ class MLAAPI(QtCore.QObject):
             if unlink: self.unlink()
         
         return (outputs_dict, error)
+
+    def inputs_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        error = False
+        inputs_dict = {"dict_name": "inputs"}
+        
+        try:
+            if verbose:
+                if len(parameters) > 0: self.logprint(f"mla.inputs_update({parameters})", message_type = "code")
+                else: self.logprint("mla.inputs_update()", message_type = "code")
+            
+            if not self.status == "running" and not self.test_mode: self.link()
+            
+            mask = parameters.get("mask")
+            """
+            for index, mod in enumerate([mod0, mod1, mod2, mod3]):
+                if not isinstance(mod, dict):
+                    if self.output_masks[0, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 1}})
+                    elif self.output_masks[1, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 2}})
+                    else: outputs_dict.update({f"mod{index}": {"on": False}})
+                    continue
+                chan = mod.get("channel", None) # Channel, signal and port are all considered valid keywords to indicate the output port
+                if not chan: chan = mod.get("signal", None)
+                if not chan: chan = mod.get("port", None)
+                if chan not in [1, 2]:
+                    outputs_dict.update({f"mod{index}": {"on": False}})
+                    continue # 0 means that the modulator signal is not applied to any port, 1 means applied to port 1, and 2 is applied to port 2
+
+                if mod.get("on"):
+                    self.output_masks[chan - 1, index] = 1
+                    outputs_dict.update({f"mod{index}": {"on": True, "port": chan}})
+            
+            if not self.test_mode:
+                self.mla.lockin.set_output_mask(self.output_masks[0], port = 1)
+                self.mla.lockin.set_output_mask(self.output_masks[1], port = 2)
+            outputs_dict.update({"output_mask": self.output_masks})
+            self.parameters.emit(outputs_dict)
+            """
+            #if verbose and len(parameters) < 1: self.logprint(f"{outputs_dict}", message_type = "result")
+        
+        except Exception as e: error = e
+        finally:
+            if unlink: self.unlink()
+        
+        return (inputs_dict, error)
 
     def bias_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False

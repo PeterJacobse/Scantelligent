@@ -1671,16 +1671,16 @@ class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
 
 
 
-class OscillatorWidget(QtWidgets.QWidget):
-    def __init__(self, state_button: SCTWidgets.MultiStateButton, input_cb: SCTWidgets.ComboBox, output_cb: SCTWidgets.ComboBox,
+class ModulatorWidget(QtWidgets.QWidget):
+    def __init__(self, state_button: SCTWidgets.MultiStateButton, input: SCTWidgets.MultiStateButton, output: SCTWidgets.MultiStateButton,
                  mod_amplitude_le: SCTWidgets.PhysicsLineEdit, demod_amplitude_le: SCTWidgets.PhysicsLineEdit, mod_phase_le: SCTWidgets.PhysicsLineEdit, demod_phase_le: SCTWidgets.PhysicsLineEdit,
                  frequency_le: SCTWidgets.PhysicsLineEdit, number_le: SCTWidgets.PhysicsLineEdit):
         
         super().__init__()
         
         self.state_button = state_button
-        self.input_cb = input_cb
-        self.output_cb = output_cb
+        self.input = input
+        self.output = output
         self.frequency_le = frequency_le
         self.number_le = number_le
         
@@ -1689,9 +1689,131 @@ class OscillatorWidget(QtWidgets.QWidget):
         self.demod_amplitude_le = demod_amplitude_le
         self.demod_phase_le = demod_phase_le
         
+        self.df = 100
+        
         layout = make_layout("g")
-        [layout.addWidget(widget) for widget in [self.state_button, self.demod_phase_le, self.demod_amplitude_le, self.frequency_le]]
+        layout.addWidget(input, 0, 0, 2, 1)
+        [layout.addWidget(widget, index, 1) for index, widget in enumerate([self.demod_amplitude_le, self.demod_phase_le])]
+        layout.addWidget(state_button, 0, 2, 2, 1)
+        [layout.addWidget(widget, index, 3) for index, widget in enumerate([self.number_le, self.frequency_le])]
+        [layout.addWidget(widget, index, 4) for index, widget in enumerate([self.mod_amplitude_le, self.mod_phase_le])]
+        layout.addWidget(output, 0, 5, 2, 1)
+        layout.setContentsMargins(2, 0, 2, 0)
         self.setLayout(layout)
+
+    def setdf(self, value) -> None:
+        self.df = value
+        return
+
+    def setFrequency(self, value) -> None:
+        return self.frequency_le.setValue(value)
+    
+    def setAmplitude(self, value) -> None:
+        return self.mod_amplitude_le.setValue(value)
+
+    def setMeasuredAmplitude(self, value) -> None:
+        return self.demod_amplitude_le.setValue(value)
+
+    def setPhase(self, value) -> None:
+        return self.mod_phase_le.setValue(value)
+
+    def setMeasuredPhase(self, value) -> None:
+        return self.demod_phase_le.setValue(value)
+
+    def readTone(self, value) -> None:
+        abs = np.abs(value)
+        arg = np.rad2deg(np.angle(value))
+        self.setMeasuredAmplitude(abs)
+        self.setMeasuredPhase(arg)
+        return
+
+    def setInput(self, value) -> None:
+        return self.input.setState(value)
+
+    def setOutput(self, value) -> None:
+        return self.output.setState(value)
+
+
+
+class LockinWidget(QtWidgets.QWidget):
+    def __init__(self, modulators: list, df_line_edit: SCTWidgets.PhysicsLineEdit, t_line_edit: SCTWidgets.PhysicsLineEdit):
+        super().__init__()
+        
+        self.modulators = modulators
+        self.df_le = df_line_edit
+        self.t_le = t_line_edit
+        
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.mod_widget = QtWidgets.QWidget()
+        
+        layout = make_layout("v")
+        
+        df_t_layout = make_layout("h")
+        [df_t_layout.addWidget(widget) for widget in [self.df_le, self.t_le]]
+        layout.addLayout(df_t_layout)
+        
+        mod_layout = make_layout("v")
+        mod_layout.setContentsMargins(2, 0, 2, 0)
+        [mod_layout.addWidget(modulator_widget) for modulator_widget in self.modulators]
+        self.mod_widget.setLayout(mod_layout)
+        self.scroll_area.setWidget(self.mod_widget)
+        layout.addWidget(self.scroll_area)
+        
+        self.setLayout(layout)
+        
+        self.df_t_rg = SCTWidgets.ReciprocalGroup(product = 1000, factors = [self.df_le, self.t_le])
+        #self.tone_rgs = [RG(product = line_edits[f"mla_mod{index}_f"], factors = [line_edits["mla_df"], line_edits[f"mla_mod{index}_n"]],
+        #            lock = "factor0", try_to_retain = "product", factor1_warn_if_not_integer = True) for index in range(4)]
+
+
+    
+    def setFrequencies(self, frequencies) -> None:
+        for index, frequency in enumerate(frequencies):
+            if index > len(self.modulators): break
+            self.modulators[index].setFrequency(frequency)
+        return
+
+    def setAmplitudes(self, amplitudes) -> None:
+        for index, amplitude in enumerate(amplitudes):
+            if index > len(self.modulators): break
+            self.modulators[index].setAmplitude(amplitude)
+        return
+
+    def setPhases(self, phases) -> None:
+        for index, phase in enumerate(phases):
+            if index > len(self.modulators): break
+            self.modulators[index].setPhase(phase)
+        return
+
+    def setdf(self, value) -> None:
+        self.df_le.setValue(value)
+        self.df_t_rg.updateFactor1()
+        return
+
+    def getInputs(self) -> list:
+        input_mask = []
+        [input_mask.append(modulator.input.state_index) for modulator in self.modulators]
+        return input_mask
+
+    def setInputs(self, input_mask) -> None:
+        for index, value in enumerate(input_mask):
+            if index > len(self.modulators): break
+            try: self.modulators[index].input.setState(value)
+            except: pass
+        return
+
+    def getOutputs(self) -> list:
+        output_mask = []
+        [output_mask.append(modulator.output.state_index) for modulator in self.modulators]
+        return output_mask
+
+    def setOutputs(self, input_mask) -> None:
+        for index, value in enumerate(input_mask):
+            if index > len(self.modulators): break
+            try: self.modulators[index].output.setState(value)
+            except: pass
+        return
+
 
 
 

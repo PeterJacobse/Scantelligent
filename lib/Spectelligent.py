@@ -23,11 +23,12 @@ class Spectelligent(QtCore.QObject):
     amplitudes = QtCore.pyqtSignal(list)
     frequencies = QtCore.pyqtSignal(list)
 
-    def __init__(self):
+    def __init__(self, parent):
         super().__init__()
         #self.parameters_init()
         self.gui = SpectelligentGUI()
-        #self.connect_buttons()
+        self.sct = parent
+        self.connect_buttons()
 
 
 
@@ -91,306 +92,44 @@ class Spectelligent(QtCore.QObject):
         return
 
     def connect_buttons(self) -> None:
-        button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
-                        "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.start_auto_approach,
-                        
-                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
-                        "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
-                        
-                        "audio": self.toggle_audio, "zero_volumes": self.zero_volumes, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
-                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "save": self.save_experiment
-                        }
-        
-        [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
-        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
-        
-        for parameter_type in ["bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
-            button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
-            button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")})
-        
-        [button_slots.update({direction: lambda checked, drxn = direction: self.coarse_move(drxn)}) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
-
-        for button_name, connected_function in button_slots.items():
-            self.gui.buttons[button_name].clicked.connect(connected_function)
-            if button_name in self.gui.shortcuts.keys():
-                shortcut = QtGui.QShortcut(self.gui.shortcuts[button_name], self.gui)
-                shortcut.activated.connect(connected_function)
-
-        # Line edits
-        self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
-        
         # Comboboxes
-        self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
-        self.experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
-        self.gui.comboboxes["experiment"].addItems(self.experiments)
-        self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
-                
-        # Sliders
-        self.gui.sliders["volume"].valueChanged.connect(self.send_volumes)
-        [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_volumes) for i in range(32)]
-        
-        # Checkboxes and button groups
-        #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
-        self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
-        self.gui.limits_widget.stateChanged.connect(self.update_processing_flags)
-        self.gui.button_groups["channels"].clicked.connect(lambda index_str: self.set_pdi_visible(int(index_str)))
-        return
-
-    def connect_hardware(self, target: str = "all") -> None:
-        self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
-        self.populate_completer()
-        
-        """
-        Set up and test hardware connections, and request parameters from the hardware components
-        """
-        self.logprint(f"Attempting to connect to the following hardware: {target}", message_type = "message")
-
-        # Read hardware configurations from file
-        (hw_config, error) = self.file_functions.load_yaml(self.paths.get("config_file"))
-        if error:
-            self.logprint(".\\sys\\config.yml: Problem loading the hardware configurations from file", message_type = "error")
-            return
-        else:
-            self.logprint(".\\sys\\config.yml: Loaded hardware configurations from file as (dict) hw_config", message_type = "success")
-        self.hw_config = hw_config
-
-        # MLA (library)
-        mla_config = hw_config.get("mla")
-        if isinstance(mla_config, dict):
-            mla_path = mla_config.get("library_path")
-            if os.path.isdir(mla_path):
-                self.paths.update({"mla": mla_path})
-                sys.path.insert(0, mla_path) # Path to the MLA library
-
-        # Audio generator
-        if target.lower() == "audio" or target.lower() == "all":
-            try:
-                # Instantiate
-                self.audio = AudioGenerator()
-
-                # Set up signal-slot connections
-                self.volumes.connect(self.audio.volumes_update)
-                self.amplitudes.connect(self.audio.amplitudes_update)                
-                self.frequencies.connect(self.audio.frequencies_update)
-                
-                # Add attributes to the input line edit
-                new_attributes = ["audio." + attr for attr in self.audio.__dict__ if not attr.startswith("_")]
-                completer = self.gui.line_edits["input"].completer()
-                model = completer.model()
-                string_list = model.stringList()
-                [string_list.append(item) for item in new_attributes if item not in string_list]
-                model.setStringList(string_list)
-                completer.setModel(model)
-                                
-                self.logprint(f"AudioGenerator: Successfully connected the audio generator, and instantiated AudioGenerator as audio", "success")
-            except Exception as e:
-                self.logprint(f"AudioGenerator: Unable to connect to the audio generator: {e}", "error")
-
-        # Camera
-        if target.lower() == "camera" or target.lower() == "all":
-            try:
-                # Instantiate
-                self.camera = CameraAPI(hw_config = self.hw_config)
-                
-                # Set up signal-slot connections
-                self.camera.parameters.connect(self.parameters.receive)
-                self.camera.captured_frame.connect(self.receive_image)
-                
-                # Initialize
-                self.camera.initialize()
-                
-                self.logprint("Camera: Found the camera and instantiated CameraAPI as camera", "success")
-                self.gui.buttons["camera"].setState("online")
-            except Exception as e:
-                self.logprint(f"Camera: Unable to connect to camera: {e}", "warning")
-                self.gui.buttons["camera"].setState("offline")
-
-
-
-        # Scanalyzer
-        if target.lower() == "scanalyzer" or target.lower() == "all":
-            scanalyzer_path = hw_config.get("scanalyzer_path")
-            if os.path.isfile(scanalyzer_path):
-                self.paths.update({"scanalyzer": scanalyzer_path})
-                
-                self.logprint(f"Scanalyzer: Scanalyzer found at {self.paths["scanalyzer"]} and linked", message_type = "success")
-                self.gui.buttons["scanalyzer"].setState("online")
-            else:
-                self.logprint("Scanalyzer: Scanalyzer path could not be read", message_type = "warning")
-                self.gui.buttons["scanalyzer"].setState("offline")
-
-        # Keithley
-        if target.lower() == "keithley" or target.lower() == "all":
-            try:
-                # Instantiate
-                self.keithley = KeithleyAPI(hw_config = self.hw_config)
-                
-                # Set up signal-slot connections
-                # Keithley -> Scantelligent
-                self.keithley.parameters.connect(self.parameters.receive)
-                
-                # Get parameters from Keithley
-                self.keithley.initialize()
-                
-                self.logprint("Keithley: Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
-                self.gui.buttons["keithley"].setState("online")
-            except Exception as e:
-                self.logprint(f"Keithley: Unable to connect to the Keithley source meter: {e}", "warning")
-                self.gui.buttons["keithley"].setState("offline")
-
-        # MLA
-        if target.lower() == "mla" or target.lower() == "all":
-            try:
-                # Instantiate
-                self.mla = MLAAPI(hw_config = self.hw_config)
-                
-                # Set up signal-slot connections                
-                # MLA -> Scantelligent
-                self.mla.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
-                self.mla.message.connect(self.logprint)
-
-                self.logprint("MLA: Found the MLA", "success")
-                self.gui.buttons["mla"].setState("online")
-            except Exception as e:
-                self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
-
-
-
-        # Nanonis
-        if target.lower() == "nanonis" or target.lower() == "all":
-            try:
-                # Instantiate
-                nanonis_config = self.hw_config.get("nanonis")
-                nanonis_ports = nanonis_config.get("tcp_ports")
-                
-                nanonis_config0 = nanonis_config.copy()
-                nanonis_config0.update({"tcp_port": nanonis_ports[0]})
-                nanonis_config1 = nanonis_config.copy()
-                nanonis_config1.update({"tcp_port": nanonis_ports[1]})
-                
-                # First port
-                self.nanonis = NanonisAPI(hw_config = nanonis_config0)
-                
-                # Set up signal-slot connections
-                # Scantelligent -> Nanonis
-                self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, wait = True, unlink = True))
-                self.gui.image_view.position_signal_middle_button.connect(lambda x, y: self.parameters.set("grid"))
-
-                # Nanonis -> Scantelligent
-                self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
-                self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
-                self.nanonis.message.connect(self.logprint)
-                self.nanonis.image.connect(self.receive_image)
-                self.nanonis.data_array.connect(self.receive_data)
-                
-                # Get parameters from Nanonis
-                (nanonis_parameters, _) = self.nanonis.initialize()
-                
-                
-                
-                # Second port
-                self.nanonis1 = NanonisAPI(hw_config = nanonis_config1)
-                
-                # Set up signal-slot connections
-                # Nanonis -> Scantelligent
-                self.nanonis1.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
-                self.nanonis1.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
-                self.nanonis1.message.connect(self.logprint)
-                self.nanonis1.image.connect(self.receive_image)
-                self.nanonis1.data_array.connect(self.receive_data)
-                
-                # Get parameters from Nanonis
-                (nanonis_parameters1, _) = self.nanonis1.initialize(verbose = False)
-                
-                
-                
-                # Populate the input line edit completer
-                nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
-                nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith("_")]
-                completer = self.gui.line_edits["input"].completer()
-                model = completer.model()
-                string_list = model.stringList()
-                [string_list.append(item) for item in nanonis_attributes if item not in string_list]
-                [string_list.append(item) for item in nanonis_hw_attributes if item not in string_list]
-                model.setStringList(string_list)
-                completer.setModel(model)
-                                
-                self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
-            except Exception as e:
-                self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
-        return
-
-    def dis_reconnect(self, target: str = "nanonis") -> None:
-        match target:
-            case "nanonis":
-                if self.gui.buttons["nanonis"].state_name == "running":
-                    try: self.nanonis.unlink(verbose = True)
-                    except: pass
-                elif self.gui.buttons["nanonis"].state_name == "idle" or self.gui.buttons["nanonis"].state_name == "online":
-                    try: self.nanonis.link(verbose = True)
-                    except: pass
-                else:
-                    self.connect_hardware(target = "nanonis")
-                return
-            
-            case "mla":
-                if self.gui.buttons["mla"].state_name == "running":
-                    try:
-                        self.mla.unlink()
-                        self.status.update({"mla": "idle"})
-                    except:
-                        self.status.update({"mla": "offline"})
-                elif self.gui.buttons["mla"].state_name == "idle" or self.gui.buttons["mla"].state_name == "online":
-                    try:
-                        self.mla.link()
-                        self.status.update({"mla": "running"})
-                    except:
-                        pass
-                else:
-                    self.connect_hardware(target = "mla")
-                return
-            
-            case _:
-                pass
-        
+        [self.gui.comboboxes[dim].currentIndexChanged.connect(self.set_grid) for dim in ["x", "y"]]
         return
 
 
 
     # Miscellaneous
     def logprint(self, message: str = "", message_type: str = "error", timestamp: bool = True) -> None:
-        """Print a (timestamped) message to the redirected stdout.
+        return self.sct.logprint(message = message, message_type = message_type)
 
-        Parameters:
-        - message: text to print
-        - timestamp: whether to prepend HH:MM:SS timestamp
-        - type: type of message. The style of the message will be selected according to its type
-        """
-        colors = self.gui.colors
-        text_colors = {"message": colors["white"], "error": colors["red"], "code": colors["blue"], "result": colors["light_blue"], "success": colors["green"], "warning": colors["orange"]}
-
-        current_time = datetime.now().strftime("%H:%M:%S")
+    def set_grid(self) -> None:
+        match self.gui.comboboxes["x"].currentText():
+            case "V (V)":
+                limits = [self.gui.line_edits[f"sts_V_{side}"].getValue() for side in ["start", "end"]]
+                x_points = self.gui.line_edits["sts_V_points"].getValue()
+                self.gui.plot_widget.setLabel("bottom", "V", units = "V")
+            case "amp (mV)":
+                limits = [self.gui.line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
+                x_points = self.gui.line_edits["sts_amp_points"].getValue()
+            case "f (Hz)":
+                limits = [self.gui.line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
+                x_points = self.gui.line_edits["sts_f_points"].getValue()
+            case "z (nm)":
+                limits = [self.gui.line_edits[f"sts_{side}"].getValue() for side in ["start", "end"]]
+                x_points = self.gui.line_edits["sts_z_points"].getValue()
+            case _:
+                pass
         
-        color = text_colors["error"]
-        if message_type in ["message", "code", "result", "success", "warning"]: color = text_colors[message_type]
-        if message_type == "code" or message_type == "result": timestamp = False
-        
-        if timestamp: timestamped_message = current_time + f">>  {message}"
-        else: timestamped_message = f"{message}"
-
-        # Escape HTML to avoid accidental tag injection, then optionally wrap in a colored span so QTextEdit renders it in color.
-        escaped = html.escape(timestamped_message)        
-        if message_type == "code" or message_type == "result": final = f"<pre><span style=\"color:{color}\">          {escaped}</span></pre>"
-        else: final = f"<span style=\"color:{color}\">{escaped}</span>"
-
-        # Print HTML text (QTextEdit.append will render it as rich text).
-        print(final, flush = True)
+        try:
+            x_min = min(limits)
+            x_max = max(limits)
+            dx = (x_max - x_min) / (x_points - 1)
+            self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)
+        except:
+            pass
         return
 
-    def camera_finished(self):
-        try: self.camera_thread = None
-        except: pass
-        return
+
 
     def open_session_folder(self) -> None:
         if "session_path" in list(self.paths.keys()):

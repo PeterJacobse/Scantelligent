@@ -41,6 +41,7 @@ class ParameterManager(QtCore.QObject):
     def set(self, parameter_type: str = "frame") -> None:
         # It is noted that the nomenclature 'set' causes shadowing of the built-in 'set' method, but I decided to keep this regardless
         sct = self.scantelligent
+        line_edits = sct.gui.line_edits
         
         # Abort if the relevant hardware objects are missing
         if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"] and not hasattr(sct, "nanonis"):
@@ -49,13 +50,13 @@ class ParameterManager(QtCore.QObject):
 
         match parameter_type:
             case "bias":
-                [port1, port2] = [sct.gui.line_edits[name].getValue() for name in ["V_mla_port1", "V_mla_port2"]]
+                [port1, port2] = [line_edits[name].getValue() for name in ["V_mla_port1", "V_mla_port2"]]
                 if hasattr(sct, "nanonis"):
                     parameters = {"dict_name": "bias"}
                     
                     for parameter in ["V_nanonis (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
                         quantity = parameter.split()[0]
-                        val = sct.gui.line_edits[quantity].getValue()
+                        val = line_edits[quantity].getValue()
                         if isinstance(val, int | float): parameters.update({parameter: val})
 
                     sct.nanonis.bias_update(parameters, unlink = True)
@@ -67,7 +68,7 @@ class ParameterManager(QtCore.QObject):
                 
                 for parameter in ["I_fb (pA)", "p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]:
                     quantity = parameter.split()[0]
-                    val = sct.gui.line_edits[quantity].getValue()
+                    val = line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
                 gain = sct.gui.comboboxes["tia_gain"].currentText()
                 
@@ -75,25 +76,25 @@ class ParameterManager(QtCore.QObject):
                 sct.nanonis.hardware_update({"dict_name": "hardware", "gain": gain}, unlink = True)                
 
             case "frame":
-                offset = [sct.gui.line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
-                scan_range = [sct.gui.line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
-                angle = sct.gui.line_edits["frame_angle"].getValue()
+                offset = [line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
+                scan_range = [line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
+                angle = line_edits["frame_angle"].getValue()
                 
                 parameters = {"dict_name": "frame", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle}
                 sct.nanonis.frame_update(parameters, unlink = True)
 
             case "grid":
-                [pixels, lines] = [sct.gui.line_edits[tag].getValue() for tag in ["grid_pixels", "grid_lines"]]
+                [pixels, lines] = [line_edits[tag].getValue() for tag in ["grid_pixels", "grid_lines"]]
                 
-                offset = [sct.gui.line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
-                scan_range = [sct.gui.line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
-                angle = sct.gui.line_edits["frame_angle"].getValue()
+                offset = [line_edits[tag].getValue() for tag in ["frame_x", "frame_y"]]
+                scan_range = [line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
+                angle = line_edits["frame_angle"].getValue()
                                 
                 parameters = {"dict_name": "grid", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle, "pixels": pixels, "lines": lines}
                 sct.nanonis.grid_update(parameters, unlink = True)
 
             case "speed" | "speeds":
-                [v_fwd_nm_per_s, v_bwd_nm_per_s, v_tip_nm_per_s] = [sct.gui.line_edits[tag].getValue() for tag in ["v_fwd", "v_bwd", "v_tip"]]
+                [v_fwd_nm_per_s, v_bwd_nm_per_s, v_tip_nm_per_s] = [line_edits[tag].getValue() for tag in ["v_fwd", "v_bwd", "v_tip"]]
                 
                 parameters = {"dict_name": "speeds", "v_fwd (nm/s)": v_fwd_nm_per_s, "v_bwd (nm/s)": v_bwd_nm_per_s, "v_xy (nm/s)": v_tip_nm_per_s, "v_tip (nm/s)": v_tip_nm_per_s}
                 sct.nanonis.speeds_update(parameters, unlink = True)
@@ -102,9 +103,9 @@ class ParameterManager(QtCore.QObject):
                 if hasattr(sct, "nanonis"):
                     [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{index + 1}"].state_index) for index in range(2)]
                     mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
-                    [mod1_f, mod1_mV, mod1_phi] = [sct.gui.line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
-                    [mod2_f, mod2_mV, mod2_phi] = [sct.gui.line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
-                    [mla1_f, mla1_mV, mla1_phi] = [sct.gui.line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
+                    [mod1_f, mod1_mV, mod1_phi] = [line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
+                    [mod2_f, mod2_mV, mod2_phi] = [line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
+                    [mla1_f, mla1_mV, mla1_phi] = [line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
                     
                     parameters = {"dict_name": "lockin",
                                 "mod1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
@@ -113,7 +114,7 @@ class ParameterManager(QtCore.QObject):
                                 }
                     sct.nanonis.lockin_update(parameters, unlink = True)
                 if hasattr(sct, "mla"):
-                    [tm, df] = [sct.gui.line_edits[quantity].getValue() for quantity in ["mla_t", "mla_df"]]
+                    [tm, df] = [line_edits[quantity].getValue() for quantity in ["mla_t", "mla_df"]]
                     parameters = {"dict_name": "time_constant", "df (Hz)": df, "tm (ms)": tm}
                     sct.mla.time_constant_update(parameters, unlink = False)
                     
@@ -124,11 +125,11 @@ class ParameterManager(QtCore.QObject):
                                   "mod2": {"on": mod2_on, "port": mod2_port}, "mod3": {"on": mod3_on, "port": mod3_port}}
                     sct.mla.outputs_update(parameters, unlink = False)
                     
-                    [mod0_f, mod1_f, mod2_f, mod3_f] = [sct.gui.line_edits[f"mla_mod{index}_f"].getValue() for index in range(4)]
+                    [mod0_f, mod1_f, mod2_f, mod3_f] = [line_edits[f"mla_mod{index}_f"].getValue() for index in range(4)]
                     parameters = {"dict_name": "frequencies", "frequencies (Hz)": [mod0_f, mod1_f, mod2_f, mod3_f]}
                     sct.mla.frequencies_update(parameters, unlink = False)
                     
-                    [mod0_amp, mod1_amp, mod2_amp, mod3_amp] = [sct.gui.line_edits[f"mla_mod{index}_amp"].getValue() for index in range(4)]
+                    [mod0_amp, mod1_amp, mod2_amp, mod3_amp] = [line_edits[f"mla_mod{index}_amp"].getValue() for index in range(4)]
                     parameters = {"dict_name": "amplitudes", "amplitudes (mV)": [mod0_amp, mod1_amp, mod2_amp, mod3_amp]}
                     sct.mla.amplitudes_update(parameters, unlink = False)
             
@@ -265,12 +266,15 @@ class ParameterManager(QtCore.QObject):
                 if pixel.ndim > 1: pixel = pixel[:, 0]
                 abs_values = np.abs(2 * pixel)
                 #arg_values = np.rad2deg(np.angle(pixel))
-                [line_edits[f"demod_amplitude_{index}"].setValue(value * 1000) for index, value in enumerate(abs_values)]
+                #[line_edits[f"demod_amplitude_{index}"].setValue(value * 1000) for index, value in enumerate(abs_values)]
                 #[line_edits[f"demod_angle_{index}"].setValue(value) for index, value in enumerate(abs_values)]
+                
+                [sct.spt.gui.mla_mod[idx].readTone(pixel[idx] * 1000) for idx in range(32)]
                 sct.amplitudes.emit(100 * abs_values)
 
             case "time_constant":
                 [line_edits[f"mla_{quantity}"].setValue(value) for quantity, value in zip(["t", "df"], [parameters.get(key) for key in ["tm (ms)", "df (Hz)"]])]
+                sct.spt.gui.lockin_widget.setdf(parameters.get("tm (ms)"))
 
             case "frequencies":
                 freqs = parameters.get("frequencies (Hz)")
@@ -279,14 +283,17 @@ class ParameterManager(QtCore.QObject):
                 df = line_edits["mla_df"].getValue()
                 if df: [line_edits[f"mla_mod{index}_n"].setValue(value / df) for index, value in enumerate(freqs[:4])]
                 sct.frequencies.emit(freqs)
+                sct.spt.gui.lockin_widget.setFrequencies(freqs)
             
             case "amplitudes":
                 amplitudes = parameters.get("amplitudes (mV)")
                 [line_edits[f"mla_mod{index}_amp"].setValue(value) for index, value in enumerate(amplitudes[:4])]
+                sct.spt.gui.lockin_widget.setAmplitudes(amplitudes)
             
             case "phases":
                 phases = parameters.get("phases (deg)")
                 [line_edits[f"mla_mod{index}_phase"].setValue(value) for index, value in enumerate(phases[:4])]
+                sct.spt.gui.lockin_widget.setPhases(phases)
             
             case "outputs":
                 output_mask = parameters.get("output_mask")
@@ -484,12 +491,12 @@ class ParameterManager(QtCore.QObject):
 
             case "sts":
                 [V_start, V_end] = parameters.get("limits (V)")
-                if V_start: [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_start", "sts_V_end"], [V_start, V_end])]
+                if V_start: [line_edits[name].setValue(value) for name, value in zip(["sts_V_start", "sts_V_end"], [V_start, V_end])]
                 
                 [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (ms)", "t_settle (ms)"]]
                 t_int_ms = t_int_s * 1000
                 t_settle_ms = t_settle_s * 1000
-                [sct.gui.line_edits[name].setValue(value) for name, value in zip(["sts_V_points"], [n_points])]
+                [line_edits[name].setValue(value) for name, value in zip(["sts_V_points"], [n_points])]
                 sct.gui.sts_V_rg.updateFactor1()
 
             case "gains":

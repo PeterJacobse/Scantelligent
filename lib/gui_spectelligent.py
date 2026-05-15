@@ -1,7 +1,7 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from .sct_widgets import SCTWidgets, OscillatorWidget, rotate_icon, make_layout, make_line
+from .sct_widgets import SCTWidgets, ModulatorWidget, LockinWidget, rotate_icon, make_layout, make_line
 
 
 
@@ -141,7 +141,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
                                             {"name": "online", "color": self.colors["dark_green"], "tooltip": "Open the session folder"}]),
-            "info": MSB(tooltip = "Info", icon = icons.get("i")),
             
             # Experiment
             "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy"), click_to_toggle = False,
@@ -191,9 +190,12 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes")
         }
         
-        [buttons.update({f"mla_mod{mod_number}": MSB(icon = icons.get("mla_oscillator"), states = [{"name": "off", "tooltip": f"MLA modulator {mod_number} OFF", "color": sct_black}, {"name": "on", "tooltip": f"MLA modulator {mod_number} ON", "color": sct_blue}])}) for mod_number in range (32)]
-        
-        
+        for mod_number in range (32):
+            buttons.update({f"mla_mod{mod_number}": MSB(icon = icons.get("mla_oscillator"),
+                                                        states = [{"name": "off", "tooltip": f"MLA modulator {mod_number} OFF", "color": sct_black}, {"name": "on", "tooltip": f"MLA modulator {mod_number} ON", "color": sct_blue}]),
+                            f"mla_mod{mod_number}_input": MSB(states = [{"name": f"{port_index + 1}", "tooltip": f"input port {port_index + 1}", "icon": self.icons.get(f"{port_index + 1}")} for port_index in range(4)]),
+                            f"mla_mod{mod_number}_output": MSB(states = [{"name": f"{port_index + 1}", "tooltip": f"output port {port_index + 1}", "icon": self.icons.get(f"{port_index + 1}")} for port_index in range(2)])})
+                
         for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
             buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
             buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))})
@@ -252,38 +254,17 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         CB = SCTWidgets.ComboBox
         
         comboboxes = {
-            "channels": CB(tooltip = "Available scan channels"),
-            "projection": CB(tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
-            "experiment": CB(tooltip = "Select an experiment"),
-            "direction": CB(tooltip = "Select a scan direction / pattern"),
+            "x": CB(tooltip = "Select which parameter to sweep on the x axis (fast axis) of the measurement", items = ["V (V)", "amp (mV)", "z (nm)", "r (nm)", "f (Hz)", "V_keithley (V)"]),
+            "y": CB(tooltip = "Select which parameter to sweep on the y axis (slow axis) of the measurement", items = ["", "V (V)", "amp (mV)", "z (nm)", "r (nm)", "f (Hz)", "V_keithley (V)"]),
             
             "tia_gain": CB(tooltip = "Transimpedance amplifier gain setting"),
-            
-            "bias": CB(tooltip = "Load bias parameters"),
-            "feedback": CB(tooltip = "Load feedback parameters"),
-            "speeds": CB(tooltip = "Load speed parameters"),
-            "frame_grid": CB(tooltip = "Load frame/grid parameters"),
-            "spectroscopy": CB(tooltip = "Load spectroscopy parameters"),
-            "spectroscopy_parameter": CB(tooltip = "Load spectroscopy parameters", items = ["V_nanonis", "V_mla", "V_keithley", "f_mla", "z_nanonis"]),
-            
-            "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach"),
-                        
+                       
             "nanonis_mod1": CB(tooltip = "Add Nanonis modulator 1 to this channel"),
-            "nanonis_mod2": CB(tooltip = "Add Nanonis modulator 2 to this channel"),
-            
-            "mla_mod1": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
-            "mla_mod2": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
-            "mla_mod3": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
+            "nanonis_mod2": CB(tooltip = "Add Nanonis modulator 2 to this channel")
         }
-        
-        for mod_number in range(32):
-            comboboxes.update({f"mla_mod{mod_number}": CB(tooltip = f"Add MLA modulator {mod_number} to this output port", items = ["port 1", "port 2"]),
-                               f"mla_demod{mod_number}": CB(tooltip = f"Add MLA demodulator {mod_number} to this input port", items = ["port 1", "port 2", "port 3", "port 4"])})
         
         # Add the button handles to the tooltips
         [comboboxes[name].changeToolTip(f"gui.comboboxes[\"{name}\"]", line = 10) for name in comboboxes.keys()]
-        
-        comboboxes["experiment"].setSizeAdjustPolicy(CB.SizeAdjustPolicy.AdjustToContents)
         
         return comboboxes
 
@@ -291,38 +272,11 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         LE = SCTWidgets.PhysicsLineEdit
         RG = SCTWidgets.ReciprocalGroup
         
-        sct_green = self.colors["dark_green"]
         scanalyzer_blue = "#2020C0"
         
         line_edits = {
             # Experiment
             "experiment_filename": LE(tooltip = "base name of the file when saved to png or hdf5"),
-
-            # Coarse
-            "z_steps": LE(value = 20, tooltip = "steps in the +z (retract) direction", unit = "↑", limits = [0, 100000], digits = 0, max_width = 100),
-            "h_steps": LE(value = 100, tooltip = "steps in the horizontal direction", unit = "← →", limits = [0, 100000], digits = 0, max_width = 100),
-            "minus_z_steps": LE(value = 0, tooltip = "steps in the -z (advance) direction", unit = "↓", limits = [0, 100000], digits = 0, max_width = 100),
-            
-            "V_hor": LE(value = 150, tooltip = "voltage supplied to the coarse piezos during horizontal movement", unit = "V (xy)", digits = 0, max_width = 100),
-            "V_ver": LE(value = 150, tooltip = "voltage supplied to the coarse piezos during vertical movement", unit = "V (z)", digits = 0, max_width = 100),
-            "f_motor": LE(value = 1000, tooltip = "sawtooth wave frequency supplied to the coarse piezos during movement", unit = "Hz", digits = 0, max_width = 100),
-            
-            "approach_min_percentile": LE(value = 40, tooltip = "minimum percentile of the piezo range\nWithdraw and coarse adjust if the tip lands below this value", unit = "%", digits = 0),
-            "approach_max_percentile": LE(value = 60, tooltip = "maximum percentile of the piezo range\nWithdraw and coarse adjust if the tip lands above this value", unit = "%", digits = 0),
-
-            # Parameters
-            # Bias
-            "V_nanonis": LE(tooltip = "Nanonis bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "V_mla_port1": LE(tooltip = "MLA bias on port 1", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "V_mla_port2": LE(tooltip = "MLA bias on port 2", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "V_keithley": LE(tooltip = "Keithley bias", unit = "V", limits = [-200, 200], digits = 3, edited_color = scanalyzer_blue),
-
-            "dV_nanonis": LE(tooltip = "voltage step dV when ramping the bias", unit = "mV", limits = [-1000, 1000], digits = 1),
-            "dt_nanonis": LE(tooltip = "time step dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
-            "dz_nanonis": LE(tooltip = "height step dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
-
-            "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1, edited_color = scanalyzer_blue),
-            "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0, edited_color = scanalyzer_blue),
             
             # Feedback
             "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
@@ -337,34 +291,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "v_fwd": LE(tooltip = "forward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
             "v_bwd": LE(tooltip = "backward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
             "v_tip": LE(tooltip = "tip move speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
-            
-            # Frame
-            "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1, edited_color = scanalyzer_blue),
-            "frame_width": LE(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1, edited_color = scanalyzer_blue),
-            "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
-            "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
-            "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1, edited_color = scanalyzer_blue),
-            "frame_aspect": LE(tooltip = "frame aspect ratio (height / width)", digits = 4, edited_color = scanalyzer_blue),
 
-            # Grid
-            "grid_pixels": LE(tooltip = "number of pixels", unit = "px", limits = [1, 10000], digits = 0, edited_color = scanalyzer_blue),
-            "grid_lines": LE(tooltip = "number of lines", unit = "px", limits = [1, 10000], digits = 0, edited_color = scanalyzer_blue),
-            "grid_aspect": LE(tooltip = "grid aspect ratio (lines / pixels)", digits = 4, edited_color = scanalyzer_blue),
-            "pixel_width": LE(tooltip = "pixel width", unit = "nm", digits = 4, edited_color = scanalyzer_blue),
-            "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4, edited_color = scanalyzer_blue),
-            
-            # Tip shaper
-            "pulse_voltage": LE(value = 6, tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
-            "pulse_duration": LE(value = 300, tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
-            
-            "poke_voltage": LE(tooltip = "poke voltage (bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
-            "poke_depth": LE(tooltip = "poke depth (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "poke_time": LE(tooltip = "poke time (duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
-            
-            "lift_voltage": LE(tooltip = "lift voltage (bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
-            "lift_height": LE(tooltip = "lift height (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
-            
             # STS
             "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
@@ -408,50 +335,32 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
 
             "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-                        
+            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue)               
         }
         
-        for mod_number in range(30):
+        for mod_number in range(32):
             line_edits.update({
-                f"mla_mod{mod_number}_f": LE(tooltip = f"MLA modulator {mod_number} frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-                f"mla_mod{mod_number}_n": LE(tooltip = f"MLA modulator {mod_number} number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-                f"mla_mod{mod_number}_amp": LE(tooltip = f"MLA modulator {mod_number} amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-                f"mla_demod{mod_number}_amp": LE(tooltip = f"MLA demodulator {mod_number} measured amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-                f"mla_mod{mod_number}_phase": LE(tooltip = f"MLA modulator {mod_number} phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-                f"mla_demod{mod_number}_phase": LE(tooltip = f"MLA demodulator {mod_number} measured phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue)
+                f"mla_mod{mod_number}_f": LE(tooltip = f"MLA modulator {mod_number} frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, max_width = 100, edited_color = scanalyzer_blue),
+                f"mla_mod{mod_number}_n": LE(tooltip = f"MLA modulator {mod_number} number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, max_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"]),
+                f"mla_mod{mod_number}_amp": LE(tooltip = f"MLA modulator {mod_number} amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 100, edited_color = scanalyzer_blue),
+                f"mla_demod{mod_number}_amp": LE(tooltip = f"MLA demodulator {mod_number} measured amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 100, edited_color = scanalyzer_blue),
+                f"mla_mod{mod_number}_phase": LE(tooltip = f"MLA modulator {mod_number} phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 100, edited_color = scanalyzer_blue),
+                f"mla_demod{mod_number}_phase": LE(tooltip = f"MLA demodulator {mod_number} measured phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 100, edited_color = scanalyzer_blue)
                 })
+                
+        # Add the button handles to the tooltips
+        [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
         
         # Reciprocal groups (inter-line-edit update logic)
         self.sts_V_rg = RG(product = [line_edits["sts_V_start"], line_edits["sts_V_end"]], factors = [line_edits["sts_V_points"], line_edits["sts_dV"]], factor = 1000,
                            lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
-        self.nanonis_rg = RG(product = 1000, factors = [line_edits["nanonis_t"], line_edits["nanonis_df"]])
-        self.mla_rg = RG(product = 1000, factors = [line_edits["mla_t"], line_edits["mla_df"]])
         self.sts_z_rg = RG(product = [line_edits["sts_z_start"], line_edits["sts_z_end"]], factors = [line_edits["sts_z_points"], line_edits["sts_dz"]],
                            lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
         self.sts_f_rg = RG(product = [line_edits["sts_f_start"], line_edits["sts_f_end"]], factors = [line_edits["sts_f_points"], line_edits["sts_df"]],
                            lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
         self.sts_amp_rg = RG(product = [line_edits["sts_amp_start"], line_edits["sts_amp_end"]], factors = [line_edits["sts_amp_points"], line_edits["sts_damp"]],
-                             lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)        
-        self.tone_rgs = [RG(product = line_edits[f"mla_mod{index}_f"], factors = [line_edits["mla_df"], line_edits[f"mla_mod{index}_n"]],
-                            lock = "factor0", try_to_retain = "product", factor1_warn_if_not_integer = True) for index in range(4)]
-        self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "factor0")
-        self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "factor0",
-                          factor0_constraint = lambda value: int(round(value / 16) * 16))
+                             lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
         
-        # Extra line edits
-        [line_edits.update({f"demod_frequency_{i}": LE(value = 100 * i, tooltip = f"frequency of tone {i}", unit = "Hz", digits = 2, min_width = 80)}) for i in range(32)]
-        [line_edits.update({f"demod_amplitude_{i}": LE(value = 100 * i, tooltip = f"amplitude of tone {i}", unit = "mV", digits = 2, min_width = 80)}) for i in range(32)]
-        [line_edits.update({f"experiment_{i}": LE(tooltip = f"Experiment parameter field {i}", digits = 2)}) for i in range(9)]
-
-        # Named groups
-        self.action_line_edits = [line_edits[name] for name in ["z_steps", "h_steps", "minus_z_steps"]]
-        
-        # Add the button handles to the tooltips
-        [line_edits[name].changeToolTip(f"gui.line_edits[\"{name}\"]", line = 10) for name in line_edits.keys()]
-        
-        # Frame
-        [line_edits[f"frame_{key}"].editingFinished.connect(self.update_frame_from_fields) for key in ["x", "y", "width", "height", "angle", "aspect"]]
         return line_edits
 
     def make_progress_bars(self) -> dict:
@@ -476,6 +385,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             # Main
             "main": make_layout("h"),
             "lockin": make_layout("v"),
+            "mla_modulators" : make_layout("v"),
             
             "left_side": make_layout("v"),
             "toolbar": make_layout("v"),
@@ -636,13 +546,18 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "scan": QWgt(),
             "experiment": QWgt(),
             "lockins": QWgt(),
-            "demodulators": QWgt()
+            
+            "mla_modulators": QWgt()
         }
         
-        mod_number = 0
-        [mod_amp, demod_amp, mod_phase, demod_phase, freq, num] = [self.line_edits[f"mla_{key}"] for key in ["mod0_amp", "demod0_amp", "mod0_phase", "demod0_phase", "mod0_f", "mod0_n"]]
-        self.mla_mod0 = OscillatorWidget(state_button = self.buttons["mla_mod0"], input_cb = self.comboboxes["mla_demod0"], output_cb = self.comboboxes["mla_mod0"],
-                                         mod_amplitude_le = mod_amp, demod_amplitude_le = demod_amp, mod_phase_le = mod_phase, demod_phase_le = demod_phase, frequency_le = freq, number_le = num)
+        self.mla_mod = []
+        for idx in range(32):
+            [mod_amp, demod_amp, mod_phase, demod_phase, freq, num] = [self.line_edits[f"mla_{key}"] for key in [f"mod{idx}_amp", f"demod{idx}_amp", f"mod{idx}_phase", f"demod{idx}_phase", f"mod{idx}_f", f"mod{idx}_n"]]
+            [state_button, input_button, output_button] = [self.buttons[f"mla_mod{idx}{key}"] for key in ["", "_input", "_output"]]
+            self.mla_mod.append(ModulatorWidget(state_button = state_button, input = input_button, output = output_button,
+                                                mod_amplitude_le = mod_amp, demod_amplitude_le = demod_amp, mod_phase_le = mod_phase, demod_phase_le = demod_phase, frequency_le = freq, number_le = num))
+        
+        self.lockin_widget = LockinWidget(modulators = self.mla_mod, df_line_edit = self.line_edits["mla_df"], t_line_edit = self.line_edits["mla_t"])
         
         return widgets
 
@@ -702,20 +617,21 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         align_center = QtCore.Qt.AlignmentFlag.AlignCenter
         buttons = self.buttons
         line_edits = self.line_edits
-        #labels = self.labels
-        comboboxes = self.comboboxes
         
-        layouts["lockin"].addWidget(self.mla_mod0)
+        layouts["lockin"].addWidget(self.lockin_widget)
+        layouts["lockin"].addStretch(1)
         
         # STS
-        [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
-        
         layouts["spectroscopy"].addWidget(buttons["start_spectrum"], 0, 0, 1, 2, align_center)
         layouts["spectroscopy"].addWidget(buttons["nanonis_mla"], 0, 2, 1, 1, align_center)
         [layouts["spectroscopy"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
         [layouts["spectroscopy"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
         for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):
             [layouts["spectroscopy"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+        
+        layouts["spectroscopy"].addWidget(self.comboboxes["y"], 20, 0)
+        layouts["spectroscopy"].addWidget(self.plot_widget, 20, 1, 1, 2)
+        layouts["spectroscopy"].addWidget(self.comboboxes["x"], 21, 1, 1, 2)
         
         #layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 11, 0, 1, 3)
         """

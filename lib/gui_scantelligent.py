@@ -185,7 +185,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                         {"name": "ready", "color": self.colors["dark_green"], "tooltip": "Start experiment", "icon": icons.get("start")},
                                         {"name": "running", "color": sct_blue, "tooltip": "Experiment running", "icon": icons.get("stop")},
                                         {"name": "aborted", "color": self.colors["orange"], "tooltip": "Abort requested", "icon": icons.get("stop")}]),
-            "stop": MSB(tooltip = "Stop experiment", icon = icons.get("stop"), size = 28),
             
             # Locks
             "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
@@ -336,15 +335,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "retract": CB(tooltip = "Include retracting the tip during a tip move"),
             "advance": CB(tooltip = "Include advancing the tip during a move"),
             "approach": CB(tooltip = "End the tip move with an auto approach"),
-            
-            # STS
-            "voltage_sweep": CB(tooltip = "Perform STS in voltage sweep mode"),
-            "frequency_sweep": CB(tooltip = "Perform STS in frequency sweep mode"),
-            "height_sweep": CB(tooltip = "Perform STS in height sweep mode"),
-            
-            "single_sweep": CB(tooltip = "Perform single sweep"),
-            "amplitude_sweep": CB(tooltip = "Perform iterative STS in amplitude sweep mode"),
-            "line_spectroscopy": CB(tooltip = "Perform iterative STS over a line"),
             
             # Limits
             "min_full": CB(tooltip = "Set to minimum value of scan data range"),

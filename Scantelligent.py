@@ -21,11 +21,11 @@ class Scantelligent(QtCore.QObject):
         self.parameters_init()
         self.gui = ScantelligentGUI()
         self.gui.show()
-        self.spt = Spectelligent()
+        self.spt = Spectelligent(parent = self)
         self.connect_console()
         self.connect_buttons()
-        self.connect_hardware()
-        self.toggle_view("none")
+        #self.connect_hardware()
+        #self.toggle_view("none")
 
 
 
@@ -499,7 +499,7 @@ class Scantelligent(QtCore.QObject):
             if substring in self_objects:
                 if index < 2:
                     split_text[index] = "self." + substring
-                if split_text[index - 2] == "self":
+                if split_text[index - 2] == "self" or split_text[index - 1] == ".":
                     pass
                 else:
                     split_text[index] = "self." + substring
