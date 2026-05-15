@@ -166,14 +166,15 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "running", "color": sct_blue, "tooltip": "Camera: running"}]),
             "view": MSB(click_to_toggle = False, size = 28,
-                        states = [{"name": "none", "tooltip": "Toggle the active view", "icon": icons.get("eye"), "color": sct_black},
-                                  {"name": "camera", "tooltip": "Active view: Camera", "icon": icons.get("view_camera"), "color": sct_black},
-                                  {"name": "nanonis", "tooltip": "Active view: Nanonis", "icon": icons.get("view_nanonis"), "color": sct_black}]),
-            "exit": MSB(tooltip = "Exit scantelligent\n(Esc / X / E)", icon = icons.get("escape"), size = 28),
+                        states = [{"name": "none", "tooltip": "toggle the active view", "icon": icons.get("eye"), "color": sct_black},
+                                  {"name": "camera", "tooltip": "active view: Camera", "icon": icons.get("view_camera"), "color": sct_black},
+                                  {"name": "nanonis", "tooltip": "active view: Nanonis", "icon": icons.get("view_nanonis"), "color": sct_black}]),
+            "exit": MSB(tooltip = "Exit Scantelligent\n(Esc / X / E)", icon = icons.get("escape"), size = 28),
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
                                             {"name": "online", "color": self.colors["dark_green"], "tooltip": "Open the session folder"}]),
             "info": MSB(tooltip = "Info", icon = icons.get("i")),
+            "spectelligent": MSB(tooltip = "Open Spectelligent", icon = icons.get("start_spectrum")),
             
             # Experiment
             "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy"), click_to_toggle = False,
@@ -316,7 +317,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
 
         # Named groups
-        self.connection_buttons = [buttons[name] for name in ["nanonis", "camera", "mla", "keithley", "scanalyzer", "session_folder", "info"]]
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
         self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
 
@@ -526,7 +526,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_mod1_amp": LE(tooltip = "Nanonis modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_mod1_phase": LE(tooltip = "Nanonis modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "nanonis_mod1_n": LE(tooltip = "Nanonis modulator 1 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
+            "nanonis_mod1_n": LE(tooltip = "Nanonis modulator 1 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, max_width = 70,
+                                 warning_triggers = [lambda value: (value * 1000) % 1000 != 0]),
             "nanonis_mod2_f": LE(tooltip = "Nanonis modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_mod2_amp": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_mod2_phase": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
@@ -873,7 +874,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def make_boxes(self) -> tuple[QtWidgets.QMessageBox, QtWidgets.QMessageBox]:
         info_box = QtWidgets.QMessageBox(self)
         info_box.setWindowTitle("Info")
-        info_box.setText("Scanalyzer (2026)\nby Peter H. Jacobse\nRice University; Lawrence Berkeley National Lab")
+        info_box.setText("Scantelligent (2026)\nby Peter H. Jacobse\nRice University; Lawrence Berkeley National Lab")
         info_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
         info_box.setWindowIcon(self.icons.get("i"))
         
@@ -903,14 +904,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         # Toolbar
         # Connections
         layouts["connections"].addWidget(buttons["view"], 0, 0, 2, 1)
-        [layouts["connections"].addWidget(button, 0, i + 1) for i, button in enumerate(self.connection_buttons[:4])]
-        [layouts["connections"].addWidget(button, 1, i + 1) for i, button in enumerate(self.connection_buttons[4:])]
+        [layouts["connections"].addWidget(buttons[name], 0, index + 1) for index, name in enumerate(["nanonis", "camera", "mla", "keithley"])]
+        [layouts["connections"].addWidget(buttons[name], 1, index + 1) for index, name in enumerate(["scanalyzer", "session_folder", "info", "spectelligent"])]
         layouts["connections"].addWidget(buttons["exit"], 0, 5, 2, 1)
         
         layouts["connections"].addWidget(self.current_height_widget, 2, 0, 1, 2)
 
         # Experiment
-        #layouts["experiment_controls_0"].addWidget(buttons["start_stop"])
         [layouts["experiment_controls_0"].addWidget(self.comboboxes[name]) for name in ["experiment", "direction"]]
         
         [layouts["experiment_controls_1"].addWidget(widget) for widget in [line_edits["experiment_filename"], buttons["save"]]]
@@ -920,7 +920,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         e_layout.addWidget(self.current_height_widget, 0, 0, 5, 1)
         [e_layout.addWidget(widget, 0, index + 1) for index, widget in enumerate([buttons["start_stop"], self.progress_bars["task"], self.progress_bars["experiment"]])]
-        #e_layout.addLayout(layouts["experiment_controls_0"], 0, 0, 4, 1)
         e_layout.addLayout(layouts["experiment_controls_1"], 1, 1, 1, 3)
         e_layout.addLayout(layouts["experiment_controls_0"], 2, 1, 1, 3)
         e_layout.addLayout(layouts["experiment_fields"], 3, 1, 1, 3)
@@ -1207,61 +1206,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.new_frame_roi.blockSignals(True)
         self.new_frame_roi.setAngle(new_angle)
         self.new_frame_roi.blockSignals(False)
-        return
-
-    def height_width_aspect(self, line_edit_name: str = "frame_width") -> None:
-        """
-        [self.line_edits[name].blockSignals(True) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
-
-        match line_edit_name:
-            case "grid_pixels":
-                pixels = self.line_edits["grid_pixels"].getValue()
-                if not isinstance(pixels, float) and not isinstance(pixels, int): return
-
-                if bool(self.buttons["grid_aspect"].state_index):
-                    grid_aspect = self.line_edits["grid_aspect"].getValue()
-
-                    if isinstance(grid_aspect, float) or isinstance(grid_aspect, int):
-                        lines = int(pixels * grid_aspect)
-                        self.line_edits["grid_lines"].setValue(lines, edited_color = True)
-                else:
-                    lines = self.line_edits["grid_lines"].getValue()
-
-                    if isinstance(lines, float) or isinstance(lines, int):
-                        grid_aspect = lines / pixels
-                        self.line_edits["grid_aspect"].setValue(grid_aspect, edited_color = True)
-
-            case "grid_lines":
-                lines = self.line_edits["grid_lines"].getValue()
-                if not isinstance(lines, float) and not isinstance(lines, int): return
-
-                if bool(self.buttons["grid_aspect"].state_index):
-                    grid_aspect = self.line_edits["grid_aspect"].getValue()
-
-                    if isinstance(grid_aspect, float) or isinstance(frame_aspect, int):
-                        pixels = int(lines / grid_aspect)
-                        self.line_edits["grid_pixels"].setValue(pixels, edited_color = True)
-                else:
-                    pixels = self.line_edits["grid_pixels"].getValue()
-                    
-                    if isinstance(pixels, float) or isinstance(pixels, int):
-                        grid_aspect = lines / pixels
-                        self.line_edits["grid_aspect"].setValue(grid_aspect, edited_color = True)
-
-            case "grid_aspect":
-                grid_aspect = self.line_edits["grid_aspect"].getValue()
-                if not isinstance(grid_aspect, float) and not isinstance(grid_aspect, int): return
-
-                pixels = self.line_edits["grid_pixels"].getValue()
-                if isinstance(pixels, float) or isinstance(pixels, int):
-                    lines = int(pixels * grid_aspect)
-                    self.line_edits["grid_lines"].setValue(lines, edited_color = True)
-
-            case _:
-                pass
-
-        [self.line_edits[name].blockSignals(False) for name in ["frame_width", "frame_height", "frame_aspect", "grid_pixels", "grid_lines", "grid_aspect"]]
-        """
         return
 
     def update_fields_from_frame_change(self) -> None:

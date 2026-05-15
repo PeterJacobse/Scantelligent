@@ -22,6 +22,7 @@ class Scantelligent(QtCore.QObject):
         self.gui = ScantelligentGUI()
         self.gui.show()
         self.spt = Spectelligent(parent = self)
+        self.spt.gui.show()
         self.connect_console()
         self.connect_buttons()
         #self.connect_hardware()
@@ -95,7 +96,7 @@ class Scantelligent(QtCore.QObject):
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
                         "audio": self.toggle_audio, "zero_volumes": self.zero_volumes, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
-                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "save": self.open_spectelligent
+                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "spectelligent": self.open_spectelligent
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]

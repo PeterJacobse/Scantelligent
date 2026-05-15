@@ -9,10 +9,6 @@ from .data_processing import DataProcessing
 from .file_functions import FileFunctions
 from .parameter_manager import ParameterManager, UserData
 from .audio_generator import AudioGenerator
-from .api_nanonis import NanonisAPI
-from .api_keithley import KeithleyAPI
-from .api_camera import CameraAPI
-from .api_mla import MLAAPI
 from datetime import datetime
 
 
@@ -92,8 +88,13 @@ class Spectelligent(QtCore.QObject):
         return
 
     def connect_buttons(self) -> None:
-        # Comboboxes
-        [self.gui.comboboxes[dim].currentIndexChanged.connect(self.set_grid) for dim in ["x", "y"]]
+        button_slots = {"sts_x_axis": self.update_grid, "sts_y_axis": self.update_grid, "exit": self.exit}
+        
+        for button_name, connected_function in button_slots.items():
+            self.gui.buttons[button_name].clicked.connect(connected_function)
+            #if button_name in self.gui.shortcuts.keys():
+            #    shortcut = QtGui.QShortcut(self.gui.shortcuts[button_name], self.gui)
+            #    shortcut.activated.connect(connected_function)
         return
 
 
@@ -101,35 +102,6 @@ class Spectelligent(QtCore.QObject):
     # Miscellaneous
     def logprint(self, message: str = "", message_type: str = "error", timestamp: bool = True) -> None:
         return self.sct.logprint(message = message, message_type = message_type)
-
-    def set_grid(self) -> None:
-        match self.gui.comboboxes["x"].currentText():
-            case "V (V)":
-                limits = [self.gui.line_edits[f"sts_V_{side}"].getValue() for side in ["start", "end"]]
-                x_points = self.gui.line_edits["sts_V_points"].getValue()
-                self.gui.plot_widget.setLabel("bottom", "V", units = "V")
-            case "amp (mV)":
-                limits = [self.gui.line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
-                x_points = self.gui.line_edits["sts_amp_points"].getValue()
-            case "f (Hz)":
-                limits = [self.gui.line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
-                x_points = self.gui.line_edits["sts_f_points"].getValue()
-            case "z (nm)":
-                limits = [self.gui.line_edits[f"sts_{side}"].getValue() for side in ["start", "end"]]
-                x_points = self.gui.line_edits["sts_z_points"].getValue()
-            case _:
-                pass
-        
-        try:
-            x_min = min(limits)
-            x_max = max(limits)
-            dx = (x_max - x_min) / (x_points - 1)
-            self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)
-        except:
-            pass
-        return
-
-
 
     def open_session_folder(self) -> None:
         if "session_path" in list(self.paths.keys()):
@@ -156,30 +128,77 @@ class Spectelligent(QtCore.QObject):
             
         return
 
-    def cleanup(self) -> None:
-        #self.user.save_parameter_sets()
-        try: self.experiment_thread.requestInterruption()
-        except: pass
-        
-        try: self.nanonis.unlink()
-        except: pass        
-        try: self.mla.unlink()
-        except: pass
-        try: self.toggle_view("none")
-        except: pass
-        
-        for attribute_name in ["nanonis", "mla", "experiment", "experiment_thread", "camera", "camera_thread"]:
-            try: delattr(self, attribute_name)
-            except: pass
-        return
-
     def exit(self) -> None:
-        self.cleanup()
-        self.logprint("Thank you for using Scantelligent!", message_type = "success")
-        SCTWidgets.Application.instance().quit()
+        self.gui.close()
 
     def closeEvent(self, event) -> None:
         self.exit()
+
+
+
+    # Update the STS grid
+    def update_grid(self) -> None:
+        line_edits = self.gui.line_edits
+        
+        match self.gui.buttons["sts_x_axis"].state_name:
+            case "V":
+                x_limits = [line_edits[f"sts_V_{side}"].getValue() for side in ["start", "end"]]
+                x_points = line_edits["sts_V_points"].getValue()
+                self.gui.plot_widget.setLabel("bottom", "V (V)")
+            case "amp":
+                x_limits = [line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
+                x_points = line_edits["sts_amp_points"].getValue()
+                self.gui.plot_widget.setLabel("bottom", "amp (mV)")
+            case "f":
+                x_limits = [line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
+                x_points = line_edits["sts_f_points"].getValue()
+                self.gui.plot_widget.setLabel("bottom", "f (Hz)")
+            case "z":
+                x_limits = [line_edits[f"sts_z_{side}"].getValue() for side in ["start", "end"]]
+                x_points = line_edits["sts_z_points"].getValue()
+                self.gui.plot_widget.setLabel("bottom", "z (nm)")
+            case _:
+                pass
+
+        match self.gui.buttons["sts_y_axis"].state_name:
+            case "V":
+                y_limits = [line_edits[f"sts_V_{side}"].getValue() for side in ["start", "end"]]
+                y_points = line_edits["sts_V_points"].getValue()
+                self.gui.plot_widget.setLabel("left", "V (V)")
+            case "amp":
+                y_limits = [line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
+                y_points = line_edits["sts_amp_points"].getValue()
+                self.gui.plot_widget.setLabel("left", "amp (mV)")
+            case "f":
+                y_limits = [line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
+                y_points = line_edits["sts_f_points"].getValue()
+                self.gui.plot_widget.setLabel("left", "f (Hz)")
+            case "z":
+                y_limits = [line_edits[f"sts_z_{side}"].getValue() for side in ["start", "end"]]
+                y_points = line_edits["sts_z_points"].getValue()
+                self.gui.plot_widget.setLabel("left", "z (nm)")
+            case _:
+                self.gui.plot_widget.setLabel("left", "")
+
+        try:
+            x_min = min(x_limits)
+            x_max = max(x_limits)
+            dx = (x_max - x_min) / (x_points - 1)
+            self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)
+            
+            if y_limits:
+                y_min = min(y_limits)
+                y_max = max(y_limits)
+                dy = (y_max - y_min) / (y_points - 1)
+                self.gui.plot_widget.setYRange(y_min - dy, y_max + dy)
+                self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.linspace(y_min, y_max, y_points))
+            else:
+                self.gui.plot_widget.setYRange(-1, 1)
+                self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.zeros((1), dtype = float))
+        except:
+            pass
+        return
+
 
 
 

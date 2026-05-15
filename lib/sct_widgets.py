@@ -415,15 +415,16 @@ class SCTWidgets:
             self.style_sheet = kwargs.pop("style_sheet", None)
             self.digits = kwargs.pop("digits", 2)
             self.block = kwargs.pop("block", False)
+            self.warning_triggers = kwargs.pop("warning_triggers", None)
             self.base_color = kwargs.pop("base_color", "#101010")
-            self.edited_color = kwargs.pop("edited_color", None)
-            self.warning_color = kwargs.pop("warning_color", None)
+            self.edited_color = kwargs.pop("edited_color", "#2020C0")
+            self.warning_color = kwargs.pop("warning_color", "#A05000")
             
             super().__init__(parent)
             
             self.setDefaults()
             if not self.block: self.editingFinished.connect(self.addUnit)
-            if isinstance(self.edited_color, str): self.editingFinished.connect(lambda: self.setColor(self.edited_color))
+            self.editingFinished.connect(self.postEditing)
             self.old_tooltip = self.toolTip()
 
         def setColor(self, color: str) -> None:
@@ -440,16 +441,25 @@ class SCTWidgets:
                 self.editingFinished.connect(lambda: self.setColor(self.edited_color))
             return
 
-        def setWarning(self, tooltip: str = "") -> None:
+        def setWarning(self) -> None:
             if isinstance(self.warning_color, str):
                 self.setColor(self.warning_color)
             self.old_tooltip = self.toolTip()
-            self.setToolTip(tooltip)
             return
 
         def resetWarning(self) -> None:
             self.setToolTip(self.old_tooltip)
             self.resetColor()
+            return
+
+        def postEditing(self, edited_color: bool = False) -> None:
+            if edited_color: self.setColor(self.edited_color)
+            if isinstance(self.warning_triggers, list):
+                new_value = self.getValue()
+                for trigger in self.warning_triggers:
+                    if trigger(new_value):
+                        self.setWarning()
+                        break
             return
 
         def setDefaults(self) -> None:
@@ -481,8 +491,7 @@ class SCTWidgets:
 
                 self.setToolTip(new_tooltip)
             except:
-                pass
-            
+                pass            
             return
 
         def setDigits(self, digits: int) -> None:
@@ -513,6 +522,7 @@ class SCTWidgets:
                 if isinstance(self.digits, int): self.setText(f"{number:.{self.digits}f}")
                 else: self.setText(f"{number}")
             self.blockSignals(False)
+            self.postEditing(edited_color = True)
             return
 
         def getValue(self) -> float | str:
@@ -540,8 +550,8 @@ class SCTWidgets:
                     number = int(number)
                 
                 return number
-
-            return entered_text
+            else:
+                return entered_text
 
         def setValue(self, value, edited_color: bool = False) -> None:
             # Method for programatically setting a value or str
@@ -559,11 +569,9 @@ class SCTWidgets:
                     if isinstance(self.digits, int): self.setText(f"{number:.{self.digits}f}")
                     else: self.setText(f"{number}")                    
             
+                self.postEditing(edited_color = edited_color)
             else:
                 self.setText(f"{value}")
-            
-            if edited_color: self.setColor(self.edited_color)
-            else: self.resetColor()
             return
 
         def wheelEvent(self, event) -> None:
@@ -582,6 +590,9 @@ class SCTWidgets:
                 new_pos = self.update_number_at_pos(old_pos, new_pos, delta)
                 if isinstance(new_pos, bool): break
                 elif new_pos < 0: break
+            
+            self.postEditing()
+            return
 
         def move_cursor(self) -> tuple[int, int, int]:
             number = 0
@@ -1025,6 +1036,41 @@ class SCTWidgets:
                 
             # Call base class implementation
             return super().mousePressEvent(event)
+
+    class GridItem(pg.ScatterPlotItem):
+        def __init__(self, x_values: np.ndarray = np.linspace(0, 1, 3), y_values: np.ndarray = np.linspace(0, 1, 3), size: int = 10, color: str = "#40A040", brush_color = "#A00000"):
+            self.x_values = x_values
+            self.y_values = y_values
+            self.pen = pg.mkPen(color)
+            self.brush = pg.mkBrush(brush_color)
+            
+            super().__init__(pen = self.pen, brush = self.brush)
+            
+            self.updateGrid()
+
+        def setXValues(self, x_values: np.ndarray) -> None:
+            self.x_values = x_values
+            self.updateGrid()
+            return
+        
+        def setYValues(self, y_values: np.ndarray) -> None:
+            self.y_values = y_values
+            self.updateGrid()
+            return
+        
+        def setValues(self, x_values: np.ndarray, y_values: np.ndarray) -> None:
+            self.x_values = x_values
+            self.y_values = y_values
+            self.updateGrid()
+            return
+
+        def updateGrid(self) -> None:
+            x_mesh, y_mesh = np.meshgrid(self.x_values, self.y_values)
+            x_flat = x_mesh.flatten()
+            y_flat = y_mesh.flatten()
+            
+            self.setData(x = x_flat, y = y_flat)
+            return
 
     class PhaseSlider(SliderLineEdit):
         """
