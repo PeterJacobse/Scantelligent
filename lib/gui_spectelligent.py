@@ -98,43 +98,37 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                         
             # Lockins
             "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
-                                         {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),            
-            "nanonis_mod1": MSB(icon = icons.get("nanonis_mod1"),
-                                states = [{"name": "off", "tooltip": "Nanonis modulator 1 OFF", "color": sct_black},
-                                          {"name": "on", "tooltip": "Nanonis modulator 1 ON", "color": sct_blue}]),
-            "nanonis_mod2": MSB(icon = icons.get("nanonis_mod2"),
-                                states = [{"name": "off", "tooltip": "Nanonis modulator 2 OFF", "color": sct_black},
-                                          {"name": "on", "tooltip": "Nanonis modulator 2 ON", "color": sct_blue}]),
+                                         {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),
 
             "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                    {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
-                                   {"name": "y", "tooltip": "Voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}]),
+                                   {"name": "y", "tooltip": "Voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}], click_to_toggle = False),
             "sts_f": MSB(states = [{"name": "off", "tooltip": "Check to include a frequency sweep", "color": sct_black, "icon": icons.get("f")},
                                    {"name": "x", "tooltip": "Frequency sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("f_x")},
-                                   {"name": "y", "tooltip": "Frequency sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("f_y")}]),
+                                   {"name": "y", "tooltip": "Frequency sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("f_y")}], click_to_toggle = False),
             "sts_amp": MSB(states = [{"name": "off", "tooltip": "Check to include an amplitude sweep", "color": sct_black, "icon": icons.get("A")},
                                      {"name": "x", "tooltip": "Amplitude sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": self.icons.get("A_x")},
-                                     {"name": "y", "tooltip": "Amplitude sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": self.icons.get("A_y")}]),
+                                     {"name": "y", "tooltip": "Amplitude sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": self.icons.get("A_y")}], click_to_toggle = False),
             "sts_z": MSB(states = [{"name": "off", "tooltip": "Check to include a height sweep", "color": sct_black, "icon": icons.get("z")},
                                    {"name": "x", "tooltip": "Height sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("z_x")},
-                                   {"name": "y", "tooltip": "Height sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("z_y")}]),
+                                   {"name": "y", "tooltip": "Height sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("z_y")}], click_to_toggle = False),
             "sts_V_keithley": MSB(states = [{"name": "off", "tooltip": "Check to include a Keithley voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                             {"name": "x", "tooltip": "Keithley voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
-                                            {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}]),
+                                            {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}], click_to_toggle = False),
             
-            "sts_x_axis": MSB(states = [{"name": "V", "icon": icons.get("V"), "tooltip": "Perform a voltage sweep on the x axis (fast axis)"},
-                                        {"name": "amp", "icon": icons.get("A"), "tooltip": "Perform an amplitude sweep on the x axis (fast axis)"},
-                                        {"name": "z", "icon": icons.get("z"), "tooltip": "Perform a tip height sweep on the x axis (fast axis)"},
-                                        {"name": "f", "icon": icons.get("A"), "tooltip": "Perform a frequency sweep on the x axis (fast axis)"},
-                                        {"name": "V_keithley", "icon": icons.get("V"), "tooltip": "Perform a Keithley voltage sweep on the x axis (fast axis)"}]),
-            "sts_y_axis": MSB(states = [{"name": "none", "icon": icons.get("0"), "tooltip": "Sweep on the x axis (fast axis) only"},
-                                        {"name": "V", "icon": icons.get("V"), "tooltip": "Perform a voltage sweep on the y axis (slow axis)"},
-                                        {"name": "amp", "icon": icons.get("A"), "tooltip": "Perform an amplitude sweep on the y axis (slow axis)"},
-                                        {"name": "z", "icon": icons.get("z"), "tooltip": "Perform a tip height sweep on the y axis (slow axis)"},
-                                        {"name": "f", "icon": icons.get("A"), "tooltip": "Perform a frequency sweep on the y axis (slow axis)"},
-                                        {"name": "V_keithley", "icon": icons.get("V"), "tooltip": "Perform a Keithley voltage sweep on the y axis (slow axis)"}]),
+            "sts_x_axis": MSB(size = 28, states = [{"name": "V", "icon": icons.get("V"), "tooltip": "Perform a voltage sweep on the x axis (fast axis)"},
+                                                   {"name": "amp", "icon": icons.get("A"), "tooltip": "Perform an amplitude sweep on the x axis (fast axis)"},
+                                                   {"name": "z", "icon": icons.get("z"), "tooltip": "Perform a tip height sweep on the x axis (fast axis)"},
+                                                   {"name": "f", "icon": icons.get("f"), "tooltip": "Perform a frequency sweep on the x axis (fast axis)"},
+                                                   {"name": "V_keithley", "icon": icons.get("V"), "tooltip": "Perform a Keithley voltage sweep on the x axis (fast axis)"}]),
+            "sts_y_axis": MSB(size = 28, states = [{"name": "none", "icon": icons.get("0"), "tooltip": "Sweep on the x axis (fast axis) only"},
+                                                   {"name": "V", "icon": icons.get("V"), "tooltip": "Perform a voltage sweep on the y axis (slow axis)"},
+                                                   {"name": "amp", "icon": icons.get("A"), "tooltip": "Perform an amplitude sweep on the y axis (slow axis)"},
+                                                   {"name": "z", "icon": icons.get("z"), "tooltip": "Perform a tip height sweep on the y axis (slow axis)"},
+                                                   {"name": "f", "icon": icons.get("f"), "tooltip": "Perform a frequency sweep on the y axis (slow axis)"},
+                                                   {"name": "V_keithley", "icon": icons.get("V"), "tooltip": "Perform a Keithley voltage sweep on the y axis (slow axis)"}]),
 
             "get_pixel_nanonis": MSB(tooltip = "Click to receive a pixel from Nanonis", icon = icons.get("nanonis")),
             "get_pixel_mla": MSB(tooltip = "Click to receive a pixel from the MLA", icon = icons.get("imp")),
@@ -144,12 +138,19 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes")
         }
         
+        for mod_number in range (2):
+            buttons.update({f"nanonis_mod{mod_number + 1}": MSB(icon = icons.get("mla_oscillator"),
+                                                                states = [{"name": "off", "tooltip": f"Nanonis modulator {mod_number + 1} OFF", "color": sct_black}, {"name": "on", "tooltip": f"Nanonis modulator {mod_number + 1} ON", "color": sct_blue}])})
+        
         for mod_number in range (32):
             buttons.update({f"mla_mod{mod_number}": MSB(icon = icons.get("mla_oscillator"),
                                                         states = [{"name": "off", "tooltip": f"MLA modulator {mod_number} OFF", "color": sct_black}, {"name": "on", "tooltip": f"MLA modulator {mod_number} ON", "color": sct_blue}]),
                             f"mla_mod{mod_number}_input": MSB(states = [{"name": f"{port_index + 1}", "tooltip": f"input port {port_index + 1}", "icon": self.icons.get(f"{port_index + 1}")} for port_index in range(4)]),
-                            f"mla_mod{mod_number}_output": MSB(states = [{"name": f"{port_index + 1}", "tooltip": f"output port {port_index + 1}", "icon": self.icons.get(f"{port_index + 1}")} for port_index in range(2)])})
-                
+                            f"mla_mod{mod_number}_output": MSB(states = [{"name": f"{port_index + 1}", "tooltip": f"output port {port_index + 1}", "icon": self.icons.get(f"{port_index + 1}")} for port_index in range(2)]),
+                            f"mla_mod{mod_number}_extrapolate_f": MSB(tooltip = "click to extrapolate frequencies to successive modulator\nbased on this modulator and the previous one"),
+                            f"mla_mod{mod_number}_extrapolate_input": MSB(tooltip = "click to extrapolate inputs to successive modulator\nbased on this modulator and the previous one"),
+                            f"mla_mod{mod_number}_extrapolate_output": MSB(tooltip = "click to extrapolate inputs to successive modulator\nbased on this modulator and the previous one")})
+
         for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
             buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
             buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))})
@@ -255,7 +256,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
             "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
             "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = scanalyzer_blue),
-            "sts_f_points": LE(value = 1001, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
+            "sts_f_points": LE(value = 1000, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
             
             "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
             "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
@@ -272,6 +273,17 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "sts_dV_keithley": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
             "sts_V_keithley_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
             
+            # X and Y axes will have copies of the selected parameters
+            "sts_x_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "sts_x_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "sts_dx": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
+            "sts_x_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
+
+            "sts_y_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "sts_y_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "sts_dy": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
+            "sts_y_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
+
             # Lockin
             "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [1, 10000], digits = 0, trigger_warnings = [lambda value: value < 3]),
             "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2]),
@@ -334,30 +346,30 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts = {
             # Main
             "main": make_layout("h"),
+            
+            # Lockin
+            "left_column": make_layout("v"),
             "lockin": make_layout("v"),
-            "mla_modulators" : make_layout("v"),
+            "waveforms": make_layout("h"),
 
             # STS
-            "control_buttons": make_layout("h"),
+            "right_column": make_layout("v"),
+            "spectroscopy_controls": make_layout("h"),
+            "spectroscopy_settings": make_layout("g"),
+            "parameter_space": make_layout("g"),
             
             "xy_plot": make_layout("g"),
             "xy_plot_x": make_layout("h"),
             "xy_plot_y": make_layout("v"),
             
-            "osc": make_layout("v"),
-            "sts": make_layout("v"),
             "spectroscopy": make_layout("g"),
             "spectroscopy_getset": make_layout("h"),
             
-            "waveforms": make_layout("h"),
-            
+            ##            
             "lockin_parameter_sets": make_layout("h"),
             "modulators": make_layout("g"),
             "mod_set_get": make_layout("h"),
-            "pixel": make_layout("h"),
-            "demodulators": make_layout("v"),
-            "volume": make_layout("h"),
-            "demod_sliders": make_layout("h")
+            "pixel": make_layout("h")
         }        
         return layouts
 
@@ -454,17 +466,21 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         buttons = self.buttons
         line_edits = self.line_edits
         
+        # Lockin
         layouts["lockin"].addWidget(self.lockin_widget)
         layouts["lockin"].addStretch(1)
         
-        # STS
-        [layouts["control_buttons"].addWidget(buttons[name]) for name in ["start_spectrum", "nanonis_mla", "exit"]]
+        layouts["waveforms"].addWidget(self.waveform_widget)
         
-        layouts["spectroscopy"].addLayout(layouts["control_buttons"], 0, 0, 1, 3)
-        [layouts["spectroscopy"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
-        [layouts["spectroscopy"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
+        # STS
+        [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectrum", "nanonis_mla", "exit"]]
+        
+        #layouts["spectroscopy_settings"]
+        
+        [layouts["parameter_space"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
+        [layouts["parameter_space"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
         for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):
-            [layouts["spectroscopy"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+            [layouts["parameter_space"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
         
         layouts["xy_plot_y"].addWidget(buttons["sts_y_axis"])
         layouts["xy_plot_x"].addWidget(buttons["sts_x_axis"])
@@ -473,9 +489,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["xy_plot"].addWidget(self.plot_widget, 0, 1)
         layouts["xy_plot"].addLayout(layouts["xy_plot_x"], 1, 1)
         
-        layouts["spectroscopy"].addLayout(layouts["xy_plot"], 20, 0, 1, 3)
+        layouts["parameter_space"].addLayout(layouts["xy_plot"], 20, 0, 1, 3)
         
-        #layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 11, 0, 1, 3)
         """
         # Modulators
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
@@ -519,11 +534,19 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         groupboxes = {
             "lockin": SGB(title = "lockin controls", tooltip = "Set up the lockin amplifiers"),
-            "spectroscopy": SGB(title = "spectroscopy", tooltip = "spectroscopy")
+            "waveforms": SGB(title = "waveforms", tooltip = "Check the outputted modulations waveforms"),
+            
+            "spectroscopy": SGB(title = "spectroscopy", tooltip = "spectroscopy"),
+            "spectroscopy_controls": SGB(title = "spectroscopy controls", tooltip = "spectroscopy controls"),
+            "spectroscopy_settings": SGB(title = "spectroscopy settings", tooltip = "spectroscopy settings"),
+            "parameter_space": SGB(title = "parameter space", tooltip = "parameter space")
         }
         
         [layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupboxes.keys()]
-        [groupboxes[name].setLayout(layouts[name]) for name in ["lockin", "spectroscopy"]]
+        [groupboxes[name].setLayout(layouts[name]) for name in groupboxes.keys()]
+        
+        [layouts["left_column"].addWidget(groupboxes[name]) for name in ["lockin", "waveforms"]]
+        [layouts["right_column"].addWidget(groupboxes[name]) for name in ["spectroscopy_controls", "spectroscopy_settings", "parameter_space"]]
         return groupboxes
 
 
@@ -554,7 +577,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         #layouts["main"].addWidget(self.widgets["left_side"], stretch = 4)
         #layouts["main"].addLayout(layouts["toolbar"], 1)
         
-        [layouts["main"].addWidget(groupboxes[name]) for name in ["lockin", "spectroscopy"]]
+        [layouts["main"].addLayout(layouts[f"{side}_column"]) for side in ["left", "right"]]
         
         # Set the central widget of the QMainWindow
         widgets["central"].setLayout(layouts["main"])

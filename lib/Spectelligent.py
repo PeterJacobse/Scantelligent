@@ -190,15 +190,14 @@ class Spectelligent(QtCore.QObject):
                 y_min = min(y_limits)
                 y_max = max(y_limits)
                 dy = (y_max - y_min) / (y_points - 1)
-                self.gui.plot_widget.setYRange(y_min - dy, y_max + dy)
                 self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.linspace(y_min, y_max, y_points))
+                self.gui.plot_widget.setYRange(y_min - dy, y_max + dy)
             else:
+                self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.array([0], dtype = float))
                 self.gui.plot_widget.setYRange(-1, 1)
-                self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.zeros((1), dtype = float))
         except:
             pass
         return
-
 
 
 

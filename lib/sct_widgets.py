@@ -1038,13 +1038,13 @@ class SCTWidgets:
             return super().mousePressEvent(event)
 
     class GridItem(pg.ScatterPlotItem):
-        def __init__(self, x_values: np.ndarray = np.linspace(0, 1, 3), y_values: np.ndarray = np.linspace(0, 1, 3), size: int = 10, color: str = "#40A040", brush_color = "#A00000"):
+        def __init__(self, x_values: np.ndarray = np.linspace(0, 1, 3), y_values: np.ndarray = np.linspace(0, 1, 3), size: int = 2, color: str = "#FFFFFF"):
             self.x_values = x_values
             self.y_values = y_values
             self.pen = pg.mkPen(color)
-            self.brush = pg.mkBrush(brush_color)
+            self.brush = pg.mkBrush(color)
             
-            super().__init__(pen = self.pen, brush = self.brush)
+            super().__init__(pen = self.pen, brush = self.brush, size = size)
             
             self.updateGrid()
 
