@@ -25,7 +25,7 @@ class Scantelligent(QtCore.QObject):
         self.spt.gui.show()
         self.connect_console()
         self.connect_buttons()
-        #self.connect_hardware()
+        self.connect_hardware()
         #self.toggle_view("none")
 
 
@@ -102,12 +102,12 @@ class Scantelligent(QtCore.QObject):
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
         [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
         
-        for parameter_type in ["bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
+        for parameter_type in ["bias", "mla_bias", "keithley_bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
             button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
             button_slots.update({f"set_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.set(f"{param_type}")})
         
         [button_slots.update({direction: lambda checked, drxn = direction: self.coarse_move(drxn)}) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
-
+        
         for button_name, connected_function in button_slots.items():
             self.gui.buttons[button_name].clicked.connect(connected_function)
             if button_name in self.gui.shortcuts.keys():
@@ -132,6 +132,14 @@ class Scantelligent(QtCore.QObject):
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
         self.gui.limits_widget.stateChanged.connect(self.update_processing_flags)
         self.gui.button_groups["channels"].clicked.connect(lambda index_str: self.set_pdi_visible(int(index_str)))
+        
+        
+        
+        # Spectelligent
+        self.spt.gui.lockin_widget.get_button.clicked.connect(self.spt.update_waveforms)
+        self.spt.gui.lockin_widget.set_button.clicked.connect(self.spt.update_waveforms)
+        self.spt.gui.lockin_widget.get_button.clicked.connect(lambda: self.parameters.get("lockin"))
+        self.spt.gui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.set("lockin"))
         return
 
     def connect_hardware(self, target: str = "all") -> None:

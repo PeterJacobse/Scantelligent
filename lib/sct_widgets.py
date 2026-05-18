@@ -140,6 +140,11 @@ class SCTWidgets:
                 except: pass
             return
 
+        def setSize(self, value: int = 0) -> None:
+            self.button_size = value
+            self.setFixedSize(self.button_size + 12, self.button_size + 12)
+            return
+
         def setState(self, value = 0) -> None:
             if isinstance(value, int): # Index given
                 if value > -1: self.state_index = value # Valid index given: set
@@ -424,7 +429,6 @@ class SCTWidgets:
             
             self.setDefaults()
             if not self.block: self.editingFinished.connect(self.addUnit)
-            self.editingFinished.connect(self.postEditing)
             self.old_tooltip = self.toolTip()
 
         def setColor(self, color: str) -> None:
@@ -454,6 +458,7 @@ class SCTWidgets:
 
         def postEditing(self, edited_color: bool = False) -> None:
             if edited_color: self.setColor(self.edited_color)
+            else: self.resetColor()
             if isinstance(self.warning_triggers, list):
                 new_value = self.getValue()
                 for trigger in self.warning_triggers:
@@ -505,7 +510,8 @@ class SCTWidgets:
         def setUnit(self, unit: str = "") -> None:
             if isinstance(unit, str):
                 self.unit = unit
-                self.addUnit()
+                try: self.addUnit()
+                except: pass
             else:
                 self.unit = None
             return
@@ -895,15 +901,15 @@ class SCTWidgets:
         """
         valueChanged = QtCore.pyqtSignal(int)
 
-        def __init__(self, parent = None, tooltip: str = "", limits: list = [-180, 180], value: float = 0, digits: int = 0, max_width = 150, unit = None, orientation: str = "h",
-                     minmax_buttons: bool = False, min_button_icon: QtGui.QIcon = None, max_button_icon: QtGui.QIcon = None):
+        def __init__(self, parent = None, tooltip: str = "", limits: list = [-180, 180], value: float = 0, digits: int = 0, max_width = 150, unit = None, layout_orientation: str = "h", slider_orientation: str = "h",
+                     log_scale: bool = False, minmax_buttons: bool = False, min_button_icon: QtGui.QIcon = None, max_button_icon: QtGui.QIcon = None):
             super().__init__(parent)
             [self.min_val, self.max_val] = limits
 
             # 1: Create the widgets
-            self.slider = SCTWidgets.Slider(orientation = orientation, tooltip = tooltip)
+            self.slider = SCTWidgets.Slider(orientation = slider_orientation, tooltip = tooltip)
             self.line_edit = SCTWidgets.PhysicsLineEdit(max_width = max_width, unit = unit, limits = limits, digits = digits, tooltip = tooltip)
-            if orientation == "v": self.slider.setMinimumHeight(20)
+            if slider_orientation == "v": self.slider.setMinimumHeight(20)
 
             if minmax_buttons:
                 if isinstance(min_button_icon, QtGui.QIcon): self.min_button = SCTWidgets.MultiStateButton(tooltip = "set slider to minimum", icon = min_button_icon)
@@ -916,18 +922,18 @@ class SCTWidgets:
             [widget.setValue(value) for widget in [self.slider, self.line_edit]]
 
             # 3: Set up the layout
-            if orientation == "h": self.widget_layout = QtWidgets.QHBoxLayout()
+            if layout_orientation == "h": self.widget_layout = QtWidgets.QHBoxLayout()
             else:
                 self.widget_layout = QtWidgets.QVBoxLayout()
                 self.widget_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             
             if minmax_buttons:
-                if orientation == "v": self.widget_layout.addWidget(self.max_button, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+                if layout_orientation == "v": self.widget_layout.addWidget(self.max_button, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
                 else: self.widget_layout.addWidget(self.min_button)
             self.widget_layout.addWidget(self.slider, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
             self.widget_layout.addWidget(self.line_edit)
             if minmax_buttons:
-                if orientation == "v": self.widget_layout.addWidget(self.min_button, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
+                if layout_orientation == "v": self.widget_layout.addWidget(self.min_button, alignment = QtCore.Qt.AlignmentFlag.AlignCenter)
                 else: self.widget_layout.addWidget(self.max_button)
             
             # Remove extra margins from the layout
@@ -948,40 +954,33 @@ class SCTWidgets:
 
 
 
-        def _update_line_edit(self, value):
+        def _update_line_edit(self, value: float = 0) -> None:
             self.line_edit.blockSignals(True) 
             self.line_edit.setValue(value)
             self.line_edit.blockSignals(False)
+            return
 
         def _update_slider(self):
             try:
-                text = self.line_edit.text()
-                if text.startswith("."): text = "0" + text
-                regex_pattern = r"[-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?"
-                number_matches = re.findall(regex_pattern, text)
-                numbers = [int(x) for x in number_matches]
-                value = numbers[0]            
+                value = self.line_edit.getValue()
+                if not isinstance(value, float | int): return
                 
-                self.slider.blockSignals(True)
-                self.slider.setValue(value)
-                self.slider.blockSignals(False)
-
-                self.line_edit.blockSignals(True) 
-                self.line_edit.setValue(value)
-                self.line_edit.blockSignals(False)
+                [widget.blockSignals(True) for widget in [self.slider, self.line_edit]]
+                [widget.setValue(value) for widget in [self.slider, self.line_edit]]
+                [widget.blockSignals(False) for widget in [self.slider, self.line_edit]]
             except ValueError:
                 # Handle empty or invalid input by resetting to the current slider value
                 self.line_edit.setText(str(self.slider.value()))
+            return
 
-        def getValue(self):
-            """Returns the current integer value of the combined widget."""
-            return self.slider.value()
+        def getValue(self) -> float:
+            return self.line_edit.getValue()
         
-        def setValue(self, value):
-            """Sets the value of the combined widget programmatically."""
+        def setValue(self, value: float = 0) -> None:
             if value < self.min_val: value = self.min_val
             elif value > self.max_val: value = self.max_val
-            self.slider.setValue(value)
+            self.slider.setValue(value) # Triggers _update_line_edit
+            return
 
         def changeToolTip(self, text: str, line: int = 0) -> None:
             """
@@ -1360,13 +1359,6 @@ class SCTWidgets:
             if not isinstance(self.factor1, SCTWidgets.PhysicsLineEdit | float | int): self.lock = "factor1"
             if not isinstance(self.max, SCTWidgets.PhysicsLineEdit | float | int): self.lock = "product"
             
-            self.factor0_warn_if_not_integer = False
-            factor0_warn_if_not_integer = kwargs.pop("factor0_warn_if_not_integer", None)
-            if isinstance(factor0_warn_if_not_integer, bool): self.factor0_warn_if_not_integer = factor0_warn_if_not_integer
-            self.factor1_warn_if_not_integer = False
-            factor1_warn_if_not_integer = kwargs.pop("factor1_warn_if_not_integer", None)
-            if isinstance(factor1_warn_if_not_integer, bool): self.factor1_warn_if_not_integer = factor1_warn_if_not_integer
-
             self.factor0_enforce_integer = False
             factor0_enforce_integer = kwargs.pop("factor0_enforce_integer", None)
             if isinstance(factor0_enforce_integer, bool): self.factor0_enforce_integer = factor0_enforce_integer
@@ -1410,29 +1402,25 @@ class SCTWidgets:
             else: self.max_value = self.max
             if isinstance(self.min, SCTWidgets.PhysicsLineEdit): self.min_value = self.min.getValue() # Get min
             else: self.min_value = self.min
+            
+            if not isinstance(self.min_value, float | int) or not isinstance(self.max_value, float | int): return 0
 
             self.product_value = (self.max_value - self.min_value) * self.factor
             return self.product_value
 
         def getFactors(self) -> tuple[float, float]:
-            if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit):
-                self.factor0_value = self.factor0.getValue() # Get factor0
-                if self.factor0_warn_if_not_integer and not round(self.factor0_value * 10000) % 10000 == 0: self.factor0.setWarning()
-            else:
-                self.factor0_value = self.factor0
-            
-            if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit):
-                self.factor1_value = self.factor1.getValue() # Get factor1
-                if self.factor1_warn_if_not_integer and not round(self.factor1_value * 10000) % 10000 == 0: self.factor0.setWarning()
-            else:
-                self.factor1_value = self.factor1
-            
+            if isinstance(self.factor0, SCTWidgets.PhysicsLineEdit): self.factor0_value = self.factor0.getValue() # Get factor0
+            else: self.factor0_value = self.factor0
+            if isinstance(self.factor1, SCTWidgets.PhysicsLineEdit): self.factor1_value = self.factor1.getValue() # Get factor1
+            else: self.factor1_value = self.factor1
+                        
+            if not isinstance(self.factor0_value, float | int) or not isinstance(self.factor1_value, float | int): return (0, 0)
             return (self.factor0_value, self.factor1_value)
 
         def factor0Changed(self) -> None:
             factor0_value = self.factor0.getValue() # Get the new value
             factor0_value = self.factor0_constraint(factor0_value) # Apply the constraint, e.g. an integer value or a multiple of 16
-            self.factor0.setValue(factor0_value)
+            self.factor0.setValue(factor0_value, edited_color = True)
             
             match self.lock:
                 case "factor0":
@@ -1446,7 +1434,7 @@ class SCTWidgets:
         def factor1Changed(self) -> None:
             factor1_value = self.factor1.getValue() # Get the new value
             factor1_value = self.factor1_constraint(factor1_value) # Apply the constraint, e.g. an integer value or a multiple of 16
-            self.factor1.setValue(factor1_value)
+            self.factor1.setValue(factor1_value, edited_color = True)
             
             match self.lock:
                 case "factor0": self.updateProduct()
@@ -1482,17 +1470,13 @@ class SCTWidgets:
                 
                 # Apply a constraint if it is there. If the constraint changes the value, this needs to be bounced back
                 constrained_factor0_value = self.factor0_constraint(new_factor0_value)
-                self.factor0.setValue(constrained_factor0_value)
+                self.factor0.setValue(constrained_factor0_value, edited_color = True)
                 if not constrained_factor0_value == new_factor0_value:
                     self.bounce += 1
                     if self.lock == "factor1" and isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.updateProduct()
                     else: self.updateFactor1()
                 else:
                     self.bounce = 0
-                
-                # Set a warning if requested
-                if self.factor0_warn_if_not_integer and not round(new_factor0_value * 10000) % 10000 == 0: self.factor0.setWarning()
-                else: self.factor0.resetWarning()
             except:
                 pass
             return
@@ -1512,17 +1496,13 @@ class SCTWidgets:
                 
                 # Apply a constraint if it is there. If the constraint changes the value, this needs to be bounced back
                 constrained_factor1_value = self.factor1_constraint(new_factor1_value)
-                self.factor1.setValue(constrained_factor1_value)
+                self.factor1.setValue(constrained_factor1_value, edited_color = True)
                 if not constrained_factor1_value == new_factor1_value:
                     self.bounce += 1
                     if self.lock == "factor0" and isinstance(self.max, SCTWidgets.PhysicsLineEdit): self.updateProduct()
                     else: self.updateFactor0()
                 else:
                     self.bounce = 0
-                
-                # Set a warning if requested
-                if self.factor1_warn_if_not_integer and not round(new_factor1_value * 10000) % 10000 == 0: self.factor1.setWarning()
-                else: self.factor1.resetWarning()
             except:
                 pass
             return
@@ -1718,9 +1698,9 @@ class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
 
 
 class ModulatorWidget(QtWidgets.QWidget):
-    def __init__(self, state_button: SCTWidgets.MultiStateButton, input: SCTWidgets.MultiStateButton, output: SCTWidgets.MultiStateButton,
+    def __init__(self, state_button: SCTWidgets.MultiStateButton, input: SCTWidgets.MultiStateButton | SCTWidgets.ComboBox, output: SCTWidgets.MultiStateButton | SCTWidgets.ComboBox,
                  mod_amplitude_le: SCTWidgets.PhysicsLineEdit, demod_amplitude_le: SCTWidgets.PhysicsLineEdit, mod_phase_le: SCTWidgets.PhysicsLineEdit, demod_phase_le: SCTWidgets.PhysicsLineEdit,
-                 frequency_le: SCTWidgets.PhysicsLineEdit, number_le: SCTWidgets.PhysicsLineEdit):
+                 frequency_le: SCTWidgets.PhysicsLineEdit, number_le: SCTWidgets.PhysicsLineEdit, volume):
         
         super().__init__()
         
@@ -1735,89 +1715,176 @@ class ModulatorWidget(QtWidgets.QWidget):
         self.demod_amplitude_le = demod_amplitude_le
         self.demod_phase_le = demod_phase_le
         
+        self.volume = None
+        if isinstance(volume, SCTWidgets.SliderLineEdit): self.volume = volume
+        
         self.df = 100
         
-        layout = make_layout("g")
-        layout.addWidget(input, 0, 0, 2, 1)
-        [layout.addWidget(widget, index, 1) for index, widget in enumerate([self.demod_amplitude_le, self.demod_phase_le])]
-        layout.addWidget(state_button, 0, 2, 2, 1)
-        [layout.addWidget(widget, index, 3) for index, widget in enumerate([self.number_le, self.frequency_le])]
-        [layout.addWidget(widget, index, 4) for index, widget in enumerate([self.mod_amplitude_le, self.mod_phase_le])]
-        layout.addWidget(output, 0, 5, 2, 1)
-        layout.setContentsMargins(2, 0, 2, 0)
-        self.setLayout(layout)
+        self.modulator_layout = make_layout("g")
+        [self.modulator_layout.addWidget(widget, 0, index, 2, 1) for index, widget in enumerate([self.state_button, self.output])]
+        self.modulator_layout.addWidget(self.frequency_le, 0, 2, 1, 2)
+        self.modulator_layout.addWidget(self.number_le, 1, 2, 1, 1)
+        
+        [self.modulator_layout.addWidget(widget, index, 4) for index, widget in enumerate([self.mod_amplitude_le, self.mod_phase_le])]        
+        self.modulator_layout.addWidget(input, 0, 5, 2, 1)
+        [self.modulator_layout.addWidget(widget, index, 6) for index, widget in enumerate([self.demod_amplitude_le, self.demod_phase_le])]
+        
+        if self.volume:
+            try:
+                self.modulator_layout.addWidget(self.volume.min_button, 0, 7, 2, 1)
+                self.modulator_layout.addWidget(self.volume.slider, 0, 8, 1, 1, alignment = QtCore.Qt.AlignmentFlag.AlignBottom)
+                self.modulator_layout.addWidget(self.volume.line_edit, 1, 8, 1, 1)
+                self.modulator_layout.addWidget(self.volume.max_button, 0, 9, 2, 1)
+            except:
+                pass
+        
+        self.modulator_layout.setContentsMargins(2, 0, 2, 0)
+        self.setLayout(self.modulator_layout)
 
-    def setdf(self, value) -> None:
+
+
+    def getdf(self) -> float:
+        return self.df
+
+    def setdf(self, value: float) -> None:
         self.df = value
         return
 
-    def setFrequency(self, value) -> None:
+    def getFrequency(self) -> float:
+        return self.frequency_le.getValue()
+
+    def setFrequency(self, value: float) -> None:
         return self.frequency_le.setValue(value)
+
+    def getAmplitude(self) -> float:
+        return self.mod_amplitude_le.getValue()
     
-    def setAmplitude(self, value) -> None:
+    def setAmplitude(self, value: float) -> None:
         return self.mod_amplitude_le.setValue(value)
 
-    def setMeasuredAmplitude(self, value) -> None:
+    def setMeasuredAmplitude(self, value: float) -> None:
         return self.demod_amplitude_le.setValue(value)
 
-    def setPhase(self, value) -> None:
+    def getPhase(self) -> float:
+        return self.mod_phase_le.getValue()
+
+    def setPhase(self, value: float) -> None:
         return self.mod_phase_le.setValue(value)
 
-    def setMeasuredPhase(self, value) -> None:
+    def setMeasuredPhase(self, value: float) -> None:
         return self.demod_phase_le.setValue(value)
 
-    def readTone(self, value) -> None:
+    def readTone(self, value: complex) -> None:
         abs = np.abs(value)
         arg = np.rad2deg(np.angle(value))
         self.setMeasuredAmplitude(abs)
         self.setMeasuredPhase(arg)
         return
 
-    def setInput(self, value) -> None:
+    def getInput(self) -> int | str:
+        return self.input.state_name
+
+    def setInput(self, value: int | str) -> None:
         return self.input.setState(value)
 
-    def setOutput(self, value) -> None:
+    def getOutput(self) -> int | str:
+        return self.output.state_name
+
+    def setOutput(self, value: int | str) -> None:
         return self.output.setState(value)
+
+    def getVolume(self) -> int:
+        return self.volume.getValue()
 
 
 
 class LockinWidget(QtWidgets.QWidget):
-    def __init__(self, modulators: list, df_line_edit: SCTWidgets.PhysicsLineEdit, t_line_edit: SCTWidgets.PhysicsLineEdit):
+    set_signal = QtCore.pyqtSignal()
+    get_signal = QtCore.pyqtSignal()
+    
+    def __init__(self, modulators: list, df_line_edit: SCTWidgets.PhysicsLineEdit, t_line_edit: SCTWidgets.PhysicsLineEdit, audio_button: SCTWidgets.MultiStateButton, extrapolate_icon: QtGui.QIcon,
+                 min_button_icon: QtGui.QIcon, max_button_icon: QtGui.QIcon, get_button: SCTWidgets.MultiStateButton = None, set_button: SCTWidgets.MultiStateButton = None, zero_volumes_button: SCTWidgets.MultiStateButton = None):
         super().__init__()
         
         self.modulators = modulators
         self.df_le = df_line_edit
         self.t_le = t_line_edit
+        self.audio_button = audio_button
+        self.zero_volumes_button = zero_volumes_button
+        self.get_button = get_button
+        self.set_button = set_button
         
         self.scroll_area = QtWidgets.QScrollArea()
-        self.mod_widget = QtWidgets.QWidget()
-        
+        self.mod_widget = QtWidgets.QWidget()        
+        self.volume = SCTWidgets.SliderLineEdit(unit = "%", layout_orientation = "h", minmax_buttons = True, min_button_icon = min_button_icon, max_button_icon = max_button_icon, limits = [0, 100])
+                
         layout = make_layout("v")
         
         df_t_layout = make_layout("h")
-        [df_t_layout.addWidget(widget) for widget in [self.df_le, self.t_le]]
+        [df_t_layout.addWidget(widget) for widget in [self.df_le, self.t_le, self.audio_button, self.volume, self.zero_volumes_button]]
         layout.addLayout(df_t_layout)
         
         mod_layout = make_layout("v")
         mod_layout.setContentsMargins(2, 0, 2, 0)
-        [mod_layout.addWidget(modulator_widget) for modulator_widget in self.modulators]
+        
+        # Add extrapolate buttons
+        for index, modulator in enumerate(self.modulators):
+            modulator_layout = modulator.modulator_layout
+            
+            modulator.extrapolate_outputs = SCTWidgets.MultiStateButton(tooltip = "extrapolate to buttons below", icon = extrapolate_icon, size = 14)
+            modulator.extrapolate_inputs = SCTWidgets.MultiStateButton(tooltip = "extrapolate to buttons below", icon = extrapolate_icon, size = 14)
+            modulator.extrapolate_frequencies = SCTWidgets.MultiStateButton(tooltip = "extrapolate to buttons below", icon = extrapolate_icon, size = 14)
+
+            [input_button, output_button] = [modulator.input, modulator.output]
+            [button.setSize(14) for button in [input_button, output_button]]
+            
+            if index > 0 and index < len(self.modulators) - 1:
+                [modulator.modulator_layout.addWidget(widget, index1, 1) for index1, widget in enumerate([output_button, modulator.extrapolate_outputs])]
+                [modulator.modulator_layout.addWidget(widget, index1, 5) for index1, widget in enumerate([input_button, modulator.extrapolate_inputs])]
+                modulator.modulator_layout.addWidget(modulator.extrapolate_frequencies, 1, 3)
+                
+                modulator.extrapolate_outputs.clicked.connect(lambda clicked, index0 = index: self.extrapolate(target = "outputs", index = index0))
+                modulator.extrapolate_inputs.clicked.connect(lambda clicked, index0 = index: self.extrapolate(target = "inputs", index = index0))
+                modulator.extrapolate_frequencies.clicked.connect(lambda clicked, index0 = index: self.extrapolate(target = "frequencies", index = index0))
+            
+            modulator.setLayout(modulator.modulator_layout)
+            mod_layout.addWidget(modulator)
+        
         self.mod_widget.setLayout(mod_layout)
         self.scroll_area.setWidget(self.mod_widget)
         layout.addWidget(self.scroll_area)
         
+        get_set_layout = make_layout("h")
+        [get_set_layout.addWidget(widget) for widget in [self.get_button, self.set_button]]
+        layout.addLayout(get_set_layout)
+        
         self.setLayout(layout)
         
-        self.df_t_rg = SCTWidgets.ReciprocalGroup(product = 1000, factors = [self.df_le, self.t_le])
-        #self.tone_rgs = [RG(product = line_edits[f"mla_mod{index}_f"], factors = [line_edits["mla_df"], line_edits[f"mla_mod{index}_n"]],
-        #            lock = "factor0", try_to_retain = "product", factor1_warn_if_not_integer = True) for index in range(4)]
+        RG = SCTWidgets.ReciprocalGroup
+        self.df_t_rg = RG(product = 1000, factors = [self.df_le, self.t_le])
+        self.tone_rgs = [RG(product = self.modulators[index].frequency_le, factors = [self.df_le, self.modulators[index].number_le], lock = "factor0", try_to_retain = "product") for index in range(len(self.modulators))]
+        
+        # Set up connections
+        self.zero_volumes_button.clicked.connect(self.setZeroVolumes)
+        self.get_button.clicked.connect(self.get_signal.emit)
+        self.set_button.clicked.connect(self.set_signal.emit)
+        
 
 
+    def getFrequencies(self) -> list:
+        [modulator.frequency_le.resetColor() for modulator in self.modulators]
+        return [modulator.getFrequency() for modulator in self.modulators]
     
     def setFrequencies(self, frequencies) -> None:
         for index, frequency in enumerate(frequencies):
             if index > len(self.modulators): break
             self.modulators[index].setFrequency(frequency)
+            self.tone_rgs[index].updateFactor1()
         return
+
+    def getAmplitudes(self) -> list:
+        [modulator.mod_amplitude_le.resetColor() for modulator in self.modulators]
+        return [modulator.getAmplitude() for modulator in self.modulators]
 
     def setAmplitudes(self, amplitudes) -> None:
         for index, amplitude in enumerate(amplitudes):
@@ -1825,41 +1892,111 @@ class LockinWidget(QtWidgets.QWidget):
             self.modulators[index].setAmplitude(amplitude)
         return
 
+    def getPhases(self) -> list:
+        [modulator.mod_phase_le.resetColor() for modulator in self.modulators]
+        return [modulator.getPhase() for modulator in self.modulators]
+
     def setPhases(self, phases) -> None:
         for index, phase in enumerate(phases):
             if index > len(self.modulators): break
             self.modulators[index].setPhase(phase)
         return
 
+    def getdf(self) -> float:
+        self.df_le.resetColor()
+        return self.df_le.getValue()
+
     def setdf(self, value) -> None:
         self.df_le.setValue(value)
         self.df_t_rg.updateFactor1()
+        self.t_le.resetColor()
+        return
+
+    def setMeasuredAmplitudes(self, amplitudes) -> None:
+        for index, amplitude in enumerate(amplitudes):
+            if index > len(self.modulators): break
+            self.modulators[index].setMeasuredAmplitude(amplitude)
+        return
+
+    def setMeasuredPhases(self, phases) -> None:
+        for index, phase in enumerate(phases):
+            if index > len(self.modulators): break
+            self.modulators[index].setMeasuredPhase(phase)
         return
 
     def getInputs(self) -> list:
-        input_mask = []
-        [input_mask.append(modulator.input.state_index) for modulator in self.modulators]
-        return input_mask
+        return [int(modulator.input.state_index + 1) for modulator in self.modulators]
 
     def setInputs(self, input_mask) -> None:
         for index, value in enumerate(input_mask):
             if index > len(self.modulators): break
-            try: self.modulators[index].input.setState(value)
+            try: self.modulators[index].setInput(value)
             except: pass
         return
 
-    def getOutputs(self) -> list:
-        output_mask = []
-        [output_mask.append(modulator.output.state_index) for modulator in self.modulators]
+    def getOutputs(self) -> np.ndarray:
+        output_mask = np.zeros((32, 2), dtype = int)
+        for index, modulator in enumerate(self.modulators):
+            if modulator.state_button.isChecked():
+                if modulator.output.state_name == "1": output_mask[index] = [1, 0]
+                else: output_mask[index] = [0, 1]
         return output_mask
 
-    def setOutputs(self, input_mask) -> None:
-        for index, value in enumerate(input_mask):
+    def setOutputs(self, output_masks) -> None:
+        for index, modulator in enumerate(output_masks):
             if index > len(self.modulators): break
-            try: self.modulators[index].output.setState(value)
-            except: pass
+            
+            if 1 in modulator:
+                self.modulators[index].state_button.setState("on")
+                if modulator[0] == 1: self.modulators[index].output.setState("1")
+                elif modulator[1] == 1: self.modulators[index].output.setState("2")
+            else:
+                self.modulators[index].state_button.setState("off")
         return
 
+    def setZeroVolumes(self) -> None:
+        try: [modulator.volume.setValue(0) for modulator in self.modulators]
+        except: pass
+        return
+
+    def extrapolate(self, target: str = "", index: int = 1) -> None:
+        if index < 1 or index > len(self.modulators) - 1: return
+        
+        match target:
+            case "outputs":
+                current_value = self.modulators[index].output.state_index
+                previous_value = self.modulators[index - 1].output.state_index
+                difference = current_value - previous_value
+                
+                for new_index in range(index + 1, len(self.modulators)):
+                    modulator = self.modulators[new_index]
+                    new_state_index = (current_value + (new_index - index) * difference) % len(modulator.output.states)
+                    modulator.output.setState(new_state_index)
+
+            case "inputs":
+                current_value = self.modulators[index].input.state_index
+                previous_value = self.modulators[index - 1].input.state_index
+                difference = current_value - previous_value
+                
+                for new_index in range(index + 1, len(self.modulators)):
+                    modulator = self.modulators[new_index]
+                    new_state_index = (current_value + (new_index - index) * difference) % len(modulator.input.states)
+                    modulator.input.setState(new_state_index)
+
+            case "frequencies":
+                current_value = self.modulators[index].getFrequency()
+                previous_value = self.modulators[index - 1].getFrequency()
+                difference = current_value - previous_value
+                
+                for new_index in range(index + 1, len(self.modulators)):
+                    modulator = self.modulators[new_index]
+                    new_frequency = current_value + (new_index - index) * difference
+                    modulator.setFrequency(new_frequency)
+                    self.tone_rgs[new_index].updateFactor1()
+
+            case _:
+                pass        
+        return
 
 
 

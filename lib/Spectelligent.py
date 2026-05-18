@@ -25,6 +25,7 @@ class Spectelligent(QtCore.QObject):
         self.gui = SpectelligentGUI()
         self.sct = parent
         self.connect_buttons()
+        self.update_grid()
 
 
 
@@ -88,7 +89,8 @@ class Spectelligent(QtCore.QObject):
         return
 
     def connect_buttons(self) -> None:
-        button_slots = {"sts_x_axis": self.update_grid, "sts_y_axis": self.update_grid, "exit": self.exit}
+        button_slots = {"sts_x_axis": self.update_grid, "sts_y_axis": self.update_grid, "exit": self.exit, "get_parameter_space_parameters": self.update_grid, "set_parameter_space_parameters": self.update_grid,
+                        "get_spectroscopy_parameters": self.update_grid, "set_spectroscopy_parameters": self.update_grid}
         
         for button_name, connected_function in button_slots.items():
             self.gui.buttons[button_name].clicked.connect(connected_function)
@@ -140,42 +142,73 @@ class Spectelligent(QtCore.QObject):
     def update_grid(self) -> None:
         line_edits = self.gui.line_edits
         
+        for parameter in ["V", "amp", "f", "z", "V_keithley"]:
+            line_edits[f"sts_{parameter}_start"].resetColor()
+            line_edits[f"sts_{parameter}_end"].resetColor()
+            line_edits[f"sts_{parameter}_points"].resetColor()
+            line_edits[f"sts_d{parameter}"].resetColor()
+                
         match self.gui.buttons["sts_x_axis"].state_name:
             case "V":
                 x_limits = [line_edits[f"sts_V_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_V_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["x_start", "x_end", "dx"], ["V", "V", "mV"])]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [3, 3, 2])]
                 self.gui.plot_widget.setLabel("bottom", "V (V)")
             case "amp":
                 x_limits = [line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_amp_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit("mV") for side in ["x_start", "x_end", "dx"]]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [1, 1, 2])]
                 self.gui.plot_widget.setLabel("bottom", "amp (mV)")
             case "f":
                 x_limits = [line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_f_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit("Hz") for side in ["x_start", "x_end", "dx"]]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [1, 1, 2])]
                 self.gui.plot_widget.setLabel("bottom", "f (Hz)")
             case "z":
                 x_limits = [line_edits[f"sts_z_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_z_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit("nm") for side in ["x_start", "x_end", "dx"]]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [2, 2, 2])]
                 self.gui.plot_widget.setLabel("bottom", "z (nm)")
             case _:
                 pass
-
+        
+        y_limits = None
         match self.gui.buttons["sts_y_axis"].state_name:
             case "V":
                 y_limits = [line_edits[f"sts_V_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_V_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["y_start", "y_end", "dy"], ["V", "V", "mV"])]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [3, 3, 2])]
                 self.gui.plot_widget.setLabel("left", "V (V)")
             case "amp":
                 y_limits = [line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_amp_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit("mV") for side in ["y_start", "y_end", "dy"]]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [1, 1, 2])]
                 self.gui.plot_widget.setLabel("left", "amp (mV)")
             case "f":
                 y_limits = [line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_f_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit("Hz") for side in ["y_start", "y_end", "dy"]]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [1, 1, 2])]
                 self.gui.plot_widget.setLabel("left", "f (Hz)")
             case "z":
                 y_limits = [line_edits[f"sts_z_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_z_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit("nm") for side in ["y_start", "y_end", "dy"]]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [2, 2, 2])]
                 self.gui.plot_widget.setLabel("left", "z (nm)")
             case _:
                 self.gui.plot_widget.setLabel("left", "")
@@ -184,19 +217,53 @@ class Spectelligent(QtCore.QObject):
             x_min = min(x_limits)
             x_max = max(x_limits)
             dx = (x_max - x_min) / (x_points - 1)
-            self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)
+            self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)            
+            [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["x_start", "x_end", "dx", "x_points"], [x_min, x_max, dx, x_points])]
+            
+            print(f"{y_limits = }")
             
             if y_limits:
                 y_min = min(y_limits)
                 y_max = max(y_limits)
                 dy = (y_max - y_min) / (y_points - 1)
+                [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["y_start", "y_end", "dy", "y_points"], [y_min, y_max, dy, y_points])]
+                
                 self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.linspace(y_min, y_max, y_points))
                 self.gui.plot_widget.setYRange(y_min - dy, y_max + dy)
+            
             else:
-                self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.array([0], dtype = float))
+                print(f"{np.zeros((1), dtype = float) = }")
+                [line_edits[f"sts_{side}"].setText("") for side in ["y_start", "y_end", "dy", "y_points"]]
+                self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.zeros((1), dtype = float))
+                print(f"Setting Y range")
                 self.gui.plot_widget.setYRange(-1, 1)
-        except:
-            pass
+        except Exception as e:
+            print(f"{e}")
+        return
+
+    def update_waveforms(self) -> None:
+        df = self.gui.lockin_widget.getdf()
+        if not isinstance(df, float | int): return
+        tm = 1000 / df
+        self.gui.waveform_widget.setXRange(0, tm)
+        [mla_bias_1, mla_bias_2] = [self.sct.gui.line_edits[f"V_mla_port{port}"].getValue() for port in [1, 2]]
+        
+        wave_t_ms = np.linspace(0, tm, 500)
+        wave_1_mV = np.full_like(wave_t_ms, 1000 * mla_bias_1, dtype = float)
+        wave_2_mV = np.full_like(wave_t_ms, 1000 * mla_bias_2, dtype = float)
+        
+        for mod in self.gui.lockin_widget.modulators:
+            if not mod.state_button.isChecked(): continue
+            
+            amp_mV = mod.getAmplitude()
+            freq_Hz = mod.getFrequency()
+            w_rad_per_ms = np.pi * freq_Hz / 500
+            
+            if mod.output.state_index == 0: wave_1_mV += amp_mV * np.cos(wave_t_ms * w_rad_per_ms)
+            elif mod.output.state_index == 1: wave_2_mV += amp_mV * np.cos(wave_t_ms * w_rad_per_ms)
+        
+        self.gui.waveforms[0].setData(wave_t_ms, wave_1_mV)
+        self.gui.waveforms[1].setData(wave_t_ms, wave_2_mV)
         return
 
 

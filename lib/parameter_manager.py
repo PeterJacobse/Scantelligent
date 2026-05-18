@@ -15,14 +15,12 @@ class ParameterManager(QtCore.QObject):
     def get(self, parameter_type: str = "frame") -> None:
         sct = self.scantelligent
         
-        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain", "tip_shaper"] and not hasattr(sct, "nanonis"):
+        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain", "tip_shaper", "bias"] and not hasattr(sct, "nanonis"):
             sct.logprint("Cannot get parameters without a Nanonis connection", message_type = "error")
             return
 
         match parameter_type:
-            case "bias":
-                if hasattr(sct, "nanonis"): sct.nanonis.bias_update(unlink = True)
-                if hasattr(sct, "mla"): sct.mla.bias_update(unlink = False)
+            case "bias": sct.nanonis.bias_update(unlink = True)
             case "feedback":
                 sct.nanonis.feedback_update(unlink = False)
                 sct.nanonis.hardware_update(unlink = False)
@@ -31,8 +29,15 @@ class ParameterManager(QtCore.QObject):
             case "grid": sct.nanonis.grid_update(unlink = True)
             case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)                
             case "lockin":
-                if hasattr(sct, "nanonis"): sct.nanonis.lockin_update(name_lookup = True, unlink = True)
-                if hasattr(sct, "mla"): sct.mla.lockin_update(unlink = False)
+                if hasattr(sct, "nanonis"):
+                    sct.nanonis.lockin_update(name_lookup = True, unlink = True)
+                if hasattr(sct, "mla"):
+                    sct.mla.lockin_update(unlink = False)
+                    sct.mla.start_lockin()
+                    sct.mla.get_pixels(1)
+                    sct.mla.stop_lockin()
+            case "mla_bias":
+                if hasattr(sct, "mla"): sct.mla.bias_update(unlink = False)
             case "tip_shaper": sct.nanonis.tip_shaper_update(unlink = True)
             case "spectroscopy": sct.nanonis.sts_update(unlink = True)
             case _: pass
@@ -50,22 +55,16 @@ class ParameterManager(QtCore.QObject):
 
         match parameter_type:
             case "bias":
-                [port1, port2] = [line_edits[name].getValue() for name in ["V_mla_port1", "V_mla_port2"]]
-                if hasattr(sct, "nanonis"):
-                    parameters = {"dict_name": "bias"}
-                    
-                    for parameter in ["V_nanonis (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
-                        quantity = parameter.split()[0]
-                        val = line_edits[quantity].getValue()
-                        if isinstance(val, int | float): parameters.update({parameter: val})
+                parameters = {"dict_name": "bias"}                
+                for parameter in ["V_nanonis (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
+                    quantity = parameter.split()[0]
+                    val = line_edits[quantity].getValue()
+                    if isinstance(val, int | float): parameters.update({parameter: val})
 
-                    sct.nanonis.bias_update(parameters, unlink = True)
-                
-                if hasattr(sct, "mla"): sct.mla.bias_update({"dict_name": "bias", "port_1 (V)": port1, "port_2 (V)": port2})
+                sct.nanonis.bias_update(parameters, unlink = True)
 
             case "feedback":
-                parameters = {"dict_name": "feedback"}
-                
+                parameters = {"dict_name": "feedback"}                
                 for parameter in ["I_fb (pA)", "p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]:
                     quantity = parameter.split()[0]
                     val = line_edits[quantity].getValue()
@@ -99,6 +98,10 @@ class ParameterManager(QtCore.QObject):
                 parameters = {"dict_name": "speeds", "v_fwd (nm/s)": v_fwd_nm_per_s, "v_bwd (nm/s)": v_bwd_nm_per_s, "v_xy (nm/s)": v_tip_nm_per_s, "v_tip (nm/s)": v_tip_nm_per_s}
                 sct.nanonis.speeds_update(parameters, unlink = True)
             
+            case "mla_bias":
+                [port1_V, port2_V] = [line_edits[f"V_mla_port{index}"].getValue() for index in [1, 2]]
+                sct.mla.bias_update({"port_1 (V)": port1_V, "port_2 (V)": port2_V})
+            
             case "lockin":
                 if hasattr(sct, "nanonis"):
                     [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{index + 1}"].state_index) for index in range(2)]
@@ -113,25 +116,15 @@ class ParameterManager(QtCore.QObject):
                                 "mla_mod1": {"on": mla_mod1_on, "frequency (Hz)": mla1_f, "amplitude (mV)": mla1_mV, "phase (deg)": mla1_phi}
                                 }
                     sct.nanonis.lockin_update(parameters, unlink = True)
+                
                 if hasattr(sct, "mla"):
-                    [tm, df] = [line_edits[quantity].getValue() for quantity in ["mla_t", "mla_df"]]
-                    parameters = {"dict_name": "time_constant", "df (Hz)": df, "tm (ms)": tm}
-                    sct.mla.time_constant_update(parameters, unlink = False)
-                    
-                    [mod0_on, mod1_on, mod2_on, mod3_on] = [bool(sct.gui.buttons[f"mla_mod{index}"].state_index) for index in range(4)]
-                    [mod0_port, mod1_port, mod2_port, mod3_port] = [sct.gui.comboboxes[f"mla_mod{index}"].currentIndex() + 1 for index in range(4)]
-                    
-                    parameters = {"dict_name": "outputs", "mod0": {"on": mod0_on, "port": mod0_port}, "mod1": {"on": mod1_on, "port": mod1_port},
-                                  "mod2": {"on": mod2_on, "port": mod2_port}, "mod3": {"on": mod3_on, "port": mod3_port}}
-                    sct.mla.outputs_update(parameters, unlink = False)
-                    
-                    [mod0_f, mod1_f, mod2_f, mod3_f] = [line_edits[f"mla_mod{index}_f"].getValue() for index in range(4)]
-                    parameters = {"dict_name": "frequencies", "frequencies (Hz)": [mod0_f, mod1_f, mod2_f, mod3_f]}
-                    sct.mla.frequencies_update(parameters, unlink = False)
-                    
-                    [mod0_amp, mod1_amp, mod2_amp, mod3_amp] = [line_edits[f"mla_mod{index}_amp"].getValue() for index in range(4)]
-                    parameters = {"dict_name": "amplitudes", "amplitudes (mV)": [mod0_amp, mod1_amp, mod2_amp, mod3_amp]}
-                    sct.mla.amplitudes_update(parameters, unlink = False)
+                    df = sct.spt.gui.lockin_widget.getdf()
+                    frequencies = sct.spt.gui.lockin_widget.getFrequencies()
+                    amplitudes = sct.spt.gui.lockin_widget.getAmplitudes()
+                    phases = sct.spt.gui.lockin_widget.getPhases()
+                    outputs = sct.spt.gui.lockin_widget.getOutputs()
+                    inputs = sct.spt.gui.lockin_widget.getInputs()
+                    sct.mla.lockin_update({"df (Hz)": df, "frequencies (Hz)": frequencies, "amplitudes (mV)": amplitudes, "phases (deg)": phases, "output_masks": outputs, "input_mask": inputs}, unlink = False)
             
             case "tip_shaper":
                 sct.nanonis.tip_shaper_update(unlink = True)
@@ -259,50 +252,28 @@ class ParameterManager(QtCore.QObject):
 
             case "mla_bias":
                 biases = [parameters.get(f"port_{index + 1} (V)") for index in range(2)]
-                [line_edits[f"V_mla_port{index + 1}"].setValue(val) for index, val in enumerate(biases)]
+                [line_edits[f"V_mla_port{index + 1}"].setValue(val, edited_color = False) for index, val in enumerate(biases)]
 
-            case "pixel":
-                pixel = parameters.get("pixel")
+            case "pixels":
+                pixel = parameters.get("pixels")
                 if pixel.ndim > 1: pixel = pixel[:, 0]
                 abs_values = np.abs(2 * pixel)
-                #arg_values = np.rad2deg(np.angle(pixel))
-                #[line_edits[f"demod_amplitude_{index}"].setValue(value * 1000) for index, value in enumerate(abs_values)]
-                #[line_edits[f"demod_angle_{index}"].setValue(value) for index, value in enumerate(abs_values)]
+                arg_values = np.rad2deg(np.angle(pixel))
                 
-                [sct.spt.gui.mla_mod[idx].readTone(pixel[idx] * 1000) for idx in range(32)]
+                sct.spt.gui.lockin_widget.setMeasuredAmplitudes(abs_values)
+                sct.spt.gui.lockin_widget.setMeasuredPhases(arg_values)
                 sct.amplitudes.emit(100 * abs_values)
-
-            case "time_constant":
-                [line_edits[f"mla_{quantity}"].setValue(value) for quantity, value in zip(["t", "df"], [parameters.get(key) for key in ["tm (ms)", "df (Hz)"]])]
-                sct.spt.gui.lockin_widget.setdf(parameters.get("tm (ms)"))
 
             case "frequencies":
                 freqs = parameters.get("frequencies (Hz)")
-                [line_edits[f"mla_mod{index}_f"].setValue(value) for index, value in enumerate(freqs[:4])]
-                [line_edits[f"demod_frequency_{index}"].setValue(value) for index, value in enumerate(freqs)]
-                df = line_edits["mla_df"].getValue()
-                if df: [line_edits[f"mla_mod{index}_n"].setValue(value / df) for index, value in enumerate(freqs[:4])]
                 sct.frequencies.emit(freqs)
                 sct.spt.gui.lockin_widget.setFrequencies(freqs)
             
-            case "amplitudes":
-                amplitudes = parameters.get("amplitudes (mV)")
-                [line_edits[f"mla_mod{index}_amp"].setValue(value) for index, value in enumerate(amplitudes[:4])]
-                sct.spt.gui.lockin_widget.setAmplitudes(amplitudes)
-            
-            case "phases":
-                phases = parameters.get("phases (deg)")
-                [line_edits[f"mla_mod{index}_phase"].setValue(value) for index, value in enumerate(phases[:4])]
-                sct.spt.gui.lockin_widget.setPhases(phases)
-            
-            case "outputs":
-                output_mask = parameters.get("output_mask")
-                for mod_index in range(4):
-                    channel_mask = output_mask[:, mod_index]
-                    if channel_mask[0] + channel_mask[1] > 0:
-                        sct.gui.buttons[f"mla_mod{mod_index}"].setState(1)
-                        if channel_mask[0] == 1: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(0)
-                        else: sct.gui.comboboxes[f"mla_mod{mod_index}"].setCurrentIndex(1)
+            case "time_constant": sct.spt.gui.lockin_widget.setdf(parameters.get("df (Hz)"))
+            case "amplitudes": sct.spt.gui.lockin_widget.setAmplitudes(parameters.get("amplitudes (mV)"))            
+            case "phases": sct.spt.gui.lockin_widget.setPhases(parameters.get("phases (deg)"))            
+            case "outputs": sct.spt.gui.lockin_widget.setOutputs(parameters.get("output_masks"))
+            case "inputs": sct.spt.gui.lockin_widget.setInputs(parameters.get("input_mask"))
     
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)
@@ -362,10 +333,12 @@ class ParameterManager(QtCore.QObject):
             case "bias":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
                                                                                  [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
-                [port1, port2] = [parameters.get(key) for key in ["port_1 (V)", "port_2 (V)"]]
-                if sct.gui.buttons["voltage_lock"].isChecked() and hasattr(sct, "mla") and hasattr(sct.mla, "mla"):
-                    V_nanonis = parameters.get("V_nanonis (V)")
-                    # if isinstance(V_nanonis, float | int): sct.mla.bias_update({"port_1 (V)": V_nanonis, "port_2 (V)": V_nanonis})
+                if sct.gui.buttons["voltage_lock"].isChecked() and hasattr(sct, "mla"):
+                    try:
+                        V_nanonis = parameters.get("V_nanonis (V)")
+                        sct.mla.bias_update({"port_1 (V)": V_nanonis, "port_2 (V)": V_nanonis})
+                    except:
+                        pass
 
             case "feedback":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "i_gain", "t_const"], [parameters.get(name) for name in ["p_gain (pm)", "i_gain (nm/s)", "t_const (us)"]])]

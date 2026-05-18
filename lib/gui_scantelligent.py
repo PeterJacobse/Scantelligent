@@ -306,7 +306,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes")
         }
         
-        for parameter_type in ["bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
+        for parameter_type in ["bias", "mla_bias", "keithley_bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
             buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
             buttons.update({f"set_{parameter_type}_parameters": MSB(tooltip = "Set the new parameters", icon = icons.get("set"))})
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
@@ -574,7 +574,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.sts_amp_rg = RG(product = [line_edits["sts_amp_start"], line_edits["sts_amp_end"]], factors = [line_edits["sts_amp_points"], line_edits["sts_damp"]],
                              lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)        
         self.tone_rgs = [RG(product = line_edits[f"mla_mod{index}_f"], factors = [line_edits["mla_df"], line_edits[f"mla_mod{index}_n"]],
-                            lock = "factor0", try_to_retain = "product", factor1_warn_if_not_integer = True) for index in range(4)]
+                            lock = "factor0", try_to_retain = "product") for index in range(4)]
         self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "factor0")
         self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "factor0",
                           factor0_constraint = lambda value: int(round(value / 16) * 16))
@@ -794,19 +794,17 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         return consoles
 
     def make_sliders(self) -> dict:
-        SL = SCTWidgets.Slider
         PS = SCTWidgets.PhaseSlider
         SLE = SCTWidgets.SliderLineEdit
         
         sliders = {
-            "tip": SL(tooltip = "tip height (nm)", orientation = "v"),
-            "volume": SLE(tooltip = "volume", orientation = "h", limits = [0, 100], value = 20, unit = "%", minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100")),
+            "volume": SLE(tooltip = "volume", slider_orientation = "h", layout_orientation = "h", limits = [0, 100], value = 20, unit = "%", minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100")),
             "phase": PS(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))
         }
 
         for tone in range(32):
             value = 100 if tone == 0 else 0
-            sle = SLE(tooltip = f"relative volume of tone {tone}", orientation = "v", limits = [0, 100], value = value, digits = 0, unit = "%",
+            sle = SLE(tooltip = f"relative volume of tone {tone}", slider_orientation = "h", layout_orientation = "v", limits = [0, 100], value = value, digits = 0, unit = "%",
                       minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100"))
             
             self.labels[f"demod_index_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -951,7 +949,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         
         # Bias
-        [layouts["bias_getset"].addWidget(widget) for widget in [buttons["get_bias_parameters"], buttons["set_bias_parameters"], comboboxes["bias"]]]
+        [layouts["bias_getset"].addWidget(buttons[f"{key}_bias_parameters"]) for key in ["get", "set", "get_mla", "set_mla", "get_keithley", "set_keithley"]]
         b_layout = layouts["bias"]
         b_layout.addWidget(labels["nanonis"])
         [b_layout.addWidget(labels[name], 0, index + 2) for index, name in enumerate(["mla", "keithley"])]

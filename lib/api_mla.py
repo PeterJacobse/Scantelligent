@@ -48,7 +48,7 @@ class MLAAPI(QtCore.QObject):
         self.df = 100 # Defaults, to be overwritten by the first call to time_constant_update()
         self.tm = 10
         self.V = [0, 0]
-        self.output_masks = np.zeros((2, 32), dtype = int)
+        self.output_masks = np.zeros((32, 2), dtype = int)
         self.input_mask = np.zeros((32), dtype = int)
         self.status = "online"
         self.status_callback(self.status)        
@@ -137,13 +137,14 @@ class MLAAPI(QtCore.QObject):
             rng = np.random.default_rng()
             pix = rng.random((32, number), dtype = float) + 1j * rng.random((32, number), dtype = float)
             if average: pix = np.average(pix, axis = 1)
+            self.parameters.emit({"dict_name": "pixels", "pixels": pix})
             return pix
         
         if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
         if data_format == "phase": (pix, _) = self.mla.lockin.get_pixels(number, data_format == "phase", unit = "deg")
         else: (pix, _) = self.mla.lockin.get_pixels(number)
         if average: pix = np.average(pix, axis = 1)
-        self.parameters.emit({"dict_name": "pixel", "pixel": pix})
+        self.parameters.emit({"dict_name": "pixels", "pixels": pix})
         return pix
     
     def get_phases(self, number_pixels: int = 1) -> np.ndarray:
@@ -226,21 +227,27 @@ class MLAAPI(QtCore.QObject):
             
             # amplitudes update
             amplitudes = parameters.get("amplitudes (mV)", None)
-            if isinstance(amplitudes, list | np.ndarray): (amplitudes_dict, error) = self.amplitudes_update({"frequencies (Hz)": frequencies}, verbose = verbose)
+            if isinstance(amplitudes, list | np.ndarray): (amplitudes_dict, error) = self.amplitudes_update({"amplitudes (mV)": amplitudes}, verbose = verbose)
             else: (amplitudes_dict, error) = self.amplitudes_update(verbose = verbose)
             parameters_dict.update(amplitudes_dict)
             
             # phases update
             phases = parameters.get("phases (deg)", None)
-            if isinstance(phases, list | np.ndarray): (phase_dict, error) = self.phases_update({"phases (deg)": phases}, verbose = verbose)
+            if isinstance(phases, list | np.ndarray): (phases_dict, error) = self.phases_update({"phases (deg)": phases}, verbose = verbose)
             else: (phases_dict, error) = self.phases_update(verbose = verbose)
             parameters_dict.update(phases_dict)
             
             # outputs update
-            outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "mod0", "mod1", "mod2", "mod3"]}
-            if len(outputs_keys) > 0:(outputs_dict, error) = self.outputs_update(outputs_keys, verbose = verbose)
+            outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "output_masks", "mod0", "mod1", "mod2", "mod3"]}
+            if len(outputs_keys) > 0: (outputs_dict, error) = self.outputs_update(outputs_keys, verbose = verbose)
             else: (outputs_dict, error) = self.outputs_update(verbose = verbose)
             parameters_dict.update(outputs_dict)
+
+            # outputs update
+            inputs_keys = {key: value for key, value in parameters.items() if key in ["input_mask"]}
+            if len(inputs_keys) > 0: (inputs_dict, error) = self.inputs_update(inputs_keys, verbose = verbose)
+            else: (inputs_dict, error) = self.inputs_update(verbose = verbose)
+            parameters_dict.update(inputs_dict)
             
             # bias update
             (bias_dict, error) = self.bias_update(verbose = verbose)
@@ -277,6 +284,10 @@ class MLAAPI(QtCore.QObject):
                 # Read            
                 self.tm = self.mla.lockin.get_Tm() * 1000 # Default unit in Scantelligent is ms, not s
                 self.df = self.mla.lockin.get_df()
+            else:
+                if df:
+                    self.df = df
+                    self.tm = 1000 / df
             
             tc_dict.update({"tm (ms)": self.tm, "df (Hz)": self.df})
             self.parameters.emit(tc_dict)
@@ -445,9 +456,11 @@ class MLAAPI(QtCore.QObject):
             
             if not self.status == "running" and not self.test_mode: self.link()
             
-            # Read the modulator data
+            # Read the parameters
             blank = parameters.get("blank", False)
-            if blank: self.output_masks *= 0
+            if blank: self.output_masks *= 0            
+            output_masks = parameters.get("output_masks", False)
+            if isinstance(output_masks, np.ndarray) and output_masks.shape == self.output_masks.shape: self.output_masks = output_masks
             
             mod0 = parameters.get("mod0", None)
             if not mod0: mod0 = parameters.get("mla_mod0", None)
@@ -458,12 +471,10 @@ class MLAAPI(QtCore.QObject):
             mod3 = parameters.get("mod3", None)
             if not mod1: mod1 = parameters.get("mla_mod3", None)
             
-            if mod0 or mod1 or mod2 or mod3: self.output_masks *= 0 # Reset the output masks
-            
             for index, mod in enumerate([mod0, mod1, mod2, mod3]):
                 if not isinstance(mod, dict):
-                    if self.output_masks[0, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 1}})
-                    elif self.output_masks[1, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 2}})
+                    if self.output_masks[index, 0]: outputs_dict.update({f"mod{index}": {"on": True, "port": 1}})
+                    elif self.output_masks[index, 1]: outputs_dict.update({f"mod{index}": {"on": True, "port": 2}})
                     else: outputs_dict.update({f"mod{index}": {"on": False}})
                     continue
                 chan = mod.get("channel", None) # Channel, signal and port are all considered valid keywords to indicate the output port
@@ -474,13 +485,13 @@ class MLAAPI(QtCore.QObject):
                     continue # 0 means that the modulator signal is not applied to any port, 1 means applied to port 1, and 2 is applied to port 2
 
                 if mod.get("on"):
-                    self.output_masks[chan - 1, index] = 1
+                    self.output_masks[index, chan - 1] = 1
                     outputs_dict.update({f"mod{index}": {"on": True, "port": chan}})
             
             if not self.test_mode:
-                self.mla.lockin.set_output_mask(self.output_masks[0], port = 1)
-                self.mla.lockin.set_output_mask(self.output_masks[1], port = 2)
-            outputs_dict.update({"output_mask": self.output_masks})
+                self.mla.lockin.set_output_mask(self.output_masks[:, 0], port = 1)
+                self.mla.lockin.set_output_mask(self.output_masks[:, 1], port = 2)
+            outputs_dict.update({"output_masks": self.output_masks})
             self.parameters.emit(outputs_dict)
             
             if verbose and len(parameters) < 1: self.logprint(f"{outputs_dict}", message_type = "result")
@@ -502,32 +513,16 @@ class MLAAPI(QtCore.QObject):
             
             if not self.status == "running" and not self.test_mode: self.link()
             
-            mask = parameters.get("mask")
-            """
-            for index, mod in enumerate([mod0, mod1, mod2, mod3]):
-                if not isinstance(mod, dict):
-                    if self.output_masks[0, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 1}})
-                    elif self.output_masks[1, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 2}})
-                    else: outputs_dict.update({f"mod{index}": {"on": False}})
-                    continue
-                chan = mod.get("channel", None) # Channel, signal and port are all considered valid keywords to indicate the output port
-                if not chan: chan = mod.get("signal", None)
-                if not chan: chan = mod.get("port", None)
-                if chan not in [1, 2]:
-                    outputs_dict.update({f"mod{index}": {"on": False}})
-                    continue # 0 means that the modulator signal is not applied to any port, 1 means applied to port 1, and 2 is applied to port 2
-
-                if mod.get("on"):
-                    self.output_masks[chan - 1, index] = 1
-                    outputs_dict.update({f"mod{index}": {"on": True, "port": chan}})
+            mask = parameters.get("input_mask", None)
+            if isinstance(mask, list): mask = np.array(mask, dtype = int)
+            if isinstance(mask, np.ndarray) and mask.shape == self.input_mask.shape:
+                self.input_mask = mask
+                if not self.test_mode: self.mla.lockin.set_input_multiplexer(self.input_mask)
             
-            if not self.test_mode:
-                self.mla.lockin.set_output_mask(self.output_masks[0], port = 1)
-                self.mla.lockin.set_output_mask(self.output_masks[1], port = 2)
-            outputs_dict.update({"output_mask": self.output_masks})
-            self.parameters.emit(outputs_dict)
-            """
-            #if verbose and len(parameters) < 1: self.logprint(f"{outputs_dict}", message_type = "result")
+            inputs_dict.update({"input_mask": self.input_mask})
+            self.parameters.emit(inputs_dict)
+            
+            if verbose and len(parameters) < 1: self.logprint(f"{inputs_dict}", message_type = "result")
         
         except Exception as e: error = e
         finally:
