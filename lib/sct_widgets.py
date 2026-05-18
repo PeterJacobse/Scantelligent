@@ -246,6 +246,9 @@ class SCTWidgets:
                 self.blockSignals(False)
             return
 
+        def getItems(self) -> list:
+            return [self.itemText(index) for index in range(self.count())]
+
         def toggleIndex(self, delta_index) -> None:
             if not isinstance(delta_index, int) or isinstance(delta_index, float): return
             delta_i = int(delta_index)

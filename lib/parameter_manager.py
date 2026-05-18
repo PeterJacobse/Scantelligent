@@ -460,16 +460,6 @@ class ParameterManager(QtCore.QObject):
                 if "Current (A)" in parameters.keys():
                     current_value = parameters["Current (A)"]
 
-            case "sts":
-                [V_start, V_end] = parameters.get("limits (V)")
-                if V_start: [line_edits[name].setValue(value) for name, value in zip(["sts_V_start", "sts_V_end"], [V_start, V_end])]
-                
-                [n_points, t_int_s, t_settle_s] = [parameters.get(key) for key in ["num_points", "t_integration (ms)", "t_settle (ms)"]]
-                t_int_ms = t_int_s * 1000
-                t_settle_ms = t_settle_s * 1000
-                [line_edits[name].setValue(value) for name, value in zip(["sts_V_points"], [n_points])]
-                sct.gui.sts_V_rg.updateFactor1()
-
             case "gains":
                 [p_gain_ms, t_const_us, i_gain_nm_per_s] = [parameters.get(parameter) for parameter in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
 

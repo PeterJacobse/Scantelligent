@@ -69,7 +69,7 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
         return
 
-    def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, verbose: bool = True, autophase: bool = True) -> str:
+    def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = True) -> str:
         """
         Returns which device the STM bias cable is connected to, and autophases the lockin amplifier for the corresponding device
         """
@@ -79,7 +79,7 @@ class BaseExperiment(QObject):
         
         lockin_signal_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)"]
         (signal_dict, error) = nn.signals_update(lockin_signal_names, verbose = verbose) # Retrieve the signal indices for more efficient lookup
-        lockin_signal_indices = [signal_dict.get(signal)[0] for signal in lockin_signal_names]        
+        lockin_signal_indices = [signal_dict.get(signal)[0] for signal in lockin_signal_names]
         (lockin, error) = nn.lockin_update({"mod1": {"on": True, "amplitude (mV)": amplitude_mV, "frequency (Hz)": frequency_Hz, "phase (deg)": 0}, "mod2": {"on": True}}, verbose = verbose)
         (signal_dict, error) = nn.signals_update(lockin_signal_indices, verbose = False)
         [li_x_pA, li_y_pA] = [signal_dict[index][1] * 1E12 for index in lockin_signal_indices]
@@ -89,29 +89,34 @@ class BaseExperiment(QObject):
             if verbose: self.logprint(f"I cannot measure a response from Nanonis from the applied modulation. I will check if the cable is connected to the MLA instead.", message_type = "warning")
             
             try:
-                if not mla.status == "running": mla.link()
+                # Start up the MLA if it wasn't started yet. Save the current parameters to self.start_parameters so the MLA can be reset later
+                if not "mla" in self.start_parameters.keys():
+                    (mla_parameters, error) = self.mla.initialize(verbose = False)
+                    self.start_parameters.update({"mla": mla_parameters})
+                [time_constant, mla_bias, amplitudes_dict, frequencies_dict, outputs_dict] = [self.start_parameters["mla"].get(key) for key in ["time_constant", "mla_bias", "amplitudes", "frequencies", "outputs"]]
                 
-                mla.time_constant_update({"df (Hz)": 600}, verbose = verbose)
+                # Set parameters for conenction test
                 output_numbers = np.arange(0, 32)
                 output_numbers[0] = 1
-                mla.frequencies_update({"numbers": output_numbers}, verbose = verbose)
                 input_multiplexer = np.full((32), 2, dtype = int)
                 input_multiplexer[0] = 1
                 mla.set_input_multiplexer(input_multiplexer)
                 amplitudes = np.zeros((32), dtype = float)
                 amplitudes[0] = 200
-                mla.amplitudes_update({"amplitudes (mV)": 200}, verbose = verbose)
-                mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}, verbose = verbose)
+                mla.lockin_update({"df (Hz)": frequency_Hz, "numbers": output_numbers, "amplitudes (mV)": amplitudes}, verbose = verbose)
+                mla.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}, verbose = verbose)
                 
                 mla.start_lockin()
-                mla.get_pixels(1)
-                pix = mla.get_pixels(10, average = True)
+                
+                mla.get_pixels(2)
+                (pix, pix_var) = mla.get_pixels(100, average = True)
                 mla.stop_lockin()
-                li_complex_V = pix[1] / 2
+                li_complex_V = pix[1]
+                print(f"{li_complex_V = }")
                 
                 mla.outputs_update({"blank": True}, verbose = verbose)
                 
-                if np.abs(li_complex_V) < .01:
+                if np.abs(li_complex_V) < .1:
                     if verbose: self.logprint(f"I cannot measure a response from the MLA either!", message_type = "error")
                     return "none"
                 
@@ -131,12 +136,24 @@ class BaseExperiment(QObject):
                         self.logprint(f"The tip-sample capacitance as measured by the MLA is {cap_fC:.4f} fC", message_type = "message")
                     else:
                         self.logprint(f"I could not read the tia gain and therefore I do not know the tip-sample capacitance, but the voltage amplitude response is {np.abs(li_complex_V):.4f} V", message_type = "message")
+                                
+                # Reset the MLA
+                try:
+                    mla.outputs_update({"blank": True}, verbose = verbose)
+                    mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"),
+                                        "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "outputs": outputs_dict.get("outputs")}, verbose = verbose)
+                except Exception as e:
+                    self.logprint(f"{type(e)}: {e}", message_type = "error")
                 return "mla"
             
-            except:
-                try: mla.outputs_update({"blank": True}, verbose = verbose)
-                except: pass
-                self.logprint("Problem ancountered while trying to run the MLA.", message_type = "error")
+            except Exception as e:
+                try:
+                    mla.outputs_update({"blank": True}, verbose = verbose)
+                    mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"),
+                                        "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "outputs": outputs_dict.get("outputs")}, verbose = verbose)
+                except Exception as e2:
+                    self.logprint(f"{type(e2)}: {e2}", message_type = "error")
+                self.logprint(f"Problem ancountered while trying to run the MLA. {type(e)}: {e}", message_type = "error")
                 return "none"
         
         if autophase:
@@ -187,7 +204,7 @@ class BaseExperiment(QObject):
             self.mla.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False) # Frequencies set in units of numbers of whole oscillations per period
             
             self.mla.get_pixels(settle_pixels)
-            pix = measurement()
+            (pix, pix_var) = measurement()
             
             a1refabs = 1000 * np.abs(pix[0]) # Output directly copied to the MLA port 1 in
             a1refarg = np.angle(pix[0])
@@ -246,7 +263,7 @@ class BaseExperiment(QObject):
             self.mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
             
             self.mla.get_pixels(settle_pixels)
-            pix_V = measurement()
+            (pix_V, pix_V_var) = measurement()
             
             pix_pA = pix_V / tia_gain_V_per_pA
             pix_nS = pix_pA / amp_mV
@@ -306,7 +323,7 @@ class BaseExperiment(QObject):
             self.mla.bias_update({"port_1 (V)": voltage}, verbose = False)
             
             self.mla.get_pixels(settle_pixels)
-            pix_V = measurement()
+            (pix_V, pix_V_var) = measurement()
             
             pix_pA = pix_V / tia_gain_V_per_pA
             pix_nS = pix_pA / mod_voltage_mV
@@ -333,8 +350,8 @@ class BaseExperiment(QObject):
                 (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
                 self.start_parameters.update({"nanonis": nanonis_parameters})
             
-            if hasattr(self, "mla") and hasattr(self.mla, "lockin"):
-                (mla_parameters, error) = self.mla.lockin_update()
+            if hasattr(self, "mla") and self.mla.status == "running":
+                (mla_parameters, error) = self.mla.initialize(verbose = False)
                 self.start_parameters.update({"mla": mla_parameters})
             
             self.output_file = h5py.File(self.experiment_file, "w")

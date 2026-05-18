@@ -119,7 +119,8 @@ class Scantelligent(QtCore.QObject):
         # Comboboxes
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
         experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
-        self.experiments = [experiment for experiment in experiments if not experiment in ["spectroscopy"]]
+        self.experiments = [experiment for experiment in experiments if not experiment in ["spectroscopy", "auto_approach"]]
+        self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
         
@@ -1022,8 +1023,11 @@ class Scantelligent(QtCore.QObject):
             case "load": # Load the experiment
                 if not experiment_name: experiment_name = self.gui.comboboxes["experiment"].currentText()
                 else:
-                    try: self.gui.comboboxes["experiment"].setCurrentText(experiment_name)
-                    except: pass
+                    try:
+                        if experiment_name in self.gui.comboboxes["experiment"].getItems(): self.gui.comboboxes["experiment"].setCurrentText(experiment_name)
+                        else: self.gui.comboboxes["experiment"].setCurrentText("")
+                    except:
+                        pass
                 experiment_path = os.path.join(self.paths["experiments_folder"], experiment_name + ".py")
                 if not os.path.isfile(experiment_path):
                     self.logprint(f"The selected experiment was not found in {self.paths["experiments_folder"]}", "error")

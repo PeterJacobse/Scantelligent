@@ -61,7 +61,8 @@ class MLAAPI(QtCore.QObject):
             self.mla.connect(server_text_callback = lambda text: self.logprint(text, message_type = "result"), ping_attempts = 4)
             self.status = "running"
             self.set_defaults()
-            try: self.status_callback(self.status)
+            try:
+                self.status_callback(self.status)
             except Exception as e:
                 self.status = "offline"
                 self.status_callback(self.status)
@@ -87,6 +88,9 @@ class MLAAPI(QtCore.QObject):
             try: self.status_callback(self.status)
             except: pass
         return f"MLA status: {self.status}"
+
+    def initialize(self, verbose: bool = True) -> tuple[dict, bool | str]:
+        return self.lockin_update(verbose = verbose)
 
     def start_lockin(self) -> None:
         self.lockin_running = True
@@ -119,9 +123,7 @@ class MLAAPI(QtCore.QObject):
         numbers[0] = 1
         input_mask = np.full((self.mla.lockin.nr_input_freq), 2, dtype = int)
         input_mask[0] = 1
-        self.lockin_update({"df (Hz)": 220, "numbers": numbers, "amplitudes (mV)": {0: 100}}, verbose = False)
-        self.set_input_multiplexer(input_mask)
-        self.autophase()
+        self.lockin_update({"df (Hz)": 220, "numbers": numbers, "amplitudes (mV)": {0: 100}, "input_mask": input_mask}, verbose = False)
         return
 
     def reset_outputs(self) -> None:
@@ -130,7 +132,11 @@ class MLAAPI(QtCore.QObject):
             self.logprint(f"{e}")
         return
 
-    def get_pixels(self, number: int = 1, average: bool = False, data_format: str = "IQ", wait_for_new: bool = True) -> np.ndarray:
+    def get_pixels(self, number: int = 1, average: bool = False, bessel_correct: bool = True, data_format: str = "IQ", wait_for_new: bool = True) -> tuple[np.ndarray, None | np.ndarray]:
+        """
+        Returns MLA lockin measurements. When average is False, the first element returned is a 2D array comprising a list of pixels.
+        When average is True, the list of pixels is turned into an average and the variance is returned as the second element.
+        """
         if not self.lockin_running: raise Exception("Requesting locking data while it is not running. Call mla.start_lockin() first.")
         
         if self.test_mode:
@@ -143,9 +149,14 @@ class MLAAPI(QtCore.QObject):
         if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
         if data_format == "phase": (pix, _) = self.mla.lockin.get_pixels(number, data_format == "phase", unit = "deg")
         else: (pix, _) = self.mla.lockin.get_pixels(number)
-        if average: pix = np.average(pix, axis = 1)
+        
+        pix_var = None
+        if average:
+            pix_var = np.var(pix, axis = 1, ddof = int(bessel_correct))
+            pix = np.average(pix, axis = 1)
+        
         self.parameters.emit({"dict_name": "pixels", "pixels": pix})
-        return pix
+        return (pix, pix_var)
     
     def get_phases(self, number_pixels: int = 1) -> np.ndarray:
         return self.get_pixels(number = number_pixels, average = True, data_format = "phase")
@@ -176,19 +187,19 @@ class MLAAPI(QtCore.QObject):
 
     def autophase(self, amplitude_mV: float = 500) -> None:
         if isinstance(amplitude_mV, float | int): self.amplitudes_update({"amplitudes (mV)": {0: amplitude_mV}})
-        self.outputs_update({"mod0": {"port": 1, "on": True}})
+        self.outputs_update({"mod0": {"port": 1, "on": True}, "blank": True})
 
-        (phase_dict, error) = self.phases_update()
-        phases = phase_dict.get("phases (deg)")
+        (phases_dict, error) = self.phases_update()
+        phases = phases_dict.get("phases (deg)")
 
         self.start_lockin()
         for iteration in range(3):
-            pix = self.get_pixels(12, average = True, wait_for_new = True)
+            (pix, pix_var) = self.get_pixels(12, average = True, wait_for_new = True)
             measured_phases = np.rad2deg(np.angle(pix))
             delta_phase = 90 - measured_phases[1]
             drive_phase = phases[0] + delta_phase
-            (phase_dict, error) = self.phases_update({"phases (deg)": {0: drive_phase}})
-            phases = phase_dict.get("phases (deg)")
+            (phases_dict, error) = self.phases_update({"phases (deg)": {0: drive_phase}})
+            phases = phases_dict.get("phases (deg)")
         self.stop_lockin()
         self.outputs_update({"blank": True})
         return
@@ -198,7 +209,7 @@ class MLAAPI(QtCore.QObject):
     # 'Update' methods that both take and apply parameters supplied to them and read from the mla
     def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
-        parameters_dict = {"dict_name": "parameters"}
+        parameters_out = {"dict_name": "mla_parameters"}
         
         try:
             if verbose:
@@ -213,7 +224,8 @@ class MLAAPI(QtCore.QObject):
             if isinstance(df, float | int): (time_constant, error) = self.time_constant_update({"df (Hz)": df}, verbose = verbose)
             elif isinstance(tm, float | int): (time_constant, error) = self.time_constant_update({"tm (ms)": tm}, verbose = verbose)
             else: (time_constant, error) = self.time_constant_update(verbose = verbose)
-            parameters_dict.update(time_constant)
+            if error: raise Exception(error)
+            else: parameters_out.update({time_constant.get("dict_name"): time_constant})
             
             # frequencies_update
             frequencies = parameters.get("frequencies (Hz)", None)
@@ -223,43 +235,51 @@ class MLAAPI(QtCore.QObject):
             elif isinstance(numbers, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"numbers": numbers}, verbose = verbose)
             elif isinstance(times, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"times (ms)": times}, verbose = verbose)
             else: (frequencies_dict, error) = self.frequencies_update(verbose = verbose)
-            parameters_dict.update(frequencies_dict)
+            if error: raise Exception(error)
+            else: parameters_out.update({frequencies_dict.get("dict_name"): frequencies_dict})
             
             # amplitudes update
             amplitudes = parameters.get("amplitudes (mV)", None)
             if isinstance(amplitudes, list | np.ndarray): (amplitudes_dict, error) = self.amplitudes_update({"amplitudes (mV)": amplitudes}, verbose = verbose)
             else: (amplitudes_dict, error) = self.amplitudes_update(verbose = verbose)
-            parameters_dict.update(amplitudes_dict)
+            if error: raise Exception(error)
+            else: parameters_out.update({amplitudes_dict.get("dict_name"): amplitudes_dict})
             
             # phases update
             phases = parameters.get("phases (deg)", None)
             if isinstance(phases, list | np.ndarray): (phases_dict, error) = self.phases_update({"phases (deg)": phases}, verbose = verbose)
             else: (phases_dict, error) = self.phases_update(verbose = verbose)
-            parameters_dict.update(phases_dict)
+            if error: raise Exception(error)
+            else: parameters_out.update({phases_dict.get("dict_name"): phases_dict})
             
             # outputs update
             outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "output_masks", "mod0", "mod1", "mod2", "mod3"]}
             if len(outputs_keys) > 0: (outputs_dict, error) = self.outputs_update(outputs_keys, verbose = verbose)
             else: (outputs_dict, error) = self.outputs_update(verbose = verbose)
-            parameters_dict.update(outputs_dict)
+            if error: raise Exception(error)
+            else: parameters_out.update({outputs_dict.get("dict_name"): outputs_dict})
 
             # outputs update
             inputs_keys = {key: value for key, value in parameters.items() if key in ["input_mask"]}
             if len(inputs_keys) > 0: (inputs_dict, error) = self.inputs_update(inputs_keys, verbose = verbose)
             else: (inputs_dict, error) = self.inputs_update(verbose = verbose)
-            parameters_dict.update(inputs_dict)
+            if error: raise Exception(error)
+            else: parameters_out.update({inputs_dict.get("dict_name"): inputs_dict})
             
             # bias update
-            (bias_dict, error) = self.bias_update(verbose = verbose)
-            parameters_dict.update(bias_dict)
+            bias_keys = {key: value for key, value in parameters.items() if key in ["port_1 (V)", "port_2 (V)"]}
+            if len(bias_keys) > 0: (bias_dict, error) = self.bias_update(bias_keys, verbose = verbose)
+            else: (bias_dict, error) = self.bias_update(verbose = verbose)
+            if error: raise Exception(error)
+            else: parameters_out.update({bias_dict.get("dict_name"): bias_dict})
             
-            if verbose and len(parameters) < 1: self.logprint(f"{parameters}", message_type = "result", verbose = verbose)
+            if verbose and len(parameters) < 1: self.logprint(f"{parameters_out}", message_type = "result", verbose = verbose)
         
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
         
-        return (parameters_dict, error)
+        return (parameters_out, error)
 
     def time_constant_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
