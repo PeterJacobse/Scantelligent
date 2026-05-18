@@ -670,6 +670,7 @@ class Scantelligent(QtCore.QObject):
                 pass
 
         if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
+        self.logprint(f"View set to {new_view}", message_type = "message")
 
 
 

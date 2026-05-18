@@ -26,7 +26,7 @@ class Experiment(BaseExperiment):
         V_start = bias.get("V_nanonis (V)")
                 
         # Testing the connected device using the lock-in amplifiers
-        connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = False)
+        connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
         if not connected_device in ["nanonis", "mla"]:
             raise Exception("The STM does not seem to be connected to either Nanonis or the MLA. I am unable to see a response in the tunneling current. It is not safe to approach.")
         self.logprint(f"I detected that the STM sample bias is applied through the following device: {connected_device}.", message_type = "message")
@@ -74,7 +74,7 @@ class Experiment(BaseExperiment):
                 (tip_status, error) = nn.tip_update(fast_mode = False)
                 signal_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)"]
                 (signal_dict, error) = nn.signals_update(signal_names)
-                [LI_X_index, LI_Y_index] = [signal_dict[signal_name] for signal_name in signal_names]
+                [LI_X_index, LI_Y_index] = [signal_dict[signal_name][0] for signal_name in signal_names]
                 (lockin, error) = nn.lockin_update({"mod1": {"on": True, "amplitude (mV)": 2, "frequency (Hz)": 600}})
 
                 (tip_status, error) = nn.tip_update({"withdraw": True}, fast_mode = False)
@@ -116,19 +116,19 @@ class Experiment(BaseExperiment):
                             surface_reached = True
                             break
                         if z_tip_nm < z_min_nm + 1: break
-                        self.check_abort_request()
-                
-                    nn.tip_update({"withdraw": True})
+                        self.check_abort_request(withdraw = True)
+
+                    nn.tip_update({"withdraw": True}, verbose = False)
                     if surface_reached:
                         self.logprint(f"Surface detected!", message_type = "message")
                         self.parameters.emit({"dict_name": "view_request", "view": "nanonis"})
                         break
-                    
+                
                     # Reset the feedback parameters
-                    nn.feedback_update(start_feedback)
                     nn.coarse_move({"minus_z_steps": 1})
-                    
-                    
+            
+                nn.tip_update({"withdraw": True})
+                nn.feedback_update(start_feedback)
             
             case "mla":
                 self.logprint(f"Sorry. I haven't learned to approach with the MLA yet")

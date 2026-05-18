@@ -1683,13 +1683,15 @@ class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
     def currentChanged(self) -> None:
         value = self.current_le.getValue()
         if isinstance(value, float | int):
-            indicator_level = np.log10(np.abs(value))
+            abs_val = np.abs(value)
+            indicator_level = np.log10(abs_val, where = abs_val > 10)
             self.current_indicator.setValue(indicator_level)
         return
     
     def setCurrentTick(self, value) -> None:
         if isinstance(value, float | int):
-            tick_level = np.log10(np.abs(value))
+            abs_val = np.abs(value)
+            tick_level = np.log10(abs_val, where = abs_val > 10)
             self.current_indicator.setTickValue(tick_level)
         return
 

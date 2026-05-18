@@ -405,9 +405,12 @@ class BaseExperiment(QObject):
     
         return scan_image
 
-    def check_abort_request(self) -> None:
+    def check_abort_request(self, withdraw: bool = False) -> None:
         if self.thread().isInterruptionRequested():
             self.abort_requested = True
+            if withdraw:
+                try: self.nanonis.tip_update({"withdraw": True})
+                except: pass
             raise AbortedError
         return
 
