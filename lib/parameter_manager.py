@@ -103,20 +103,18 @@ class ParameterManager(QtCore.QObject):
                 sct.mla.bias_update({"port_1 (V)": port1_V, "port_2 (V)": port2_V})
             
             case "lockin":
+                """
                 if hasattr(sct, "nanonis"):
                     [mod1_on, mod2_on] = [bool(sct.gui.buttons[f"nanonis_mod{index + 1}"].state_index) for index in range(2)]
-                    mla_mod1_on = bool(sct.gui.buttons[f"mla_mod1"].state_index)
                     [mod1_f, mod1_mV, mod1_phi] = [line_edits[f"nanonis_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
                     [mod2_f, mod2_mV, mod2_phi] = [line_edits[f"nanonis_mod2_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
                     [mla1_f, mla1_mV, mla1_phi] = [line_edits[f"mla_mod1_{quantity}"].getValue() for quantity in ["f", "amp", "phase"]]
                     
                     parameters = {"dict_name": "lockin",
                                 "mod1": {"on": mod1_on, "frequency (Hz)": mod1_f, "amplitude (mV)": mod1_mV, "phase (deg)": mod1_phi},
-                                "mod2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi},
-                                "mla_mod1": {"on": mla_mod1_on, "frequency (Hz)": mla1_f, "amplitude (mV)": mla1_mV, "phase (deg)": mla1_phi}
-                                }
+                                "mod2": {"on": mod2_on, "frequency (Hz)": mod2_f, "amplitude (mV)": mod2_mV, "phase (deg)": mod2_phi}}
                     sct.nanonis.lockin_update(parameters, unlink = True)
-                
+                """
                 if hasattr(sct, "mla"):
                     df = sct.spt.gui.lockin_widget.getdf()
                     frequencies = sct.spt.gui.lockin_widget.getFrequencies()
@@ -318,8 +316,6 @@ class ParameterManager(QtCore.QObject):
                     
                     # Update the slider
                     z_limits_nm = tip_status.get("z_limits (nm)")
-                    sct.gui.sliders["tip"].setMinimum(int(z_limits_nm[0]))
-                    sct.gui.sliders["tip"].setMaximum(int(z_limits_nm[1]))
                     sct.gui.current_height_widget.setHeightLimits(z_limits_nm)
 
                 [x_tip_nm, y_tip_nm, z_tip_nm, I_pA] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
@@ -333,12 +329,14 @@ class ParameterManager(QtCore.QObject):
             case "bias":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
                                                                                  [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
+                """
                 if sct.gui.buttons["voltage_lock"].isChecked() and hasattr(sct, "mla"):
                     try:
                         V_nanonis = parameters.get("V_nanonis (V)")
                         sct.mla.bias_update({"port_1 (V)": V_nanonis, "port_2 (V)": V_nanonis})
                     except:
                         pass
+                """
 
             case "feedback":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "i_gain", "t_const"], [parameters.get(name) for name in ["p_gain (pm)", "i_gain (nm/s)", "t_const (us)"]])]

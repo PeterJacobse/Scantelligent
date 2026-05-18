@@ -136,7 +136,16 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
             "mla_zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes"),
-            "nanonis_zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes")
+            "nanonis_zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes"),
+            "spectroscopy_feedback": MSB(click_to_toggle = False, size = 28,
+                                         states = [{"name": "off", "tooltip": "Feedback switched OFF while performing spectroscopy", "icon": icons.get("constant_height"), "color": sct_black},
+                                                   {"name": "on", "tooltip": "Feedback switched ON while performing spectroscopy", "icon": icons.get("constant_current"), "color": sct_blue}]),
+            "intermediate_feedback": MSB(click_to_toggle = False, size = 28,
+                                         states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
+                                                   {"name": "on", "tooltip": "Return to intermediate feedback\nafter every sweep in x", "icon": icons.get("constant_current"), "color": sct_blue}]),
+            "z_adjust": MSB(click_to_toggle = False, size = 28,
+                            states = [{"name": "off", "tooltip": "Do not adjust the tip height relative to the feedback setpoint", "icon": icons.get("constant_height"), "color": sct_black},
+                                      {"name": "on", "tooltip": "Adjust the tip height relative to the feedback setpoint before each sweep", "icon": icons.get("constant_current"), "color": sct_blue}])
         }
         
         for parameter_type in ["lockin", "parameter_space", "spectroscopy"]:
@@ -230,20 +239,19 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "experiment_filename": LE(tooltip = "base name of the file when saved to png or hdf5"),
             
             # Feedback
-            "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
             "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
             "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
             "I_pA": LE(tooltip = "most recent current measurement", unit = "pA", digits = 0),
 
-            "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0, edited_color = scanalyzer_blue),
             "t_const": LE(tooltip = "time constant", unit = "us", digits = 0, edited_color = scanalyzer_blue),
             "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0, edited_color = scanalyzer_blue),
-            
-            "v_fwd": LE(tooltip = "forward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
-            "v_bwd": LE(tooltip = "backward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
-            "v_tip": LE(tooltip = "tip move speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
 
-            # STS           
+            # STS
+            "sts_V_feedback": LE(tooltip = "bias voltage", unit = "V", digits = 3),
+            "sts_I_feedback": LE(tooltip = "feedback current", unit = "pA", digits = 1),
+            "sts_p_feedback": LE(tooltip = "proportional gain", unit = "pm", digits = 0),
+            "sts_z_feedback": LE(tooltip = "tip height step relative to feedback setpoint", unit = "nm", digits = 4),
+            
             "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
             "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
             "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
@@ -472,8 +480,11 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # Settings
         [layouts["spectroscopy_getset"].addWidget(buttons[f"{key}et_spectroscopy_parameters"]) for key in ["g", "s"]]
-        [layouts["spectroscopy_settings"].addWidget(line_edits[name], 0, index) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
-        layouts["spectroscopy_settings"].addLayout(layouts["spectroscopy_getset"], 1, 0, 1, 2)
+        layouts["spectroscopy_settings"].addWidget(buttons["spectroscopy_feedback"], 0, 0, 2, 1)
+        [layouts["spectroscopy_settings"].addWidget(line_edits[name], index, 1) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
+        layouts["spectroscopy_settings"].addWidget(buttons["intermediate_feedback"], 0, 2, 2, 1)
+        [layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_{key}_feedback"], index % 2, 3 + int(index / 2)) for index, key in enumerate(["V", "I", "p", "z"])]
+        layouts["spectroscopy_settings"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 4)
         
         # Parameter space
         [layouts["parameter_space"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]

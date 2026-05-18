@@ -22,8 +22,6 @@ class Experiment(BaseExperiment):
         nn = self.nanonis
         mla = self.mla
         
-        #connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
-        #self.logprint(f"{connected_device = }")
         #if not connected_device == "mla":
         #    raise Exception("The bias cable does not seem to be connected to the MLA. This experiment requires the MLA. Please connect the bias cable to the MLA first")
         
@@ -32,8 +30,17 @@ class Experiment(BaseExperiment):
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
-        if nanonis_or_mla == "nanonis": raise Exception(f"Nanonis sweep not yet implemented. Try setting the spectroscopy to MLA")
+        connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
+        if not connected_device == nanonis_or_mla:
+            self.logprint(f"Warning. The STM seems to be connected to {connected_device}. However, an experiment using {nanonis_or_mla} was requested", message_type = "warning")
+        if not connected_device == "mla":
+            self.logprint(f"Warning. Only spectroscopy using the MLA is supported at this moment.", message_type = "warning")
         
+        x_axis_label = ""
+        y_values = None
+        y_axis_label = ""
+        x_ds = None
+        y_ds = None
         [x_start, x_end, x_steps] = [spec_line_edits.get(key) for key in ["x_start", "x_end", "x_points"]]
         x_values = np.linspace(x_start, x_end, x_steps)
         dx = (x_end - x_start) / (x_steps - 1)
@@ -65,14 +72,7 @@ class Experiment(BaseExperiment):
         self.output_file.attrs.update({"modulator amplitude (mV)": mod_voltage_mV, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int})
 
         # Read what kind of spectroscopic axes are requested
-        x_values = None
-        x_axis_label = ""
-        y_values = None
-        y_axis_label = ""
-        x_ds = None
-        y_ds = None
-
-        match spec_button_states["x_axis"].state_name:
+        match spec_button_states["x_axis"]:
             case "V":
                 x_axis_label = "voltage (V)"
                 x_values = np.concatenate((x_values, x_values[::-1]))
@@ -102,13 +102,14 @@ class Experiment(BaseExperiment):
             case _:
                 pass
 
-                    
+        self.logprint(f"PRINT DEBUG 5")
+
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         x_ds.make_scale(x_axis_label)
         self.output_file.attrs.update({"x axis": x_axis_label})
 
         # y axis
-        match spec_button_states["y_axis"].state_name:
+        match spec_button_states["y_axis"]:
             case _:
                 pass
 

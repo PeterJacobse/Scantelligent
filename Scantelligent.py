@@ -118,7 +118,8 @@ class Scantelligent(QtCore.QObject):
         
         # Comboboxes
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
-        self.experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
+        experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
+        self.experiments = [experiment for experiment in experiments if not experiment in ["spectroscopy"]]
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
         
