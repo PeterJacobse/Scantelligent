@@ -220,8 +220,6 @@ class Spectelligent(QtCore.QObject):
             self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)            
             [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["x_start", "x_end", "dx", "x_points"], [x_min, x_max, dx, x_points])]
             
-            print(f"{y_limits = }")
-            
             if y_limits:
                 y_min = min(y_limits)
                 y_max = max(y_limits)
@@ -232,13 +230,11 @@ class Spectelligent(QtCore.QObject):
                 self.gui.plot_widget.setYRange(y_min - dy, y_max + dy)
             
             else:
-                print(f"{np.zeros((1), dtype = float) = }")
                 [line_edits[f"sts_{side}"].setText("") for side in ["y_start", "y_end", "dy", "y_points"]]
                 self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.zeros((1), dtype = float))
-                print(f"Setting Y range")
                 self.gui.plot_widget.setYRange(-1, 1)
         except Exception as e:
-            print(f"{e}")
+            self.logprint(f"{e}", message_type = "error")
         return
 
     def update_waveforms(self) -> None:

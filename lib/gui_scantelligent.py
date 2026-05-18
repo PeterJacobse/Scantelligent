@@ -241,41 +241,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "nanonis_mod2": MSB(icon = icons.get("nanonis_mod2"),
                                 states = [{"name": "off", "tooltip": "Nanonis modulator 2 OFF", "color": sct_black},
                                           {"name": "on", "tooltip": "Nanonis modulator 2 ON", "color": sct_blue}]),
-            "mla_mod0": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 0 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 0 ON", "color": sct_blue}]),
-            "mla_mod1": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 1 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 1 ON", "color": sct_blue}]),
-            "mla_mod2": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 2 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 2 ON", "color": sct_blue}]),
-            "mla_mod3": MSB(icon = icons.get("mla_oscillator"),
-                            states = [{"name": "off", "tooltip": "MLA modulator 3 OFF", "color": sct_black},
-                                      {"name": "on", "tooltip": "MLA modulator 3 ON", "color": sct_blue}]),
 
             "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
-            
-            "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
-                                   {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
-                                   {"name": "y", "tooltip": "Voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}]),
-            "sts_f": MSB(states = [{"name": "off", "tooltip": "Check to include a frequency sweep", "color": sct_black, "icon": icons.get("f")},
-                                   {"name": "x", "tooltip": "Frequency sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("f_x")},
-                                   {"name": "y", "tooltip": "Frequency sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("f_y")}]),
-            "sts_amp": MSB(states = [{"name": "off", "tooltip": "Check to include an amplitude sweep", "color": sct_black, "icon": icons.get("A")},
-                                     {"name": "x", "tooltip": "Amplitude sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": self.icons.get("A_x")},
-                                     {"name": "y", "tooltip": "Amplitude sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": self.icons.get("A_y")}]),
-            "sts_z": MSB(states = [{"name": "off", "tooltip": "Check to include a height sweep", "color": sct_black, "icon": icons.get("z")},
-                                   {"name": "x", "tooltip": "Height sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("z_x")},
-                                   {"name": "y", "tooltip": "Height sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("z_y")}]),
-            "sts_V_keithley": MSB(states = [{"name": "off", "tooltip": "Check to include a Keithley voltage sweep", "color": sct_black, "icon": icons.get("V")},
-                                            {"name": "x", "tooltip": "Keithley voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
-                                            {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}]),
-            
-            "get_pixel_nanonis": MSB(tooltip = "Click to receive a pixel from Nanonis", icon = icons.get("nanonis")),
-            "get_pixel_mla": MSB(tooltip = "Click to receive a pixel from the MLA", icon = icons.get("imp")),
             
             # Processing
             "direction": MSB(tooltip = "Change scan direction\n(X)",
@@ -302,8 +271,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "rot_trans": MSB(tooltip = "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", icon = self.icons.get("rot_trans"), states = [{"color": sct_black}, {"color": sct_blue}]),
             
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
-                                                              {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
-            "zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes")
+                                                              {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}])
         }
         
         for parameter_type in ["bias", "mla_bias", "keithley_bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
@@ -361,15 +329,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "min": BG(),
             "max": BG(),
             "background": BG(),
-            "channels": BG(exclusive = False, keep_one_checked = False),
-            "spec_axes": BG(keep_one_checked = False)
+            "channels": BG(exclusive = False, keep_one_checked = False)
         }
         limit_methods = ["full", "percentiles", "deviations", "absolute"]        
         [self.button_groups["min"].addButton(checkboxes[f"min_{method}"], f"min_{method}") for method in limit_methods]
         [self.button_groups["max"].addButton(checkboxes[f"max_{method}"], f"max_{method}") for method in limit_methods]
         [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise"]]
         [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(40)]
-        [self.button_groups["spec_axes"].addButton(self.buttons[f"sts_{quantity}"], quantity) for quantity in ["V", "z", "f", "amp", "V_keithley"]]
         
         # Initialize
         checked_buttons = [checkboxes[name] for name in ["min_full", "max_full"]]
@@ -414,7 +380,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         ILE = SCTWidgets.InputLineEdit
         RG = SCTWidgets.ReciprocalGroup
         
-        sct_green = self.colors["dark_green"]
         scanalyzer_blue = "#2020C0"
         
         line_edits = {
@@ -490,35 +455,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "lift_height": LE(tooltip = "lift height (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
             "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
-            # STS
-            "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
-            "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
-            
-            "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
-            "sts_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
-            
-            "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = scanalyzer_blue),
-            "sts_f_points": LE(value = 1001, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
-            
-            "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
-            "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
-            "sts_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [0, 200], digits = 2, edited_color = scanalyzer_blue),
-            "sts_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),            
-
-            "sts_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "sts_amp_points": LE(value = 101, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
-
-            "sts_V_keithley_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_V_keithley_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_dV_keithley": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
-            "sts_V_keithley_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
-            
             # Lockins
             "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_df": LE(tooltip = "Nanonis frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
@@ -533,9 +469,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "nanonis_mod2_phase": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
 
-            "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            
             "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "mla_mod0_phase": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
@@ -563,18 +496,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         }
         
         # Reciprocal groups (inter-line-edit update logic)
-        self.sts_V_rg = RG(product = [line_edits["sts_V_start"], line_edits["sts_V_end"]], factors = [line_edits["sts_V_points"], line_edits["sts_dV"]], factor = 1000,
-                           lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
         self.nanonis_rg = RG(product = 1000, factors = [line_edits["nanonis_t"], line_edits["nanonis_df"]])
-        self.mla_rg = RG(product = 1000, factors = [line_edits["mla_t"], line_edits["mla_df"]])
-        self.sts_z_rg = RG(product = [line_edits["sts_z_start"], line_edits["sts_z_end"]], factors = [line_edits["sts_z_points"], line_edits["sts_dz"]],
-                           lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
-        self.sts_f_rg = RG(product = [line_edits["sts_f_start"], line_edits["sts_f_end"]], factors = [line_edits["sts_f_points"], line_edits["sts_df"]],
-                           lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
-        self.sts_amp_rg = RG(product = [line_edits["sts_amp_start"], line_edits["sts_amp_end"]], factors = [line_edits["sts_amp_points"], line_edits["sts_damp"]],
-                             lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)        
-        self.tone_rgs = [RG(product = line_edits[f"mla_mod{index}_f"], factors = [line_edits["mla_df"], line_edits[f"mla_mod{index}_n"]],
-                            lock = "factor0", try_to_retain = "product") for index in range(4)]
         self.frame_rg = RG(product = line_edits["frame_height"], factors = [line_edits["frame_width"], line_edits["frame_aspect"]], lock = "factor1", try_to_retain = "factor0")
         self.grid_rg = RG(product = line_edits["grid_lines"], factors = [line_edits["grid_pixels"], line_edits["grid_aspect"]], lock = "factor1", try_to_retain = "factor0",
                           factor0_constraint = lambda value: int(round(value / 16) * 16))
@@ -676,19 +598,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                         
             # STS
             "osc": make_layout("v"),
-            "sts": make_layout("v"),
-            "spectroscopy": make_layout("g"),
-            "spectroscopy_getset": make_layout("h"),
-            
-            "waveforms": make_layout("h"),
             
             "lockin_parameter_sets": make_layout("h"),
             "modulators": make_layout("g"),
             "mod_set_get": make_layout("h"),
-            "pixel": make_layout("h"),
-            "demodulators": make_layout("v"),
-            "volume": make_layout("h"),
-            "demod_sliders": make_layout("h")
         }
         
         return layouts
@@ -795,32 +708,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
     def make_sliders(self) -> dict:
         PS = SCTWidgets.PhaseSlider
-        SLE = SCTWidgets.SliderLineEdit
-        
-        sliders = {
-            "volume": SLE(tooltip = "volume", slider_orientation = "h", layout_orientation = "h", limits = [0, 100], value = 20, unit = "%", minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100")),
-            "phase": PS(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))
-        }
-
-        for tone in range(32):
-            value = 100 if tone == 0 else 0
-            sle = SLE(tooltip = f"relative volume of tone {tone}", slider_orientation = "h", layout_orientation = "v", limits = [0, 100], value = value, digits = 0, unit = "%",
-                      minmax_buttons = True, min_button_icon = self.icons.get("0"), max_button_icon = self.icons.get("100"))
-            
-            self.labels[f"demod_index_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            self.line_edits[f"demod_frequency_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            self.line_edits[f"demod_amplitude_{tone}"].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            
-            sle.widget_layout.insertWidget(0, self.line_edits[f"demod_amplitude_{tone}"])
-            sle.widget_layout.insertWidget(0, self.line_edits[f"demod_frequency_{tone}"])
-            sle.widget_layout.insertWidget(0, self.labels[f"demod_index_{tone}"])
-            sle.widget_layout.setContentsMargins(0, 0, 0, 0)
-
-            sliders.update({f"f{tone}": sle})
-
-        self.demod_scroller = QtWidgets.QScrollArea()
-        self.demod_scroller.setWidgetResizable(True)
-
+        sliders = {"phase": PS(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
         return sliders
 
     def make_shortcuts(self) -> dict:
@@ -1015,18 +903,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [tp_layout.addWidget(line_edits[name], 3 + index, 3) for index, name in enumerate(["lift_height", "lift_voltage", "lift_time"])]
         tp_layout.addLayout(layouts["shaper_getset"], 6, 2, 1, 3)
         
-        # STS
-        [layouts["spectroscopy_getset"].addWidget(widget) for widget in [buttons["get_spectroscopy_parameters"], buttons["set_spectroscopy_parameters"], comboboxes["spectroscopy"]]]        
-        
-        layouts["spectroscopy"].addWidget(buttons["start_spectrum"], 0, 0, 1, 2, align_center)
-        layouts["spectroscopy"].addWidget(buttons["nanonis_mla"], 0, 2, 1, 1, align_center)
-        [layouts["spectroscopy"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
-        [layouts["spectroscopy"].addWidget(line_edits[name], 1, 1 + index) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
-        for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):
-            [layouts["spectroscopy"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
-        
-        # layouts["spectroscopy"].addLayout(layouts["spectroscopy_getset"], 11, 0, 1, 3)
-
         # Modulators
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
 
@@ -1034,26 +910,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [layouts["modulators"].addWidget(buttons[f"nanonis_mod{index + 1}"], 1 + 2 * index, 0, 2, 1) for index in range(2)]
         [[layouts["modulators"].addWidget(line_edits[f"nanonis_mod{number + 1}_{quantity}"], 1 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phase"])] for number in range(2)]
         [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_amp"], comboboxes[f"nanonis_mod{number + 1}"]])] for number in range(2)]
-        
-        [layouts["modulators"].addWidget(line_edits[f"mla_{quantity}"], 5, 2 * index, 1, 2) for index, quantity in enumerate(["t", "df"])]
-        [layouts["modulators"].addWidget(buttons[f"mla_mod{index}"], 6 + 2 * index, 0, 2, 1) for index in range(4)]
-        [[layouts["modulators"].addWidget(line_edits[f"mla_mod{number}_{quantity}"], 6 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phase"])] for number in range(4)]
-        [[layouts["modulators"].addWidget(widget, 7 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"mla_mod{number}_amp"], comboboxes[f"mla_mod{number}"]])] for number in range(4)]
-        
-        layouts["modulators"].addLayout(layouts["mod_set_get"], 16, 0, 1, 4)        
-        layouts["waveforms"].addWidget(self.waveform_widget)
 
 
-
-        # Demodulators
-        [layouts["pixel"].addWidget(widget) for widget in [buttons["get_pixel_nanonis"], buttons["get_pixel_mla"]]]
-        [layouts["volume"].addWidget(widget) for widget in [buttons["audio"], self.sliders["volume"], buttons["zero_volumes"]]]
-        layouts["demodulators"].addLayout(layouts["pixel"])
-        layouts["demodulators"].addLayout(layouts["volume"])
-        [layouts["demod_sliders"].addWidget(self.sliders[f"f{i}"]) for i in range(32)]
-        self.widgets["demodulators"].setLayout(layouts["demod_sliders"])
-        self.demod_scroller.setWidget(self.widgets["demodulators"])
-        layouts["demodulators"].addWidget(self.demod_scroller)
         
         # Scan
         [layouts["scan_control"].addWidget(buttons[name], 0, index) for index, name in enumerate(["start_scan", "auto_paste"])]
@@ -1099,10 +957,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "frame_grid": SGB(title = "frame / grid", tooltip = "frame and grid parameters"),
             "bias": SGB(title = "bias", tooltip = "bias and ramp parameters"),
             "feedback": SGB(title = "feedback", tooltip = "feedback and gains"),
-            "spectroscopy": SGB(title = "spectroscopy", tooltip = "spectroscopy"),
             "modulators": SGB(title = "modulators", tooltip = "modulators"),
-            "waveforms": SGB(title = "waveforms", tooltip = "waveforms"),
-            "demodulators": SGB(title = "demodulators", tooltip = "demodulators"),
             
             "scan_control": SGB(title = "scan control", tooltip = "scan control"),
             "navigation": SGB(title = "navigation", tooltip = "navigation"),
@@ -1125,11 +980,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])
         
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
-        [layouts["osc"].addWidget(groupboxes[name]) for name in ["modulators", "waveforms"]]
-        [layouts["sts"].addWidget(groupboxes[name]) for name in ["spectroscopy", "demodulators"]]
+        [layouts["osc"].addWidget(groupboxes[name]) for name in ["modulators"]]
         [layouts["scan"].addWidget(groupboxes[name]) for name in ["scan_control", "navigation", "operations", "limits"]]
-        [layouts[name].addStretch(1) for name in ["parameters", "sts", "osc", "coarse_prep", "scan"]]
-
+        [layouts[name].addStretch(1) for name in ["parameters", "osc", "coarse_prep", "scan"]]
         return groupboxes
 
 
@@ -1138,11 +991,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def make_tab_widget(self) -> QtWidgets.QTabWidget:
         tab_widget = QtWidgets.QTabWidget()
         
-        tabs = ["parameters", "coarse_prep", "scan", "osc", "sts"]
+        tabs = ["scan", "parameters", "coarse_prep", "osc"]
         [self.widgets[name].setLayout(self.layouts[name]) for name in tabs]
         tab_widget.addTab(self.widgets["parameters"], "params")
         [tab_widget.addTab(self.widgets[name], name) for name in tabs if not name == "parameters"]
-
         return tab_widget
 
 

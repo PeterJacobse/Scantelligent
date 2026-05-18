@@ -1801,6 +1801,9 @@ class ModulatorWidget(QtWidgets.QWidget):
 class LockinWidget(QtWidgets.QWidget):
     set_signal = QtCore.pyqtSignal()
     get_signal = QtCore.pyqtSignal()
+    volumes = QtCore.pyqtSignal(list)
+    amplitudes = QtCore.pyqtSignal(list)
+    frequencies = QtCore.pyqtSignal(list)
     
     def __init__(self, modulators: list, df_line_edit: SCTWidgets.PhysicsLineEdit, t_line_edit: SCTWidgets.PhysicsLineEdit, audio_button: SCTWidgets.MultiStateButton, extrapolate_icon: QtGui.QIcon,
                  min_button_icon: QtGui.QIcon, max_button_icon: QtGui.QIcon, get_button: SCTWidgets.MultiStateButton = None, set_button: SCTWidgets.MultiStateButton = None, zero_volumes_button: SCTWidgets.MultiStateButton = None):
@@ -1817,7 +1820,7 @@ class LockinWidget(QtWidgets.QWidget):
         self.scroll_area = QtWidgets.QScrollArea()
         self.mod_widget = QtWidgets.QWidget()        
         self.volume = SCTWidgets.SliderLineEdit(unit = "%", layout_orientation = "h", minmax_buttons = True, min_button_icon = min_button_icon, max_button_icon = max_button_icon, limits = [0, 100])
-                
+
         layout = make_layout("v")
         
         df_t_layout = make_layout("h")
@@ -1846,6 +1849,7 @@ class LockinWidget(QtWidgets.QWidget):
                 modulator.extrapolate_outputs.clicked.connect(lambda clicked, index0 = index: self.extrapolate(target = "outputs", index = index0))
                 modulator.extrapolate_inputs.clicked.connect(lambda clicked, index0 = index: self.extrapolate(target = "inputs", index = index0))
                 modulator.extrapolate_frequencies.clicked.connect(lambda clicked, index0 = index: self.extrapolate(target = "frequencies", index = index0))
+                modulator.volume.slider.valueChanged.connect(self.sendVolumes)
             
             modulator.setLayout(modulator.modulator_layout)
             mod_layout.addWidget(modulator)
@@ -1868,7 +1872,8 @@ class LockinWidget(QtWidgets.QWidget):
         self.zero_volumes_button.clicked.connect(self.setZeroVolumes)
         self.get_button.clicked.connect(self.get_signal.emit)
         self.set_button.clicked.connect(self.set_signal.emit)
-        
+        self.volume.slider.valueChanged.connect(self.sendVolumes)
+
 
 
     def getFrequencies(self) -> list:
@@ -1955,8 +1960,11 @@ class LockinWidget(QtWidgets.QWidget):
         return
 
     def setZeroVolumes(self) -> None:
-        try: [modulator.volume.setValue(0) for modulator in self.modulators]
-        except: pass
+        try:
+            [modulator.volume.setValue(0) for modulator in self.modulators]
+            self.sendVolumes()
+        except:
+            pass
         return
 
     def extrapolate(self, target: str = "", index: int = 1) -> None:
@@ -1996,6 +2004,12 @@ class LockinWidget(QtWidgets.QWidget):
 
             case _:
                 pass        
+        return
+
+    def sendVolumes(self) -> None:
+        overal_volume = int(self.volume.line_edit.getValue())
+        volumes = [int(modulator.volume.line_edit.getValue() * overal_volume) for modulator in self.modulators]
+        self.volumes.emit(volumes)
         return
 
 

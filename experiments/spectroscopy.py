@@ -34,7 +34,15 @@ class Experiment(BaseExperiment):
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
         if nanonis_or_mla == "nanonis": raise Exception(f"Nanonis sweep not yet implemented. Try setting the spectroscopy to MLA")
         
-        # Set up linspaces
+        [x_start, x_end, x_steps] = [spec_line_edits.get(key) for key in ["x_start", "x_end", "x_points"]]
+        x_values = np.linspace(x_start, x_end, x_steps)
+        dx = (x_end - x_start) / (x_steps - 1)
+        [y_start, y_end, y_steps] = [spec_line_edits.get(key) for key in ["y_start", "y_end", "y_points"]]
+        if isinstance(y_start, int | float) and isinstance(y_end, int | float):
+            y_values = np.linspace(y_start, y_end, y_steps)
+            dy = (y_end - y_start) / (y_steps - 1)
+        
+        """
         [V_start_V, V_end_V, n_steps] = [spec_line_edits.get(key) for key in ["V_start", "V_end", "V_points"]]
         V_linspace = np.linspace(V_start_V, V_end_V, n_steps)
         dV = (V_end_V - V_start_V) / (n_steps - 1)
@@ -47,6 +55,7 @@ class Experiment(BaseExperiment):
         [amp_start_mV, amp_end_mV, n_steps] = [spec_line_edits.get(key) for key in ["amp_start", "amp_end", "amp_points"]]
         amp_linspace = np.linspace(amp_start_mV, amp_end_mV, n_steps)
         damp = (amp_end_mV - amp_start_mV) / (n_steps - 1)
+        """
         
         # Read parameters from Nanonis
         nn_hardware_dict = self.start_parameters["nanonis"].get("hardware", {})
@@ -63,61 +72,72 @@ class Experiment(BaseExperiment):
         x_ds = None
         y_ds = None
 
-        if spec_button_states.get("V") == "x":
-            x_axis_label = "voltage (V)"
-            x_values = V_linspace
-            x_values = np.concatenate((x_values, x_values[::-1]))
-            self.output_file.attrs.update({"V start (V)": V_start_V, "V end (V)": V_end_V, "dV (V)": dV, "steps": n_steps})
-            x_ds = self.output_file.create_dataset("voltage axis", data = x_values)
-        
-        elif spec_button_states.get("z") == "x":
-            x_axis_label = "tip height (nm)"
-            x_values = z_linspace
-            self.output_file.attrs.update({"z start (nm)": z_start_nm, "z end (nm)": z_end_nm, "dz (nm)": dz, "steps": n_steps})
-            x_ds = self.output_file.create_dataset("tip height axis", data = x_values)
-        
-        elif spec_button_states.get("f") == "x":
-            x_axis_label = "frequency (Hz)"
-            x_values = f_linspace
-            self.output_file.attrs.update({"f start (Hz)": f_start_Hz, "f end (Hz)": f_end_Hz, "df (Hz)": df, "steps": n_steps})
-            x_ds = self.output_file.create_dataset("frequency axis", data = x_values)
+        match spec_button_states["x_axis"].state_name:
+            case "V":
+                x_axis_label = "voltage (V)"
+                x_values = np.concatenate((x_values, x_values[::-1]))
+                self.output_file.attrs.update({"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "steps": x_steps})
+                x_ds = self.output_file.create_dataset("voltage axis", data = x_values)
 
-        elif spec_button_states.get("amp") == "x":
-            x_axis_label = "amplitude (mV)"
-            x_values = amp_linspace
-            self.output_file.attrs.update({"amp start (mV)": amp_start_mV, "amp end (mV)": amp_end_mV, "damp (mV)": damp, "steps": n_steps})
-            x_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
-        
+            case "z":
+                x_axis_label = "tip height (nm)"
+                x_values = x_values
+                self.output_file.attrs.update({"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "steps": x_steps})
+                x_ds = self.output_file.create_dataset("tip height axis", data = x_values)
+            
+                """
+                case "f":
+                    x_axis_label = "frequency (Hz)"
+                    x_values = f_linspace
+                    self.output_file.attrs.update({"f start (Hz)": f_start_Hz, "f end (Hz)": f_end_Hz, "df (Hz)": df, "steps": n_steps})
+                    x_ds = self.output_file.create_dataset("frequency axis", data = x_values)
+
+                case "amp":
+                    x_axis_label = "amplitude (mV)"
+                    x_values = amp_linspace
+                    self.output_file.attrs.update({"amp start (mV)": amp_start_mV, "amp end (mV)": amp_end_mV, "damp (mV)": damp, "steps": n_steps})
+                    x_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
+
+                """
+            case _:
+                pass
+
+                    
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         x_ds.make_scale(x_axis_label)
         self.output_file.attrs.update({"x axis": x_axis_label})
 
         # y axis
-        if spec_button_states.get("V") == "y":
-            y_axis_label = "voltage (V)"
-            y_values = V_linspace
-            y_values = np.concatenate((y_values, y_values[::-1]))
-            self.output_file.attrs.update({"V start (V)": V_start_V, "V end (V)": V_end_V, "dV (V)": dV, "steps": n_steps})
-            y_ds = self.output_file.create_dataset("voltage axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-        
-        elif spec_button_states.get("z") == "y":
-            y_axis_label = "tip height (nm)"
-            y_values = z_linspace
-            self.output_file.attrs.update({"z start (nm)": z_start_nm, "z end (nm)": z_end_nm, "dz (nm)": dz, "steps": n_steps})
-            y_ds = self.output_file.create_dataset("tip height axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-        
-        elif spec_button_states.get("f") == "y":
-            y_axis_label = "frequency (Hz)"
-            y_values = f_linspace
-            self.output_file.attrs.update({"f start (Hz)": f_start_Hz, "f end (Hz)": f_end_Hz, "df (Hz)": df, "steps": n_steps})
-            y_ds = self.output_file.create_dataset("frequency axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
+        match spec_button_states["y_axis"].state_name:
+            case _:
+                pass
 
-        elif spec_button_states.get("amp") == "y":
-            y_axis_label = "amplitude (mV)"
-            y_values = amp_linspace
-            self.output_file.attrs.update({"amp start (mV)": amp_start_mV, "amp end (mV)": amp_end_mV, "damp (mV)": damp, "steps": n_steps})
-            y_ds = self.output_file.create_dataset("amplitude axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-        
+                """
+            case "V":
+                y_axis_label = "voltage (V)"
+                y_values = V_linspace
+                y_values = np.concatenate((y_values, y_values[::-1]))
+                self.output_file.attrs.update({"V start (V)": V_start_V, "V end (V)": V_end_V, "dV (V)": dV, "steps": n_steps})
+                y_ds = self.output_file.create_dataset("voltage axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
+            
+            elif spec_button_states.get("z") == "y":
+                y_axis_label = "tip height (nm)"
+                y_values = z_linspace
+                self.output_file.attrs.update({"z start (nm)": z_start_nm, "z end (nm)": z_end_nm, "dz (nm)": dz, "steps": n_steps})
+                y_ds = self.output_file.create_dataset("tip height axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
+            
+            elif spec_button_states.get("f") == "y":
+                y_axis_label = "frequency (Hz)"
+                y_values = f_linspace
+                self.output_file.attrs.update({"f start (Hz)": f_start_Hz, "f end (Hz)": f_end_Hz, "df (Hz)": df, "steps": n_steps})
+                y_ds = self.output_file.create_dataset("frequency axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
+
+            elif spec_button_states.get("amp") == "y":
+                y_axis_label = "amplitude (mV)"
+                y_values = amp_linspace
+                self.output_file.attrs.update({"amp start (mV)": amp_start_mV, "amp end (mV)": amp_end_mV, "damp (mV)": damp, "steps": n_steps})
+                y_ds = self.output_file.create_dataset("amplitude axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
+                """
         if "y" in [spec_button_states.get(key) for key in ["V", "z", "f", "amp"]] and isinstance(y_values, np.ndarray):
             self.output_file.attrs.update({"y axis": y_axis_label})
             y_ds.make_scale(y_axis_label)        

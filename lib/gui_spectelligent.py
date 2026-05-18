@@ -100,7 +100,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
                                          {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),
 
-            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
+            "start_spectroscopy": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                    {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
@@ -468,7 +468,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["waveforms"].addWidget(self.waveform_widget)
         
         # STS controls
-        [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectrum", "nanonis_mla", "exit"]]
+        [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectroscopy", "nanonis_mla", "exit"]]
         
         # Settings
         [layouts["spectroscopy_getset"].addWidget(buttons[f"{key}et_spectroscopy_parameters"]) for key in ["g", "s"]]

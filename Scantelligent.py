@@ -22,7 +22,7 @@ class Scantelligent(QtCore.QObject):
         self.gui = ScantelligentGUI()
         self.gui.show()
         self.spt = Spectelligent(parent = self)
-        self.spt.gui.show()
+        #self.spt.gui.show()
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
@@ -95,7 +95,6 @@ class Scantelligent(QtCore.QObject):
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
-                        "audio": self.toggle_audio, "zero_volumes": self.zero_volumes, "get_pixel_nanonis": lambda: self.request_pixel("nanonis"), "get_pixel_mla": lambda: self.request_pixel("mla"),
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "spectelligent": self.open_spectelligent
                         }
         
@@ -122,10 +121,6 @@ class Scantelligent(QtCore.QObject):
         self.experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
-                
-        # Sliders
-        self.gui.sliders["volume"].valueChanged.connect(self.send_volumes)
-        [self.gui.sliders[f"f{i}"].valueChanged.connect(self.send_volumes) for i in range(32)]
         
         # Checkboxes and button groups
         #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
@@ -140,6 +135,8 @@ class Scantelligent(QtCore.QObject):
         self.spt.gui.lockin_widget.set_button.clicked.connect(self.spt.update_waveforms)
         self.spt.gui.lockin_widget.get_button.clicked.connect(lambda: self.parameters.get("lockin"))
         self.spt.gui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.set("lockin"))
+        self.spt.gui.lockin_widget.audio_button.clicked.connect(self.toggle_audio)
+        self.spt.gui.buttons["start_spectroscopy"].clicked.connect(self.start_spectroscopy)
         return
 
     def connect_hardware(self, target: str = "all") -> None:
@@ -175,8 +172,8 @@ class Scantelligent(QtCore.QObject):
                 self.audio = AudioGenerator()
 
                 # Set up signal-slot connections
-                self.volumes.connect(self.audio.volumes_update)
-                self.amplitudes.connect(self.audio.amplitudes_update)                
+                self.spt.gui.lockin_widget.volumes.connect(self.audio.volumes_update)
+                self.amplitudes.connect(self.audio.amplitudes_update)
                 self.frequencies.connect(self.audio.frequencies_update)
                 
                 # Add attributes to the input line edit
@@ -741,20 +738,8 @@ class Scantelligent(QtCore.QObject):
     def toggle_audio(self) -> None:
         if not hasattr(self, "audio"): return
 
-        if bool(self.gui.buttons["audio"].state_index):
-            self.audio.start()
-        else:
-            self.audio.stop()
-        return
-
-    def send_volumes(self) -> None:
-        overal_volume = int(self.gui.sliders["volume"].getValue())
-        volumes = [int(self.gui.sliders[f"f{index}"].getValue() * overal_volume) for index in range(32)]
-        self.volumes.emit(volumes)
-        return
-
-    def zero_volumes(self) -> None:
-        [self.gui.sliders[f"f{index}"].setValue(0) for index in range(32)]
+        if self.spt.gui.lockin_widget.audio_button.isChecked(): self.audio.start()
+        else: self.audio.stop()
         return
 
 
@@ -1107,11 +1092,11 @@ class Scantelligent(QtCore.QObject):
                 
                 # Pass the parameters from the gui to the experiment
                 spec_line_edits = {}
-                [spec_line_edits.update({f"{quantity}_{key}": self.gui.line_edits[f"sts_{quantity}_{key}"].getValue() for key in ["start", "end", "points"]}) for quantity in ["V", "f", "z", "amp", "V_keithley"]]
-                [spec_line_edits.update({f"t_{key}": self.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})]
+                [spec_line_edits.update({f"{quantity}_{key}": self.spt.gui.line_edits[f"sts_{quantity}_{key}"].getValue() for key in ["start", "end", "points"]}) for quantity in ["x", "y", "V", "f", "z", "amp", "V_keithley"]]
+                [spec_line_edits.update({f"t_{key}": self.spt.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})]
                 spec_buttons = {}
-                [spec_buttons.update({f"{quantity}": self.gui.buttons[f"sts_{quantity}"].state_name}) for quantity in ["V", "f", "z", "amp", "V_keithley"]]
-                spec_buttons.update({"nanonis_mla": self.gui.buttons["nanonis_mla"].state_name})
+                [spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name}) for key in ["x_axis", "y_axis"]]
+                spec_buttons.update({"nanonis_mla": self.spt.gui.buttons["nanonis_mla"].state_name})
                 
                 gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),
                                   "line_edits": [self.gui.line_edits[f"experiment_{index}"].getValue() for index in range(9)],

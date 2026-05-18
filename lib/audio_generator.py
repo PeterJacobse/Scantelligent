@@ -13,8 +13,7 @@ class AudioGenerator(QObject):
         self.sample_rate = sample_rate
         self.w = np.pi * 220.0 * np.arange(32)
         self.amplitudes = np.zeros(shape = (32), dtype = float)
-        self.amplitudes[0] = 1
-        self.volumes = 2000 * np.ones_like(self.amplitudes, dtype = int)
+        self.volumes = np.zeros_like(self.amplitudes, dtype = int)
         self.phases = np.zeros_like(self.amplitudes)
         self.stream = None
 
