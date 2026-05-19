@@ -35,35 +35,7 @@ class Experiment(BaseExperiment):
             self.logprint(f"Warning. The STM seems to be connected to {connected_device}. However, an experiment using {nanonis_or_mla} was requested", message_type = "warning")
         if not connected_device == "mla":
             self.logprint(f"Warning. Only spectroscopy using the MLA is supported at this moment.", message_type = "warning")
-        
-        x_axis_label = ""
-        y_values = None
-        y_axis_label = ""
-        x_ds = None
-        y_ds = None
-        [x_start, x_end, x_steps] = [spec_line_edits.get(key) for key in ["x_start", "x_end", "x_points"]]
-        x_values = np.linspace(x_start, x_end, x_steps)
-        dx = (x_end - x_start) / (x_steps - 1)
-        [y_start, y_end, y_steps] = [spec_line_edits.get(key) for key in ["y_start", "y_end", "y_points"]]
-        if isinstance(y_start, int | float) and isinstance(y_end, int | float):
-            y_values = np.linspace(y_start, y_end, y_steps)
-            dy = (y_end - y_start) / (y_steps - 1)
-        
-        """
-        [V_start_V, V_end_V, n_steps] = [spec_line_edits.get(key) for key in ["V_start", "V_end", "V_points"]]
-        V_linspace = np.linspace(V_start_V, V_end_V, n_steps)
-        dV = (V_end_V - V_start_V) / (n_steps - 1)
-        [z_start_nm, z_end_nm, n_steps] = [spec_line_edits.get(key) for key in ["z_start", "z_end", "z_points"]]
-        z_linspace = np.linspace(z_start_nm, z_end_nm, n_steps)
-        dz = (z_end_nm - z_start_nm) / (n_steps - 1)
-        [f_start_Hz, f_end_Hz, n_steps] = [spec_line_edits.get(key) for key in ["f_start", "f_end", "f_points"]]
-        f_linspace = np.linspace(f_start_Hz, f_end_Hz, n_steps)
-        df = (f_end_Hz - f_start_Hz) / (n_steps - 1)
-        [amp_start_mV, amp_end_mV, n_steps] = [spec_line_edits.get(key) for key in ["amp_start", "amp_end", "amp_points"]]
-        amp_linspace = np.linspace(amp_start_mV, amp_end_mV, n_steps)
-        damp = (amp_end_mV - amp_start_mV) / (n_steps - 1)
-        """
-        
+       
         # Read parameters from Nanonis
         nn_hardware_dict = self.start_parameters["nanonis"].get("hardware", {})
         [tia_gain, tia_gain_V_per_pA] = [nn_hardware_dict.get(key) for key in ["current_gain", "gain (V/pA)"]]
@@ -71,44 +43,56 @@ class Experiment(BaseExperiment):
         mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
         self.output_file.attrs.update({"modulator amplitude (mV)": mod_voltage_mV, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int})
 
-        # Read what kind of spectroscopic axes are requested
+
+
+        # Set up spectroscopy axes
+        # x axis
+        x_values = None
+        x_axis_label = ""
+        x_ds = None
+        
+        [x_start, x_end, x_steps] = [spec_line_edits.get(key) for key in ["x_start", "x_end", "x_points"]]
+        x_values = np.linspace(x_start, x_end, x_steps)
+        dx = (x_end - x_start) / (x_steps - 1)
+        
         match spec_button_states["x_axis"]:
             case "V":
                 x_axis_label = "voltage (V)"
                 x_values = np.concatenate((x_values, x_values[::-1]))
-                self.output_file.attrs.update({"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "steps": x_steps})
+                self.output_file.attrs.update({"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps})
                 x_ds = self.output_file.create_dataset("voltage axis", data = x_values)
-
             case "z":
                 x_axis_label = "tip height (nm)"
                 x_values = x_values
-                self.output_file.attrs.update({"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "steps": x_steps})
+                self.output_file.attrs.update({"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "z steps": x_steps})
                 x_ds = self.output_file.create_dataset("tip height axis", data = x_values)
-            
-                """
-                case "f":
-                    x_axis_label = "frequency (Hz)"
-                    x_values = f_linspace
-                    self.output_file.attrs.update({"f start (Hz)": f_start_Hz, "f end (Hz)": f_end_Hz, "df (Hz)": df, "steps": n_steps})
-                    x_ds = self.output_file.create_dataset("frequency axis", data = x_values)
-
-                case "amp":
-                    x_axis_label = "amplitude (mV)"
-                    x_values = amp_linspace
-                    self.output_file.attrs.update({"amp start (mV)": amp_start_mV, "amp end (mV)": amp_end_mV, "damp (mV)": damp, "steps": n_steps})
-                    x_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
-
-                """
+            case "f":
+                x_axis_label = "frequency (Hz)"
+                x_values = x_values
+                self.output_file.attrs.update({"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps})
+                x_ds = self.output_file.create_dataset("frequency axis", data = x_values)
+            case "amp":
+                x_axis_label = "amplitude (mV)"
+                x_values = x_values
+                self.output_file.attrs.update({"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps})
+                x_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
             case _:
                 pass
-
-        self.logprint(f"PRINT DEBUG 5")
 
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         x_ds.make_scale(x_axis_label)
         self.output_file.attrs.update({"x axis": x_axis_label})
 
         # y axis
+        y_values = None
+        y_axis_label = ""
+        y_ds = None
+        
+        [y_start, y_end, y_steps] = [spec_line_edits.get(key) for key in ["y_start", "y_end", "y_points"]]
+        if isinstance(y_start, int | float) and isinstance(y_end, int | float):
+            y_values = np.linspace(y_start, y_end, y_steps)
+            dy = (y_end - y_start) / (y_steps - 1)
+            
         match spec_button_states["y_axis"]:
             case _:
                 pass
@@ -139,9 +123,9 @@ class Experiment(BaseExperiment):
                 self.output_file.attrs.update({"amp start (mV)": amp_start_mV, "amp end (mV)": amp_end_mV, "damp (mV)": damp, "steps": n_steps})
                 y_ds = self.output_file.create_dataset("amplitude axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
                 """
-        if "y" in [spec_button_states.get(key) for key in ["V", "z", "f", "amp"]] and isinstance(y_values, np.ndarray):
-            self.output_file.attrs.update({"y axis": y_axis_label})
-            y_ds.make_scale(y_axis_label)        
+        #if "y" in [spec_button_states.get(key) for key in ["V", "z", "f", "amp"]] and isinstance(y_values, np.ndarray):
+        #    self.output_file.attrs.update({"y axis": y_axis_label})
+        #    y_ds.make_scale(y_axis_label)
 
 
 
@@ -228,7 +212,7 @@ class Experiment(BaseExperiment):
                         self.exp_progress.emit(100)
                     
                     case _:
-                        self.logprint(f"Not yet implemented")
+                        raise Exception("This experiment is not yet implemented")
             
             
             
@@ -313,12 +297,12 @@ class Experiment(BaseExperiment):
                         self.exp_progress.emit(100)
                     
                     case _:
-                        self.logprint(f"Not yet implemented")
+                        raise Exception("This experiment is not yet implemented")
 
 
 
             case _: # Pure x-axis measurements
-                channel_names = [] # TBD                
+                channel_names = []
                 match x_axis_label:                    
                     case "frequency (Hz)": # Simple frequency sweep (capacitive)                        
                         """
@@ -327,7 +311,7 @@ class Experiment(BaseExperiment):
                         This measurement uses a reference of the applied tone on input 1 and measures the response from the STM on input 2.
                         The response of the second harmonic is captured as well.
                         """
-                        (measurement_array, channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
+                        (measurement_array, channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True, abort_callback = self.check_abort_request) # Perform the measurement and retrieve the data as a numpy array
                     
                     case "amplitude (mV)": # Simple amplitude sweep
                         """
@@ -341,10 +325,10 @@ class Experiment(BaseExperiment):
                         (measurement_array, channel_names) = self.mla_voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
                         
                     case "tip height (nm)":
-                        self.logprint("Z sweep is not yet implemented")
+                        raise Exception("This experiment is not yet implemented")
                     
                     case _:
-                        pass
+                        raise Exception("This experiment is not yet implemented")
                 
                 self.exp_progress.emit(100)
                 measurement_ds = self.output_file.create_dataset("sweep", data = measurement_array, dtype = float)

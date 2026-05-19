@@ -7,7 +7,6 @@ import time
 
 
 class NanonisAPI(QtCore.QObject):
-    connection = QtCore.pyqtSignal(str) # This signal emits 'running' on connect, 'idle' after disconnect and 'offline' after an error to indicate the TCP connection status to the gui/program
     task_progress = QtCore.pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of an experiment
     message = QtCore.pyqtSignal(str, str) # First argument is the message string, sedond argument is the message type, like 'warning', 'code', 'result', 'message', or 'error'
     parameters = QtCore.pyqtSignal(dict) # Any parameters dictionary sent through this signal should include a self-reference 'dict_name' such that the receiver can read it and understand what kind of parameters they are
