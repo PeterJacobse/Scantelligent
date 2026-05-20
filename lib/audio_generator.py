@@ -30,7 +30,7 @@ class AudioGenerator(QObject):
         
         for i in range(32):
             wn = self.w[i]
-            amp = self.amplitudes[i] * self.volumes[i] / 100000
+            amp = self.amplitudes[i] * self.volumes[i] / 10000000
             
             if wn < wnyquist:
                 wave += amp * np.sin(wn * time_list + self.phases[i])

@@ -546,11 +546,6 @@ class SCTWidgets:
             
             if len(numbers) > 0:
                 number = numbers[0]
-                
-                # Apply limits in case the number is too big or small
-                if isinstance(self.limits, list):
-                    if number < self.limits[0]: number = self.limits[0]
-                    if number > self.limits[1]: number = self.limits[1]
 
                 # Add the unit to the number
                 if isinstance(self.digits, int):
@@ -566,6 +561,11 @@ class SCTWidgets:
             # Method for programatically setting a value or str
             if isinstance(value, int) or isinstance(value, float):
                 number = value
+                
+                # Apply limits in case the number is too big or small
+                if isinstance(self.limits, list):
+                    if number < self.limits[0]: number = self.limits[0]
+                    if number > self.limits[1]: number = self.limits[1]
 
                 if isinstance(self.digits, int):
                     number = round(number, self.digits)
@@ -1683,15 +1683,15 @@ class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
     def currentChanged(self) -> None:
         value = self.current_le.getValue()
         if isinstance(value, float | int):
-            abs_val = np.abs(value)
-            indicator_level = np.log10(abs_val, where = abs_val > 10)
+            abs_val = np.clip(np.abs(value), .1, None)
+            indicator_level = np.log10(abs_val)
             self.current_indicator.setValue(indicator_level)
         return
     
     def setCurrentTick(self, value) -> None:
         if isinstance(value, float | int):
-            abs_val = np.abs(value)
-            tick_level = np.log10(abs_val, where = abs_val > 10)
+            abs_val = np.clip(np.abs(value), .1, None)
+            tick_level = np.log10(abs_val)
             self.current_indicator.setTickValue(tick_level)
         return
 

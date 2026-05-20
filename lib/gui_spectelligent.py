@@ -278,14 +278,14 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "sts_V_keithley_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
             
             # X and Y axes will have copies of the selected parameters
-            "sts_x_start": LE(tooltip = "start value", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_x_end": LE(tooltip = "end value", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_dx": LE(tooltip = "step value", unit = "Hz", limits = [0, 100], digits = 2),
+            "sts_x_start": LE(tooltip = "start value", unit = "Hz", limits = [-100000, 100000], digits = 1),
+            "sts_x_end": LE(tooltip = "end value", unit = "Hz", limits = [-100000, 100000], digits = 1),
+            "sts_dx": LE(tooltip = "step value", unit = "Hz", limits = [-100, 100], digits = 2),
             "sts_x_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
 
-            "sts_y_start": LE(tooltip = "start value", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_y_end": LE(tooltip = "end value", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_dy": LE(tooltip = "step value", unit = "Hz", limits = [0, 100], digits = 2),
+            "sts_y_start": LE(tooltip = "start value", unit = "Hz", limits = [-100000, 100000], digits = 1),
+            "sts_y_end": LE(tooltip = "end value", unit = "Hz", limits = [-100000, 100000], digits = 1),
+            "sts_dy": LE(tooltip = "step value", unit = "Hz", limits = [-100, 100], digits = 2),
             "sts_y_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
 
             # Lockin

@@ -164,68 +164,6 @@ class BaseExperiment(QObject):
             self.logprint(f"The tip-sample capacitance as measured by Nanonis is {cap_fC:.4f} fC", message_type = "message")
         return "nanonis"
 
-    def mla_frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0, output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None) -> np.ndarray:
-        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
-        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
-        measurement = lambda: self.mla.get_pixels(pixels_per_datapoint, average = True)
-        
-        if setup_defaults:
-            self.mla.inputs_update([input_reference_port, input_port, input_port], verbose = False)
-            self.mla.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}, verbose = False) # Output modulator 1 onto port 1
-        
-        (amplitudes_dict, error) = self.mla.amplitudes_update(verbose = False) # Read the amplitude
-        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
-        
-        # Prepare to plot these channels
-        channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "arg(a1) (rad)", "|a2| (mV)", "arg(a2) (rad)"]
-        if tia_gain_V_per_pA > 1E-12: channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (rad)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (rad)"]
-        self.prepare_graph(channel_names) # When a gain is given, convert the voltages to displacement currents and subsequently capacitances
-        measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = float)
-        
-        
-        
-        # Main loop
-        n_total = len(frequencies)
-        self.mla.start_lockin()
-        for index, f in enumerate(frequencies):
-            abort_callback()
-            self.task_progress.emit(int(100 * index / n_total))
-            w = 2 * np.pi * int(f) # Frequency in rad per s
-            self.mla.time_constant_update({"df (Hz)": int(f)}, verbose = False)
-            self.mla.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False)
-            
-            self.mla.get_pixels(settle_pixels) # Wait settle_pixels number of pixels
-            (pix, pix_var) = measurement()
-            
-            a1refabs = 1000 * np.abs(pix[0]) # Reference signal = output directly copied to an MLA input port
-            a1refarg = np.angle(pix[0])
-            
-            a1abs_mV = 1000 * np.abs(pix[1]) # Drive and second harmonic output measured on input port
-            a2abs_mV = 1000 * np.abs(pix[2])
-            a1arg = np.angle(pix[1])
-            a2arg = np.angle(pix[2])
-
-            if tia_gain_V_per_pA > 1E-12: # When a gain is given, convert the voltages to displacement currents and subsequently capacitances. The factor 2 accounts for the discrepancy between the time-averaged lockin signal and the actual voltage amplitude
-                a1abs_pA = 2 * a1abs_mV / (1000 * tia_gain_V_per_pA)
-                a2abs_pA = 2 * a2abs_mV / (1000 * tia_gain_V_per_pA)
-                
-                if mod_voltage_mV > .01: # Convert to femtofarad
-                    a1abs_fF = 1000000 * a1abs_pA / (w * mod_voltage_mV)
-                    a2abs_fF = 1000000 * a2abs_pA / (w * mod_voltage_mV)
-                else:
-                    a1abs_fF = 0
-                    a2abs_fF = 1
-                
-                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = float)
-            else:
-                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1arg, a2abs_mV, a2arg], dtype = float)
-            
-            self.data_array.emit(data_chunk)
-            measurement_array[index] = data_chunk
-        
-        self.task_progress.emit(100)
-        return (measurement_array, channel_names)
-
     def mla_amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
