@@ -20,7 +20,7 @@ class Experiment(BaseExperiment):
         # Aliases
         nn = self.nanonis
         mla = self.mla
-                
+
         # Read parameters
         [bias, start_feedback, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "hardware"]]
         V_start = bias.get("V_nanonis (V)")
@@ -35,6 +35,7 @@ class Experiment(BaseExperiment):
             V_start = bias_dict.get("port_1 (V)")
         
         """
+        self.logprint(f"I noticed you connected the sample bias to: {connected_device}. Please connect it to the MLA", message_type = "warning")
         iterations = 0
         while iterations < 20:
             iterations += 1
@@ -42,19 +43,6 @@ class Experiment(BaseExperiment):
             connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = False)
             self.logprint(f"{connected_device = }")
             if connected_device == "nanonis": break
-        
-        self.logprint(f"I noticed you connected the sample bias to: {connected_device}. Please connect it to the MLA", message_type = "warning")
-        
-        iterations = 0
-        while iterations < 20:
-            iterations += 1
-            self.check_abort_request()
-            connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = False)
-            if connected_device == "mla": break
-
-        self.logprint(f"Thank you for obeying my demands", message_type = "success")
-        
-        time.sleep(2)
         """
 
         if np.abs(V_start) < .6:

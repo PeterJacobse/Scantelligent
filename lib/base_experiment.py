@@ -112,9 +112,7 @@ class BaseExperiment(QObject):
                 (pix, pix_var) = mla.get_pixels(100, average = True)
                 mla.stop_lockin()
                 li_complex_V = pix[1]
-                print(f"{li_complex_V = }")
-                
-                mla.outputs_update({"blank": True}, verbose = verbose)
+                print(f"MLA: {li_complex_V = }")
                 
                 if np.abs(li_complex_V) < .1:
                     if verbose: self.logprint(f"I cannot measure a response from the MLA either!", message_type = "error")
@@ -139,8 +137,7 @@ class BaseExperiment(QObject):
                                 
                 # Reset the MLA
                 try:
-                    mla.outputs_update({"blank": True}, verbose = verbose)
-                    mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"),
+                    mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_1 (V)"),
                                         "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "outputs": outputs_dict.get("outputs")}, verbose = verbose)
                 except Exception as e:
                     self.logprint(f"{type(e)}: {e}", message_type = "error")
@@ -148,8 +145,7 @@ class BaseExperiment(QObject):
             
             except Exception as e:
                 try:
-                    mla.outputs_update({"blank": True}, verbose = verbose)
-                    mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"),
+                    mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_1 (V)"),
                                         "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "outputs": outputs_dict.get("outputs")}, verbose = verbose)
                 except Exception as e2:
                     self.logprint(f"{type(e2)}: {e2}", message_type = "error")
@@ -171,13 +167,13 @@ class BaseExperiment(QObject):
     def mla_frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0, output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None) -> np.ndarray:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
-        measurement = lambda: 2 * self.mla.get_pixels(pixels_per_datapoint, average = True)
+        measurement = lambda: self.mla.get_pixels(pixels_per_datapoint, average = True)
         
         if setup_defaults:
             self.mla.inputs_update([input_reference_port, input_port, input_port], verbose = False)
             self.mla.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}, verbose = False) # Output modulator 1 onto port 1
         
-        (amplitudes_dict, error) = self.mla.amplitudes_update() # Read the amplitude
+        (amplitudes_dict, error) = self.mla.amplitudes_update(verbose = False) # Read the amplitude
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
         
         # Prepare to plot these channels
@@ -194,7 +190,7 @@ class BaseExperiment(QObject):
         for index, f in enumerate(frequencies):
             abort_callback()
             self.task_progress.emit(int(100 * index / n_total))
-            w = 2 * np.pi * int(f)
+            w = 2 * np.pi * int(f) # Frequency in rad per s
             self.mla.time_constant_update({"df (Hz)": int(f)}, verbose = False)
             self.mla.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False)
             
@@ -208,10 +204,10 @@ class BaseExperiment(QObject):
             a2abs_mV = 1000 * np.abs(pix[2])
             a1arg = np.angle(pix[1])
             a2arg = np.angle(pix[2])
-                        
-            if tia_gain_V_per_pA > 1E-12: # When a gain is given, convert the voltages to displacement currents and subsequently capacitances
-                a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA)
-                a2abs_pA = a2abs_mV / (1000 * tia_gain_V_per_pA)
+
+            if tia_gain_V_per_pA > 1E-12: # When a gain is given, convert the voltages to displacement currents and subsequently capacitances. The factor 2 accounts for the discrepancy between the time-averaged lockin signal and the actual voltage amplitude
+                a1abs_pA = 2 * a1abs_mV / (1000 * tia_gain_V_per_pA)
+                a2abs_pA = 2 * a2abs_mV / (1000 * tia_gain_V_per_pA)
                 
                 if mod_voltage_mV > .01: # Convert to femtofarad
                     a1abs_fF = 1000000 * a1abs_pA / (w * mod_voltage_mV)
@@ -421,32 +417,40 @@ class BaseExperiment(QObject):
     def finish_experiment(self) -> None:
         self.logprint("Starting cleanup sequence", message_type = "message")
         
-        if hasattr(self, "nanonis"):
-            try:
-                self.nanonis.scan_action({"action": "stop"})
-                if self.feedback_changed: self.nanonis.tip_update({"z_rel (nm)": 1})
-                
-                # Read the start parameters and try to reset all of them
-                nanonis_parameters = self.start_parameters.get("nanonis", {})
-                [grid, lockin_parameters, feedback_parameters, speed_parameters, bias, tip_status] = [nanonis_parameters.get(key, None) for key in ["grid", "lockin", "feedback", "speeds", "bias", "tip_status"]]
-                if grid: self.nanonis.grid_update(grid)
-                if lockin_parameters: self.nanonis.lockin_update(lockin_parameters)
-                V_nanonis = round(bias.get("V_nanonis (V)", None), 2)
-                if isinstance(V_nanonis, float | int): self.nanonis.bias_update({"V_nanonis (V)": V_nanonis})
-                self.nanonis.feedback_update(feedback_parameters)
-                self.nanonis.speeds_update(speed_parameters)
-                
-                fb = tip_status.get("feedback")
-                self.nanonis.tip_update({"feedback": fb})
-            except Exception as e:
-                self.logprint(f"Error while resetting Nanonis: {e}", message_type = "error")
+        # Try to reset Nanonis
+        try:
+            self.nanonis.scan_action({"action": "stop"})
+            if self.feedback_changed: self.nanonis.tip_update({"z_rel (nm)": 1})
+            
+            # Read the start parameters and try to reset all of them
+            nanonis_parameters = self.start_parameters.get("nanonis")
+            if not isinstance(nanonis_parameters, dict):
+                raise Exception("")
+            
+            [grid, lockin_parameters, feedback_parameters, speed_parameters, bias, tip_status] = [nanonis_parameters.get(key, None) for key in ["grid", "lockin", "feedback", "speeds", "bias", "tip_status"]]
+            if grid: self.nanonis.grid_update(grid, verbose = False)
+            if lockin_parameters: self.nanonis.lockin_update(lockin_parameters, verbose = False)
+            V_nanonis = round(bias.get("V_nanonis (V)", None), 2)
+            if isinstance(V_nanonis, float | int): self.nanonis.bias_update({"V_nanonis (V)": V_nanonis}, verbose = False)
+            self.nanonis.feedback_update(feedback_parameters, verbose = False)
+            self.nanonis.speeds_update(speed_parameters, verbose = False)
+            
+            fb = tip_status.get("feedback")
+            self.nanonis.tip_update({"feedback": fb})
+        except Exception as e:
+            self.logprint(f"Problem encountered while trying to reset Nanonis. I could not read the start parameters. {e}", message_type = "error")
         
-        if hasattr(self, "mla") and self.mla.status == "running":
-            try:
-                pass
-                #self.mla.outputs_update({"blank": True})
-            except:
-                pass
+        try:
+            # Read the start parameters and try to reset all of them
+            mla_parameters = self.start_parameters.get("mla")
+            if not isinstance(mla_parameters, dict):
+                raise Exception("")
+            
+            [time_constant, mla_bias, amplitudes_dict, frequencies_dict, outputs_dict] = [self.start_parameters["mla"].get(key) for key in ["time_constant", "mla_bias", "amplitudes", "frequencies", "outputs"]]
+            self.mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_2 (V)"),
+                                    "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "outputs": outputs_dict.get("outputs")}, verbose = False)
+        except Exception as e:
+            self.logprint(f"Problem encountered while trying to reset the MLA. I could not read the start parameters. {e}", message_type = "error")
 
         if not self.abort_requested:
             self.logprint("Experiment finished!", message_type = "success")

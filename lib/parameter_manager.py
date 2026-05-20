@@ -255,7 +255,7 @@ class ParameterManager(QtCore.QObject):
             case "pixels":
                 pixel = parameters.get("pixels")
                 if pixel.ndim > 1: pixel = pixel[:, 0]
-                abs_values = np.abs(2 * pixel)
+                abs_values = np.abs(2000 * pixel)
                 arg_values = np.rad2deg(np.angle(pixel))
                 
                 sct.spt.gui.lockin_widget.setMeasuredAmplitudes(abs_values)

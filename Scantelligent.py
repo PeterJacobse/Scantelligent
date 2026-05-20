@@ -63,7 +63,7 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
-        self.xy_mode = True # False means graphing parameters as a function of index, rolling when more than 1000 buffer values are filled. True means using the values of channel 0 as x values.
+        self.x_channel = 0 # x channel for graphing. An index of -1 means graphing parameters as a function of index, rolling when more than 6000 buffer values are filled
 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -251,6 +251,7 @@ class Scantelligent(QtCore.QObject):
                 
                 # Set up signal-slot connections                
                 # MLA -> Scantelligent
+                self.mla.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
                 self.mla.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
                 self.mla.message.connect(self.logprint)
 
@@ -399,7 +400,7 @@ class Scantelligent(QtCore.QObject):
         x_data = None
         if data_array.ndim < 2: data_array = np.array([data_array])
 
-        for index in range(min(len(data_array[0]), 40)):            
+        for index in range(min(len(data_array[0]), 40)):
             new_data = data_array[:, index]
 
             plot_data_item = self.gui.pdis[index]
@@ -413,10 +414,9 @@ class Scantelligent(QtCore.QObject):
                     crop_length = total_length - max_length
                     data = np.concatenate([old_data[crop_length:], new_data])
             else: data = new_data
-            
-            if index == 0: x_data = data # Set x_data to be the updated data from channel 0
-
-            if bool(self.xy_mode):
+            if index == self.x_channel: x_data = data # Set x_data
+        
+            if self.x_channel > -1:
                 n_points = max(len(x_data), len(data))
                 plot_data_item.setData(x = x_data[:n_points], y = data[:n_points])
             else:

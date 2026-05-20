@@ -30,16 +30,18 @@ class Experiment(BaseExperiment):
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
+        """
         connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
         if not connected_device == nanonis_or_mla:
             self.logprint(f"Warning. The STM seems to be connected to {connected_device}. However, an experiment using {nanonis_or_mla} was requested", message_type = "warning")
         if not connected_device == "mla":
             self.logprint(f"Warning. Only spectroscopy using the MLA is supported at this moment.", message_type = "warning")
+        """
        
         # Read parameters from Nanonis
         nn_hardware_dict = self.start_parameters["nanonis"].get("hardware", {})
         [tia_gain, tia_gain_V_per_pA] = [nn_hardware_dict.get(key) for key in ["current_gain", "gain (V/pA)"]]
-        (amplitudes, error) = mla.amplitudes_update()
+        (amplitudes, error) = mla.amplitudes_update(verbose = False)
         mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
         self.output_file.attrs.update({"modulator amplitude (mV)": mod_voltage_mV, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int})
 
@@ -94,38 +96,33 @@ class Experiment(BaseExperiment):
             dy = (y_end - y_start) / (y_steps - 1)
             
         match spec_button_states["y_axis"]:
-            case _:
-                pass
-
-                """
             case "V":
                 y_axis_label = "voltage (V)"
-                y_values = V_linspace
+                y_values = y_values
                 y_values = np.concatenate((y_values, y_values[::-1]))
-                self.output_file.attrs.update({"V start (V)": V_start_V, "V end (V)": V_end_V, "dV (V)": dV, "steps": n_steps})
+                self.output_file.attrs.update({"V start (V)": y_start, "V end (V)": y_end, "dV (V)": dy, "steps": y_steps})
                 y_ds = self.output_file.create_dataset("voltage axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-            
-            elif spec_button_states.get("z") == "y":
+            case "z":
                 y_axis_label = "tip height (nm)"
-                y_values = z_linspace
-                self.output_file.attrs.update({"z start (nm)": z_start_nm, "z end (nm)": z_end_nm, "dz (nm)": dz, "steps": n_steps})
+                y_values = y_values
+                self.output_file.attrs.update({"z start (nm)": y_start, "z end (nm)": y_end, "dz (nm)": dy, "steps": y_steps})
                 y_ds = self.output_file.create_dataset("tip height axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-            
-            elif spec_button_states.get("f") == "y":
+            case "f":
                 y_axis_label = "frequency (Hz)"
-                y_values = f_linspace
-                self.output_file.attrs.update({"f start (Hz)": f_start_Hz, "f end (Hz)": f_end_Hz, "df (Hz)": df, "steps": n_steps})
+                y_values = y_values
+                self.output_file.attrs.update({"f start (Hz)": y_start, "f end (Hz)": y_end, "df (Hz)": dy, "steps": y_steps})
                 y_ds = self.output_file.create_dataset("frequency axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-
-            elif spec_button_states.get("amp") == "y":
+            case "amp":
                 y_axis_label = "amplitude (mV)"
-                y_values = amp_linspace
-                self.output_file.attrs.update({"amp start (mV)": amp_start_mV, "amp end (mV)": amp_end_mV, "damp (mV)": damp, "steps": n_steps})
-                y_ds = self.output_file.create_dataset("amplitude axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-                """
-        #if "y" in [spec_button_states.get(key) for key in ["V", "z", "f", "amp"]] and isinstance(y_values, np.ndarray):
-        #    self.output_file.attrs.update({"y axis": y_axis_label})
-        #    y_ds.make_scale(y_axis_label)
+                y_values = y_values
+                self.output_file.attrs.update({"amp start (mV)": y_start, "amp end (mV)": y_end, "damp (mV)": dy, "steps": y_steps})
+                y_ds = self.output_file.create_dataset("amplitude axis", shape = (0,), maxshape = (len(y_values),), dtype = float)            
+            case _:
+                pass
+        
+        if isinstance(y_values, np.ndarray):
+            self.output_file.attrs.update({"y axis": y_axis_label})
+            y_ds.make_scale(y_axis_label)
 
 
 
@@ -134,43 +131,37 @@ class Experiment(BaseExperiment):
             case "voltage (V)": # Experiments that sweep along one parameter while slowly ramping the bias                
                 match x_axis_label:
                     case "frequency (Hz)": # Frequency sweeps on the x axis while sweeping voltage on the y axis                        
-                        # Go to initial value and perform a single sweep to retrieve the channels and single sweep array
+                        # Go to initial value and perform a single sweep to retrieve the channels and single sweep array, inserting the amplitude into the measurement array
                         voltage = y_values[0]
                         mla.bias_update({"port_1 (V)": voltage}, verbose = False)
-                        (single_sweep_array, sweep_channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
+                        (single_sweep_array, channel_names) = mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True, tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = ("voltage (V)", voltage),
+                                                                                  abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
                         
-                        # Extract data from the first measurement and set up a measurement array accordingly
-                        channel_names = np.insert(sweep_channel_names, 0, "voltage (V)")
-                        single_sweep_array_with_voltage = np.insert(single_sweep_array, 0, voltage, axis = 1)
-                        sweep_array_shape = single_sweep_array_with_voltage.shape
-                        
-                        # Create the measurement array with the right size
+                        # Create the measurement array with the right size. It will be a stack of arrays, each layer of which is the single sweep array
                         measurement_array = np.zeros((len(y_values), len(x_values), len(channel_names)))
-                        measurement_array[0] = single_sweep_array_with_voltage
+                        measurement_array[0] = single_sweep_array
                         
                         # Create the hdf5 dataset
-                        measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + sweep_array_shape, maxshape = measurement_array.shape, dtype = float)
+                        measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
                         channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
                         channels_ds.make_scale("channels")
                         measurement_ds.dims[2].attach_scale(channels_ds)
                         measurement_ds.dims[1].attach_scale(x_ds)
                         measurement_ds.dims[0].attach_scale(y_ds)
                         
-                        # Perform the sweep
+                        # Perform the sweep, iteratively adding layers to the HDF5 dataset
                         n_total = len(y_values)
-                        for index, voltage in enumerate(y_values):
+                        for index, amp_mV in enumerate(y_values):
                             self.exp_progress.emit(int(100 * index / n_total))
                             mla.bias_update({"port_1 (V)": voltage}, verbose = False)
-                            (single_sweep_array, sweep_channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
-                            single_sweep_array_with_voltage = np.insert(single_sweep_array, 0, voltage, axis = 1) # Insert the voltage
-                            measurement_array[0] = single_sweep_array_with_voltage
-                            
-                            measurement_ds.resize((index + 1,) + sweep_array_shape)
+                            (single_sweep_array, sweep_channel_names) = mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True, tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = ("voltage (V)", voltage),
+                                                                                            abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
+                            measurement_array[index] = single_sweep_array                            
+                            measurement_ds.resize((index + 1,) + single_sweep_array.shape)
                             y_ds.resize((index + 1,))
-                            measurement_ds[index, :, :] = single_sweep_array_with_voltage
-                            y_ds[index] = voltage
-                        
-                        self.exp_progress.emit(100)
+                            measurement_ds[index, :, :] = single_sweep_array
+                            y_ds[index] = amp_mV
+                        self.exp_progress.emit(100) # Experiment finished
                     
                     case "amplitude (mV)": # Increasing the amplitude at each bias voltage point
                         # Go to initial value and perform a single sweep to retrieve the channels and single sweep array
@@ -258,43 +249,39 @@ class Experiment(BaseExperiment):
                         self.exp_progress.emit(100)
 
                     case "frequency (Hz)": # Frequency sweeps on the x axis while sweeping voltage on the y axis                        
-                        # Go to initial value and perform a single sweep to retrieve the channels and single sweep array
+                        # Go to initial value and perform a single sweep to retrieve the channels and single sweep array, inserting the amplitude into the measurement array
                         amp_mV = y_values[0]
                         mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
-                        (single_sweep_array, sweep_channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
+                        (single_sweep_array, channel_names) = mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True, tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = ("amp (mV)", amp_mV),
+                                                                                  abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
                         
-                        # Extract data from the first measurement and set up a measurement array accordingly
-                        channel_names = np.insert(sweep_channel_names, 0, "voltage (V)")
-                        single_sweep_array_with_amplitude = np.insert(single_sweep_array, 0, amp_mV, axis = 1)
-                        sweep_array_shape = single_sweep_array_with_amplitude.shape
-                        
-                        # Create the measurement array with the right size
+                        # Create the measurement array with the right size. It will be a stack of arrays, each layer of which is the single sweep array
+                        #(measurement_array, measurement_ds) = self.prepare_2D_dataset(single_sweep_array, channel_names)
+                        # print(f"{len(y_values) = }, {len(x_values) = }; {single_sweep_array.shape = }")
                         measurement_array = np.zeros((len(y_values), len(x_values), len(channel_names)))
-                        measurement_array[0] = single_sweep_array_with_amplitude
+                        measurement_array[0] = single_sweep_array
                         
                         # Create the hdf5 dataset
-                        measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + sweep_array_shape, maxshape = measurement_array.shape, dtype = float)
+                        measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
                         channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
                         channels_ds.make_scale("channels")
                         measurement_ds.dims[2].attach_scale(channels_ds)
                         measurement_ds.dims[1].attach_scale(x_ds)
                         measurement_ds.dims[0].attach_scale(y_ds)
                         
-                        # Perform the sweep
+                        # Perform the sweep, iteratively adding layers to the HDF5 dataset
                         n_total = len(y_values)
                         for index, amp_mV in enumerate(y_values):
                             self.exp_progress.emit(int(100 * index / n_total))
                             mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
-                            (single_sweep_array, sweep_channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True) # Perform the measurement and retrieve the data as a numpy array
-                            single_sweep_array_with_amplitude = np.insert(single_sweep_array, 0, amp_mV, axis = 1) # Insert the amplitude
-                            measurement_array[0] = single_sweep_array_with_amplitude
-                            
-                            measurement_ds.resize((index + 1,) + sweep_array_shape)
+                            (single_sweep_array, sweep_channel_names) = mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True, tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = ("amp (mV)", amp_mV),
+                                                                                            abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
+                            measurement_array[index] = single_sweep_array                            
+                            measurement_ds.resize((index + 1,) + single_sweep_array.shape)
                             y_ds.resize((index + 1,))
-                            measurement_ds[index, :, :] = single_sweep_array_with_amplitude
+                            measurement_ds[index, :, :] = single_sweep_array
                             y_ds[index] = amp_mV
-                        
-                        self.exp_progress.emit(100)
+                        self.exp_progress.emit(100) # Experiment finished
                     
                     case _:
                         raise Exception("This experiment is not yet implemented")
@@ -311,11 +298,12 @@ class Experiment(BaseExperiment):
                         This measurement uses a reference of the applied tone on input 1 and measures the response from the STM on input 2.
                         The response of the second harmonic is captured as well.
                         """
-                        (measurement_array, channel_names) = self.mla_frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True, abort_callback = self.check_abort_request) # Perform the measurement and retrieve the data as a numpy array
+                        (measurement_array, channel_names) = mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True, tia_gain_V_per_pA = tia_gain_V_per_pA,
+                                                                                 abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
                     
                     case "amplitude (mV)": # Simple amplitude sweep
                         """
-                        Amplitude sweeps show how the higher harmonic peaks increase in amplitude with increasing drive.
+                        Amplitude sweeps show how the higher harmonic peaks increase in amplitude with increasing drive amplitude.
                         The responses are converted to conductances.
                         A pure tone is set on port 1, a reference of the applied tone is measured on input 1, and the response from the STM is measured on input 2.
                         """
@@ -336,10 +324,6 @@ class Experiment(BaseExperiment):
                 channels_ds.make_scale("channels")
                 measurement_ds.dims[0].attach_scale(channels_ds)
                 measurement_ds.dims[1].attach_scale(x_ds)
-
-
-
-
 
 
 
