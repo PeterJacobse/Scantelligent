@@ -118,6 +118,12 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                                             {"name": "x", "tooltip": "Keithley voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
                                             {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}], click_to_toggle = False),
             
+            "V_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "f_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "amp_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "z_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "V_keithley_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            
             "sts_x_axis": MSB(size = 28, states = [{"name": "V", "icon": icons.get("V"), "tooltip": "Perform a voltage sweep on the x axis (fast axis)"},
                                                    {"name": "amp", "icon": icons.get("A"), "tooltip": "Perform an amplitude sweep on the x axis (fast axis)"},
                                                    {"name": "z", "icon": icons.get("z"), "tooltip": "Perform a tip height sweep on the x axis (fast axis)"},
@@ -137,15 +143,13 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
             "mla_zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes"),
             "nanonis_zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes"),
-            "spectroscopy_feedback": MSB(click_to_toggle = False, size = 28,
-                                         states = [{"name": "off", "tooltip": "Feedback switched OFF while performing spectroscopy", "icon": icons.get("constant_height"), "color": sct_black},
-                                                   {"name": "on", "tooltip": "Feedback switched ON while performing spectroscopy", "icon": icons.get("constant_current"), "color": sct_blue}]),
-            "intermediate_feedback": MSB(click_to_toggle = False, size = 28,
-                                         states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
-                                                   {"name": "on", "tooltip": "Return to intermediate feedback\nafter every sweep in x", "icon": icons.get("constant_current"), "color": sct_blue}]),
-            "z_adjust": MSB(click_to_toggle = False, size = 28,
-                            states = [{"name": "off", "tooltip": "Do not adjust the tip height relative to the feedback setpoint", "icon": icons.get("constant_height"), "color": sct_black},
-                                      {"name": "on", "tooltip": "Adjust the tip height relative to the feedback setpoint before each sweep", "icon": icons.get("constant_current"), "color": sct_blue}])
+            "spectroscopy_feedback": MSB(size = 28, states = [{"name": "off", "tooltip": "Feedback switched OFF while performing spectroscopy", "icon": icons.get("constant_height"), "color": sct_black},
+                                                              {"name": "on", "tooltip": "Feedback switched ON while performing spectroscopy", "icon": icons.get("constant_current"), "color": sct_blue},
+                                                              {"name": "unchanged", "tooltip": "Feedback left unchanged while performing spectroscopy", "icon": icons.get("tip_unknown"), "color": sct_black}]),
+            "intermediate_feedback": MSB(size = 28, states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
+                                                              {"name": "on", "tooltip": "Return to intermediate feedback\before every sweep in x", "icon": icons.get("constant_current"), "color": sct_blue}]),
+            "z_adjust": MSB(size = 28, states = [{"name": "off", "tooltip": "Do not adjust the tip height relative to the feedback setpoint", "icon": icons.get("constant_height"), "color": sct_black},
+                                                 {"name": "on", "tooltip": "Adjust the tip height relative to the feedback setpoint before each sweep", "icon": icons.get("constant_current"), "color": sct_blue}])
         }
         
         for parameter_type in ["lockin", "parameter_space", "spectroscopy"]:
@@ -254,28 +258,28 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             
             "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
             "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [-10000, 10000], digits = 2, edited_color = scanalyzer_blue),
             "sts_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
             
             "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
             "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2, edited_color = scanalyzer_blue),
+            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [-100, 100], digits = 2, edited_color = scanalyzer_blue),
             "sts_f_points": LE(value = 1000, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
             
             "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
             "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
-            "sts_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [0, 200], digits = 2, edited_color = scanalyzer_blue),
+            "sts_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
             "sts_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),            
 
             "sts_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
             "sts_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [0, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
             "sts_amp_points": LE(value = 101, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
 
-            "sts_V_keithley_start": LE(tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_V_keithley_end": LE(tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_dV_keithley": LE(tooltip = "frequency step value", unit = "Hz", limits = [0, 100], digits = 2),
-            "sts_V_keithley_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
+            "sts_V_keithley_start": LE(value = -60, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "sts_V_keithley_end": LE(value = 60, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
+            "sts_dV_keithley": LE(value = 1, tooltip = "frequency step value", unit = "Hz", limits = [-100, 100], digits = 2),
+            "sts_V_keithley_points": LE(value = 121, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
             
             # X and Y axes will have copies of the selected parameters
             "sts_x_start": LE(tooltip = "start value", unit = "Hz", limits = [-100000, 100000], digits = 1),
@@ -346,7 +350,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         return progress_bars
 
-    def make_layouts(self) -> dict:        
+    def make_layouts(self) -> dict:
         layouts = {
             # Main
             "main": make_layout("h"),
@@ -360,7 +364,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "right_column": make_layout("v"),
             "spectroscopy_controls": make_layout("h"),
             "spectroscopy_settings": make_layout("g"),
-            "parameter_space": make_layout("g"),
+            "parameter_space": make_layout("v"),
+            "parameter_space_line_edits": make_layout("g"),
             "parameter_space_getset": make_layout("h"),
             
             "xy_plot": make_layout("g"),
@@ -487,20 +492,30 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["spectroscopy_settings"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 4)
         
         # Parameter space
-        [layouts["parameter_space"].addWidget(buttons[f"sts_{parameter}"], 2 + 2 * index, 0, 2, 1) for index, parameter in enumerate(["V", "z", "f", "amp", "V_keithley"])]
-        for number, quantity in enumerate(["V", "z", "f", "amp", "V_keithley"]):
-            [layouts["parameter_space"].addWidget(line_edits[name], 2 + int(index / 2) + 2 * number, 1 + index % 2) for index, name in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
-        [layouts["parameter_space_getset"].addWidget(buttons[f"{key}et_parameter_space_parameters"]) for key in ["g", "s"]]
-        layouts["parameter_space"].addLayout(layouts["parameter_space_getset"], 12, 0, 1, 3)
+        for qindex, quantity in enumerate(["V", "z"]):
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 0, 0, 2, 1)
+            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], int(index / 2), 1 + 3 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 0, 3 + 3 * qindex, 2, 1)
+        for qindex, quantity in enumerate(["f", "amp"]):
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 2, 0, 2, 1)
+            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], 2 + int(index / 2), 1 + 3 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 2, 3 + 3 * qindex, 2, 1)
+        for qindex, quantity in enumerate(["V_keithley"]):
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 4, 0, 2, 1)
+            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], 4 + int(index / 2), 1 + 3 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 4, 3 + 3 * qindex, 2, 1)
+        layouts["parameter_space"].addLayout(layouts["parameter_space_line_edits"])
         
+        [layouts["parameter_space_getset"].addWidget(buttons[f"{key}et_parameter_space_parameters"]) for key in ["g", "s"]]
+        layouts["parameter_space"].addLayout(layouts["parameter_space_getset"])
+                
         [layouts["xy_plot_y"].addWidget(widget) for widget in [line_edits["sts_y_end"], buttons["sts_y_axis"], line_edits["sts_y_points"], line_edits["sts_y_start"]]]
         [layouts["xy_plot_x"].addWidget(widget) for widget in [line_edits["sts_x_start"], buttons["sts_x_axis"], line_edits["sts_x_points"], line_edits["sts_x_end"]]]
-        
         layouts["xy_plot"].addLayout(layouts["xy_plot_y"], 0, 0)
         layouts["xy_plot"].addWidget(self.plot_widget, 0, 1)
         layouts["xy_plot"].addLayout(layouts["xy_plot_x"], 1, 1)
         
-        layouts["parameter_space"].addLayout(layouts["xy_plot"], 13, 0, 1, 3)
+        layouts["parameter_space"].addLayout(layouts["xy_plot"])
         
         """
         # Modulators

@@ -546,6 +546,11 @@ class SCTWidgets:
             
             if len(numbers) > 0:
                 number = numbers[0]
+                
+                # Apply limits in case the number is too big or small
+                if isinstance(self.limits, list) and isinstance(number, int | float):
+                    if number < self.limits[0]: number = self.limits[0]
+                    if number > self.limits[1]: number = self.limits[1]
 
                 # Add the unit to the number
                 if isinstance(self.digits, int):

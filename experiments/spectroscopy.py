@@ -54,8 +54,6 @@ class Experiment(BaseExperiment):
         x_ds = None
         
         [x_start, x_end, x_steps] = [spec_line_edits.get(key) for key in ["x_start", "x_end", "x_points"]]
-        print(f"{spec_line_edits = }")
-        print(f"{x_start = }")
         x_values = np.linspace(x_start, x_end, x_steps)
         dx = (x_end - x_start) / (x_steps - 1)
         

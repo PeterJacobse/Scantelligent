@@ -373,8 +373,9 @@ class BaseExperiment(QObject):
             self.nanonis.feedback_update(feedback_parameters, verbose = False)
             self.nanonis.speeds_update(speed_parameters, verbose = False)
             
+            withdrawn = tip_status.get("withdrawn")
             fb = tip_status.get("feedback")
-            self.nanonis.tip_update({"feedback": fb})
+            self.nanonis.tip_update({"feedback": fb, "withdrawn": withdrawn})
         except Exception as e:
             self.logprint(f"Problem encountered while trying to reset Nanonis. I could not read the start parameters. {e}", message_type = "error")
         
@@ -386,7 +387,7 @@ class BaseExperiment(QObject):
             
             [time_constant, mla_bias, amplitudes_dict, frequencies_dict, outputs_dict] = [self.start_parameters["mla"].get(key) for key in ["time_constant", "mla_bias", "amplitudes", "frequencies", "outputs"]]
             self.mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_2 (V)"),
-                                    "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "outputs": outputs_dict.get("outputs")}, verbose = False)
+                                    "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "output_masks": outputs_dict.get("output_masks")}, verbose = False)
         except Exception as e:
             self.logprint(f"Problem encountered while trying to reset the MLA. I could not read the start parameters. {e}", message_type = "error")
 

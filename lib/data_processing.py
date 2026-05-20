@@ -653,7 +653,7 @@ class DataProcessing:
 
         return (fft_image, error)
 
-    def line_subtract(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
+    def line_subtract(self, image: np.ndarray, transpose: bool = True) -> tuple[np.ndarray, bool | str]:
         error = False
 
         if not isinstance(image, np.ndarray):
@@ -662,6 +662,8 @@ class DataProcessing:
         
         image_subtracted = []
         try:
+            if transpose: image = image.transpose()
+            
             for line in image:
                 x = range(len(line))
                 # Construct the design matrix A for a linear fit (y = mx + c)
@@ -683,6 +685,8 @@ class DataProcessing:
         except:
             error = "Error. Line subtraction algorithm failed."
             return (image, error)
+        
+        if transpose: image_subtracted = image_subtracted.transpose()
 
         return (image_subtracted, error)
 
@@ -754,7 +758,7 @@ class DataProcessing:
                 case "plane":
                     processed_image = image - plane - avg_image
                 case "linewise":
-                    (processed_image, error) = self.line_subtract(image)
+                    (processed_image, error) = self.line_subtract(image, transpose = True)
                 case "average":
                     processed_image = image - avg_image
                 case _:

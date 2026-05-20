@@ -600,6 +600,9 @@ class MLAAPI(QtCore.QObject):
         
         
         if setup_defaults:
+            (outputs_dict, error) = self.outputs_update(verbose = False) # Read for resetting later
+            (inputs_dict, error) = self.inputs_update(verbose = False)
+            
             self.inputs_update({"input_mask": [input_reference_port, input_port, input_port]}, verbose = False)
             self.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}, verbose = False) # Output modulator 1 onto port 1
         
@@ -659,7 +662,9 @@ class MLAAPI(QtCore.QObject):
             if isinstance(insert_value, float | int): measurement_array[index] = np.insert(data_chunk, 0, insert_value)
             else: measurement_array[index] = data_chunk
         
-        self.task_progress.emit(100)
+        self.task_progress.emit(100)        
+        if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
+        if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
         return (measurement_array, channel_names)
 
     def amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
@@ -672,6 +677,9 @@ class MLAAPI(QtCore.QObject):
         if not data_array_callback: data_array_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
         
         if setup_defaults:
+            (outputs_dict, error) = self.outputs_update(verbose = False) # Read for resetting later
+            (inputs_dict, error) = self.inputs_update(verbose = False)
+            
             input_mask = np.full((32), input_port, dtype = int)
             input_mask[0] = input_reference_port
             self.inputs_update({"input_mask": input_mask})
@@ -722,6 +730,8 @@ class MLAAPI(QtCore.QObject):
             else: measurement_array[index] = data_chunk
 
         self.task_progress.emit(100)
+        if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
+        if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
         return (measurement_array, channel_names)
 
     def voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
@@ -734,6 +744,9 @@ class MLAAPI(QtCore.QObject):
         if not data_array_callback: data_array_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
         
         if setup_defaults:
+            (outputs_dict, error) = self.outputs_update(verbose = False) # Read for resetting later
+            (inputs_dict, error) = self.inputs_update(verbose = False)
+            
             input_mask = np.full((32), input_port, dtype = int)
             input_mask[0] = input_reference_port
             self.inputs_update({"input_mask": input_mask})
@@ -795,6 +808,8 @@ class MLAAPI(QtCore.QObject):
             else: measurement_array[index] = data_chunk
         
         self.task_progress.emit(100)
+        if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
+        if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
         return (measurement_array, channel_names)
 
 
