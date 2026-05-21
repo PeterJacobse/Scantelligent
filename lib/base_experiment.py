@@ -2,6 +2,7 @@ import time, h5py, types
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from datetime import datetime
+from .file_functions import FileFunctions
 
 
 
@@ -27,7 +28,8 @@ class BaseExperiment(QObject):
         
         self.mla = kwargs.pop("mla", None)
         self.nanonis = kwargs.pop("nanonis", None)
-
+        
+        self.file_functions = FileFunctions()
         self.gui_setup = {}
         self.abort_requested = False
         self.current_spikes = 0
@@ -291,9 +293,6 @@ class BaseExperiment(QObject):
             if hasattr(self, "mla") and self.mla.status == "running":
                 (mla_parameters, error) = self.mla.initialize(verbose = False)
                 self.start_parameters.update({"mla": mla_parameters})
-            
-            self.output_file = h5py.File(self.experiment_file, "w")
-            self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S")})
             
             try:
                 run(self)

@@ -91,6 +91,7 @@ class Spectelligent(QtCore.QObject):
     def connect_buttons(self) -> None:
         button_slots = {"sts_x_axis": self.update_grid, "sts_y_axis": self.update_grid, "exit": self.exit, "get_parameter_space_parameters": self.update_grid, "set_parameter_space_parameters": self.update_grid,
                         "get_spectroscopy_parameters": self.update_grid, "set_spectroscopy_parameters": self.update_grid}
+        button_slots.update({f"sts_{parameter}": lambda: self.update_grid(parameter) for parameter in ["V", "f", "z", "amp", "V_keithley"]})
         
         for button_name, connected_function in button_slots.items():
             self.gui.buttons[button_name].clicked.connect(connected_function)
@@ -139,7 +140,7 @@ class Spectelligent(QtCore.QObject):
 
 
     # Update the STS grid
-    def update_grid(self) -> None:
+    def update_grid(self, new_parameter: str = None) -> None:
         line_edits = self.gui.line_edits
         
         for parameter in ["V", "amp", "f", "z", "V_keithley"]:
@@ -147,8 +148,17 @@ class Spectelligent(QtCore.QObject):
             line_edits[f"sts_{parameter}_end"].resetColor()
             line_edits[f"sts_{parameter}_points"].resetColor()
             line_edits[f"sts_d{parameter}"].resetColor()
-                
-        match self.gui.buttons["sts_x_axis"].state_name:
+            
+        x_parameter = self.gui.buttons["sts_x_axis"].state_name
+        y_parameter = self.gui.buttons["sts_y_axis"].state_name
+        if isinstance(new_parameter, str) and new_parameter in ["V", "amp", "f", "z", "V_keithley"]:
+            if new_parameter == x_parameter: # New parameter is already on the x axis
+                if y_parameter in ["V", "amp", "f", "z", "V_keithley"]: self.gui.buttons["sts_x_axis"].setState(y_parameter) # Swap y axis parameter to x axis if possible
+                self.gui.buttons["sts_y_axis"].setState(new_parameter)
+            else:
+                self.gui.buttons["sts_x_axis"].setState(x_parameter)
+
+        match x_parameter:
             case "V":
                 x_limits = [line_edits[f"sts_V_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_V_points"].getValue()
@@ -218,13 +228,13 @@ class Spectelligent(QtCore.QObject):
             x_max = max(x_limits)
             dx = (x_max - x_min) / (x_points - 1)
             self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)            
-            [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["x_start", "x_end", "dx", "x_points"], [x_min, x_max, dx, x_points])]
+            [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["x_start", "x_end", "dx", "x_points"], [x_limits[0], x_limits[1], dx, x_points])]
             
             if y_limits:
                 y_min = min(y_limits)
                 y_max = max(y_limits)
                 dy = (y_max - y_min) / (y_points - 1)
-                [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["y_start", "y_end", "dy", "y_points"], [y_min, y_max, dy, y_points])]
+                [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["y_start", "y_end", "dy", "y_points"], [y_limits[0], y_limits[1], dy, y_points])]
                 
                 self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.linspace(y_min, y_max, y_points))
                 self.gui.plot_widget.setYRange(y_min - dy, y_max + dy)

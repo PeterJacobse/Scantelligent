@@ -1102,7 +1102,8 @@ class Scantelligent(QtCore.QObject):
                 [spec_line_edits.update({f"t_{key}": self.spt.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})]
                 spec_buttons = {}
                 [spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name}) for key in ["x_axis", "y_axis"]]
-                spec_buttons.update({"nanonis_mla": self.spt.gui.buttons["nanonis_mla"].state_name})
+                spec_buttons.update({f"{parameter}_retrace": self.spt.gui.buttons[f"{parameter}_retrace"].isChecked() for parameter in ["V", "f", "z", "amp", "V_keithley"]})
+                spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["nanonis_mla", "spectroscopy_feedback", "intermediate_feedback"]})
                 
                 gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),
                                   "line_edits": [self.gui.line_edits[f"experiment_{index}"].getValue() for index in range(9)],

@@ -95,7 +95,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                         states = [{"name": "idle", "color": sct_black, "tooltip": "Click this button to save experiment data"},
                                   {"name": "data_present", "color": sct_blue, "tooltip": "Experiment data is present. Click to save"},
                                   {"name": "data_saved", "color": self.colors["dark_green"], "tooltip": "Experiment data was saved"}]),
-                        
+
             # Lockins
             "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
                                          {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),

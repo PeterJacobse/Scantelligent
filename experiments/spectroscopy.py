@@ -1,7 +1,7 @@
-import sys, os, time
+import sys, os, time, re, h5py
 import numpy as np
 from scipy.ndimage import gaussian_filter
-import h5py
+from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
 from lib import BaseExperiment
@@ -28,6 +28,11 @@ class Experiment(BaseExperiment):
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
+        self.logprint(f"I read the following things from the gui", message_type = "warning")
+        self.logprint(f"{spec_button_states = }", message_type = "result")
+        self.logprint(f"{spec_line_edits = }", message_type = "warning")
+        self.logprint(f"{self.experiment_file = }")
+        
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
         """
@@ -43,11 +48,11 @@ class Experiment(BaseExperiment):
         [tia_gain, tia_gain_V_per_pA] = [nn_hardware_dict.get(key) for key in ["current_gain", "gain (V/pA)"]]
         (amplitudes, error) = mla.amplitudes_update(verbose = False)
         mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
-        self.output_file.attrs.update({"modulator amplitude (mV)": mod_voltage_mV, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int})
+        
 
-
-
+        
         # Set up spectroscopy axes
+        experiment_filename = "spectroscopy"
         # x axis
         x_values = None
         x_axis_label = ""
@@ -60,9 +65,10 @@ class Experiment(BaseExperiment):
         match spec_button_states["x_axis"]:
             case "V":
                 x_axis_label = "voltage (V)"
-                x_values = np.concatenate((x_values, x_values[::-1]))
+                experiment_filename = "V_" + experiment_filename
                 
-                self.output_file.attrs.update({"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps})
+                if spec_button_states.get("V_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
+                x_axis_info = {"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps}
                 x_ds = self.output_file.create_dataset("voltage axis", data = x_values)
                 
                 x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True,
@@ -70,15 +76,19 @@ class Experiment(BaseExperiment):
                                                                            abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "z":
                 x_axis_label = "tip height (nm)"
-                x_values = x_values
-                self.output_file.attrs.update({"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "z steps": x_steps})
+                experiment_filename = "z_" + experiment_filename
+                
+                if spec_button_states.get("z_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
+                x_axis_info = {"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "z steps": x_steps}
                 x_ds = self.output_file.create_dataset("tip height axis", data = x_values)
                 
                 # x_measurement not yet defined
             case "f":
                 x_axis_label = "frequency (Hz)"
-                x_values = x_values
-                self.output_file.attrs.update({"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps})
+                experiment_filename = "f_" + experiment_filename
+                
+                if spec_button_states.get("f_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
+                x_axis_info = {"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps}
                 x_ds = self.output_file.create_dataset("frequency axis", data = x_values)
                 
                 x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True,
@@ -86,8 +96,10 @@ class Experiment(BaseExperiment):
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "amp":
                 x_axis_label = "amplitude (mV)"
-                x_values = x_values
-                self.output_file.attrs.update({"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps})
+                experiment_filename = "amp_" + experiment_filename
+                
+                if spec_button_states.get("amp_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
+                x_axis_info = {"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps}
                 x_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
                 
                 x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True,
@@ -95,9 +107,10 @@ class Experiment(BaseExperiment):
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "V_keithley":
                 x_axis_label = "V_Keithley (V)"
-                x_values = x_values
-                self.output_file.attrs.update({"V_Keithley start (V)": x_start, "V_Keithley end (V)": x_end, "dV_Keithley (mV)": dx, "V_Keithley steps": x_steps})
-                x_ds = self.output_file.create_dataset("V_Keithley axis", data = x_values)
+                experiment_filename = "V_Keithley_" + experiment_filename
+                
+                if spec_button_states.get("V_keithley_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
+                x_axis_info = {"V_Keithley start (V)": x_start, "V_Keithley end (V)": x_end, "dV_Keithley (mV)": dx, "V_Keithley steps": x_steps}
                 
                 # x_measurement not yet defined            
             case _:
@@ -106,7 +119,9 @@ class Experiment(BaseExperiment):
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         x_ds.make_scale(x_axis_label)
         self.output_file.attrs.update({"x axis": x_axis_label})
-
+        
+        
+        
         # y axis
         y_values = None
         y_axis_label = ""
@@ -120,16 +135,23 @@ class Experiment(BaseExperiment):
         match spec_button_states["y_axis"]:
             case "V":
                 y_axis_label = "voltage (V)"
+                split_name = re.split("_", experiment_filename)
+                split_name.insert(-1, "V")
+                experiment_filename = "_".join(split_name)
+                
                 y_values = y_values
                 y_values = np.concatenate((y_values, y_values[::-1]))
-                self.output_file.attrs.update({"V start (V)": y_start, "V end (V)": y_end, "dV (V)": dy, "steps": y_steps})
-                y_ds = self.output_file.create_dataset("voltage axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
+                y_axis_info = {"V start (V)": y_start, "V end (V)": y_end, "dV (V)": dy, "steps": y_steps}
                 
                 voltage = y_values[0] # Set the MLA to the first value of the y parameter sweep
                 mla.bias_update({"port_1 (V)": voltage}, verbose = False)
                 (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage)) # Perform the first sweep on the x axis
             case "z":
                 y_axis_label = "tip height (nm)"
+                split_name = re.split("_", experiment_filename)
+                split_name.insert(-1, "z")
+                experiment_filename = "_".join(split_name)
+                
                 y_values = y_values
                 self.output_file.attrs.update({"z start (nm)": y_start, "z end (nm)": y_end, "dz (nm)": dy, "steps": y_steps})
                 y_ds = self.output_file.create_dataset("tip height axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
@@ -139,6 +161,11 @@ class Experiment(BaseExperiment):
                 (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height)) # Perform the first sweep on the x axis
             case "f":
                 y_axis_label = "frequency (Hz)"
+                split_name = re.split("_", experiment_filename)
+                split_name.insert(-1, "f")
+                experiment_filename = "_".join(split_name)
+                
+                experiment_filename = "f_" + experiment_filename
                 y_values = y_values
                 self.output_file.attrs.update({"f start (Hz)": y_start, "f end (Hz)": y_end, "df (Hz)": dy, "steps": y_steps})
                 y_ds = self.output_file.create_dataset("frequency axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
@@ -148,6 +175,11 @@ class Experiment(BaseExperiment):
                 (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz)) # Perform the first sweep on the x axis
             case "amp":
                 y_axis_label = "amplitude (mV)"
+                split_name = re.split("_", experiment_filename)
+                split_name.insert(-1, "amp")
+                experiment_filename = "_".join(split_name)
+                
+                experiment_filename = "amp_" + experiment_filename
                 y_values = y_values
                 self.output_file.attrs.update({"amp start (mV)": y_start, "amp end (mV)": y_end, "damp (mV)": dy, "steps": y_steps})
                 y_ds = self.output_file.create_dataset("amplitude axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
@@ -166,7 +198,25 @@ class Experiment(BaseExperiment):
                 measurement_ds.dims[1].attach_scale(x_ds)
                 return
         
-        if not isinstance(y_values, np.ndarray): raise Exception("Encountered a problem determining the spectroscopic axes")
+        
+        
+        # Change the experiment file name to include the spectroscopic axes
+        experiment_folder = os.path.dirname(self.experiment_file)
+        self.experiment_file = self.file_functions.get_next_indexed_filename(experiment_folder, experiment_filename, ".hdf5")[1]
+        self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
+        self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S"), "device": "mla",
+                                       "modulator amplitude (mV)": mod_voltage_mV, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int
+                                       } | x_axis_info | y_axis_info)
+        
+        # Create axes data sets
+        match spec_button_states["x_axis"]:
+            case "V": x_ds = self.output_file.create_dataset("voltage axis (V)", data = x_values)
+            case "z": x_ds = self.output_file.create_dataset("tip height axis (nm)", data = x_values)
+            case "f": x_ds = self.output_file.create_dataset("frequency axis (Hz)", data = x_values)
+            case "amp": x_ds = self.output_file.create_dataset("amplitude axis (Hz)", data = x_values)
+            case "V_keithley": x_ds = self.output_file.create_dataset("Keithley voltage axis (V)", data = x_values)
+        
+        y_ds = self.output_file.create_dataset("voltage axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
         y_ds.make_scale(y_axis_label)
         self.output_file.attrs.update({"y axis": y_axis_label})
 
