@@ -493,17 +493,17 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # Parameter space
         for qindex, quantity in enumerate(["V", "z"]):
-            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 0, 0, 2, 1)
-            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], int(index / 2), 1 + 3 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
-            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 0, 3 + 3 * qindex, 2, 1)
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 0, 4 * qindex, 2, 1)
+            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], int(index / 2), 1 + 4 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 0, 3 + 4 * qindex, 2, 1)
         for qindex, quantity in enumerate(["f", "amp"]):
-            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 2, 0, 2, 1)
-            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], 2 + int(index / 2), 1 + 3 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
-            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 2, 3 + 3 * qindex, 2, 1)
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 2, 4 * qindex, 2, 1)
+            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], 2 + int(index / 2), 1 + 4 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 2, 3 + 4 * qindex, 2, 1)
         for qindex, quantity in enumerate(["V_keithley"]):
-            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 4, 0, 2, 1)
-            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], 4 + int(index / 2), 1 + 3 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
-            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 4, 3 + 3 * qindex, 2, 1)
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"sts_{quantity}"], 4, 4 * qindex, 2, 1)
+            [layouts["parameter_space_line_edits"].addWidget(line_edits[key], 4 + int(index / 2), 1 + 4 * qindex + index % 2) for index, key in enumerate([f"sts_{quantity}_start", f"sts_{quantity}_end", f"sts_d{quantity}", f"sts_{quantity}_points"])]
+            layouts["parameter_space_line_edits"].addWidget(buttons[f"{quantity}_retrace"], 4, 3 + 4 * qindex, 2, 1)
         layouts["parameter_space"].addLayout(layouts["parameter_space_line_edits"])
         
         [layouts["parameter_space_getset"].addWidget(buttons[f"{key}et_parameter_space_parameters"]) for key in ["g", "s"]]

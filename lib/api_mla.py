@@ -515,7 +515,7 @@ class MLAAPI(QtCore.QObject):
             if not self.test_mode:
                 self.mla.lockin.set_output_mask(self.output_masks[:, 0], port = 1)
                 self.mla.lockin.set_output_mask(self.output_masks[:, 1], port = 2)
-            outputs_dict.update({"output_masks": self.output_masks})
+            outputs_dict.update({"output_masks": np.copy(self.output_masks)})
             self.parameters.emit(outputs_dict)
             
             if verbose and len(parameters) < 1: self.logprint(f"{outputs_dict}", message_type = "result")
@@ -543,7 +543,7 @@ class MLAAPI(QtCore.QObject):
                 self.input_mask = mask
                 if not self.test_mode: self.mla.lockin.set_input_multiplexer(self.input_mask)
             
-            inputs_dict.update({"input_mask": self.input_mask})
+            inputs_dict.update({"input_mask": np.copy(self.input_mask)})
             self.parameters.emit(inputs_dict)
             
             if verbose and len(parameters) < 1: self.logprint(f"{inputs_dict}", message_type = "result")
@@ -730,7 +730,8 @@ class MLAAPI(QtCore.QObject):
             else: measurement_array[index] = data_chunk
 
         self.task_progress.emit(100)
-        if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
+        if outputs_dict:
+            self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
         if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
         return (measurement_array, channel_names)
 
