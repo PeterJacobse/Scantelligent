@@ -103,6 +103,7 @@ class Experiment(BaseExperiment):
                 x_axis_info = {"V_Keithley start (V)": x_start, "V_Keithley end (V)": x_end, "dV_Keithley (mV)": dx, "V_Keithley steps": x_steps}
                 
                 raise Exception("Experiment not yet implemented")
+            
             case _:
                 pass
 
@@ -156,7 +157,7 @@ class Experiment(BaseExperiment):
                 if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
                 if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 mla.bias_update({"port_1 (V)": voltage}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
             
             case "z":
                 y_axis_label = "tip height (nm)"
@@ -168,7 +169,7 @@ class Experiment(BaseExperiment):
                 if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
                 if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 nn.tip_update({"feedback": False, "z_rel (nm)": tip_height}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height))
             
             case "f":
                 y_axis_label = "frequency (Hz)"
@@ -180,7 +181,7 @@ class Experiment(BaseExperiment):
                 if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
                 if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 mla.lockin_update({"df (Hz)": f_Hz, "numbers": [1, 1, 2, 3]}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
             
             case "amp":
                 y_axis_label = "amplitude (mV)"
@@ -192,17 +193,19 @@ class Experiment(BaseExperiment):
                 if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
                 if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
             
             case _: # No parameter on the y axis. Perform a 1D sweep instead
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = None)
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = None)
                 self.exp_progress.emit(100)
                 
-                measurement_ds = self.output_file.create_dataset("sweep", data = single_sweep_array, dtype = float)
+                measurement_ds = self.output_file.create_dataset("Sweep", data = single_sweep_array, dtype = float)
+                error_ds = self.output_file.create_dataset("Errors (std. dev.)", data = single_sweep_error_array, dtype = float)
                 channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
                 channels_ds.make_scale("channels")
-                measurement_ds.dims[0].attach_scale(channels_ds)
-                measurement_ds.dims[1].attach_scale(x_ds)
+                
+                [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([channels_ds, x_ds])]
+                [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([channels_ds, x_ds])]
                 return
         
         # Everything below is for 2D measurements only. 1D sweeps have already returned at this point
@@ -210,18 +213,19 @@ class Experiment(BaseExperiment):
         y_ds.make_scale(y_axis_label)
         self.output_file.attrs.update({"y axis": y_axis_label} | y_axis_info)
 
-        
-                
+
+
         # Create the measurement array and the hdf5 dataset
         measurement_array = np.zeros((len(y_values), len(x_values), len(channel_names)))
         measurement_array[0] = single_sweep_array
+        error_array = np.zeros_like(measurement_array)
         
-        measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
+        measurement_ds = self.output_file.create_dataset("Sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
+        error_ds = self.output_file.create_dataset("Errors (std. dev.)", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
         channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
         channels_ds.make_scale("channels")
-        measurement_ds.dims[2].attach_scale(channels_ds)
-        measurement_ds.dims[1].attach_scale(x_ds)
-        measurement_ds.dims[0].attach_scale(y_ds)
+        [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
+        [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
         
         n_total = len(y_values)
         match y_axis_label:
@@ -231,15 +235,11 @@ class Experiment(BaseExperiment):
                     
                     if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
                     if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
-                    
                     mla.bias_update({"port_1 (V)": voltage}, verbose = False)
-                    (single_sweep_array, sweep_channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
                     
+                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
+                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = voltage)
                     measurement_array[index] = single_sweep_array
-                    measurement_ds.resize((index + 1,) + single_sweep_array.shape)
-                    y_ds.resize((index + 1,))
-                    measurement_ds[index, :, :] = single_sweep_array
-                    y_ds[index] = voltage
             
             case "amplitude (mV)":
                 for index, amp_mV in enumerate(y_values):
@@ -249,12 +249,9 @@ class Experiment(BaseExperiment):
                     if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                     mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
                     
-                    (single_sweep_array, sweep_channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))                    
+                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
+                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = amp_mV)
                     measurement_array[index] = single_sweep_array
-                    measurement_ds.resize((index + 1,) + single_sweep_array.shape)
-                    y_ds.resize((index + 1,))
-                    measurement_ds[index, :, :] = single_sweep_array
-                    y_ds[index] = amp_mV
 
             case "frequency (Hz)":
                 for index, f_Hz in enumerate(y_values):
@@ -267,12 +264,9 @@ class Experiment(BaseExperiment):
                     if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                     mla.frequencies_update({"numbers": numbers})
                     
-                    (single_sweep_array, sweep_channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
-                    measurement_array[index] = single_sweep_array                            
-                    measurement_ds.resize((index + 1,) + single_sweep_array.shape)
-                    y_ds.resize((index + 1,))
-                    measurement_ds[index, :, :] = single_sweep_array
-                    y_ds[index] = f_Hz
+                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
+                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = f_Hz)
+                    measurement_array[index] = single_sweep_array
             
             case _:
                 raise Exception("This experiment is not yet implemented")
@@ -281,6 +275,7 @@ class Experiment(BaseExperiment):
 
 
 
+    # Convenience functions
     def intermediate_feedback(self, V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) -> None:
         try:
             self.mla.bias_update({"port_1 (V)": V_fb})
@@ -291,3 +286,14 @@ class Experiment(BaseExperiment):
         except:
             pass
         return
+
+    def add_data_to_datasets(self, single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter) -> None:
+        measurement_ds.resize((index + 1,) + single_sweep_array.shape)
+        error_ds.resize((index + 1,) + single_sweep_array.shape)
+        y_ds.resize((index + 1,))
+        
+        measurement_ds[index, :, :] = single_sweep_array
+        error_ds[index, :, :] = single_sweep_error_array
+        y_ds[index] = parameter
+        return
+

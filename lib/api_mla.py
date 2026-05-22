@@ -182,8 +182,20 @@ class MLAAPI(QtCore.QObject):
         self.mla.hardware.set_output_relay(2, bypass = not value, event = True)
         return
 
-    def set_input_multiplexer(self, port_array) -> None:
+    def set_input_multiplexer(self, port_array: np.ndarray | list) -> None:
         self.mla.lockin.set_input_multiplexer(port_array)
+        return
+
+    def set_output_masks(self, output_masks: np.ndarray | list) -> None:
+        if len(output_masks) == 2:
+            self.mla.lockin.set_output_mask(output_masks[0], port = 1)
+            self.mla.lockin.set_output_mask(output_masks[1], port = 2)
+        else:
+            self.logprint("Output masks have the wrong shape")
+        return
+
+    def set_bias(self, port: int = 1, bias: float = 0) -> None:
+        self.mla.lockin.set_dc_offset(port = port, value = bias)
         return
 
     def autophase(self, amplitude_mV: float = 500, verbose: bool = False) -> None:
@@ -521,9 +533,7 @@ class MLAAPI(QtCore.QObject):
                     self.output_masks[chan - 1, index] = 1
                     outputs_dict.update({f"mod{index}": {"on": True, "port": chan}})
             
-            if not self.test_mode:
-                self.mla.lockin.set_output_mask(self.output_masks[0], port = 1)
-                self.mla.lockin.set_output_mask(self.output_masks[1], port = 2)
+            if not self.test_mode: self.set_output_masks(self.output_masks)
             outputs_dict.update({"output_masks": np.copy(self.output_masks)})
             self.parameters.emit(outputs_dict)
             
@@ -550,7 +560,7 @@ class MLAAPI(QtCore.QObject):
             if isinstance(mask, list): mask = np.array(mask, dtype = int)
             if isinstance(mask, np.ndarray) and mask.shape == self.input_mask.shape:
                 self.input_mask = mask
-                if not self.test_mode: self.mla.lockin.set_input_multiplexer(self.input_mask)
+                if not self.test_mode: self.set_input_multiplexer(self.input_mask)
             
             inputs_dict.update({"input_mask": np.copy(self.input_mask)})
             self.parameters.emit(inputs_dict)
@@ -582,17 +592,17 @@ class MLAAPI(QtCore.QObject):
                 if port1 < self.V[0]: dV *= -1
                 slew = np.arange(self.V[0], port1, dV)
                 for V_t in slew: # Perform the slew to the new bias voltage
-                    self.mla.lockin.set_dc_offset(port = 1, value = V_t)
+                    self.set_bias(port = 1, value = V_t)
                     time.sleep(dt)
-                self.mla.lockin.set_dc_offset(port = 1, value = port1)
+                self.set_bias(port = 1, value = port1)
                 self.V[0] = port1
             if isinstance(port2, float | int) and not self.test_mode:
                 if port2 < self.V[1]: dV *= -1
                 slew = np.arange(self.V[1], port2, dV)
                 for V_t in slew: # Perform the slew to the new bias voltage
-                    self.mla.lockin.set_dc_offset(port = 2, value = V_t)
+                    self.set_bias(port = 2, value = V_t)
                     time.sleep(dt)
-                self.mla.lockin.set_dc_offset(port = 2, value = port2)
+                self.set_bias(port = 2, value = port2)
                 self.V[1] = port2
             
             bias_dict.update({"port_1 (V)": self.V[0], "port_2 (V)": self.V[1]})
@@ -632,8 +642,8 @@ class MLAAPI(QtCore.QObject):
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
         
         # Prepare to plot these channels
-        channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "arg(a1) (rad)", "|a2| (mV)", "arg(a2) (rad)"] # When a gain is given, convert the voltages to displacement currents and subsequently capacitances
-        if tia_gain_V_per_pA > 1E-12: channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (rad)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (rad)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (rad)"]
+        channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (deg)", "|a1| (mV)", "arg(a1) (deg)", "|a2| (mV)", "arg(a2) (deg)"] # When a gain is given, convert the voltages to displacement currents and subsequently capacitances
+        if tia_gain_V_per_pA > 1E-12: channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (deg)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (deg)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (deg)"]
         graph_callback(channel_names)
         
         insert_value = None
@@ -641,6 +651,7 @@ class MLAAPI(QtCore.QObject):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
         measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = float)
+        error_array = np.empty_like(measurement_array, dtype = float)
         
         
         
@@ -657,37 +668,58 @@ class MLAAPI(QtCore.QObject):
             self.get_pixels(settle_pixels) # Wait settle_pixels number of pixels
             (pix, pix_var) = measurement()
             
-            a1refabs = 1000 * np.abs(pix[0]) # Reference signal = output directly copied to an MLA input port
-            a1refarg = np.angle(pix[0])
+            a1refabs = 2000 * np.abs(pix[0]) # Reference signal = output directly copied to an MLA input port
+            a1refarg = np.rad2deg(np.angle(pix[0]))
             
-            a1abs_mV = 1000 * np.abs(pix[1]) # Drive and second harmonic output measured on input port
-            a2abs_mV = 1000 * np.abs(pix[2])
-            a1arg = np.angle(pix[1])
-            a2arg = np.angle(pix[2])
+            a1abs_mV = 2000 * np.abs(pix[1]) # Drive and second harmonic output measured on input port
+            a2abs_mV = 2000 * np.abs(pix[2])
+            a1_std_dev_mV = 2000 * np.sqrt(pix_var[1])
+            a2_std_dev_mV = 2000 * np.sqrt(pix_var[2])
+            
+            a1arg = np.rad2deg(np.angle(pix[1]))
+            a2arg = np.rad2deg(np.angle(pix[2]))
 
             if tia_gain_V_per_pA > 1E-12: # When a gain is given, convert the voltages to displacement currents and subsequently capacitances. The factor 2 accounts for the discrepancy between the time-averaged lockin signal and the actual voltage amplitude
-                a1abs_pA = 2 * a1abs_mV / (1000 * tia_gain_V_per_pA)
-                a2abs_pA = 2 * a2abs_mV / (1000 * tia_gain_V_per_pA)
+                a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA) # Displacement current
+                a2abs_pA = a2abs_mV / (1000 * tia_gain_V_per_pA)
+                
+                a1_std_dev_pA = a1_std_dev_mV / (1000 * tia_gain_V_per_pA)
+                a2_std_dev_pA = a2_std_dev_mV / (1000 * tia_gain_V_per_pA)
                 
                 if mod_voltage_mV > .01: # Convert to femtofarad
-                    a1abs_fF = 1000000 * a1abs_pA / (w * mod_voltage_mV)
-                    a2abs_fF = 1000000 * a2abs_pA / (w * mod_voltage_mV)
+                    #a1abs_nS = a1abs_pA / mod_voltage_mV # Reactance
+                    #a2abs_nS = a2abs_pA / mod_voltage_mV
+                    
+                    wV = w * mod_voltage_mV
+                    a1abs_fF = 1E6 * a1abs_pA / wV # Capacitance is capacitive reactance divided by frequency
+                    a2abs_fF = 1E6 * a2abs_pA / wV
+                    
+                    a1_std_dev_fF = 1E6 * a1_std_dev_pA / wV
+                    a2_std_dev_fF = 1E6 * a2_std_dev_pA / wV
                 else:
                     a1abs_fF = 0
-                    a2abs_fF = 1
+                    a2abs_fF = 0
+                    a1_std_dev_fF = 0
+                    a2_std_dev_fF = 0
                 
                 data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = float)
+                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, a1_std_dev_pA, a1_std_dev_fF, 0, a2_std_dev_mV, a2_std_dev_pA, a2_std_dev_fF, 0], dtype = float)
             else:
                 data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1arg, a2abs_mV, a2arg], dtype = float)
+                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, 0, a2_std_dev_mV, 0], dtype = float)
             
             data_array_callback(data_chunk)
-            if isinstance(insert_value, float | int): measurement_array[index] = np.insert(data_chunk, 0, insert_value)
-            else: measurement_array[index] = data_chunk
+            if isinstance(insert_value, float | int):
+                measurement_array[index] = np.insert(data_chunk, 0, insert_value)
+                error_array[index] = np.insert(error_chunk, 0, 0)
+            else:
+                measurement_array[index] = data_chunk
+                error_array[index] = error_chunk
         
         self.task_progress.emit(100)        
         if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
         if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
-        return (measurement_array, channel_names)
+        return (measurement_array, error_array, channel_names)
 
     def amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
                         output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
@@ -720,6 +752,7 @@ class MLAAPI(QtCore.QObject):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
         measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = float)
+        error_array = np.empty_like(measurement_array, dtype = float)
 
 
 
@@ -736,26 +769,38 @@ class MLAAPI(QtCore.QObject):
             
             if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = float)
             else: data_chunk = np.zeros((len(channel_names)), dtype = float)
+            error_chunk = np.zeros_like(data_chunk)
             data_chunk[0] = amp_mV
             data_chunk[1] = 2000 * np.abs(pix_V[0]) # Factor 2 to account for discrepancy between amplitude and lockin measured amplitude
             
             harmonics_V = np.array([[np.real(tone), np.imag(tone)] for tone in pix_V[1:]]).flatten()
+            errors_V = np.sqrt(np.array([[tone, 0] for tone in pix_V_var[1:]]).flatten())
             if tia_gain_V_per_pA > 1E-12:
                 harmonics_pA = 2 * harmonics_V / tia_gain_V_per_pA
                 data_chunk[2:] = harmonics_pA
+                
+                errors_pA = 2 * errors_V / tia_gain_V_per_pA
+                error_chunk[2:] = errors_pA
             else:
                 harmonics_mV = 2000 * harmonics_V
                 data_chunk[2:] = harmonics_mV
+                
+                errors_mV = 2000 * errors_V
+                error_chunk[2:] = errors_mV
 
             data_array_callback(data_chunk)
-            if isinstance(insert_value, float | int): measurement_array[index] = np.insert(data_chunk, 0, insert_value)
-            else: measurement_array[index] = data_chunk
+            if isinstance(insert_value, float | int):
+                measurement_array[index] = np.insert(data_chunk, 0, insert_value)
+                error_array[index] = np.insert(error_chunk, 0, 0)
+            else:
+                measurement_array[index] = data_chunk
+                error_array[index] = error_chunk
 
         self.task_progress.emit(100)
         if outputs_dict:
             self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
         if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
-        return (measurement_array, channel_names)
+        return (measurement_array, error_array, channel_names)
 
     def voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
                       output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
@@ -783,7 +828,7 @@ class MLAAPI(QtCore.QObject):
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
         
         # Prepare to plot these channels
-        channel_names = [f"V_port{output_port} (V)"]
+        channel_names = [f"V_port{output_port} (V)", "|a1_ref| (mV)"]
         if tia_gain_V_per_pA > 1E-12:
             if return_type == "conductance": [channel_names.extend([f"Re(a{i + 1}) (nS)", f"Im(a{i + 1}) (nS)"]) for i in range(31)] # return_type = conductance
             else: [channel_names.extend([f"Re(a{i + 1}) (pA)", f"Im(a{i + 1}) (pA)"]) for i in range(31)] # return_type = displacement current
@@ -795,6 +840,7 @@ class MLAAPI(QtCore.QObject):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
         measurement_array = np.empty((len(voltages), len(channel_names)), dtype = float)
+        error_array = np.empty_like(measurement_array, dtype = float)
 
 
 
@@ -811,28 +857,44 @@ class MLAAPI(QtCore.QObject):
                         
             if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = float)
             else: data_chunk = np.zeros((len(channel_names)), dtype = float)
+            error_chunk = np.zeros_like(data_chunk)
             data_chunk[0] = voltage
+            data_chunk[1] = 2000 * np.abs(pix_V[0]) # Reference signal in mA
             
             harmonics_V = np.array([[np.real(tone), np.imag(tone)] for tone in pix_V[1:]]).flatten()
+            errors_V = np.sqrt(np.array([[tone] for tone in pix_V_var[1:]]).flatten())            
             if tia_gain_V_per_pA > 1E-12:
                 harmonics_pA = 2 * harmonics_V / tia_gain_V_per_pA
+                errors_pA = 2 * errors_V / tia_gain_V_per_pA
+                
                 if mod_voltage_mV > 1E-3:
                     harmonics_nS = harmonics_pA / mod_voltage_mV
+                    errors_nS = errors_pA / mod_voltage_mV
                 else: # Conductance diverges for zero modulation bias. Replace with zero
                     harmonics_nS = 0 * harmonics_pA
+                    errors_nS = 0
                 
-                if return_type == "conductance": data_chunk[1:] = harmonics_nS
-                else: data_chunk[1:] = harmonics_pA
+                if return_type == "conductance":
+                    data_chunk[2:] = harmonics_nS
+                    error_chunk[2:] = errors_nS
+                else:
+                    data_chunk[2:] = harmonics_pA
+                    error_chunk[2:] = errors_pA
             else:
-                data_chunk[1:] = 2000 * harmonics_V
+                data_chunk[2:] = 2000 * harmonics_V
+                error_chunk[2:] = 2000 * errors_V
             
             data_array_callback(data_chunk)
-            if isinstance(insert_value, float | int): measurement_array[index] = np.insert(data_chunk, 0, insert_value)
-            else: measurement_array[index] = data_chunk
+            if isinstance(insert_value, float | int):
+                measurement_array[index] = np.insert(data_chunk, 0, insert_value)
+                error_array[index] = np.insert(error_chunk, 0, insert_value)
+            else:
+                measurement_array[index] = data_chunk
+                error_array[index] = error_chunk
         
         self.task_progress.emit(100)
         if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
         if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
-        return (measurement_array, channel_names)
+        return (measurement_array, error_array, channel_names)
 
 
