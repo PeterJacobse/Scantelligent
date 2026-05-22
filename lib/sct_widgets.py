@@ -1955,10 +1955,10 @@ class LockinWidget(QtWidgets.QWidget):
             if modulator.state_button.isChecked():
                 if modulator.output.state_name == "1": output_mask[index] = [1, 0]
                 else: output_mask[index] = [0, 1]
-        return output_mask
+        return output_mask.transpose()
 
-    def setOutputs(self, output_masks) -> None:
-        for index, modulator in enumerate(output_masks):
+    def setOutputs(self, output_masks: np.ndarray) -> None:
+        for index, modulator in enumerate(output_masks.transpose()):
             if index > len(self.modulators): break
             
             if 1 in modulator:

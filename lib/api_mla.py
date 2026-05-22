@@ -49,7 +49,7 @@ class MLAAPI(QtCore.QObject):
         self.df = 100 # Defaults, to be overwritten by the first call to time_constant_update()
         self.tm = 10
         self.V = [0, 0]
-        self.output_masks = np.zeros((32, 2), dtype = int)
+        self.output_masks = np.zeros((2, 32), dtype = int)
         self.input_mask = np.zeros((32), dtype = int)
         self.status = "online"
         self.status_callback(self.status)        
@@ -277,6 +277,15 @@ class MLAAPI(QtCore.QObject):
             if error: raise Exception(error)
             else: parameters_out.update({bias_dict.get("dict_name"): bias_dict})
             
+            # Create an array that stacks all data
+            try:
+                output_masks = outputs_dict.get("output_masks")
+                array = np.vstack(np.array([amplitudes_dict.get("amplitudes (mV)"), frequencies_dict.get("frequencies (Hz)"), phases_dict.get("phases (deg)"), output_masks[0], output_masks[1], inputs_dict.get("input_mask")]))
+                array_channels = ["amplitudes (mV)", "frequencies (Hz)", "phases (deg)", "output_mask port 1", "output_mask port 2", "input_mask"]
+                parameters_out.update({"array": array, "array_channels": array_channels})
+            except:
+                pass
+            
             if verbose and len(parameters) < 1: self.logprint(f"{parameters_out}", message_type = "result", verbose = verbose)
         
         except Exception as e: error = e
@@ -497,8 +506,8 @@ class MLAAPI(QtCore.QObject):
             
             for index, mod in enumerate([mod0, mod1, mod2, mod3]):
                 if not isinstance(mod, dict):
-                    if self.output_masks[index, 0]: outputs_dict.update({f"mod{index}": {"on": True, "port": 1}})
-                    elif self.output_masks[index, 1]: outputs_dict.update({f"mod{index}": {"on": True, "port": 2}})
+                    if self.output_masks[0, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 1}})
+                    elif self.output_masks[1, index]: outputs_dict.update({f"mod{index}": {"on": True, "port": 2}})
                     else: outputs_dict.update({f"mod{index}": {"on": False}})
                     continue
                 chan = mod.get("channel", None) # Channel, signal and port are all considered valid keywords to indicate the output port
@@ -509,12 +518,12 @@ class MLAAPI(QtCore.QObject):
                     continue # 0 means that the modulator signal is not applied to any port, 1 means applied to port 1, and 2 is applied to port 2
 
                 if mod.get("on"):
-                    self.output_masks[index, chan - 1] = 1
+                    self.output_masks[chan - 1, index] = 1
                     outputs_dict.update({f"mod{index}": {"on": True, "port": chan}})
             
             if not self.test_mode:
-                self.mla.lockin.set_output_mask(self.output_masks[:, 0], port = 1)
-                self.mla.lockin.set_output_mask(self.output_masks[:, 1], port = 2)
+                self.mla.lockin.set_output_mask(self.output_masks[0], port = 1)
+                self.mla.lockin.set_output_mask(self.output_masks[1], port = 2)
             outputs_dict.update({"output_masks": np.copy(self.output_masks)})
             self.parameters.emit(outputs_dict)
             
@@ -558,6 +567,9 @@ class MLAAPI(QtCore.QObject):
         error = False
         bias_dict = {"dict_name": "mla_bias"}
         
+        dt = parameters.get("dt (ms)", 5) / 1000
+        dV = parameters.get("dV (mV)", 10) / 1000
+        
         try:
             if verbose:
                 if len(parameters) > 0: self.logprint(f"mla.bias_update({parameters})", message_type = "code")
@@ -566,11 +578,21 @@ class MLAAPI(QtCore.QObject):
             if not self.status == "running" and not self.test_mode: self.link()
             
             [port1, port2] = [parameters.get(f"port_{index + 1} (V)", None) for index in range(2)]
-            if isinstance(port1, float | int):
-                if not self.test_mode: self.mla.lockin.set_dc_offset(port = 1, value = port1)
+            if isinstance(port1, float | int) and not self.test_mode:
+                if port1 < self.V[0]: dV *= -1
+                slew = np.arange(self.V[0], port1, dV)
+                for V_t in slew: # Perform the slew to the new bias voltage
+                    self.mla.lockin.set_dc_offset(port = 1, value = V_t)
+                    time.sleep(dt)
+                self.mla.lockin.set_dc_offset(port = 1, value = port1)
                 self.V[0] = port1
-            if isinstance(port2, float | int):
-                if not self.test_mode: self.mla.lockin.set_dc_offset(port = 2, value = port2)
+            if isinstance(port2, float | int) and not self.test_mode:
+                if port2 < self.V[1]: dV *= -1
+                slew = np.arange(self.V[1], port2, dV)
+                for V_t in slew: # Perform the slew to the new bias voltage
+                    self.mla.lockin.set_dc_offset(port = 2, value = V_t)
+                    time.sleep(dt)
+                self.mla.lockin.set_dc_offset(port = 2, value = port2)
                 self.V[1] = port2
             
             bias_dict.update({"port_1 (V)": self.V[0], "port_2 (V)": self.V[1]})

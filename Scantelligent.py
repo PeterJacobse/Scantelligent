@@ -1100,6 +1100,7 @@ class Scantelligent(QtCore.QObject):
                 spec_line_edits = {}
                 [spec_line_edits.update({f"{quantity}_{key}": self.spt.gui.line_edits[f"sts_{quantity}_{key}"].getValue() for key in ["start", "end", "points"]}) for quantity in ["x", "y", "V", "f", "z", "amp", "V_keithley"]]
                 [spec_line_edits.update({f"t_{key}": self.spt.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})]
+                [spec_line_edits.update({f"{key}_feedback": self.spt.gui.line_edits[f"sts_{key}_feedback"].getValue() for key in ["t", "V", "I", "p", "t_const", "z"]})]
                 spec_buttons = {}
                 [spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name}) for key in ["x_axis", "y_axis"]]
                 spec_buttons.update({f"{parameter}_retrace": self.spt.gui.buttons[f"{parameter}_retrace"].isChecked() for parameter in ["V", "f", "z", "amp", "V_keithley"]})

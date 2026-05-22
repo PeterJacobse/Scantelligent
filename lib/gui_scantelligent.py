@@ -416,13 +416,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "z": LE(tooltip = "most recent tip height measurement", unit = "nm", digits = 2),
             
             # Feedback
-            "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
-            "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
-            "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
+            "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0),
+            "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0),
+            "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0),
 
-            "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0, edited_color = scanalyzer_blue),
-            "t_const": LE(tooltip = "time constant", unit = "us", digits = 0, edited_color = scanalyzer_blue),
-            "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0, edited_color = scanalyzer_blue),
+            "p_gain": LE(tooltip = "proportional gain", unit = "pm", digits = 0),
+            "t_const": LE(tooltip = "time constant", unit = "us", digits = 0),
+            "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0),
             
             "v_fwd": LE(tooltip = "forward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),
             "v_bwd": LE(tooltip = "backward scan speed", unit = "nm/s", digits = 2, edited_color = scanalyzer_blue),

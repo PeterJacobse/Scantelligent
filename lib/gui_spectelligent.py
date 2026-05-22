@@ -176,6 +176,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
+        
+        buttons["V_retrace"].setState(1)
         return buttons
 
     def make_checkboxes(self) -> tuple[dict, dict]:
@@ -239,22 +241,12 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         scanalyzer_blue = "#2020C0"
         
         line_edits = {
-            # Experiment
-            "experiment_filename": LE(tooltip = "base name of the file when saved to png or hdf5"),
-            
-            # Feedback
-            "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
-            "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0, edited_color = scanalyzer_blue),
-            "I_pA": LE(tooltip = "most recent current measurement", unit = "pA", digits = 0),
-
-            "t_const": LE(tooltip = "time constant", unit = "us", digits = 0, edited_color = scanalyzer_blue),
-            "i_gain": LE(tooltip = "integral gain", unit = "nm/s", digits = 0, edited_color = scanalyzer_blue),
-
             # STS
-            "sts_V_feedback": LE(tooltip = "bias voltage", unit = "V", digits = 3),
-            "sts_I_feedback": LE(tooltip = "feedback current", unit = "pA", digits = 1),
+            "sts_V_feedback": LE(tooltip = "bias voltage", unit = "V", digits = 3, lmits = [-10, 10]),
+            "sts_I_feedback": LE(tooltip = "feedback current", unit = "pA", digits = 1, limits = [0, 10000]),
             "sts_p_feedback": LE(tooltip = "proportional gain", unit = "pm", digits = 0),
-            "sts_z_feedback": LE(tooltip = "tip height step relative to feedback setpoint", unit = "nm", digits = 4),
+            "sts_t_const_feedback": LE(tooltip = "feedback time constant", unit = "us", digits = 0),
+            "sts_z_feedback": LE(tooltip = "tip height step relative to feedback setpoint", value = 0.0, unit = "nm", digits = 2, limits = [-1000, 1000]),
             
             "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
             "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
@@ -295,6 +287,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             # Lockin
             "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [1, 10000], digits = 0, trigger_warnings = [lambda value: value < 3]),
             "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2]),
+            "sts_t_feedback": LE(tooltip = "feedback dwell time in between measurements\nin units of the modulator time constant", value = 4, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2]),
 
             "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70),
             "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70)               
@@ -488,7 +481,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["spectroscopy_settings"].addWidget(buttons["spectroscopy_feedback"], 0, 0, 2, 1)
         [layouts["spectroscopy_settings"].addWidget(line_edits[name], index, 1) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
         layouts["spectroscopy_settings"].addWidget(buttons["intermediate_feedback"], 0, 2, 2, 1)
-        [layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_{key}_feedback"], index % 2, 3 + int(index / 2)) for index, key in enumerate(["V", "I", "p", "z"])]
+        [layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_{key}_feedback"], index % 2, 3 + int(index / 2)) for index, key in enumerate(["V", "I", "p", "t_const", "t", "z"])]
         layouts["spectroscopy_settings"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 4)
         
         # Parameter space
@@ -516,39 +509,6 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["xy_plot"].addLayout(layouts["xy_plot_x"], 1, 1)
         
         layouts["parameter_space"].addLayout(layouts["xy_plot"])
-        
-        """
-        # Modulators
-        [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
-
-        [layouts["modulators"].addWidget(line_edits[f"nanonis_{quantity}"], 0, 2 * index, 1, 2) for index, quantity in enumerate(["t", "df"])]
-        [layouts["modulators"].addWidget(buttons[f"nanonis_mod{index + 1}"], 1 + 2 * index, 0, 2, 1) for index in range(2)]
-        [[layouts["modulators"].addWidget(line_edits[f"nanonis_mod{number + 1}_{quantity}"], 1 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phase"])] for number in range(2)]
-        [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_amp"], comboboxes[f"nanonis_mod{number + 1}"]])] for number in range(2)]
-        
-        [layouts["modulators"].addWidget(line_edits[f"mla_{quantity}"], 5, 2 * index, 1, 2) for index, quantity in enumerate(["t", "df"])]
-        [layouts["modulators"].addWidget(buttons[f"mla_mod{index}"], 6 + 2 * index, 0, 2, 1) for index in range(4)]
-        [[layouts["modulators"].addWidget(line_edits[f"mla_mod{number}_{quantity}"], 6 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phase"])] for number in range(4)]
-        [[layouts["modulators"].addWidget(widget, 7 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"mla_mod{number}_amp"], comboboxes[f"mla_mod{number}"]])] for number in range(4)]
-        
-        layouts["modulators"].addLayout(layouts["mod_set_get"], 16, 0, 1, 4)        
-        layouts["waveforms"].addWidget(self.waveform_widget)
-
-
-
-        # Demodulators
-        [layouts["pixel"].addWidget(widget) for widget in [buttons["get_pixel_nanonis"], buttons["get_pixel_mla"]]]
-        [layouts["volume"].addWidget(widget) for widget in [buttons["audio"], self.sliders["volume"], buttons["zero_volumes"]]]
-        layouts["demodulators"].addLayout(layouts["pixel"])
-        layouts["demodulators"].addLayout(layouts["volume"])
-        [layouts["demod_sliders"].addWidget(self.sliders[f"f{i}"]) for i in range(32)]
-        self.widgets["demodulators"].setLayout(layouts["demod_sliders"])
-        self.demod_scroller.setWidget(self.widgets["demodulators"])
-        layouts["demodulators"].addWidget(self.demod_scroller)
-        
-        # Input console
-        layouts["input"].addWidget(self.consoles["input"])
-        """
         return
 
 

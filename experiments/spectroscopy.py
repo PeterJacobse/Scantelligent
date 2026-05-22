@@ -28,13 +28,12 @@ class Experiment(BaseExperiment):
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
-        self.logprint(f"I read the following things from the gui", message_type = "warning")
-        self.logprint(f"{spec_button_states = }", message_type = "result")
-        self.logprint(f"{spec_line_edits = }", message_type = "warning")
-        self.logprint(f"{self.experiment_file = }")
         
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
+        intermediate_feedback = spec_button_states["intermediate_feedback"]
+        spectroscopy_feedback = spec_button_states["spectroscopy_feedback"]
+        [V_fb, p_gain_fb, I_fb, t_fb, t_const_fb, z_fb] = [spec_line_edits[f"{key}_feedback"] for key in ["V", "p", "I", "t", "t_const", "z"]]
         """
         connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
         if not connected_device == nanonis_or_mla:
@@ -49,11 +48,16 @@ class Experiment(BaseExperiment):
         (amplitudes, error) = mla.amplitudes_update(verbose = False)
         mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
         
-
+        # Read parameters from the MLA
+        mla_parameters = self.start_parameters["mla"]
+        mla_setup_array = mla_parameters.get("array")
+        mla_array_channels = mla_parameters.get("array_channels")
+        time_constant_dict = mla_parameters.get("time_constant")
+        mla_bias = mla_parameters.get("mla_bias")
         
-        # Set up spectroscopy axes
-        experiment_filename = "spectroscopy"
-        # x axis
+               
+
+        # Set up spectroscopy x axis
         x_values = None
         x_axis_label = ""
         x_ds = None
@@ -64,59 +68,68 @@ class Experiment(BaseExperiment):
         
         match spec_button_states["x_axis"]:
             case "V":
-                x_axis_label = "voltage (V)"
-                experiment_filename = "V_" + experiment_filename
-                
+                x_axis_label = "voltage (V)"                
                 if spec_button_states.get("V_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps}
-                x_ds = self.output_file.create_dataset("voltage axis", data = x_values)
                 
                 x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True,
                                                                            tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance",
                                                                            abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "z":
-                x_axis_label = "tip height (nm)"
-                experiment_filename = "z_" + experiment_filename
-                
+                x_axis_label = "tip height (nm)"                
                 if spec_button_states.get("z_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "z steps": x_steps}
-                x_ds = self.output_file.create_dataset("tip height axis", data = x_values)
                 
-                # x_measurement not yet defined
+                raise Exception("Experiment not yet implemented")
             case "f":
-                x_axis_label = "frequency (Hz)"
-                experiment_filename = "f_" + experiment_filename
-                
+                x_axis_label = "frequency (Hz)"                
                 if spec_button_states.get("f_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps}
-                x_ds = self.output_file.create_dataset("frequency axis", data = x_values)
                 
                 x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True,
                                                                              tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter,
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "amp":
                 x_axis_label = "amplitude (mV)"
-                experiment_filename = "amp_" + experiment_filename
-                
                 if spec_button_states.get("amp_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps}
-                x_ds = self.output_file.create_dataset("amplitude axis", data = x_values)
                 
                 x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True,
                                                                              tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter,
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "V_keithley":
                 x_axis_label = "V_Keithley (V)"
-                experiment_filename = "V_Keithley_" + experiment_filename
-                
                 if spec_button_states.get("V_keithley_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V_Keithley start (V)": x_start, "V_Keithley end (V)": x_end, "dV_Keithley (mV)": dx, "V_Keithley steps": x_steps}
                 
-                # x_measurement not yet defined            
+                raise Exception("Experiment not yet implemented")
             case _:
                 pass
 
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
+        
+        
+        
+        # Create the experiment HDF5 file
+        experiment_folder = os.path.dirname(self.experiment_file)
+        if spec_button_states["y_axis"] in ["V", "z", "f", "amp"]: experiment_filename = "_".join([spec_button_states["x_axis"], spec_button_states["y_axis"], "spectroscopy"]) # 2D spectroscopy
+        else: experiment_filename = "_".join([spec_button_states["x_axis"], "spectroscopy"]) # 1D spectroscopy
+        
+        self.experiment_file = os.path.join(experiment_folder, self.file_functions.get_next_indexed_filename(experiment_folder, experiment_filename, ".hdf5")[1])
+        self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
+                
+        # Write metadata
+        self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S"),
+                                       "device": "MLA", "MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
+                                       "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int,
+                                       "intermediate_feedback": intermediate_feedback, "spectroscopy_feedback": spectroscopy_feedback})
+        self.output_file.attrs.update(x_axis_info)
+        mla_settings_ds = self.output_file.create_dataset("MLA settings", data = mla_setup_array)        
+        mla_channels_ds = self.output_file.create_dataset("MLA setup parameters", data = mla_array_channels)
+        mla_channels_ds.make_scale("MLA setup parameters")
+        mla_settings_ds.dims[0].attach_scale(mla_channels_ds)
+        
+        x_ds = self.output_file.create_dataset(x_axis_label, data = x_values)
         x_ds.make_scale(x_axis_label)
         self.output_file.attrs.update({"x axis": x_axis_label})
         
@@ -135,60 +148,54 @@ class Experiment(BaseExperiment):
         match spec_button_states["y_axis"]:
             case "V":
                 y_axis_label = "voltage (V)"
-                split_name = re.split("_", experiment_filename)
-                split_name.insert(-1, "V")
-                experiment_filename = "_".join(split_name)
-                
-                y_values = y_values
-                y_values = np.concatenate((y_values, y_values[::-1]))
+                if spec_button_states.get("V_retrace", False): y_values = np.concatenate((y_values, y_values[::-1]))
                 y_axis_info = {"V start (V)": y_start, "V end (V)": y_end, "dV (V)": dy, "steps": y_steps}
                 
-                voltage = y_values[0] # Set the MLA to the first value of the y parameter sweep
+                # Set to the first value of the y parameter sweep, then do the first measurement
+                voltage = y_values[0]
+                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 mla.bias_update({"port_1 (V)": voltage}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage)) # Perform the first sweep on the x axis
+                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
+            
             case "z":
                 y_axis_label = "tip height (nm)"
-                split_name = re.split("_", experiment_filename)
-                split_name.insert(-1, "z")
-                experiment_filename = "_".join(split_name)
+                if spec_button_states.get("z_retrace", False): y_values = np.concatenate((y_values, y_values[::-1]))                
+                y_axis_info = {"z start (nm)": y_start, "z end (nm)": y_end, "dz (nm)": dy, "steps": y_steps}
                 
-                y_values = y_values
-                self.output_file.attrs.update({"z start (nm)": y_start, "z end (nm)": y_end, "dz (nm)": dy, "steps": y_steps})
-                y_ds = self.output_file.create_dataset("tip height axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-                
-                tip_height = y_values[0] # Set to the first value of the y parameter sweep
+                # Set to the first value of the y parameter sweep, then do the first measurement
+                tip_height = y_values[0]
+                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 nn.tip_update({"feedback": False, "z_rel (nm)": tip_height}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height)) # Perform the first sweep on the x axis
+                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height))
+            
             case "f":
                 y_axis_label = "frequency (Hz)"
-                split_name = re.split("_", experiment_filename)
-                split_name.insert(-1, "f")
-                experiment_filename = "_".join(split_name)
+                if spec_button_states.get("f_retrace", False): y_values = np.concatenate((y_values, y_values[::-1]))
+                y_axis_info = {"f start (Hz)": y_start, "f end (Hz)": y_end, "df (Hz)": dy, "steps": y_steps}
                 
-                experiment_filename = "f_" + experiment_filename
-                y_values = y_values
-                self.output_file.attrs.update({"f start (Hz)": y_start, "f end (Hz)": y_end, "df (Hz)": dy, "steps": y_steps})
-                y_ds = self.output_file.create_dataset("frequency axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-                
-                f_Hz = y_values[0] # Set the MLA to the first value of the y parameter sweep
+                # Set to the first value of the y parameter sweep, then do the first measurement
+                f_Hz = y_values[0]
+                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 mla.lockin_update({"df (Hz)": f_Hz, "numbers": [1, 1, 2, 3]}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz)) # Perform the first sweep on the x axis
+                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
+            
             case "amp":
                 y_axis_label = "amplitude (mV)"
-                split_name = re.split("_", experiment_filename)
-                split_name.insert(-1, "amp")
-                experiment_filename = "_".join(split_name)
+                if spec_button_states.get("amp_retrace", False): y_values = np.concatenate((y_values, y_values[::-1]))
+                y_axis_info = {"amp start (mV)": y_start, "amp end (mV)": y_end, "damp (mV)": dy, "steps": y_steps}
                 
-                experiment_filename = "amp_" + experiment_filename
-                y_values = y_values
-                self.output_file.attrs.update({"amp start (mV)": y_start, "amp end (mV)": y_end, "damp (mV)": dy, "steps": y_steps})
-                y_ds = self.output_file.create_dataset("amplitude axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
-                
-                amp_mV = y_values[0] # Set the MLA to the first value of the y parameter sweep
+                # Set to the first value of the y parameter sweep, then do the first measurement
+                amp_mV = y_values[0]
+                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                 mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV)) # Perform the first sweep on the x axis
+                (single_sweep_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
+            
             case _: # No parameter on the y axis. Perform a 1D sweep instead
-                (single_sweep_array, channel_names) = x_measurement(insert_parameter = None) # Perform the first sweep on the x axis
+                (single_sweep_array, channel_names) = x_measurement(insert_parameter = None)
                 self.exp_progress.emit(100)
                 
                 measurement_ds = self.output_file.create_dataset("sweep", data = single_sweep_array, dtype = float)
@@ -198,27 +205,10 @@ class Experiment(BaseExperiment):
                 measurement_ds.dims[1].attach_scale(x_ds)
                 return
         
-        
-        
-        # Change the experiment file name to include the spectroscopic axes
-        experiment_folder = os.path.dirname(self.experiment_file)
-        self.experiment_file = self.file_functions.get_next_indexed_filename(experiment_folder, experiment_filename, ".hdf5")[1]
-        self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
-        self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S"), "device": "mla",
-                                       "modulator amplitude (mV)": mod_voltage_mV, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int
-                                       } | x_axis_info | y_axis_info)
-        
-        # Create axes data sets
-        match spec_button_states["x_axis"]:
-            case "V": x_ds = self.output_file.create_dataset("voltage axis (V)", data = x_values)
-            case "z": x_ds = self.output_file.create_dataset("tip height axis (nm)", data = x_values)
-            case "f": x_ds = self.output_file.create_dataset("frequency axis (Hz)", data = x_values)
-            case "amp": x_ds = self.output_file.create_dataset("amplitude axis (Hz)", data = x_values)
-            case "V_keithley": x_ds = self.output_file.create_dataset("Keithley voltage axis (V)", data = x_values)
-        
-        y_ds = self.output_file.create_dataset("voltage axis", shape = (0,), maxshape = (len(y_values),), dtype = float)
+        # Everything below is for 2D measurements only. 1D sweeps have already returned at this point
+        y_ds = self.output_file.create_dataset(y_axis_label, shape = (0,), maxshape = (len(y_values),), dtype = float) # The y axis dataset will grow along with the measurement dataset after every sweep
         y_ds.make_scale(y_axis_label)
-        self.output_file.attrs.update({"y axis": y_axis_label})
+        self.output_file.attrs.update({"y axis": y_axis_label} | y_axis_info)
 
         
                 
@@ -237,10 +227,14 @@ class Experiment(BaseExperiment):
         match y_axis_label:
             case "voltage (V)": # Experiments that sweep along one parameter while slowly ramping the bias
                 for index, voltage in enumerate(y_values):
-                    self.exp_progress.emit(int(100 * index / n_total))                    
-                    mla.bias_update({"port_1 (V)": voltage}, verbose = False)
+                    self.exp_progress.emit(int(100 * index / n_total))
                     
+                    if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                    if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
+                    
+                    mla.bias_update({"port_1 (V)": voltage}, verbose = False)
                     (single_sweep_array, sweep_channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
+                    
                     measurement_array[index] = single_sweep_array
                     measurement_ds.resize((index + 1,) + single_sweep_array.shape)
                     y_ds.resize((index + 1,))
@@ -250,6 +244,9 @@ class Experiment(BaseExperiment):
             case "amplitude (mV)":
                 for index, amp_mV in enumerate(y_values):
                     self.exp_progress.emit(int(100 * index / n_total))
+                    
+                    if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                    if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                     mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
                     
                     (single_sweep_array, sweep_channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))                    
@@ -265,6 +262,9 @@ class Experiment(BaseExperiment):
                     mla.time_constant_update({"df (Hz)": f_Hz}, verbose = False)
                     numbers = np.arange(0, 32)
                     numbers[0] = 1
+                    
+                    if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                    if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
                     mla.frequencies_update({"numbers": numbers})
                     
                     (single_sweep_array, sweep_channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
@@ -279,3 +279,15 @@ class Experiment(BaseExperiment):
     
         self.exp_progress.emit(100) # Experiment finished
 
+
+
+    def intermediate_feedback(self, V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) -> None:
+        try:
+            self.mla.bias_update({"port_1 (V)": V_fb})
+            self.nanonis.feedback_update({"I_fb (pA)": I_fb, "p_gain (pm)": p_gain_fb, "t_const (us)": t_const_fb})
+            self.nanonis.tip_update({"feedback": True})
+            self.mla.get_pixels(t_fb)
+            self.nanonis.tip_update({"z_rel (nm)": z_fb})
+        except:
+            pass
+        return

@@ -90,7 +90,7 @@ class Spectelligent(QtCore.QObject):
 
     def connect_buttons(self) -> None:
         button_slots = {"sts_x_axis": self.update_grid, "sts_y_axis": self.update_grid, "exit": self.exit, "get_parameter_space_parameters": self.update_grid, "set_parameter_space_parameters": self.update_grid,
-                        "get_spectroscopy_parameters": self.update_grid, "set_spectroscopy_parameters": self.update_grid}
+                        "get_spectroscopy_parameters": self.get_fb_parameters, "set_spectroscopy_parameters": self.update_grid}
         button_slots.update({f"sts_{parameter}": lambda: self.update_grid(parameter) for parameter in ["V", "f", "z", "amp", "V_keithley"]})
         
         for button_name, connected_function in button_slots.items():
@@ -148,7 +148,8 @@ class Spectelligent(QtCore.QObject):
             line_edits[f"sts_{parameter}_end"].resetColor()
             line_edits[f"sts_{parameter}_points"].resetColor()
             line_edits[f"sts_d{parameter}"].resetColor()
-            
+        [line_edits[f"sts_{parameter}_feedback"].resetColor() for parameter in ["V", "I", "p", "t", "t_const", "z"]]
+        
         x_parameter = self.gui.buttons["sts_x_axis"].state_name
         y_parameter = self.gui.buttons["sts_y_axis"].state_name
         if isinstance(new_parameter, str) and new_parameter in ["V", "amp", "f", "z", "V_keithley"]:
@@ -270,6 +271,21 @@ class Spectelligent(QtCore.QObject):
         
         self.gui.waveforms[0].setData(wave_t_ms, wave_1_mV)
         self.gui.waveforms[1].setData(wave_t_ms, wave_2_mV)
+        return
+
+    def get_fb_parameters(self) -> None:
+        try:
+            V_fb = self.sct.gui.line_edits["V_mla_port1"].getValue()
+            if isinstance(V_fb, int | float): self.gui.line_edits["sts_V_feedback"].setValue(V_fb)
+            I_fb = self.sct.gui.line_edits["I_fb"].getValue()
+            if isinstance(I_fb, int | float): self.gui.line_edits["sts_I_feedback"].setValue(I_fb)
+            p_gain = self.sct.gui.line_edits["p_gain"].getValue()
+            if isinstance(p_gain, int | float): self.gui.line_edits["sts_p_feedback"].setValue(p_gain)
+            t_const = self.sct.gui.line_edits["t_const"].getValue()
+            if isinstance(t_const, int | float): self.gui.line_edits["sts_t_const_feedback"].setValue(t_const)
+        except Exception as e:
+            self.logprint(f"Error setting the feedback parameters: {e}", message_type = "error")
+        self.update_grid()
         return
 
 
