@@ -22,7 +22,6 @@ class Scantelligent(QtCore.QObject):
         self.gui = ScantelligentGUI()
         self.gui.show()
         self.spt = Spectelligent(parent = self)
-        #self.spt.gui.show()
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
@@ -322,6 +321,8 @@ class Scantelligent(QtCore.QObject):
                 completer.setModel(model)
                                 
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
+                try: self.spt.get_fb_parameters()
+                except: pass
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
         return
@@ -1103,6 +1104,7 @@ class Scantelligent(QtCore.QObject):
                 spec_line_edits.update({f"{key}_feedback": self.spt.gui.line_edits[f"sts_{key}_feedback"].getValue() for key in ["t", "V", "I", "p", "t_const", "z"]})
                 spec_buttons = {}
                 spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name for key in ["x_axis", "y_axis"]})
+                spec_buttons.update({f"{quantity}_retrace": self.spt.gui.buttons[f"{quantity}_retrace"].state_name for quantity in ["V", "f", "z", "amp", "V_keithley"]})
                 spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["tia_correct", "nanonis_mla", "spectroscopy_feedback", "intermediate_feedback"]})
                 
                 gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),

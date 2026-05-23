@@ -101,8 +101,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                                          {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),
 
             "start_spectroscopy": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}], click_to_toggle = False),
-            "tia_correct": MSB(icon = icons.get("osc"), size = 28, states = [{"name": "off", "color": sct_black, "tooltip": "Do not correct for the tia response"},
-                                                                             {"name": "on", "color": sct_blue, "tooltip": "Correct for the tia response"}]),
+            "tia_correct": MSB(icon = icons.get("tia_response"), size = 28, states = [{"name": "off", "color": sct_black, "tooltip": "Do not correct for the tia response"},
+                                                                                      {"name": "on", "color": sct_blue, "tooltip": "Correct for the tia response"}]),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                    {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
@@ -290,6 +290,10 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [1, 10000], digits = 0, trigger_warnings = [lambda value: value < 3]),
             "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2]),
             "sts_t_feedback": LE(tooltip = "feedback dwell time in between measurements\nin units of the modulator time constant", value = 4, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2]),
+            
+            "sts_t_int_ms": LE(tooltip = "integration time per data point", value = 1, unit = "ms", limits = [0, 100000], digits = 2),
+            "sts_t_settle_ms": LE(tooltip = "settling time per data point", value = 1, unit = "ms", limits = [0, 100000], digits = 2),
+            "sts_t_feedback_ms": LE(tooltip = "feedback dwell time in between measurements", value = 1, unit = "ms", limits = [0, 100000], digits = 2),
 
             "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70),
             "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70)               

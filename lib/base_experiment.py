@@ -44,7 +44,7 @@ class BaseExperiment(QObject):
         if isinstance(self.sct_folder, str) and os.path.isdir(self.sct_folder):
             try:
                 sys_folder = os.path.join(self.sct_folder, "sys")
-                with h5py.File(os.path.join(sys_folder, "TIA_corrections.hdf5"), "r") as f:
+                with h5py.File(os.path.join(sys_folder, "LUTs.hdf5"), "r") as f:
                     datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
                     self.tia_corrections = {key: datasets[key][:] for key in datasets.keys()}
             except:

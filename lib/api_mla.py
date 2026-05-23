@@ -667,23 +667,27 @@ class MLAAPI(QtCore.QObject):
             freqs = frequencies_dict.get("frequencies (Hz)")
             
             self.get_pixels(settle_pixels) # Wait settle_pixels number of pixels
-            (pix, pix_var) = measurement()
+            (pix_V, pix_V_var) = measurement()
+            pix_V_std_dev = np.sqrt(pix_V_var)
             
             if isinstance(tia_corrections, list | np.ndarray): # Apply correction
-                for tone in range(len(pix)):
+                for tone in range(len(pix_V)):
                     freq_int = int(round(freqs[tone]))
-                    if freq_int < len(tia_corrections): pix[tone] *= tia_corrections[freq_int]
+                    if freq_int < len(tia_corrections):
+                        tone_correction = tia_corrections[freq_int]
+                        pix_V[tone] *= tone_correction
+                        pix_V_std_dev *= tone_correction
             
-            a1refabs = 2000 * np.abs(pix[0]) # Reference signal = output directly copied to an MLA input port
-            a1refarg = np.rad2deg(np.angle(pix[0]))
+            a1refabs = 2000 * np.abs(pix_V[0]) # Reference signal = output directly copied to an MLA input port
+            a1refarg = np.rad2deg(np.angle(pix_V[0]))
             
-            a1abs_mV = 2000 * np.abs(pix[1]) # Drive and second harmonic output measured on input port
-            a2abs_mV = 2000 * np.abs(pix[2])
-            a1_std_dev_mV = 2000 * np.sqrt(pix_var[1])
-            a2_std_dev_mV = 2000 * np.sqrt(pix_var[2])
+            a1abs_mV = 2000 * np.abs(pix_V[1]) # Drive and second harmonic output measured on input port
+            a2abs_mV = 2000 * np.abs(pix_V[2])
+            a1_std_dev_mV = 2000 * np.sqrt(pix_V_std_dev[1])
+            a2_std_dev_mV = 2000 * np.sqrt(pix_V_std_dev[2])
             
-            a1arg = np.rad2deg(np.angle(pix[1]))
-            a2arg = np.rad2deg(np.angle(pix[2]))
+            a1arg = np.rad2deg(np.angle(pix_V[1]))
+            a2arg = np.rad2deg(np.angle(pix_V[2]))
 
             if tia_gain_V_per_pA > 1E-12: # When a gain is given, convert the voltages to displacement currents and subsequently capacitances. The factor 2 accounts for the discrepancy between the time-averaged lockin signal and the actual voltage amplitude
                 a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA) # Displacement current
@@ -728,8 +732,8 @@ class MLAAPI(QtCore.QObject):
         return (measurement_array, error_array, channel_names)
 
     def amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
-                        output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
-                        insert_parameter: tuple[str, float] = None) -> tuple[np.ndarray, np.ndarray]:
+                        output_port: int = 1, modulators: list = [0], input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
+                        insert_parameter: tuple[str, float] = None, tia_corrections: list | np.ndarray = None) -> tuple[np.ndarray, np.ndarray]:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
@@ -746,8 +750,12 @@ class MLAAPI(QtCore.QObject):
             numbers = np.arange(0, 32)
             numbers[0] = 1
             self.frequencies_update({"numbers": numbers})
-            self.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}) # Output modulator 1 onto port 1
-                        
+            self.outputs_update({"blank": True})
+        
+        self.outputs_update({f"mod{number}": {"on": True, "port": output_port} for number in modulators})        
+        (frequencies_dict, error) = self.frequencies_update()
+        freqs = frequencies_dict.get("frequencies (Hz)")
+
         # Prepare to plot these channels
         channel_names = ["amp (mV)", "|a1_ref| (mV)"]
         if tia_gain_V_per_pA > 1E-12: [channel_names.extend([f"Re(a{i + 1}) (nS)", f"Im(a{i + 1}) (nS)"]) for i in range (31)]
@@ -768,10 +776,19 @@ class MLAAPI(QtCore.QObject):
         for index, amp_mV in enumerate(amplitudes):
             if abort_callback: abort_callback()
             self.task_progress.emit(int(100 * index / n_total))
-            self.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
+            self.amplitudes_update({"amplitudes (mV)": {number: amp_mV for number in modulators}}, verbose = False)
             
             self.get_pixels(settle_pixels)
             (pix_V, pix_V_var) = measurement()
+            pix_V_std_dev = np.sqrt(pix_V_var)
+            
+            if isinstance(tia_corrections, list | np.ndarray): # Apply correction
+                for tone in range(len(pix_V)):
+                    freq_int = int(round(freqs[tone]))
+                    if freq_int < len(tia_corrections):
+                        tone_correction = tia_corrections[freq_int]
+                        pix_V[tone] *= tone_correction
+                        pix_V_std_dev *= tone_correction
             
             if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = float)
             else: data_chunk = np.zeros((len(channel_names)), dtype = float)
@@ -780,7 +797,7 @@ class MLAAPI(QtCore.QObject):
             data_chunk[1] = 2000 * np.abs(pix_V[0]) # Factor 2 to account for discrepancy between amplitude and lockin measured amplitude
             
             harmonics_V = np.array([[np.real(tone), np.imag(tone)] for tone in pix_V[1:]]).flatten()
-            errors_V = np.sqrt(np.array([[tone, 0] for tone in pix_V_var[1:]]).flatten())
+            errors_V = np.sqrt(np.array([[tone, 0] for tone in pix_V_std_dev[1:]]).flatten())
             if tia_gain_V_per_pA > 1E-12:
                 harmonics_pA = 2 * harmonics_V / tia_gain_V_per_pA
                 data_chunk[2:] = harmonics_pA
@@ -810,7 +827,7 @@ class MLAAPI(QtCore.QObject):
 
     def voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
                       output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
-                      insert_parameter: tuple[str, float] = None, return_type: str = "conductance") -> tuple[np.ndarray, np.ndarray]:
+                      insert_parameter: tuple[str, float] = None, return_type: str = "conductance", tia_corrections: list | np.ndarray = None) -> tuple[np.ndarray, np.ndarray]:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
@@ -830,6 +847,8 @@ class MLAAPI(QtCore.QObject):
             self.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}) # Output modulator 1 onto port 1
         
         # Read the TIA gain and oscillator amplitude to be able to convert values
+        (frequencies_dict, error) = self.frequencies_update()
+        freqs = frequencies_dict.get("frequencies (Hz)")
         (amplitudes_dict, error) = self.amplitudes_update(verbose = False)
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
         
@@ -860,6 +879,15 @@ class MLAAPI(QtCore.QObject):
             
             self.get_pixels(settle_pixels)
             (pix_V, pix_V_var) = measurement()
+            pix_V_std_dev = np.sqrt(pix_V_var)
+            
+            if isinstance(tia_corrections, list | np.ndarray): # Apply correction for tia response if desired
+                for tone in range(len(pix_V)):
+                    freq_int = int(round(freqs[tone]))
+                    if freq_int < len(tia_corrections):
+                        tone_correction = tia_corrections[freq_int]
+                        pix_V[tone] *= tone_correction
+                        pix_V_std_dev *= tone_correction
                         
             if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = float)
             else: data_chunk = np.zeros((len(channel_names)), dtype = float)
@@ -868,7 +896,7 @@ class MLAAPI(QtCore.QObject):
             data_chunk[1] = 2000 * np.abs(pix_V[0]) # Reference signal in mA
             
             harmonics_V = np.array([[np.real(tone), np.imag(tone)] for tone in pix_V[1:]]).flatten()
-            errors_V = np.sqrt(np.array([[tone] for tone in pix_V_var[1:]]).flatten())            
+            errors_V = np.sqrt(np.array([[tone, 0] for tone in pix_V_std_dev[1:]]).flatten())            
             if tia_gain_V_per_pA > 1E-12:
                 harmonics_pA = 2 * harmonics_V / tia_gain_V_per_pA
                 errors_pA = 2 * errors_V / tia_gain_V_per_pA

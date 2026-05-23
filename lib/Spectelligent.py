@@ -25,7 +25,6 @@ class Spectelligent(QtCore.QObject):
         self.gui = SpectelligentGUI()
         self.sct = parent
         self.connect_buttons()
-        self.get_fb_parameters()
 
 
 
