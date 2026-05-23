@@ -33,6 +33,8 @@ class Experiment(BaseExperiment):
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
         intermediate_feedback = spec_button_states["intermediate_feedback"]
         spectroscopy_feedback = spec_button_states["spectroscopy_feedback"]
+        tia_correct = spec_button_states["tia_correct"]
+        
         [V_fb, p_gain_fb, I_fb, t_fb, t_const_fb, z_fb] = [spec_line_edits[f"{key}_feedback"] for key in ["V", "p", "I", "t", "t_const", "z"]]
         """
         connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
@@ -45,8 +47,6 @@ class Experiment(BaseExperiment):
         # Read parameters from Nanonis
         nn_hardware_dict = self.start_parameters["nanonis"].get("hardware", {})
         [tia_gain, tia_gain_V_per_pA] = [nn_hardware_dict.get(key) for key in ["current_gain", "gain (V/pA)"]]
-        (amplitudes, error) = mla.amplitudes_update(verbose = False)
-        mod_voltage_mV = amplitudes.get("amplitudes (mV)")[0]
         
         # Read parameters from the MLA
         mla_parameters = self.start_parameters["mla"]
@@ -55,8 +55,11 @@ class Experiment(BaseExperiment):
         time_constant_dict = mla_parameters.get("time_constant")
         mla_bias = mla_parameters.get("mla_bias")
         
-               
-
+        tia_corrections = None
+        if tia_correct == "on":
+            try: tia_corrections = self.tia_corrections.get(tia_gain)[1]            
+            except: pass
+        
         # Set up spectroscopy x axis
         x_values = None
         x_axis_label = ""
@@ -68,7 +71,7 @@ class Experiment(BaseExperiment):
         
         match spec_button_states["x_axis"]:
             case "V":
-                x_axis_label = "voltage (V)"                
+                x_axis_label = "voltage (V)"
                 if spec_button_states.get("V_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps}
                 
@@ -76,18 +79,18 @@ class Experiment(BaseExperiment):
                                                                            tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance",
                                                                            abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "z":
-                x_axis_label = "tip height (nm)"                
+                x_axis_label = "tip height (nm)"
                 if spec_button_states.get("z_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "z steps": x_steps}
                 
                 raise Exception("Experiment not yet implemented")
             case "f":
-                x_axis_label = "frequency (Hz)"                
+                x_axis_label = "frequency (Hz)"
                 if spec_button_states.get("f_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps}
                 
                 x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = True,
-                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter,
+                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "amp":
                 x_axis_label = "amplitude (mV)"

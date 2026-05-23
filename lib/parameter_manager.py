@@ -123,6 +123,9 @@ class ParameterManager(QtCore.QObject):
                     outputs = sct.spt.gui.lockin_widget.getOutputs()
                     inputs = sct.spt.gui.lockin_widget.getInputs()
                     sct.mla.lockin_update({"df (Hz)": df, "frequencies (Hz)": frequencies, "amplitudes (mV)": amplitudes, "phases (deg)": phases, "output_masks": outputs, "input_mask": inputs}, unlink = False)
+                    sct.mla.start_lockin()
+                    sct.mla.get_pixels(1)
+                    sct.mla.stop_lockin()
             
             case "tip_shaper":
                 sct.nanonis.tip_shaper_update(unlink = True)

@@ -1,6 +1,7 @@
-import sys, os, time
+import sys, os, time, h5py
 import numpy as np
 from scipy.ndimage import gaussian_filter
+from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
 from lib import BaseExperiment
@@ -45,11 +46,9 @@ class Experiment(BaseExperiment):
             dist_to_tlc = np.linalg.norm(tip_location - tlc)
             
             if dist_to_tlc < dist_to_blc: direction = "down"
-
-        self.output_file.attrs.update({"frame_offset_x (nm)": 100})
-        
-        time.sleep(2)
-
+       
+        self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
+        self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S")})
 
         # Starting the scan
         self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")

@@ -1,4 +1,4 @@
-import time, h5py, types
+import os, time, h5py, types
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from datetime import datetime
@@ -25,6 +25,7 @@ class BaseExperiment(QObject):
         self.hw_config = kwargs.pop("hw_config", None) # Will become redundant again
         self.scan_processing_flags = kwargs.pop("scan_processing_flags", None)
         self.experiment_file = kwargs.pop("experiment_file", None)
+        self.sct_folder = kwargs.pop("scantelligent_folder", None)
         
         self.mla = kwargs.pop("mla", None)
         self.nanonis = kwargs.pop("nanonis", None)
@@ -38,6 +39,16 @@ class BaseExperiment(QObject):
         self.gui_parameters = {"combobox": None, "line_edits": [None], "buttons": [None]}
         
         super().__init__()
+        
+        self.tia_corrections = ""
+        if isinstance(self.sct_folder, str) and os.path.isdir(self.sct_folder):
+            try:
+                sys_folder = os.path.join(self.sct_folder, "sys")
+                with h5py.File(os.path.join(sys_folder, "TIA_corrections.hdf5"), "r") as f:
+                    datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
+                    self.tia_corrections = {key: datasets[key][:] for key in datasets.keys()}
+            except:
+                pass
 
 
 
@@ -302,7 +313,8 @@ class BaseExperiment(QObject):
                 self.logprint(f"Error: {e}", message_type = "error")
                 self.abort_requested = True
             finally:
-                self.output_file.close()
+                try: self.output_file.close()
+                except: pass
                 self.finish_experiment()
         return wrapper
 
@@ -381,12 +393,10 @@ class BaseExperiment(QObject):
         try:
             # Read the start parameters and try to reset all of them
             mla_parameters = self.start_parameters.get("mla")
-            if not isinstance(mla_parameters, dict):
-                raise Exception("")
-            
-            [time_constant, mla_bias, amplitudes_dict, frequencies_dict, outputs_dict] = [self.start_parameters["mla"].get(key) for key in ["time_constant", "mla_bias", "amplitudes", "frequencies", "outputs"]]
-            self.mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_2 (V)"),
-                                    "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "output_masks": outputs_dict.get("output_masks")}, verbose = False)
+            if isinstance(mla_parameters, dict):
+                [time_constant, mla_bias, amplitudes_dict, frequencies_dict, outputs_dict] = [self.start_parameters["mla"].get(key) for key in ["time_constant", "mla_bias", "amplitudes", "frequencies", "outputs"]]
+                self.mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_2 (V)"),
+                                        "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "output_masks": outputs_dict.get("output_masks")}, verbose = False)
         except Exception as e:
             self.logprint(f"Problem encountered while trying to reset the MLA. I could not read the start parameters. {e}", message_type = "error")
 

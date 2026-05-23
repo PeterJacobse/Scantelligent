@@ -621,7 +621,7 @@ class MLAAPI(QtCore.QObject):
     # Parameter sweep experiments
     def frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
                         output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
-                        insert_parameter: tuple[str, float] = None) -> tuple[np.ndarray, np.ndarray]:
+                        insert_parameter: tuple[str, float] = None, tia_corrections: list | np.ndarray = None) -> tuple[np.ndarray, np.ndarray]:
         
         # In the future, more complicated data acquisitions can be passed rather than just get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
@@ -663,10 +663,16 @@ class MLAAPI(QtCore.QObject):
             self.task_progress.emit(int(100 * index / n_total))
             w = 2 * np.pi * int(f) # Frequency in rad per s
             self.time_constant_update({"df (Hz)": int(f)}, verbose = False)
-            self.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False)
+            (frequencies_dict, error) = self.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False)
+            freqs = frequencies_dict.get("frequencies (Hz)")
             
             self.get_pixels(settle_pixels) # Wait settle_pixels number of pixels
             (pix, pix_var) = measurement()
+            
+            if isinstance(tia_corrections, list | np.ndarray): # Apply correction
+                for tone in range(len(pix)):
+                    freq_int = int(round(freqs[tone]))
+                    if freq_int < len(tia_corrections): pix[tone] *= tia_corrections[freq_int]
             
             a1refabs = 2000 * np.abs(pix[0]) # Reference signal = output directly copied to an MLA input port
             a1refarg = np.rad2deg(np.angle(pix[0]))

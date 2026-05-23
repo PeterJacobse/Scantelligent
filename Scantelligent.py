@@ -1055,7 +1055,7 @@ class Scantelligent(QtCore.QObject):
                 try:
                     mla_pointer = None
                     if hasattr(self, "mla"): mla_pointer = self.mla                    
-                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath,
+                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scantelligent_folder = self.paths["parent_folder"],
                                                                                     scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis1, mla = mla_pointer)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
@@ -1099,12 +1099,11 @@ class Scantelligent(QtCore.QObject):
                 # Pass the parameters from the gui to the experiment
                 spec_line_edits = {}
                 [spec_line_edits.update({f"{quantity}_{key}": self.spt.gui.line_edits[f"sts_{quantity}_{key}"].getValue() for key in ["start", "end", "points"]}) for quantity in ["x", "y", "V", "f", "z", "amp", "V_keithley"]]
-                [spec_line_edits.update({f"t_{key}": self.spt.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})]
-                [spec_line_edits.update({f"{key}_feedback": self.spt.gui.line_edits[f"sts_{key}_feedback"].getValue() for key in ["t", "V", "I", "p", "t_const", "z"]})]
+                spec_line_edits.update({f"t_{key}": self.spt.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})
+                spec_line_edits.update({f"{key}_feedback": self.spt.gui.line_edits[f"sts_{key}_feedback"].getValue() for key in ["t", "V", "I", "p", "t_const", "z"]})
                 spec_buttons = {}
-                [spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name}) for key in ["x_axis", "y_axis"]]
-                spec_buttons.update({f"{parameter}_retrace": self.spt.gui.buttons[f"{parameter}_retrace"].isChecked() for parameter in ["V", "f", "z", "amp", "V_keithley"]})
-                spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["nanonis_mla", "spectroscopy_feedback", "intermediate_feedback"]})
+                spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name for key in ["x_axis", "y_axis"]})
+                spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["tia_correct", "nanonis_mla", "spectroscopy_feedback", "intermediate_feedback"]})
                 
                 gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),
                                   "line_edits": [self.gui.line_edits[f"experiment_{index}"].getValue() for index in range(9)],

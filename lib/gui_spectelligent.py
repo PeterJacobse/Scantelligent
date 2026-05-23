@@ -100,7 +100,9 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
                                          {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),
 
-            "start_spectroscopy": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
+            "start_spectroscopy": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}], click_to_toggle = False),
+            "tia_correct": MSB(icon = icons.get("osc"), size = 28, states = [{"name": "off", "color": sct_black, "tooltip": "Do not correct for the tia response"},
+                                                                             {"name": "on", "color": sct_blue, "tooltip": "Correct for the tia response"}]),
             
             "sts_V": MSB(states = [{"name": "off", "tooltip": "Check to include a voltage sweep", "color": sct_black, "icon": icons.get("V")},
                                    {"name": "x", "tooltip": "Voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
@@ -478,10 +480,11 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # Settings
         [layouts["spectroscopy_getset"].addWidget(buttons[f"{key}et_spectroscopy_parameters"]) for key in ["g", "s"]]
-        layouts["spectroscopy_settings"].addWidget(buttons["spectroscopy_feedback"], 0, 0, 2, 1)
-        [layouts["spectroscopy_settings"].addWidget(line_edits[name], index, 1) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
-        layouts["spectroscopy_settings"].addWidget(buttons["intermediate_feedback"], 0, 2, 2, 1)
-        [layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_{key}_feedback"], index % 2, 3 + int(index / 2)) for index, key in enumerate(["V", "I", "p", "t_const", "t", "z"])]
+        layouts["spectroscopy_settings"].addWidget(buttons["tia_correct"], 0, 0, 2, 1)
+        layouts["spectroscopy_settings"].addWidget(buttons["spectroscopy_feedback"], 0, 1, 2, 1)
+        [layouts["spectroscopy_settings"].addWidget(line_edits[name], index, 2) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
+        layouts["spectroscopy_settings"].addWidget(buttons["intermediate_feedback"], 0, 3, 2, 1)
+        [layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_{key}_feedback"], index % 2, 4 + int(index / 2)) for index, key in enumerate(["V", "I", "p", "t_const", "t", "z"])]
         layouts["spectroscopy_settings"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 4)
         
         # Parameter space
