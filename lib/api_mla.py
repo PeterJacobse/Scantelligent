@@ -194,8 +194,8 @@ class MLAAPI(QtCore.QObject):
             self.logprint("Output masks have the wrong shape")
         return
 
-    def set_bias(self, port: int = 1, bias: float = 0) -> None:
-        self.mla.lockin.set_dc_offset(port = port, value = bias)
+    def set_bias(self, port: int = 1, value: float = 0) -> None:
+        self.mla.lockin.set_dc_offset(port = port, value = value)
         return
 
     def autophase(self, amplitude_mV: float = 500, verbose: bool = False) -> None:
