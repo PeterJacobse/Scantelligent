@@ -10,3 +10,5 @@ keithley:
 scanalyzer_path: C:\Scripts\Scanalyzer\Scanalyzer.py
 mla:
  library_path: C:\IMP\imp_mla-4.7-any
+T_diode:
+ DT-670

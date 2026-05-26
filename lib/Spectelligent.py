@@ -8,7 +8,6 @@ from .sct_widgets import SCTWidgets
 from .data_processing import DataProcessing
 from .file_functions import FileFunctions
 from .parameter_manager import ParameterManager, UserData
-from .audio_generator import AudioGenerator
 from datetime import datetime
 
 
@@ -89,7 +88,8 @@ class Spectelligent(QtCore.QObject):
 
     def connect_buttons(self) -> None:
         button_slots = {"sts_x_axis": self.update_grid, "sts_y_axis": self.update_grid, "exit": self.exit, "get_parameter_space_parameters": self.update_grid, "set_parameter_space_parameters": self.update_grid,
-                        "get_spectroscopy_parameters": self.get_fb_parameters, "set_spectroscopy_parameters": self.update_grid}
+                        "get_spectroscopy_parameters": self.get_fb_parameters, "set_spectroscopy_parameters": self.update_grid, "no_modulators": lambda checked: self.check_modulators("none"),
+                        "all_modulators": lambda checked: self.check_modulators("all")}
         button_slots.update({f"sts_{parameter}": lambda: self.update_grid(parameter) for parameter in ["V", "f", "z", "amp", "V_keithley"]})
         
         for button_name, connected_function in button_slots.items():
@@ -148,6 +148,7 @@ class Spectelligent(QtCore.QObject):
             line_edits[f"sts_{parameter}_points"].resetColor()
             line_edits[f"sts_d{parameter}"].resetColor()
         [line_edits[f"sts_{parameter}_feedback"].resetColor() for parameter in ["V", "I", "p", "t", "t_const", "z"]]
+        [line_edits[f"sts_t_{key}"].resetColor() for key in ["int", "settle", "int_ms", "settle_ms"]]
         
         x_parameter = self.gui.buttons["sts_x_axis"].state_name
         y_parameter = self.gui.buttons["sts_y_axis"].state_name
@@ -187,8 +188,15 @@ class Spectelligent(QtCore.QObject):
                 [line_edits[f"sts_{side}"].setUnit("nm") for side in ["x_start", "x_end", "dx"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [2, 2, 2])]
                 self.gui.plot_widget.setLabel("bottom", "z (nm)")
+            case "V_keithley":
+                x_limits = [line_edits[f"sts_V_keithley_{side}"].getValue() for side in ["start", "end"]]
+                x_points = line_edits["sts_V_keithley_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["x_start", "x_end", "dx"], ["V", "V", "mV"])]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [3, 3, 2])]
+                self.gui.plot_widget.setLabel("bottom", "V_Keithley (V)")
             case _:
-                pass
+                self.gui.plot_widget.setLabel("bottom", "")
         
         y_limits = None
         match self.gui.buttons["sts_y_axis"].state_name:
@@ -220,6 +228,13 @@ class Spectelligent(QtCore.QObject):
                 [line_edits[f"sts_{side}"].setUnit("nm") for side in ["y_start", "y_end", "dy"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [2, 2, 2])]
                 self.gui.plot_widget.setLabel("left", "z (nm)")
+            case "V_keithley":
+                y_limits = [line_edits[f"sts_V_keithley_{side}"].getValue() for side in ["start", "end"]]
+                y_points = line_edits["sts_V_keithley_points"].getValue()
+                
+                [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["y_start", "y_end", "dy"], ["V", "V", "mV"])]
+                [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [3, 3, 2])]
+                self.gui.plot_widget.setLabel("left", "V_Keithley (V)")
             case _:
                 self.gui.plot_widget.setLabel("left", "")
 
@@ -285,6 +300,11 @@ class Spectelligent(QtCore.QObject):
         except Exception as e:
             self.logprint(f"Error setting the feedback parameters: {e}", message_type = "error")
         self.update_grid()
+        return
+
+    def check_modulators(self, value: str = "none") -> None:
+        if value == "all": [self.gui.checkboxes[f"modulator_{index}"].setState(1) for index in range(32)]
+        else: [self.gui.checkboxes[f"modulator_{index}"].setState(0) for index in range(32)]
         return
 
 

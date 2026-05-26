@@ -27,13 +27,11 @@ class Experiment(BaseExperiment):
         
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
-        [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
-        
+        [spec_button_states, spec_line_edits, modulators] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits", "modulators"]]
+                
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
-        nanonis_or_mla = spec_button_states.get("nanonis_mla")
-        intermediate_feedback = spec_button_states["intermediate_feedback"]
-        spectroscopy_feedback = spec_button_states["spectroscopy_feedback"]
-        tia_correct = spec_button_states["tia_correct"]
+        [nanonis_or_mla, tia_correct] = [spec_button_states.get(key) for key in ["nanonis_mla", "tia_correct"]]
+        [blank_modulators, intermediate_feedback, spectroscopy_feedback] = [spec_button_states.get(key) for key in ["blank_modulators", "intermediate_feedback", "spectroscopy_feedback"]]
         
         [V_fb, p_gain_fb, I_fb, t_fb, t_const_fb, z_fb] = [spec_line_edits[f"{key}_feedback"] for key in ["V", "p", "I", "t", "t_const", "z"]]
         """
@@ -72,10 +70,12 @@ class Experiment(BaseExperiment):
         match spec_button_states["x_axis"]:
             case "V":
                 x_axis_label = "voltage (V)"
-                if spec_button_states.get("V_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
+                self.logprint(f"{spec_button_states.get("V_retrace") = }")
+                if spec_button_states.get("V_retrace", False):                    
+                    x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = False,
+                x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators,
                                                                            tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance",
                                                                            abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "z":
@@ -89,7 +89,7 @@ class Experiment(BaseExperiment):
                 if spec_button_states.get("f_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = False,
+                x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators,
                                                                              tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "amp":
@@ -97,8 +97,8 @@ class Experiment(BaseExperiment):
                 if spec_button_states.get("amp_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, setup_defaults = False,
-                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, modulators = [0, 2],
+                x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators,
+                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter,
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "V_keithley":
                 x_axis_label = "V_Keithley (V)"
@@ -107,8 +107,8 @@ class Experiment(BaseExperiment):
                 
                 raise Exception("Experiment not yet implemented")
             
-            case _:
-                pass
+            case _: # No parameter to sweep on the x-axis. Resort to a single point measurement
+                raise Exception("0D spectroscopy not yet implemented")
 
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         
@@ -225,7 +225,7 @@ class Experiment(BaseExperiment):
         
         measurement_ds = self.output_file.create_dataset("Sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
         error_ds = self.output_file.create_dataset("Errors (std. dev.)", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
-        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
+        channels_ds = self.output_file.create_dataset("Channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
         channels_ds.make_scale("channels")
         [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
         [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]

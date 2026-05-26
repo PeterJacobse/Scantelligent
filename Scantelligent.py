@@ -1105,13 +1105,14 @@ class Scantelligent(QtCore.QObject):
                 spec_buttons = {}
                 spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name for key in ["x_axis", "y_axis"]})
                 spec_buttons.update({f"{quantity}_retrace": self.spt.gui.buttons[f"{quantity}_retrace"].state_name for quantity in ["V", "f", "z", "amp", "V_keithley"]})
-                spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["tia_correct", "nanonis_mla", "spectroscopy_feedback", "intermediate_feedback"]})
+                spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["tia_correct", "nanonis_mla", "spectroscopy_feedback", "intermediate_feedback", "blank_modulators"]})
+                modulators_bool_list = [self.spt.gui.checkboxes[f"modulator_{index}"].isChecked() for index in range(32)]
+                spec_modulators = [index for index, val in enumerate(modulators_bool_list) if val]
                 
                 gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),
                                   "line_edits": [self.gui.line_edits[f"experiment_{index}"].getValue() for index in range(9)],
                                   "buttons": [self.gui.buttons[f"experiment_{index}"].state_name for index in range(6)],
-                                  "spectroscopy_line_edits": spec_line_edits,
-                                  "spectroscopy_buttons": spec_buttons}
+                                  "spectroscopy_line_edits": spec_line_edits, "spectroscopy_buttons": spec_buttons, "modulators": spec_modulators}
 
                 self.experiment.gui_parameters = copy.deepcopy(gui_parameters)
                 

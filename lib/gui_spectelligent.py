@@ -29,6 +29,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
         self.buttons = self.make_buttons()
+        self.checkboxes = self.make_checkboxes()
         self.comboboxes = self.make_comboboxes()
         self.line_edits = self.make_line_edits()
         #self.progress_bars = self.make_progress_bars()
@@ -141,17 +142,24 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "get_pixel_nanonis": MSB(tooltip = "Click to receive a pixel from Nanonis", icon = icons.get("nanonis")),
             "get_pixel_mla": MSB(tooltip = "Click to receive a pixel from the MLA", icon = icons.get("imp")),
             
+            "blank_modulators": MSB(size = 28, states = [{"name": "off", "tooltip": "Do not switch off modulators between sweeps", "icon": icons.get("continue_osc"), "color": sct_black},
+                                                         {"name": "on", "tooltip": "Blank all modulators between sweeps", "icon": icons.get("stop_osc"), "color": sct_blue}]),
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
             "mla_zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes"),
             "nanonis_zero_volumes": MSB(icon = icons.get("0"), tooltip = "Zero all relative volumes"),
-            "spectroscopy_feedback": MSB(size = 28, states = [{"name": "off", "tooltip": "Feedback switched OFF while performing spectroscopy", "icon": icons.get("constant_height"), "color": sct_black},
-                                                              {"name": "on", "tooltip": "Feedback switched ON while performing spectroscopy", "icon": icons.get("constant_current"), "color": sct_blue},
+            "spectroscopy_feedback": MSB(size = 28, states = [{"name": "off", "tooltip": "Feedback switched OFF while performing spectroscopy", "icon": icons.get("constant_height"), "color": self.colors["orange"]},
+                                                              {"name": "on", "tooltip": "Feedback switched ON while performing spectroscopy", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]},
                                                               {"name": "unchanged", "tooltip": "Feedback left unchanged while performing spectroscopy", "icon": icons.get("tip_unknown"), "color": sct_black}]),
             "intermediate_feedback": MSB(size = 28, states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
-                                                              {"name": "on", "tooltip": "Return to intermediate feedback\before every sweep in x", "icon": icons.get("constant_current"), "color": sct_blue}]),
+                                                              {"name": "on", "tooltip": "Return to intermediate feedback\nbefore every sweep in x", "icon": icons.get("constant_current"), "color": sct_blue}]),
+            "intermediate_blank": MSB(size = 28, states = [{"name": "off", "tooltip": "Do not blank the lockin output during intemediate feedback", "icon": icons.get("imp"), "color": sct_blue},
+                                                           {"name": "on", "tooltip": "Blank the lockin output during intemediate feedback", "icon": icons.get("constant_current"), "color": sct_black}]),
             "z_adjust": MSB(size = 28, states = [{"name": "off", "tooltip": "Do not adjust the tip height relative to the feedback setpoint", "icon": icons.get("constant_height"), "color": sct_black},
-                                                 {"name": "on", "tooltip": "Adjust the tip height relative to the feedback setpoint before each sweep", "icon": icons.get("constant_current"), "color": sct_blue}])
+                                                 {"name": "on", "tooltip": "Adjust the tip height relative to the feedback setpoint before each sweep", "icon": icons.get("constant_current"), "color": sct_blue}]),
+            
+            "no_modulators": MSB(size = 28, tooltip = "Click to uncheck all modulators", icon = icons.get("0")),
+            "all_modulators": MSB(size = 28, tooltip = "Click to check all modulators", icon = icons.get("100")),
         }
         
         for parameter_type in ["lockin", "parameter_space", "spectroscopy"]:
@@ -179,43 +187,20 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
         
-        buttons["V_retrace"].setState(1)
+        [buttons[key].setState(1) for key in ["V_retrace", "tia_correct", "intermediate_feedback", "intermediate_blank"]]
         return buttons
 
     def make_checkboxes(self) -> tuple[dict, dict]:
         CB = SCTWidgets.CheckBox
         BG = SCTWidgets.ButtonGroup
-
-        checkboxes = {f"{parameter}_sweep_reverse": CB(tooltip = "Perform backward sweep after completing forward sweep") for parameter in ["V", "f", "amp", "V_keithley", "z"]}
-        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(40)] # Channels
-
-        # Named groups
-        self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
-        [checkbox.setChecked(True) for checkbox in self.action_checkboxes]
-        checkboxes["advance"].setChecked(False)
+        
+        checkboxes = {f"modulator_{index}": CB(tooltip = f"Use modulator {index} during the experiment") for index in range(32)}
 
         # Add the button handles to the tooltips
         [checkboxes[name].changeToolTip(f"gui.checkboxes[\"{name}\"]", line = 10) for name in checkboxes.keys()]
         
-        # Add buttons to QButtonGroups for exclusive selection and check the defaults
-        self.button_groups = {
-            "min": BG(),
-            "max": BG(),
-            "background": BG(),
-            "channels": BG(exclusive = False, keep_one_checked = False),
-            "spec_axes": BG(keep_one_checked = False)
-        }
-        limit_methods = ["full", "percentiles", "deviations", "absolute"]        
-        [self.button_groups["min"].addButton(checkboxes[f"min_{method}"], f"min_{method}") for method in limit_methods]
-        [self.button_groups["max"].addButton(checkboxes[f"max_{method}"], f"max_{method}") for method in limit_methods]
-        [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise"]]
-        [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(40)]
-        [self.button_groups["spec_axes"].addButton(self.buttons[f"sts_{quantity}"], quantity) for quantity in ["V", "z", "f", "amp", "V_keithley"]]
+        checkboxes["modulator_0"].setState(1)
         
-        # Initialize
-        checked_buttons = [checkboxes[name] for name in ["min_full", "max_full"]]
-        [button.setChecked(True) for button in checked_buttons]
-
         return checkboxes
 
     def make_comboboxes(self) -> dict:
@@ -244,79 +229,79 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         line_edits = {
             # STS
-            "sts_V_feedback": LE(tooltip = "bias voltage", unit = "V", digits = 3, lmits = [-10, 10]),
-            "sts_I_feedback": LE(tooltip = "feedback current", unit = "pA", digits = 1, limits = [0, 10000]),
-            "sts_p_feedback": LE(tooltip = "proportional gain", unit = "pm", digits = 0),
-            "sts_t_const_feedback": LE(tooltip = "feedback time constant", unit = "us", digits = 0),
-            "sts_z_feedback": LE(tooltip = "tip height step relative to feedback setpoint", value = 0.0, unit = "nm", digits = 2, limits = [-1000, 1000]),
+            "sts_V_feedback": LE(tooltip = "bias voltage", unit = "V", digits = 3, lmits = [-10, 10], max_width = 80),
+            "sts_I_feedback": LE(tooltip = "feedback current", unit = "pA", digits = 1, limits = [0, 10000], max_width = 80),
+            "sts_p_feedback": LE(tooltip = "proportional gain", unit = "pm", digits = 0, max_width = 80),
+            "sts_t_const_feedback": LE(tooltip = "feedback time constant", unit = "us", digits = 0, max_width = 80),
+            "sts_z_feedback": LE(tooltip = "tip height step relative to feedback setpoint", value = 0.0, unit = "nm", digits = 2, limits = [-1000, 1000], max_width = 80),
             
-            "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, edited_color = scanalyzer_blue),
-            "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [-10000, 10000], digits = 2, edited_color = scanalyzer_blue),
-            "sts_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
+            "sts_V_start": LE(value = -1, tooltip = "start bias", unit = "V", limits = [-10, 10], digits = 3, max_width = 80),
+            "sts_V_end": LE(value = 1, tooltip = "end bias", unit = "V", limits = [-10, 10], digits = 3, max_width = 80),
+            "sts_dV": LE(value = 10, tooltip = "bias step value", unit = "mV", limits = [-10000, 10000], digits = 2, max_width = 80),
+            "sts_V_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, max_width = 80),
             
-            "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [-100, 100], digits = 2, edited_color = scanalyzer_blue),
-            "sts_f_points": LE(value = 1000, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
+            "sts_f_start": LE(value = 10, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, max_width = 80),
+            "sts_f_end": LE(value = 10000, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, max_width = 80),
+            "sts_df": LE(value = 10, tooltip = "frequency step value", unit = "Hz", limits = [-100, 100], digits = 2, max_width = 80),
+            "sts_f_points": LE(value = 1000, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, max_width = 80),
             
-            "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
-            "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
-            "sts_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [-200, 200], digits = 2, edited_color = scanalyzer_blue),
-            "sts_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),            
+            "sts_z_start": LE(value = 0, tooltip = "start height", unit = "nm", limits = [-200, 200], digits = 2, max_width = 80),
+            "sts_z_end": LE(value = 2, tooltip = "end height", unit = "nm", limits = [-200, 200], digits = 2, max_width = 80),
+            "sts_dz": LE(value = .01, tooltip = "height step value", unit = "nm", limits = [-200, 200], digits = 2, max_width = 80),
+            "sts_z_points": LE(value = 201, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, max_width = 80),
 
-            "sts_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, edited_color = scanalyzer_blue),
-            "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "sts_amp_points": LE(value = 101, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, edited_color = scanalyzer_blue),
+            "sts_amp_start": LE(value = 0, tooltip = "start amplitude", unit = "mV", limits = [0, 100000], digits = 1, max_width = 80),
+            "sts_amp_end": LE(value = 1000, tooltip = "end amplitude", unit = "mV", limits = [0, 100000], digits = 1, max_width = 80),
+            "sts_damp": LE(value = 10, tooltip = "amplitude step value", unit = "mV", limits = [-1000, 1000], digits = 2, max_width = 80),
+            "sts_amp_points": LE(value = 101, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, max_width = 80),
 
-            "sts_V_keithley_start": LE(value = -60, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_V_keithley_end": LE(value = 60, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1),
-            "sts_dV_keithley": LE(value = 1, tooltip = "frequency step value", unit = "Hz", limits = [-100, 100], digits = 2),
-            "sts_V_keithley_points": LE(value = 121, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
+            "sts_V_keithley_start": LE(value = -60, tooltip = "start frequency", unit = "Hz", limits = [0, 100000], digits = 1, max_width = 80),
+            "sts_V_keithley_end": LE(value = 60, tooltip = "end frequency", unit = "Hz", limits = [0, 100000], digits = 1, max_width = 80),
+            "sts_dV_keithley": LE(value = 1, tooltip = "frequency step value", unit = "Hz", limits = [-100, 100], digits = 2, max_width = 80),
+            "sts_V_keithley_points": LE(value = 121, tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, max_width = 80),
             
             # X and Y axes will have copies of the selected parameters
-            "sts_x_start": LE(tooltip = "start value", unit = "Hz", limits = [-100000, 100000], digits = 1),
-            "sts_x_end": LE(tooltip = "end value", unit = "Hz", limits = [-100000, 100000], digits = 1),
-            "sts_dx": LE(tooltip = "step value", unit = "Hz", limits = [-100, 100], digits = 2),
-            "sts_x_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
+            "sts_x_start": LE(tooltip = "start value", unit = "Hz", limits = [-100000, 100000], digits = 1, max_width = 80),
+            "sts_x_end": LE(tooltip = "end value", unit = "Hz", limits = [-100000, 100000], digits = 1, max_width = 80),
+            "sts_dx": LE(tooltip = "step value", unit = "Hz", limits = [-100, 100], digits = 2, max_width = 80),
+            "sts_x_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, max_width = 80),
 
-            "sts_y_start": LE(tooltip = "start value", unit = "Hz", limits = [-100000, 100000], digits = 1),
-            "sts_y_end": LE(tooltip = "end value", unit = "Hz", limits = [-100000, 100000], digits = 1),
-            "sts_dy": LE(tooltip = "step value", unit = "Hz", limits = [-100, 100], digits = 2),
-            "sts_y_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0),
+            "sts_y_start": LE(tooltip = "start value", unit = "Hz", limits = [-100000, 100000], digits = 1, max_width = 80),
+            "sts_y_end": LE(tooltip = "end value", unit = "Hz", limits = [-100000, 100000], digits = 1, max_width = 80),
+            "sts_dy": LE(tooltip = "step value", unit = "Hz", limits = [-100, 100], digits = 2, max_width = 80),
+            "sts_y_points": LE(tooltip = "number of data points in sweep", unit = "pts", limits = [1, 100000], digits = 0, max_width = 80),
 
             # Lockin
-            "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [1, 10000], digits = 0, trigger_warnings = [lambda value: value < 3]),
-            "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2]),
-            "sts_t_feedback": LE(tooltip = "feedback dwell time in between measurements\nin units of the modulator time constant", value = 4, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2]),
+            "sts_t_int": LE(tooltip = "integration time per data point in units\nof the modulator time constant", value = 10, unit = "t", limits = [1, 10000], digits = 0, trigger_warnings = [lambda value: value < 3], max_width = 80),
+            "sts_t_settle": LE(tooltip = "settling time per data point in units\nof the modulator time constant\nRecommended value: 2", value = 2, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2], max_width = 80),
+            "sts_t_feedback": LE(tooltip = "feedback dwell time in between measurements\nin units of the modulator time constant", value = 4, unit = "t", limits = [0, 10000], digits = 0, trigger_warnings = [lambda value: value < 2], max_width = 80),
             
-            "sts_t_int_ms": LE(tooltip = "integration time per data point", value = 1, unit = "ms", limits = [0, 100000], digits = 2),
-            "sts_t_settle_ms": LE(tooltip = "settling time per data point", value = 1, unit = "ms", limits = [0, 100000], digits = 2),
-            "sts_t_feedback_ms": LE(tooltip = "feedback dwell time in between measurements", value = 1, unit = "ms", limits = [0, 100000], digits = 2),
+            "sts_t_int_ms": LE(tooltip = "integration time per data point", value = 1, unit = "ms", limits = [0, 100000], digits = 2, max_width = 80),
+            "sts_t_settle_ms": LE(tooltip = "settling time per data point", value = 1, unit = "ms", limits = [0, 100000], digits = 2, max_width = 80),
+            "sts_t_feedback_ms": LE(tooltip = "feedback dwell time in between measurements", value = 1, unit = "ms", limits = [0, 100000], digits = 2, max_width = 80),
 
-            "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70),
-            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70)               
+            "mla_t": LE(tooltip = "MLA time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, max_width = 80),
+            "mla_df": LE(tooltip = "MLA frequency resolution", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, max_width = 80)
         }
         
         for mod_number in range(32):
             line_edits.update({
-                f"mla_mod{mod_number}_f": LE(tooltip = f"MLA modulator {mod_number} frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, max_width = 100),
-                f"mla_mod{mod_number}_n": LE(tooltip = f"MLA modulator {mod_number} number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, max_width = 70, warning_triggers = [lambda value: (value * 1000) % 1000 != 0]),
-                f"mla_mod{mod_number}_amp": LE(tooltip = f"MLA modulator {mod_number} amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 100),
-                f"mla_demod{mod_number}_amp": LE(tooltip = f"MLA demodulator {mod_number} measured amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 100),
-                f"mla_mod{mod_number}_phase": LE(tooltip = f"MLA modulator {mod_number} phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 100),
-                f"mla_demod{mod_number}_phase": LE(tooltip = f"MLA demodulator {mod_number} measured phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 100)
+                f"mla_mod{mod_number}_f": LE(tooltip = f"MLA modulator {mod_number} frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, max_width = 80),
+                f"mla_mod{mod_number}_n": LE(tooltip = f"MLA modulator {mod_number} number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 50, max_width = 50, warning_triggers = [lambda value: (value * 1000) % 1000 != 0]),
+                f"mla_mod{mod_number}_amp": LE(tooltip = f"MLA modulator {mod_number} amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 80),
+                f"mla_demod{mod_number}_amp": LE(tooltip = f"MLA demodulator {mod_number} measured amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 80),
+                f"mla_mod{mod_number}_phase": LE(tooltip = f"MLA modulator {mod_number} phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 80),
+                f"mla_demod{mod_number}_phase": LE(tooltip = f"MLA demodulator {mod_number} measured phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 80)
                 })
         
         for mod_number in range(2):
             line_edits.update({
-                f"nanonis_mod{mod_number + 1}_f": LE(tooltip = f"Nanonis modulator {mod_number} frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, max_width = 100),
-                f"nanonis_mod{mod_number + 1}_n": LE(tooltip = f"Nanonis modulator {mod_number} number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, max_width = 70, warning_triggers = [lambda value: (value * 1000) % 1000 != 0]),
-                f"nanonis_mod{mod_number + 1}_amp": LE(tooltip = f"Nanonis modulator {mod_number} amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 100),
-                f"nanonis_demod{mod_number}_amp": LE(tooltip = f"Nanonis demodulator {mod_number} measured amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 100),
-                f"nanonis_mod{mod_number}_phase": LE(tooltip = f"Nanonis modulator {mod_number} phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 100),
-                f"nanonis_demod{mod_number}_phase": LE(tooltip = f"Nanonis demodulator {mod_number} measured phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 100)
+                f"nanonis_mod{mod_number + 1}_f": LE(tooltip = f"Nanonis modulator {mod_number} frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, max_width = 80),
+                f"nanonis_mod{mod_number + 1}_n": LE(tooltip = f"Nanonis modulator {mod_number} number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 50, max_width = 50, warning_triggers = [lambda value: (value * 1000) % 1000 != 0]),
+                f"nanonis_mod{mod_number + 1}_amp": LE(tooltip = f"Nanonis modulator {mod_number} amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 80),
+                f"nanonis_demod{mod_number}_amp": LE(tooltip = f"Nanonis demodulator {mod_number} measured amplitude", unit = "mV", limits = [0, 10000], digits = 1, min_width = 70, max_width = 80),
+                f"nanonis_mod{mod_number}_phase": LE(tooltip = f"Nanonis modulator {mod_number} phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 80),
+                f"nanonis_demod{mod_number}_phase": LE(tooltip = f"Nanonis demodulator {mod_number} measured phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, max_width = 80)
                 })
         
         # Add the button handles to the tooltips
@@ -324,13 +309,15 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         
         # Reciprocal groups (inter-line-edit update logic)
         self.sts_V_rg = RG(product = [line_edits["sts_V_start"], line_edits["sts_V_end"]], factors = [line_edits["sts_V_points"], line_edits["sts_dV"]], factor = 1000,
-                           lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
+                           lock = "product", try_to_retain = "factor0", factor0_include_endpoint = True)
         self.sts_z_rg = RG(product = [line_edits["sts_z_start"], line_edits["sts_z_end"]], factors = [line_edits["sts_z_points"], line_edits["sts_dz"]],
                            lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
         self.sts_f_rg = RG(product = [line_edits["sts_f_start"], line_edits["sts_f_end"]], factors = [line_edits["sts_f_points"], line_edits["sts_df"]],
-                           lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
+                           lock = "product", try_to_retain = "factor0", factor0_include_endpoint = True)
         self.sts_amp_rg = RG(product = [line_edits["sts_amp_start"], line_edits["sts_amp_end"]], factors = [line_edits["sts_amp_points"], line_edits["sts_damp"]],
                              lock = "product", try_to_retain = "factor0", factor0_enforce_integer = True, factor0_include_endpoint = True)
+        self.t_settle_rg = RG(product = line_edits["sts_t_settle_ms"], factors = [line_edits["mla_t"], line_edits["sts_t_settle"]], lock = "factor0")
+        self.t_int_rg = RG(product = line_edits["sts_t_int_ms"], factors = [line_edits["mla_t"], line_edits["sts_t_int"]], lock = "factor0")
         return line_edits
 
     def make_progress_bars(self) -> dict:
@@ -360,6 +347,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "waveforms": make_layout("h"),
 
             # STS
+            "modulators": make_layout("g"),
             "right_column": make_layout("v"),
             "spectroscopy_controls": make_layout("h"),
             "spectroscopy_settings": make_layout("g"),
@@ -483,13 +471,20 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectroscopy", "nanonis_mla", "exit"]]
         
         # Settings
-        [layouts["spectroscopy_getset"].addWidget(buttons[f"{key}et_spectroscopy_parameters"]) for key in ["g", "s"]]
         layouts["spectroscopy_settings"].addWidget(buttons["tia_correct"], 0, 0, 2, 1)
         layouts["spectroscopy_settings"].addWidget(buttons["spectroscopy_feedback"], 0, 1, 2, 1)
-        [layouts["spectroscopy_settings"].addWidget(line_edits[name], index, 2) for index, name in enumerate(["sts_t_int", "sts_t_settle"])]
-        layouts["spectroscopy_settings"].addWidget(buttons["intermediate_feedback"], 0, 3, 2, 1)
-        [layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_{key}_feedback"], index % 2, 4 + int(index / 2)) for index, key in enumerate(["V", "I", "p", "t_const", "t", "z"])]
-        layouts["spectroscopy_settings"].addLayout(layouts["spectroscopy_getset"], 2, 0, 1, 4)
+        [layouts["spectroscopy_settings"].addWidget(line_edits[name], index % 2, 2 + int(index / 2)) for index, name in enumerate(["sts_t_int", "sts_t_settle", "sts_t_int_ms", "sts_t_settle_ms"])]
+        [layouts["spectroscopy_settings"].addWidget(buttons[key], 0, 4 + index, 2, 1) for index, key in enumerate(["blank_modulators", "intermediate_feedback"])]
+        [layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_{key}_feedback"], index % 2, 6 + int(index / 2)) for index, key in enumerate(["V", "I", "p", "t_const", "t", "z"])]
+        layouts["spectroscopy_settings"].addWidget(line_edits[f"sts_t_feedback_ms"], 0, 9)
+        
+        layouts["modulators"].addWidget(self.buttons[f"no_modulators"], 0, 0, 2, 1)
+        [layouts["modulators"].addWidget(self.checkboxes[f"modulator_{index}"], int(index / 16), 1 + index % 16) for index in range(32)]
+        layouts["modulators"].addWidget(self.buttons[f"all_modulators"], 0, 17, 2, 1)
+        layouts["spectroscopy_settings"].addLayout(layouts["modulators"], 2, 0, 1, 10)
+        
+        [layouts["spectroscopy_getset"].addWidget(buttons[f"{key}et_spectroscopy_parameters"]) for key in ["g", "s"]]
+        layouts["spectroscopy_settings"].addLayout(layouts["spectroscopy_getset"], 3, 0, 1, 10)
         
         # Parameter space
         for qindex, quantity in enumerate(["V", "z"]):

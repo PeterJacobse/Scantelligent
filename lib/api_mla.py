@@ -619,7 +619,7 @@ class MLAAPI(QtCore.QObject):
 
 
     # Parameter sweep experiments
-    def frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
+    def frequency_sweep(self, frequencies = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, tia_gain_V_per_pA: float = 0, modulators: list = [0, 1],
                         output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
                         insert_parameter: tuple[str, float] = None, tia_corrections: list | np.ndarray = None) -> tuple[np.ndarray, np.ndarray]:
         
@@ -629,14 +629,11 @@ class MLAAPI(QtCore.QObject):
         if not graph_callback: graph_callback = lambda channel_names: self.logprint(f"Recording the following channels: {channel_names}")
         if not data_array_callback: data_array_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
 
-        
-        
-        if setup_defaults:
-            (outputs_dict, error) = self.outputs_update(verbose = False) # Read for resetting later
-            (inputs_dict, error) = self.inputs_update(verbose = False)
-            
-            self.inputs_update({"input_mask": [input_reference_port, input_port, input_port]}, verbose = False)
-            self.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}, verbose = False) # Output modulator 1 onto port 1
+        (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
+        measurement_output_masks = np.zeros((2, 32), dtype = int) # Set the modulators according to what was passed
+        for mod_index in modulators:
+            measurement_output_masks[output_port - 1, mod_index] = 1
+        self.outputs_update({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
         
         (amplitudes_dict, error) = self.amplitudes_update(verbose = False) # Read the amplitude
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
@@ -725,14 +722,13 @@ class MLAAPI(QtCore.QObject):
             else:
                 measurement_array[index] = data_chunk
                 error_array[index] = error_chunk
-        
-        self.task_progress.emit(100)        
-        if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
-        if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
+                
+        self.task_progress.emit(100) # Signal that the measurement is done
+        self.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
         return (measurement_array, error_array, channel_names)
 
-    def amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
-                        output_port: int = 1, modulators: list = [0], input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
+    def amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, tia_gain_V_per_pA: float = 0,
+                        output_port: int = 1, modulators: list = [0], abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
                         insert_parameter: tuple[str, float] = None, tia_corrections: list | np.ndarray = None) -> tuple[np.ndarray, np.ndarray]:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
@@ -740,27 +736,20 @@ class MLAAPI(QtCore.QObject):
         if not graph_callback: graph_callback = lambda channel_names: self.logprint(f"Recording the following channels: {channel_names}")
         if not data_array_callback: data_array_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
         
-        if setup_defaults:
-            (outputs_dict, error) = self.outputs_update(verbose = False) # Read for resetting later
-            (inputs_dict, error) = self.inputs_update(verbose = False)
-            
-            input_mask = np.full((32), input_port, dtype = int)
-            input_mask[0] = input_reference_port
-            self.inputs_update({"input_mask": input_mask})
-            numbers = np.arange(0, 32)
-            numbers[0] = 1
-            self.frequencies_update({"numbers": numbers})
-            self.outputs_update({"blank": True})
+        (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
+        measurement_output_masks = np.zeros((2, 32), dtype = int) # Set the modulators according to what was passed
+        for mod_index in modulators:
+            measurement_output_masks[output_port - 1, mod_index] = 1
+        self.outputs_update({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
         
-        self.outputs_update({f"mod{number}": {"on": True, "port": output_port} for number in modulators})        
-        (frequencies_dict, error) = self.frequencies_update()
+        (frequencies_dict, error) = self.frequencies_update() # Knowledge of the absolute frequencies is relevant when correcting for the frequency-dependent response of the TIA
         freqs = frequencies_dict.get("frequencies (Hz)")
 
         # Prepare to plot these channels
         channel_names = ["amp (mV)", "|a1_ref| (mV)"]
         if tia_gain_V_per_pA > 1E-12: [channel_names.extend([f"Re(a{i + 1}) (nS)", f"Im(a{i + 1}) (nS)"]) for i in range (31)]
         else: [channel_names.extend([f"Re(a{i + 1}) (mV)", f"Im(a{i + 1}) (mV)"]) for i in range (31)]
-        graph_callback(channel_names)
+        graph_callback(channel_names) # Signal to tell the gui to start tracking/plotting these data
         insert_value = None
         if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
@@ -819,14 +808,12 @@ class MLAAPI(QtCore.QObject):
                 measurement_array[index] = data_chunk
                 error_array[index] = error_chunk
 
-        self.task_progress.emit(100)
-        if outputs_dict:
-            self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
-        if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
+        self.task_progress.emit(100) # Signal that the measurement is done
+        self.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
         return (measurement_array, error_array, channel_names)
 
     def voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
-                      output_port: int = 1, input_port: int = 2, input_reference_port: int = 1, abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
+                      output_port: int = 1, modulators: list = [0], abort_callback: object = None, graph_callback: object = None, data_array_callback: object = None,
                       insert_parameter: tuple[str, float] = None, return_type: str = "conductance", tia_corrections: list | np.ndarray = None) -> tuple[np.ndarray, np.ndarray]:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
@@ -834,17 +821,11 @@ class MLAAPI(QtCore.QObject):
         if not graph_callback: graph_callback = lambda channel_names: self.logprint(f"Recording the following channels: {channel_names}")
         if not data_array_callback: data_array_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
         
-        if setup_defaults:
-            (outputs_dict, error) = self.outputs_update(verbose = False) # Read for resetting later
-            (inputs_dict, error) = self.inputs_update(verbose = False)
-            
-            input_mask = np.full((32), input_port, dtype = int)
-            input_mask[0] = input_reference_port
-            self.inputs_update({"input_mask": input_mask})
-            numbers = np.arange(0, 32)
-            numbers[0] = 1
-            self.frequencies_update({"numbers": numbers})
-            self.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}) # Output modulator 1 onto port 1
+        (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
+        measurement_output_masks = np.zeros((2, 32), dtype = int) # Set the modulators according to what was passed
+        for mod_index in modulators:
+            measurement_output_masks[output_port - 1, mod_index] = 1
+        self.outputs_update({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
         
         # Read the TIA gain and oscillator amplitude to be able to convert values
         (frequencies_dict, error) = self.frequencies_update()
@@ -926,9 +907,8 @@ class MLAAPI(QtCore.QObject):
                 measurement_array[index] = data_chunk
                 error_array[index] = error_chunk
         
-        self.task_progress.emit(100)
-        if outputs_dict: self.outputs_update({"output_masks": outputs_dict.get("output_masks")}) # Reset
-        if inputs_dict: self.outputs_update({"input_mask": inputs_dict.get("input_mask")})
+        self.task_progress.emit(100) # Signal that the measurement is done
+        self.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
         return (measurement_array, error_array, channel_names)
 
 
