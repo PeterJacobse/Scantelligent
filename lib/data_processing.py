@@ -1,11 +1,16 @@
-from PyQt6.QtCore import QMutex, QMutexLocker
+import pint, re
 import numpy as np
+from matplotlib import colors
+from PyQt6.QtCore import QMutex, QMutexLocker
 from scipy.signal import convolve2d
 from scipy.ndimage import gaussian_filter
 from scipy.fft import fft2, fftshift
-from matplotlib import colors
 from scipy.linalg import lstsq
-import pint, re
+from scipy.spatial import distance_matrix
+from scipy.special import factorial
+from python_tsp.exact import solve_tsp_dynamic_programming
+from sklearn.model_selection import train_test_split
+import sklearn.gaussian_process as gp
 
 
 
@@ -97,6 +102,15 @@ class DataProcessing:
         spec_processing_flags.update(entries)
         
         return spec_processing_flags
+
+    def find_shortest_path(self, coordinates: np.ndarray) -> np.ndarray:
+        """
+        Solves the traveling salesman problem to return the shortest path over a number of coordinates.
+        Returns the input coordinates ordered by the shortest path.
+        """
+        dist_matrix = distance_matrix(coordinates, coordinates)
+        (index_list, distance_list) = solve_tsp_dynamic_programming(dist_matrix)
+        return coordinates[index_list]
 
 
 

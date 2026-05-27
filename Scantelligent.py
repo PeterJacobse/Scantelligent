@@ -1103,9 +1103,11 @@ class Scantelligent(QtCore.QObject):
                 spec_line_edits.update({f"t_{key}": self.spt.gui.line_edits[f"sts_t_{key}"].getValue() for key in ["settle", "int"]})
                 spec_line_edits.update({f"{key}_feedback": self.spt.gui.line_edits[f"sts_{key}_feedback"].getValue() for key in ["t", "V", "I", "p", "t_const", "z"]})
                 spec_buttons = {}
-                spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name for key in ["x_axis", "y_axis"]})
-                spec_buttons.update({f"{quantity}_retrace": self.spt.gui.buttons[f"{quantity}_retrace"].state_name for quantity in ["V", "f", "z", "amp", "V_keithley"]})
-                spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["tia_correct", "nanonis_mla", "spectroscopy_feedback", "intermediate_feedback", "blank_modulators"]})
+                spec_buttons.update({f"{key}": self.spt.gui.buttons[f"sts_{key}"].state_name for key in ["x_axis", "y_axis"]}) # Names of the spectroscopic axes
+                spec_buttons.update({f"{quantity}_retrace": self.spt.gui.buttons[f"{quantity}_retrace"].isChecked() for quantity in ["V", "f", "z", "amp", "V_keithley"]}) # Bools desribing whether to retrace
+                spec_buttons.update({key: self.spt.gui.buttons[key].isChecked() for key in ["tia_correct", "intermediate_feedback", "blank_modulators"]}) # Spec settings: bools
+                spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["nanonis_mla", "spectroscopy_feedback"]})
+                
                 modulators_bool_list = [self.spt.gui.checkboxes[f"modulator_{index}"].isChecked() for index in range(32)]
                 spec_modulators = [index for index, val in enumerate(modulators_bool_list) if val]
                 

@@ -22,9 +22,6 @@ class Experiment(BaseExperiment):
         nn = self.nanonis
         mla = self.mla
         
-        #if not connected_device == "mla":
-        #    raise Exception("The bias cable does not seem to be connected to the MLA. This experiment requires the MLA. Please connect the bias cable to the MLA first")
-        
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits, modulators] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits", "modulators"]]
@@ -43,8 +40,10 @@ class Experiment(BaseExperiment):
         """
        
         # Read parameters from Nanonis
-        nn_hardware_dict = self.start_parameters["nanonis"].get("hardware", {})
+        nanonis_parameters = self.start_parameters["nanonis"]
+        nn_hardware_dict = nanonis_parameters.get("hardware", {})
         [tia_gain, tia_gain_V_per_pA] = [nn_hardware_dict.get(key) for key in ["current_gain", "gain (V/pA)"]]
+        start_feedback = nanonis_parameters.get("tip_status").get("feedback")
         
         # Read parameters from the MLA
         mla_parameters = self.start_parameters["mla"]
@@ -52,10 +51,12 @@ class Experiment(BaseExperiment):
         mla_array_channels = mla_parameters.get("array_channels")
         time_constant_dict = mla_parameters.get("time_constant")
         mla_bias = mla_parameters.get("mla_bias")
+        mla_output_masks = mla_parameters.get("outputs").get("output_masks")
+        if not V_fb: V_fb = mla_bias.get("port_1 (V)", 1.0)
         
         tia_corrections = None
-        if tia_correct == "on":
-            try: tia_corrections = self.tia_corrections.get(tia_gain)[1]            
+        if tia_correct:
+            try: tia_corrections = self.tia_corrections.get(tia_gain)[1]
             except: pass
         
         # Set up spectroscopy x axis
@@ -67,16 +68,17 @@ class Experiment(BaseExperiment):
         x_values = np.linspace(x_start, x_end, x_steps)
         dx = (x_end - x_start) / (x_steps - 1)
         
+        if blank_modulators: post_sweep_outputs = "blank"
+        else: post_sweep_outputs = "reset"
+        
         match spec_button_states["x_axis"]:
             case "V":
                 x_axis_label = "voltage (V)"
-                self.logprint(f"{spec_button_states.get("V_retrace") = }")
-                if spec_button_states.get("V_retrace", False):                    
-                    x_values = np.concatenate((x_values, x_values[::-1]))
+                if spec_button_states.get("V_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators,
-                                                                           tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance",
+                x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
+                                                                           tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance", tia_corrections = tia_corrections,
                                                                            abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "z":
                 x_axis_label = "tip height (nm)"
@@ -89,7 +91,7 @@ class Experiment(BaseExperiment):
                 if spec_button_states.get("f_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators,
+                x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
                                                                              tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "amp":
@@ -97,8 +99,8 @@ class Experiment(BaseExperiment):
                 if spec_button_states.get("amp_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators,
-                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter,
+                x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
+                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
                                                                              abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
             case "V_keithley":
                 x_axis_label = "V_Keithley (V)"
@@ -128,7 +130,7 @@ class Experiment(BaseExperiment):
                                        "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int,
                                        "intermediate_feedback": intermediate_feedback, "spectroscopy_feedback": spectroscopy_feedback})
         self.output_file.attrs.update(x_axis_info)
-        mla_settings_ds = self.output_file.create_dataset("MLA settings", data = mla_setup_array)        
+        mla_settings_ds = self.output_file.create_dataset("MLA settings", data = mla_setup_array)
         mla_channels_ds = self.output_file.create_dataset("MLA setup parameters", data = mla_array_channels)
         mla_channels_ds.make_scale("MLA setup parameters")
         mla_settings_ds.dims[0].attach_scale(mla_channels_ds)
@@ -157,8 +159,12 @@ class Experiment(BaseExperiment):
                 
                 # Set to the first value of the y parameter sweep, then do the first measurement
                 voltage = y_values[0]
-                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
-                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
+                
+                if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
+                if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                else: nn.tip_update({"feedback": False})
+
                 mla.bias_update({"port_1 (V)": voltage}, verbose = False)
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
             
@@ -169,8 +175,12 @@ class Experiment(BaseExperiment):
                 
                 # Set to the first value of the y parameter sweep, then do the first measurement
                 tip_height = y_values[0]
-                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
-                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
+                
+                if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
+                if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                else: nn.tip_update({"feedback": False})
+
                 nn.tip_update({"feedback": False, "z_rel (nm)": tip_height}, verbose = False)
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height))
             
@@ -181,8 +191,12 @@ class Experiment(BaseExperiment):
                 
                 # Set to the first value of the y parameter sweep, then do the first measurement
                 f_Hz = y_values[0]
-                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
-                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
+                
+                if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
+                if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                else: nn.tip_update({"feedback": False})
+                
                 mla.lockin_update({"df (Hz)": f_Hz, "numbers": [1, 1, 2, 3]}, verbose = False)
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
             
@@ -193,14 +207,21 @@ class Experiment(BaseExperiment):
                 
                 # Set to the first value of the y parameter sweep, then do the first measurement
                 amp_mV = y_values[0]
-                if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
-                if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
+                if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
+                if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                else: nn.tip_update({"feedback": False})
+                
                 mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
             
             case _: # No parameter on the y axis. Perform a 1D sweep instead
+                if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
+                if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                else: nn.tip_update({"feedback": False})
+                
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = None)
-                self.exp_progress.emit(100)
                 
                 measurement_ds = self.output_file.create_dataset("Sweep", data = single_sweep_array, dtype = float)
                 error_ds = self.output_file.create_dataset("Errors (std. dev.)", data = single_sweep_error_array, dtype = float)
@@ -209,6 +230,10 @@ class Experiment(BaseExperiment):
                 
                 [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([channels_ds, x_ds])]
                 [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([channels_ds, x_ds])]
+                
+                self.exp_progress.emit(100) # Experiment finished
+                mla.outputs_update({"output_masks": mla_output_masks})
+                nn.tip_update({"feedback": start_feedback})
                 return
         
         # Everything below is for 2D measurements only. 1D sweeps have already returned at this point
@@ -230,42 +255,54 @@ class Experiment(BaseExperiment):
         [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
         [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
         
+        # Save the first sweep
+        self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = voltage)
+        
         n_total = len(y_values)
         match y_axis_label:
             case "voltage (V)": # Experiments that sweep along one parameter while slowly ramping the bias
-                for index, voltage in enumerate(y_values):
+                for index, voltage in enumerate(y_values[1:]):
                     self.exp_progress.emit(int(100 * index / n_total))
                     
-                    if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
-                    if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
-                    mla.bias_update({"port_1 (V)": voltage}, verbose = False)
+                    if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                    if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                    elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                    else: nn.tip_update({"feedback": False})
+                    mla.bias_update({"port_1 (V)": voltage}, verbose = False)                    
+                    if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
                     (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
                     self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = voltage)
                     measurement_array[index] = single_sweep_array
             
             case "amplitude (mV)":
-                for index, amp_mV in enumerate(y_values):
+                for index, amp_mV in enumerate(y_values[1:]):
                     self.exp_progress.emit(int(100 * index / n_total))
                     
-                    if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
-                    if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
+                    if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                    if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                    elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                    else: nn.tip_update({"feedback": False})
                     mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
+                    if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
                     (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
                     self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = amp_mV)
                     measurement_array[index] = single_sweep_array
 
             case "frequency (Hz)":
-                for index, f_Hz in enumerate(y_values):
+                for index, f_Hz in enumerate(y_values[1:]):
                     self.exp_progress.emit(int(100 * index / n_total))
                     mla.time_constant_update({"df (Hz)": f_Hz}, verbose = False)
                     numbers = np.arange(0, 32)
                     numbers[0] = 1
                     
-                    if intermediate_feedback == "on": self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
-                    if spectroscopy_feedback == "off": nn.tip_update({"feedback": False})
+                    if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
+                    if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
+                    elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
+                    else: nn.tip_update({"feedback": False})
                     mla.frequencies_update({"numbers": numbers})
+                    if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
                     (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
                     self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = f_Hz)
@@ -275,6 +312,8 @@ class Experiment(BaseExperiment):
                 raise Exception("This experiment is not yet implemented")
     
         self.exp_progress.emit(100) # Experiment finished
+        mla.outputs_update({"output_masks": mla_output_masks})
+        nn.tip_update({"feedback": start_feedback})
 
 
 

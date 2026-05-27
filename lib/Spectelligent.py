@@ -90,7 +90,7 @@ class Spectelligent(QtCore.QObject):
         button_slots = {"sts_x_axis": self.update_grid, "sts_y_axis": self.update_grid, "exit": self.exit, "get_parameter_space_parameters": self.update_grid, "set_parameter_space_parameters": self.update_grid,
                         "get_spectroscopy_parameters": self.get_fb_parameters, "set_spectroscopy_parameters": self.update_grid, "no_modulators": lambda checked: self.check_modulators("none"),
                         "all_modulators": lambda checked: self.check_modulators("all")}
-        button_slots.update({f"sts_{parameter}": lambda: self.update_grid(parameter) for parameter in ["V", "f", "z", "amp", "V_keithley"]})
+        button_slots.update({f"sts_{parameter}": lambda parameter0 = parameter: self.update_grid(parameter0) for parameter in ["V", "f", "z", "amp", "V_keithley"]})
         
         for button_name, connected_function in button_slots.items():
             self.gui.buttons[button_name].clicked.connect(connected_function)
