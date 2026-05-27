@@ -401,7 +401,7 @@ class Scantelligent(QtCore.QObject):
         x_data = None
         if data_array.ndim < 2: data_array = np.array([data_array])
 
-        for index in range(min(len(data_array[0]), 40)):
+        for index in range(min(len(data_array[0]), 40), 0, -1):
             new_data = data_array[:, index]
 
             plot_data_item = self.gui.pdis[index]
@@ -1156,7 +1156,7 @@ class Scantelligent(QtCore.QObject):
         if not experiment_loaded: return False
         self.gui.buttons["approach"].setState(1)
         return self.control_experiment("auto_approach")
-        
+
 
 
 # Main program

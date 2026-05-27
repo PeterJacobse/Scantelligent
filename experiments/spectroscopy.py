@@ -254,13 +254,12 @@ class Experiment(BaseExperiment):
         channels_ds.make_scale("channels")
         [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
         [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
-        
-        # Save the first sweep
-        self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = voltage)
-        
+       
         n_total = len(y_values)
         match y_axis_label:
             case "voltage (V)": # Experiments that sweep along one parameter while slowly ramping the bias
+                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = voltage) # Save the first sweep
+                
                 for index, voltage in enumerate(y_values[1:]):
                     self.exp_progress.emit(int(100 * index / n_total))
                     
@@ -276,6 +275,8 @@ class Experiment(BaseExperiment):
                     measurement_array[index] = single_sweep_array
             
             case "amplitude (mV)":
+                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = amp_mV) # Save the first sweep
+                
                 for index, amp_mV in enumerate(y_values[1:]):
                     self.exp_progress.emit(int(100 * index / n_total))
                     
@@ -291,6 +292,8 @@ class Experiment(BaseExperiment):
                     measurement_array[index] = single_sweep_array
 
             case "frequency (Hz)":
+                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = f_Hz) # Save the first sweep
+                
                 for index, f_Hz in enumerate(y_values[1:]):
                     self.exp_progress.emit(int(100 * index / n_total))
                     mla.time_constant_update({"df (Hz)": f_Hz}, verbose = False)
@@ -313,6 +316,9 @@ class Experiment(BaseExperiment):
     
         self.exp_progress.emit(100) # Experiment finished
         mla.outputs_update({"output_masks": mla_output_masks})
+        mla.start_lockin()
+        mla.get_pixels(1)
+        mla.stop_lockin()
         nn.tip_update({"feedback": start_feedback})
 
 
