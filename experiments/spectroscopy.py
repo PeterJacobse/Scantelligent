@@ -79,7 +79,7 @@ class Experiment(BaseExperiment):
                 
                 x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
                                                                            tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance", tia_corrections = tia_corrections,
-                                                                           abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
+                                                                           abort_callback = self.check_abort_request, data_callback = self.data_array.emit)
             case "z":
                 x_axis_label = "tip height (nm)"
                 if spec_button_states.get("z_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
@@ -93,7 +93,7 @@ class Experiment(BaseExperiment):
                 
                 x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
                                                                              tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
-                                                                             abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
+                                                                             abort_callback = self.check_abort_request, data_callback = self.data_array.emit)
             case "amp":
                 x_axis_label = "amplitude (mV)"
                 if spec_button_states.get("amp_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
@@ -101,7 +101,7 @@ class Experiment(BaseExperiment):
                 
                 x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
                                                                              tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
-                                                                             abort_callback = self.check_abort_request, data_array_callback = self.data_array.emit, graph_callback = self.prepare_graph)
+                                                                             abort_callback = self.check_abort_request, data_callback = self.data_array.emit)
             case "V_keithley":
                 x_axis_label = "V_Keithley (V)"
                 if spec_button_states.get("V_keithley_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
@@ -232,8 +232,11 @@ class Experiment(BaseExperiment):
                 [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([channels_ds, x_ds])]
                 
                 self.exp_progress.emit(100) # Experiment finished
-                mla.outputs_update({"output_masks": mla_output_masks})
-                nn.tip_update({"feedback": start_feedback})
+                mla.outputs_update({"output_masks": mla_output_masks}, verbose = False)
+                mla.start_lockin()
+                mla.get_pixels(3)
+                mla.stop_lockin()
+                nn.tip_update({"feedback": start_feedback}, verbose = False)
                 return
         
         # Everything below is for 2D measurements only. 1D sweeps have already returned at this point
@@ -315,22 +318,22 @@ class Experiment(BaseExperiment):
                 raise Exception("This experiment is not yet implemented")
     
         self.exp_progress.emit(100) # Experiment finished
-        mla.outputs_update({"output_masks": mla_output_masks})
+        mla.outputs_update({"output_masks": mla_output_masks}, verbose = False)
         mla.start_lockin()
-        mla.get_pixels(1)
+        mla.get_pixels(3)
         mla.stop_lockin()
-        nn.tip_update({"feedback": start_feedback})
+        nn.tip_update({"feedback": start_feedback}, verbose = False)
 
 
 
     # Convenience functions
     def intermediate_feedback(self, V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) -> None:
         try:
-            self.mla.bias_update({"port_1 (V)": V_fb})
-            self.nanonis.feedback_update({"I_fb (pA)": I_fb, "p_gain (pm)": p_gain_fb, "t_const (us)": t_const_fb})
-            self.nanonis.tip_update({"feedback": True})
+            self.mla.bias_update({"port_1 (V)": V_fb}, verbose = False)
+            self.nanonis.feedback_update({"I_fb (pA)": I_fb, "p_gain (pm)": p_gain_fb, "t_const (us)": t_const_fb}, verbose = False)
+            self.nanonis.tip_update({"feedback": True}, verbose = False)
             self.mla.get_pixels(t_fb)
-            self.nanonis.tip_update({"z_rel (nm)": z_fb})
+            self.nanonis.tip_update({"z_rel (nm)": z_fb}, verbose = False)
         except:
             pass
         return

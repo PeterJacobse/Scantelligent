@@ -232,9 +232,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "bias_pulse": MSB(tooltip = "Apply a voltage pulse to the tip", icon = icons.get("bias_pulse"), size = 28),
             "tip_shape": MSB(tooltip = "Shape the tip by poking it into the surface", icon = icons.get("tip_shape"), size = 28),
             
-            # Lockins
-            "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
-                                         {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),            
+            # Lockins         
             "nanonis_mod1": MSB(icon = icons.get("nanonis_mod1"),
                                 states = [{"name": "off", "tooltip": "Nanonis modulator 1 OFF", "color": sct_black},
                                           {"name": "on", "tooltip": "Nanonis modulator 1 ON", "color": sct_blue}]),
@@ -244,7 +242,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
             "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "start_spectrum": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
             
             # Processing
             "direction": MSB(tooltip = "Change scan direction\n(X)",
@@ -314,7 +311,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "min_absolute": CB(tooltip = "Set minimum to an absolute value"),
             "max_absolute": CB(tooltip = "Set maximum to an absolute value"),
         }        
-        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(40)] # Channels
+        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index % 40])}) for index in range(45)] # Channels
 
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
@@ -335,7 +332,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [self.button_groups["min"].addButton(checkboxes[f"min_{method}"], f"min_{method}") for method in limit_methods]
         [self.button_groups["max"].addButton(checkboxes[f"max_{method}"], f"max_{method}") for method in limit_methods]
         [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise"]]
-        [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(40)]
+        [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(45)]
         
         # Initialize
         checked_buttons = [checkboxes[name] for name in ["min_full", "max_full"]]
@@ -369,6 +366,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "mla_mod1": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             "mla_mod2": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             "mla_mod3": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
+            
+            "graph_x_axis": CB(tooltip = "Channel to use for the x axis")
         }
         
         # Add the button handles to the tooltips
@@ -434,12 +433,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
             "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
             "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1, edited_color = scanalyzer_blue),
-            "frame_aspect": LE(tooltip = "frame aspect ratio (height / width)", digits = 4, edited_color = scanalyzer_blue),
+            "frame_aspect": LE(tooltip = "frame aspect ratio\n(height / width)", digits = 4, edited_color = scanalyzer_blue),
 
             # Grid
             "grid_pixels": LE(tooltip = "number of pixels", unit = "px", limits = [1, 10000], digits = 0, edited_color = scanalyzer_blue),
             "grid_lines": LE(tooltip = "number of lines", unit = "px", limits = [1, 10000], digits = 0, edited_color = scanalyzer_blue),
-            "grid_aspect": LE(tooltip = "grid aspect ratio (lines / pixels)", digits = 4, edited_color = scanalyzer_blue),
+            "grid_aspect": LE(tooltip = "grid aspect ratio\n(lines / pixels)", digits = 4, edited_color = scanalyzer_blue),
             "pixel_width": LE(tooltip = "pixel width", unit = "nm", digits = 4, edited_color = scanalyzer_blue),
             "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4, edited_color = scanalyzer_blue),
             
@@ -447,13 +446,16 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "pulse_voltage": LE(value = 6, tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
             "pulse_duration": LE(value = 300, tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
             
-            "poke_voltage": LE(tooltip = "poke voltage (bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
-            "poke_depth": LE(tooltip = "poke depth (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "poke_time": LE(tooltip = "poke time (duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            "poke_voltage": LE(tooltip = "poke voltage\n(bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
+            "poke_depth": LE(tooltip = "poke depth\n(height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "poke_time": LE(tooltip = "poke time\n(duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
-            "lift_voltage": LE(tooltip = "lift voltage (bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
-            "lift_height": LE(tooltip = "lift height (height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "lift_time": LE(tooltip = "lift time (duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            "lift_voltage": LE(tooltip = "lift voltage\n(bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
+            "lift_height": LE(tooltip = "lift height\n(height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "lift_time": LE(tooltip = "lift time\n(duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            
+            # Processing
+            "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
             
             # Lockins
             "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
@@ -468,28 +470,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "nanonis_mod2_amp": LE(tooltip = "Nanonis modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_mod2_phase": LE(tooltip = "Nanonis modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
             "nanonis_mod2_n": LE(tooltip = "Nanonis modulator 2 number of oscillations in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, max_width = 70),
-
-            "mla_mod0_f": LE(tooltip = "MLA modulator 0 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod0_amp": LE(tooltip = "MLA modulator 0 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod0_phase": LE(tooltip = "MLA modulator 0 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod0_n": LE(tooltip = "MLA modulator 0 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-            
-            "mla_mod1_f": LE(tooltip = "MLA modulator 1 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod1_amp": LE(tooltip = "MLA modulator 1 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod1_phase": LE(tooltip = "MLA modulator 1 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod1_n": LE(tooltip = "MLA modulator 1 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-            
-            "mla_mod2_f": LE(tooltip = "MLA modulator 2 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod2_amp": LE(tooltip = "MLA modulator 2 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod2_phase": LE(tooltip = "MLA modulator 2 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod2_n": LE(tooltip = "MLA modulator 2 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-            
-            "mla_mod3_f": LE(tooltip = "MLA modulator 3 frequency", unit = "Hz", limits = [0, 100000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod3_amp": LE(tooltip = "MLA modulator 3 amplitude", unit = "mV", limits = [0, 5000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod3_phase": LE(tooltip = "MLA modulator 3 phase", unit = "deg", limits = [-180, 360], digits = 2, min_width = 70, edited_color = scanalyzer_blue),
-            "mla_mod3_n": LE(tooltip = "MLA modulator 3 number of oscillations n in measurement window", limits = [0, 10000], digits = 2, min_width = 70, edited_color = scanalyzer_blue, warning_color = self.colors["dark_orange"], max_width = 70),
-
-            "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
             
             # Console
             "input": ILE(tooltip = "Enter a command\n(Enter to evaluate)")
@@ -781,7 +761,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], i % 8, int(i / 8)) for i in range(40)]
+        layouts["channels"].addWidget(comboboxes["graph_x_axis"], 0, 0, 1, 5)
+        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], 1 + i % 7, int(i / 7)) for i in range(35)]
         
         layouts["graph"].addWidget(self.plot_widget, 5)
         layouts["graph"].addLayout(layouts["channels"], 1)
@@ -1015,8 +996,14 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["toolbar"].addStretch(1)
         
         # Compose the image_view plus consoles layout
-        layouts["left_side"].addWidget(self.image_view, stretch = 4)
-        layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
+        self.splitters = {"image_graph": QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical), "camera_nanonis": QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)}
+        self.splitters["image_graph"].addWidget(self.image_view)
+        self.splitters["image_graph"].addWidget(widgets["graph"])
+        self.splitters["image_graph"].setStretchFactor(0, 4)
+        self.splitters["image_graph"].setStretchFactor(1, 1)
+        
+        layouts["left_side"].addWidget(self.splitters["image_graph"], stretch = 5)
+        #layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
         layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
         layouts["left_side"].addWidget(self.line_edits["input"])
         self.widgets["left_side"].setLayout(layouts["left_side"])
@@ -1038,7 +1025,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.setFocus()
         self.activateWindow()
-        
         return
 
 

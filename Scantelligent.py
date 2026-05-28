@@ -94,7 +94,7 @@ class Scantelligent(QtCore.QObject):
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
-                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "start_spectrum": self.start_spectroscopy, "spectelligent": self.open_spectelligent
+                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent
                         }
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
@@ -122,6 +122,7 @@ class Scantelligent(QtCore.QObject):
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
+        self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda: setattr(self, "x_channel", self.gui.comboboxes["graph_x_axis"].currentIndex() - 1))
         
         # Checkboxes and button groups
         #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
@@ -397,31 +398,53 @@ class Scantelligent(QtCore.QObject):
         return
 
     @QtCore.pyqtSlot(np.ndarray)
-    def receive_data(self, data_array: np.ndarray, max_length: int = 6000) -> None:
+    def receive_data(self, data, max_length: int = 6000) -> None:
         x_data = None
-        if data_array.ndim < 2: data_array = np.array([data_array])
+        
+        if isinstance(data, int) and data < 45: # If an integer is provided, that integer determines the x channel
+            self.x_channel = data
+            try:
+                self.gui.comboboxes["graph_x_axis"].selectIndex(data + 1)
+                self.gui.checkboxes[f"channel_{self.x_channel}"].setChecked(False)
+            except:
+                pass
+            return
+        
+        data_array = np.atleast_2d(data)[:, :45] # The data array provided contains strings. These are the channel names
+        if data_array.dtype.kind in ["U", "S"]:
+            [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}: {value}") for channel_index, value in enumerate(data_array[0])]
+            [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(True) for channel_index, value in enumerate(data_array[0])]
+            self.gui.comboboxes["graph_x_axis"].renewItems(np.insert(np.astype(data_array[0], object), 0, "index"))
+            return
+        elif data_array.dtype.kind == "b": # The data array has booleans. Check and uncheck according to the boolean values
+            [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(value) for channel_index, value in enumerate(data_array[0])]
+            return
+        self.redraw_graph(data_array)
+        return
+        
+    def redraw_graph(self, data_array: np.ndarray, max_length: int = 6000):
+        x_data = None
 
-        for index in range(min(len(data_array[0]), 40), 0, -1):
+        if self.x_channel > -1 and self.x_channel < 45:
+            new_data = data_array[:, self.x_channel]
+            
+            plot_data_item = self.gui.pdis[self.x_channel]
+            old_data = plot_data_item.getData()[1]
+            
+            if not isinstance(old_data, np.ndarray): old_data = np.empty(0, dtype = float)
+            x_data = np.concatenate((old_data, new_data))[-max_length:]
+
+        for index in reversed(range(len(data_array[0]))):
+            if index > len(self.gui.pdis) - 1: continue
             new_data = data_array[:, index]
-
             plot_data_item = self.gui.pdis[index]
             old_data = plot_data_item.getData()[1]
             
-            if isinstance(old_data, np.ndarray):
-                total_length = len(old_data) + len(new_data)
-                if total_length < max_length:
-                    data = np.concatenate([old_data, new_data])
-                else:
-                    crop_length = total_length - max_length
-                    data = np.concatenate([old_data[crop_length:], new_data])
-            else: data = new_data
-            if index == self.x_channel: x_data = data # Set x_data
-        
-            if self.x_channel > -1:
-                n_points = max(len(x_data), len(data))
-                plot_data_item.setData(x = x_data[:n_points], y = data[:n_points])
-            else:
-                plot_data_item.setData(data)
+            if not isinstance(old_data, np.ndarray): old_data = np.empty(0, dtype = float)
+            data = np.concatenate((old_data, new_data))[-max_length:]
+            
+            if isinstance(x_data, np.ndarray): plot_data_item.setData(x = x_data, y = data)
+            else: plot_data_item.setData(data)
         return
 
 
@@ -1069,7 +1092,8 @@ class Scantelligent(QtCore.QObject):
                     #self.experiment_thread.finished.connect(lambda: self.gui.buttons["save"].setState("data_saved"))
                     self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
                     self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
-                    [self.experiment_thread.finished.connect(lambda name0 = name: self.gui.buttons[name0].setState(0)) for name in ["start_scan", "start_spectrum", "approach"]]
+                    self.experiment_thread.finished.connect(lambda: self.spt.gui.buttons["start_spectroscopy"].setState(0))
+                    [self.experiment_thread.finished.connect(lambda name0 = name: self.gui.buttons[name0].setState(0)) for name in ["start_scan", "approach"]]
                     
                     # Progress
                     self.experiment.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
@@ -1148,7 +1172,7 @@ class Scantelligent(QtCore.QObject):
     def start_spectroscopy(self) -> None:
         experiment_loaded = self.control_experiment("spectroscopy")
         if not experiment_loaded: return False
-        self.gui.buttons["start_spectrum"].setState(1)
+        self.spt.gui.buttons["start_spectroscopy"].setState(1)
         return self.control_experiment("spectroscopy")        
 
     def start_auto_approach(self) -> None:
