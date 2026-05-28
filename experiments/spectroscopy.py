@@ -207,6 +207,7 @@ class Experiment(BaseExperiment):
                 
                 # Set to the first value of the y parameter sweep, then do the first measurement
                 amp_mV = y_values[0]
+                
                 if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
                 if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
                 elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})

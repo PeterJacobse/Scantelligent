@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, time
 from time import sleep
 import numpy as np
 
@@ -21,14 +21,16 @@ class Experiment(BaseExperiment):
         self.logprint("Hello from this demo experiment!", message_type = "message")
         self.logprint(f"I read the following parameters from the GUI: {gui_parameters}", message_type = "message")
         
-        max_iter = gui_parameters.get("line_edits")[1]
-        t_ms = gui_parameters.get("line_edits")[0]
+        rng = np.random.default_rng()
+        options = ["apple", "banana", "cherry", "date"]
+        
+        self.data_array.emit(rng.choice(options, (12)))
+        time.sleep(2)
+        for _ in range(300):
+            self.data_array.emit(np.random.random((25, 5)))
+            time.sleep(.01)
+        self.data_array.emit(np.array(["clear"]))
+        
+        
 
-        for iteration in range(max_iter):
-            experiment_progress = int(100 * (iteration / max_iter))
-            self.exp_progress.emit(experiment_progress)
-            self.check_abort_request()
-            self.logprint(f"Iteration {iter}\nIs an abort requested? {self.abort_requested}", message_type = "message")
-            if self.abort_requested: break
-            sleep(t_ms / 1000)
-
+        

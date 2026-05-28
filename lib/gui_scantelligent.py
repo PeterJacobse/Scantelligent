@@ -380,6 +380,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         RG = SCTWidgets.ReciprocalGroup
         
         scanalyzer_blue = "#2020C0"
+        sct_black = self.colors["off-black"]
         
         line_edits = {
             # Experiment
@@ -408,11 +409,11 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "dt_nanonis": LE(tooltip = "time step dt when ramping the bias", unit = "ms", limits = [-1000, 1000], digits = 0),
             "dz_nanonis": LE(tooltip = "height step dz when ramping the bias\nTemporarily retract the tip by this amount when ramping to a different polarity", unit = "nm", limits = [-200, 200], digits = 1),
 
-            "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1, edited_color = scanalyzer_blue),
+            "dV_keithley": LE(tooltip = "voltage step dV when ramping the Keithley bias", unit = "mV", limits = [-1000, 1000], digits = 1),
             "dt_keithley": LE(tooltip = "time step dt when ramping the Keithley bias", unit = "ms", limits = [-1000, 1000], digits = 0, edited_color = scanalyzer_blue),
             
-            "I": LE(tooltip = "most recent current measurement", unit = "pA", digits = 1),
-            "z": LE(tooltip = "most recent tip height measurement", unit = "nm", digits = 2),
+            "I": LE(tooltip = "most recent current measurement", unit = "pA", digits = 1, edited_color = sct_black),
+            "z": LE(tooltip = "most recent tip height measurement", unit = "nm", digits = 2, edited_color = sct_black),
             
             # Feedback
             "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0),
@@ -443,8 +444,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "pixel_height": LE(tooltip = "pixel height", unit = "nm", digits = 4, edited_color = scanalyzer_blue),
             
             # Tip shaper
-            "pulse_voltage": LE(value = 6, tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1),
-            "pulse_duration": LE(value = 300, tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0),
+            "pulse_voltage": LE(value = 6, tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1, edited_color = sct_black),
+            "pulse_duration": LE(value = 300, tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0, edited_color = sct_black),
             
             "poke_voltage": LE(tooltip = "poke voltage\n(bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
             "poke_depth": LE(tooltip = "poke depth\n(height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
@@ -455,10 +456,11 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "lift_time": LE(tooltip = "lift time\n(duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
             # Processing
-            "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70),
+            "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70, edited_color = sct_black),
+            "graph_buffer_size": LE(value = 4000, tooltip = "graph buffer size", digits = 0, max_width = 70, edited_color = sct_black),
             
             # Lockins
-            "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70, edited_color = scanalyzer_blue),
+            "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70),
             "nanonis_df": LE(tooltip = "Nanonis frequency resolution", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
             
             "nanonis_mod1_f": LE(tooltip = "Nanonis modulator 1 frequency", unit = "Hz", limits = [0, 10000], digits = 1, min_width = 70, edited_color = scanalyzer_blue),
@@ -761,8 +763,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        layouts["channels"].addWidget(comboboxes["graph_x_axis"], 0, 0, 1, 5)
-        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], 1 + i % 7, int(i / 7)) for i in range(35)]
+        layouts["channels"].addWidget(comboboxes["graph_x_axis"], 1, 0, 1, 5)
+        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], 2 + i % 7, int(i / 7)) for i in range(35)]
+        layouts["channels"].addWidget(line_edits["graph_buffer_size"], 9, 0, 1, 5)
+        layouts["channels"].setRowStretch(0, 1)
         
         layouts["graph"].addWidget(self.plot_widget, 5)
         layouts["graph"].addLayout(layouts["channels"], 1)
@@ -774,7 +778,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [layouts["connections"].addWidget(buttons[name], 0, index + 1) for index, name in enumerate(["nanonis", "camera", "mla", "keithley"])]
         [layouts["connections"].addWidget(buttons[name], 1, index + 1) for index, name in enumerate(["scanalyzer", "session_folder", "info", "spectelligent"])]
         layouts["connections"].addWidget(buttons["exit"], 0, 5, 2, 1)
-        
         layouts["connections"].addWidget(self.current_height_widget, 2, 0, 1, 2)
 
         # Experiment

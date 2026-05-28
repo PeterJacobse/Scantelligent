@@ -62,7 +62,13 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
-        self.x_channel = 0 # x channel for graphing. An index of -1 means graphing parameters as a function of index, rolling when more than 6000 buffer values are filled
+        
+        self.graph_buffer_size = 4000
+        self.graph_buffer_index = 0
+        self.x_channel = -1 # x channel for graphing. An index of -1 means graphing parameters as a function of index, rolling when more than 6000 buffer values are filled
+        self.graph_channels = 35
+        self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size))
+        self.buffer_full = False
 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -114,6 +120,7 @@ class Scantelligent(QtCore.QObject):
 
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
+        self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.set_graph_buffer(buf_size))
         
         # Comboboxes
         self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
@@ -398,53 +405,81 @@ class Scantelligent(QtCore.QObject):
         return
 
     @QtCore.pyqtSlot(np.ndarray)
-    def receive_data(self, data, max_length: int = 6000) -> None:
-        x_data = None
+    def receive_data(self, data: np.ndarray) -> None:
+        data_array = np.atleast_2d(data).transpose()[:self.graph_channels] # Cast the data into a 2D np.ndarray, if it isn't in that form yet
         
-        if isinstance(data, int) and data < 45: # If an integer is provided, that integer determines the x channel
-            self.x_channel = data
-            try:
-                self.gui.comboboxes["graph_x_axis"].selectIndex(data + 1)
-                self.gui.checkboxes[f"channel_{self.x_channel}"].setChecked(False)
-            except:
-                pass
+        # Single elements can be used to signal the grapher
+        if data_array.shape == (1, 1):
+            if isinstance(data_array[0, 0], int) and data_array[0, 0] < self.graph_channels and data_array[0, 0] > -2:
+                self.x_channel = data_array[0, 0]
+                try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
+                except: pass
+            elif isinstance(data_array[0, 0], str) and data_array[0, 0] == "clear": # Magic word to clear the buffer
+                self.graph_buffer *= 0
+                self.graph_buffer_index = 0
+                [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}") for channel_index in range(self.graph_channels)]
+                [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(False) for channel_index in range(self.graph_channels)]
+                self.buffer_full = False
+            self.redraw_graph()
             return
         
-        data_array = np.atleast_2d(data)[:, :45] # The data array provided contains strings. These are the channel names
-        if data_array.dtype.kind in ["U", "S"]:
-            [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}: {value}") for channel_index, value in enumerate(data_array[0])]
-            [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(True) for channel_index, value in enumerate(data_array[0])]
-            self.gui.comboboxes["graph_x_axis"].renewItems(np.insert(np.astype(data_array[0], object), 0, "index"))
+        # String and bool arrays can be passed to give information about channels and their checked state
+        if data_array.dtype.kind in ["U", "S"]: # The data array provided contains strings. These are the channel names
+            [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}: {value}") for channel_index, value in enumerate(data_array[:, 0])]
+            [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(True) for channel_index, value in enumerate(data_array[:, 0])]
+            self.gui.comboboxes["graph_x_axis"].renewItems(np.insert(np.astype(data_array[:, 0], object), 0, "index"))
+            try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
+            except: pass
+            self.redraw_graph()
             return
         elif data_array.dtype.kind == "b": # The data array has booleans. Check and uncheck according to the boolean values
-            [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(value) for channel_index, value in enumerate(data_array[0])]
+            [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(value) for channel_index, value in enumerate(data_array[:, 0])]
+            self.redraw_graph()
             return
-        self.redraw_graph(data_array)
-        return
+
         
-    def redraw_graph(self, data_array: np.ndarray, max_length: int = 6000):
+        
+        # Numeric data is added to the buffer
+        (n_channels, n_datapoints) = data_array.shape # Read how many channels and data points are given        
+        new_buffer_index = self.graph_buffer_index + n_datapoints # Calculate where the buffer fills up to
+        
+        if new_buffer_index > self.graph_buffer_size: # If the buffer is full: roll over
+            self.buffer_full = True
+            overflow = new_buffer_index - self.graph_buffer_size
+            
+            self.graph_buffer[:n_channels, self.graph_buffer_index : self.graph_buffer_size] = data_array[:, : n_datapoints - overflow] # Fill up the remainder
+            self.graph_buffer[:n_channels, : overflow] = data_array[:, n_datapoints - overflow :] # Roll over and overwrite
+            self.graph_buffer_index = overflow
+        
+        else:
+            self.graph_buffer[:n_channels, self.graph_buffer_index : new_buffer_index] = data_array
+            self.graph_buffer_index = new_buffer_index
+        
+        self.redraw_graph()
+        return
+
+    def redraw_graph(self): #, data_array: np.ndarray, max_length: int = 6000
+        if self.graph_buffer_index < 2: return # It takes at least two points to draw a graph
+        
         x_data = None
+        if self.buffer_full: # Buffer full: roll around to capture all data points for th pdis
+            if self.x_channel > -1 and self.x_channel < self.graph_channels:
+                x_data = np.concatenate((self.graph_buffer[self.x_channel, self.graph_buffer_index :], self.graph_buffer[self.x_channel, : self.graph_buffer_index]))
 
-        if self.x_channel > -1 and self.x_channel < 45:
-            new_data = data_array[:, self.x_channel]
+            for channel_index in range(self.graph_channels):
+                y_data = np.concatenate((self.graph_buffer[channel_index, self.graph_buffer_index :], self.graph_buffer[channel_index, : self.graph_buffer_index]))
+                
+                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
+                else: self.gui.pdis[channel_index].setData(y_data)
+        else:
+            if self.x_channel > -1 and self.x_channel < self.graph_channels:
+                x_data = self.graph_buffer[self.x_channel, : self.graph_buffer_index]
             
-            plot_data_item = self.gui.pdis[self.x_channel]
-            old_data = plot_data_item.getData()[1]
-            
-            if not isinstance(old_data, np.ndarray): old_data = np.empty(0, dtype = float)
-            x_data = np.concatenate((old_data, new_data))[-max_length:]
-
-        for index in reversed(range(len(data_array[0]))):
-            if index > len(self.gui.pdis) - 1: continue
-            new_data = data_array[:, index]
-            plot_data_item = self.gui.pdis[index]
-            old_data = plot_data_item.getData()[1]
-            
-            if not isinstance(old_data, np.ndarray): old_data = np.empty(0, dtype = float)
-            data = np.concatenate((old_data, new_data))[-max_length:]
-            
-            if isinstance(x_data, np.ndarray): plot_data_item.setData(x = x_data, y = data)
-            else: plot_data_item.setData(data)
+            for channel_index in range(self.graph_channels):
+                y_data = self.graph_buffer[channel_index, : self.graph_buffer_index]
+                
+                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
+                else: self.gui.pdis[channel_index].setData(y_data)
         return
 
 
@@ -670,7 +705,7 @@ class Scantelligent(QtCore.QObject):
         for index, scan in enumerate(self.gui.saved_scans): scan.setZValue(-1 - index)
         return
 
-    def toggle_view(self, view: str = None, verbose: bool = True):
+    def toggle_view(self, view: str = None, verbose: bool = True) -> None:
         old_view = self.gui.buttons["view"].state_name
         if old_view == view: return # Return if the view is not changed
 
@@ -747,6 +782,12 @@ class Scantelligent(QtCore.QObject):
                 self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
+        return
+
+    def set_graph_buffer(self, value: int = 6000) -> None:
+        self.graph_buffer_size = value
+        self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size))
+        self.buffer_full = False
         return
 
 
@@ -1060,7 +1101,7 @@ class Scantelligent(QtCore.QObject):
 
                 self.logprint(f"Loading/resetting experiment {experiment_name}", message_type = "message")
                 [self.gui.progress_bars[name].setValue(0) for name in ["task", "experiment"]]
-                [pdi.setData() for pdi in self.gui.pdis]
+                self.receive_data(np.array(["clear"]))
                 self.gui.comboboxes["direction"].renewItems([])
                 for i in range(9):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")

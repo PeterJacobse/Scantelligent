@@ -8,10 +8,10 @@ import sounddevice as sd
 class AudioGenerator(QObject):
     finished = pyqtSignal()
 
-    def __init__(self, sample_rate: int = 44100):
+    def __init__(self, sample_rate: int = 44100, block_size: int = 4096):
         super().__init__()
         self.sample_rate = sample_rate
-        self.block_size = 2048
+        self.block_size = block_size
         self.wnyquist = np.pi * self.sample_rate
         self.w = 2 * np.pi * 220.0 * np.arange(32)
         self.amplitudes = np.zeros(shape = (32), dtype = float)
@@ -22,6 +22,7 @@ class AudioGenerator(QObject):
         self.stream = None
         self.time_list = np.arange(self.block_size) / self.sample_rate
         self.max_time = self.block_size / self.sample_rate
+        self.new_amps = False
 
     @pyqtSlot()
     def start(self):
@@ -35,13 +36,17 @@ class AudioGenerator(QObject):
         for i, wn in enumerate(self.w):
             if wn > self.wnyquist: continue
             
-            amp_envelope = np.linspace(self.amps_old[i], self.amps_new[i], self.block_size) # Define the cross-fade
             waveform = np.sin(wn * self.time_list + self.phases[i]) # Define the bare wave
             
-            wave += amp_envelope * waveform # Calculate the wave
+            if self.new_amps:
+                amp_envelope = np.linspace(self.amps_old[i], self.amps_new[i], self.block_size) # Define the cross-fade
+                wave += amp_envelope * waveform # Calculate the wave
+            else:
+                wave += self.amps_old[i] * waveform
             self.phases[i] = (self.phases[i] + wn * self.max_time) % (2 * np.pi) # Update the phase
         
         self.amps_old = self.amps_new.copy()
+        self.new_amps = False
         wave = np.tanh(.3 * wave) # Soft clipping
         outdata[:] = wave.astype(np.float32)[:, np.newaxis]
 
@@ -50,6 +55,7 @@ class AudioGenerator(QObject):
         self.volumes = np.array(values, dtype = int)
         self.amps_old = np.copy(self.amps_new)
         self.amps_new = self.amplitudes * self.volumes * 1E-8
+        self.new_amps = True
         return
 
     @pyqtSlot(list)
@@ -57,6 +63,7 @@ class AudioGenerator(QObject):
         self.amplitudes = np.array(values, dtype = float)
         self.amps_old = self.amps_new.copy()
         self.amps_new = self.amplitudes * self.volumes * 1E-8
+        self.new_amps = True
         return
 
     @pyqtSlot(list)
