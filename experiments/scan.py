@@ -33,7 +33,7 @@ class Experiment(BaseExperiment):
         nn.scan_metadata_update({"channel_indices": recorded_channel_indices}, verbose = False) # Make sure the correct channel is being recorded
         
         graph_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
-        self.prepare_graph(graph_channels) # This triggers the GUI to start graphing data
+        self.data_array.emit(np.array(graph_channels)) # This triggers the GUI to start graphing data
                 
         # Determine the scan direction if 'nearest tip' is selected
         if direction == "nearest tip":

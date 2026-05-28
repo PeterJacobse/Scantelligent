@@ -1,7 +1,6 @@
 import os, sys, time
 from PyQt6 import QtCore
 import numpy as np
-import asyncio
 
 
 
@@ -640,12 +639,12 @@ class MLAAPI(QtCore.QObject):
         # Prepare to plot these channels
         channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (deg)", "|a1| (mV)", "arg(a1) (deg)", "|a2| (mV)", "arg(a2) (deg)"] # When a gain is given, convert the voltages to displacement currents and subsequently capacitances
         if tia_gain_V_per_pA > 1E-12: channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (deg)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (deg)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (deg)"]
-        data_callback(np.array(channel_names))
         
         insert_value = None
         if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
+        data_callback(np.array(channel_names))
         measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = float)
         error_array = np.empty_like(measurement_array, dtype = float)
         
@@ -714,13 +713,13 @@ class MLAAPI(QtCore.QObject):
                 data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1arg, a2abs_mV, a2arg], dtype = float)
                 error_chunk = np.array([0, 0, 0, a1_std_dev_mV, 0, a2_std_dev_mV, 0], dtype = float)
             
-            data_callback(data_chunk)
             if isinstance(insert_value, float | int):
                 measurement_array[index] = np.insert(data_chunk, 0, insert_value)
                 error_array[index] = np.insert(error_chunk, 0, 0)
             else:
                 measurement_array[index] = data_chunk
                 error_array[index] = error_chunk
+            data_callback(data_chunk)
                 
         self.task_progress.emit(100) # Signal that the measurement is done
         if post_sweep_outputs == "blank": self.outputs_update({"output_masks": np.zeros((2, 32), dtype = int)}) # Reset outputs
@@ -748,11 +747,11 @@ class MLAAPI(QtCore.QObject):
         channel_names = ["amp (mV)", "|a1_ref| (mV)"]
         if tia_gain_V_per_pA > 1E-12: [channel_names.extend([f"Re(a{i + 1}) (nS)", f"Im(a{i + 1}) (nS)"]) for i in range (31)]
         else: [channel_names.extend([f"Re(a{i + 1}) (mV)", f"Im(a{i + 1}) (mV)"]) for i in range (31)]
-        data_callback(np.array(channel_names)) # Signal the gui to start tracking/plotting these data
         insert_value = None
         if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
+        data_callback(np.array(channel_names)) # Signal the gui to start tracking/plotting these data
         measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = float)
         error_array = np.empty_like(measurement_array, dtype = float)
 
@@ -799,13 +798,13 @@ class MLAAPI(QtCore.QObject):
                 errors_mV = 2000 * errors_V
                 error_chunk[2:] = errors_mV
 
-            data_callback(data_chunk)
             if isinstance(insert_value, float | int):
                 measurement_array[index] = np.insert(data_chunk, 0, insert_value)
                 error_array[index] = np.insert(error_chunk, 0, 0)
             else:
                 measurement_array[index] = data_chunk
                 error_array[index] = error_chunk
+            data_callback(data_chunk)
 
         self.task_progress.emit(100) # Signal that the measurement is done
         if post_sweep_outputs == "blank": self.outputs_update({"output_masks": np.zeros((2, 32), dtype = int)}) # Reset outputs
@@ -839,11 +838,11 @@ class MLAAPI(QtCore.QObject):
             else: [channel_names.extend([f"Re(a{i + 1}) (pA)", f"Im(a{i + 1}) (pA)"]) for i in range(31)] # return_type = displacement current
         else:
             [channel_names.extend([f"Re(a{i + 1}) (mV)", f"Im(a{i + 1}) (mV)"]) for i in range(31)] # return_type = raw voltages
-        data_callback(np.array(channel_names))
         insert_value = None
         if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
+        data_callback(np.array(channel_names))
         measurement_array = np.empty((len(voltages), len(channel_names)), dtype = float)
         error_array = np.empty_like(measurement_array, dtype = float)
 
@@ -898,13 +897,13 @@ class MLAAPI(QtCore.QObject):
                 data_chunk[2:] = 2000 * harmonics_V
                 error_chunk[2:] = 2000 * errors_V
             
-            data_callback(data_chunk)
             if isinstance(insert_value, float | int):
                 measurement_array[index] = np.insert(data_chunk, 0, insert_value)
                 error_array[index] = np.insert(error_chunk, 0, insert_value)
             else:
                 measurement_array[index] = data_chunk
                 error_array[index] = error_chunk
+            data_callback(data_chunk)
         
         self.task_progress.emit(100) # Signal that the measurement is done
         if post_sweep_outputs == "blank": self.outputs_update({"output_masks": np.zeros((2, 32), dtype = int)}) # Reset outputs

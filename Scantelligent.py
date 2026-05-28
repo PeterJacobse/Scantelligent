@@ -788,6 +788,7 @@ class Scantelligent(QtCore.QObject):
         self.graph_buffer_size = value
         self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size))
         self.buffer_full = False
+        self.graph_buffer_index = 0
         return
 
 

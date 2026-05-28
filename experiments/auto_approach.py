@@ -76,7 +76,7 @@ class Experiment(BaseExperiment):
         
         match connected_device:
             case "nanonis":
-                self.prepare_graph(["t (s)", "z (nm)", "I (pA)", "Re(a1) (nS)", "Im(a1) (fF)"])
+                self.data_array.emit(np.array(["t (s)", "z (nm)", "I (pA)", "Re(a1) (nS)", "Im(a1) (fF)"]))
                 
                 signal_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)"]
                 (signal_dict, error) = nn.signals_update(signal_names)

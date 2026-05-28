@@ -264,7 +264,7 @@ class Experiment(BaseExperiment):
             case "voltage (V)": # Experiments that sweep along one parameter while slowly ramping the bias
                 self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = voltage) # Save the first sweep
                 
-                for index, voltage in enumerate(y_values[1:]):
+                for index, voltage in enumerate(y_values):
                     self.exp_progress.emit(int(100 * index / n_total))
                     
                     if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
@@ -281,7 +281,7 @@ class Experiment(BaseExperiment):
             case "amplitude (mV)":
                 self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = amp_mV) # Save the first sweep
                 
-                for index, amp_mV in enumerate(y_values[1:]):
+                for index, amp_mV in enumerate(y_values):
                     self.exp_progress.emit(int(100 * index / n_total))
                     
                     if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb)
@@ -298,7 +298,7 @@ class Experiment(BaseExperiment):
             case "frequency (Hz)":
                 self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = f_Hz) # Save the first sweep
                 
-                for index, f_Hz in enumerate(y_values[1:]):
+                for index, f_Hz in enumerate(y_values):
                     self.exp_progress.emit(int(100 * index / n_total))
                     mla.time_constant_update({"df (Hz)": f_Hz}, verbose = False)
                     numbers = np.arange(0, 32)
