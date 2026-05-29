@@ -8,7 +8,7 @@ from scipy.fft import fft2, fftshift
 from scipy.linalg import lstsq
 from scipy.spatial import distance_matrix
 from scipy.special import factorial
-from python_tsp.exact import solve_tsp_dynamic_programming
+from python_tsp.heuristics import solve_tsp_simulated_annealing
 from sklearn.model_selection import train_test_split
 import sklearn.gaussian_process as gp
 
@@ -109,7 +109,7 @@ class DataProcessing:
         Returns the input coordinates ordered by the shortest path.
         """
         dist_matrix = distance_matrix(coordinates, coordinates)
-        (index_list, distance_list) = solve_tsp_dynamic_programming(dist_matrix)
+        (index_list, distance_list) = solve_tsp_simulated_annealing(dist_matrix)
         return coordinates[index_list]
 
 

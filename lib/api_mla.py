@@ -714,11 +714,11 @@ class MLAAPI(QtCore.QObject):
                 error_chunk = np.array([0, 0, 0, a1_std_dev_mV, 0, a2_std_dev_mV, 0], dtype = float)
             
             if isinstance(insert_value, float | int):
-                measurement_array[index] = np.insert(data_chunk, 0, insert_value)
-                error_array[index] = np.insert(error_chunk, 0, 0)
-            else:
-                measurement_array[index] = data_chunk
-                error_array[index] = error_chunk
+                data_chunk = np.insert(data_chunk, 0, insert_value)
+                error_chunk = np.insert(error_chunk, 0, 0)
+            
+            measurement_array[index] = data_chunk
+            error_array[index] = error_chunk
             data_callback(data_chunk)
                 
         self.task_progress.emit(100) # Signal that the measurement is done
@@ -799,11 +799,11 @@ class MLAAPI(QtCore.QObject):
                 error_chunk[2:] = errors_mV
 
             if isinstance(insert_value, float | int):
-                measurement_array[index] = np.insert(data_chunk, 0, insert_value)
-                error_array[index] = np.insert(error_chunk, 0, 0)
-            else:
-                measurement_array[index] = data_chunk
-                error_array[index] = error_chunk
+                data_chunk = np.insert(data_chunk, 0, insert_value)
+                error_chunk = np.insert(error_chunk, 0, 0)
+            
+            measurement_array[index] = data_chunk
+            error_array[index] = error_chunk
             data_callback(data_chunk)
 
         self.task_progress.emit(100) # Signal that the measurement is done
@@ -811,7 +811,7 @@ class MLAAPI(QtCore.QObject):
         elif post_sweep_outputs == "reset": self.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
         return (measurement_array, error_array, channel_names)
 
-    def voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True, tia_gain_V_per_pA: float = 0,
+    def voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, tia_gain_V_per_pA: float = 0,
                       output_port: int = 1, modulators: list = [0], abort_callback: object = None, data_callback: object = None,
                       insert_parameter: tuple[str, float] = None, return_type: str = "conductance", tia_corrections: list | np.ndarray = None, post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray]:
         # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
@@ -898,11 +898,11 @@ class MLAAPI(QtCore.QObject):
                 error_chunk[2:] = 2000 * errors_V
             
             if isinstance(insert_value, float | int):
-                measurement_array[index] = np.insert(data_chunk, 0, insert_value)
-                error_array[index] = np.insert(error_chunk, 0, insert_value)
-            else:
-                measurement_array[index] = data_chunk
-                error_array[index] = error_chunk
+                data_chunk = np.insert(data_chunk, 0, insert_value)
+                error_chunk = np.insert(error_chunk, 0, 0)
+            
+            measurement_array[index] = data_chunk
+            error_array[index] = error_chunk
             data_callback(data_chunk)
         
         self.task_progress.emit(100) # Signal that the measurement is done

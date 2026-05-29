@@ -138,6 +138,7 @@ class Experiment(BaseExperiment):
         x_ds = self.output_file.create_dataset(x_axis_label, data = x_values)
         x_ds.make_scale(x_axis_label)
         self.output_file.attrs.update({"x axis": x_axis_label})
+        self.parameters.emit({"dict_name": "view_request", "view": "graph"})
         
         
         

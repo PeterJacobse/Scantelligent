@@ -35,7 +35,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.line_edits = self.make_line_edits()
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
-        self.image_view = self.make_image_view()
+        (self.image_view, self.camera_view) = self.make_views()
         (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
         (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
         self.widgets = self.make_custom_widgets()
@@ -168,7 +168,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "view": MSB(click_to_toggle = False, size = 28,
                         states = [{"name": "none", "tooltip": "toggle the active view", "icon": icons.get("eye"), "color": sct_black},
                                   {"name": "camera", "tooltip": "active view: Camera", "icon": icons.get("view_camera"), "color": sct_black},
-                                  {"name": "nanonis", "tooltip": "active view: Nanonis", "icon": icons.get("view_nanonis"), "color": sct_black}]),
+                                  {"name": "nanonis", "tooltip": "active view: Nanonis", "icon": icons.get("view_nanonis"), "color": sct_black},
+                                  {"name": "graph", "tooltip": "active view: graph", "icon": icons.get("view_graph"), "color": sct_black}]),
             "exit": MSB(tooltip = "Exit Scantelligent\n(Esc / X / E)", icon = icons.get("escape"), size = 28),
             "session_folder": MSB(icon = icons.get("folder_yellow"), click_to_toggle = False,
                                   states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Session folder unknown"},
@@ -186,6 +187,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                         {"name": "ready", "color": self.colors["dark_green"], "tooltip": "Start experiment", "icon": icons.get("start")},
                                         {"name": "running", "color": sct_blue, "tooltip": "Experiment running", "icon": icons.get("stop")},
                                         {"name": "aborted", "color": self.colors["orange"], "tooltip": "Abort requested", "icon": icons.get("stop")}]),
+            "scan_direction": MSB(click_to_toggle = True, size = 28, states = [{"name": "up", "color": sct_black, "tooltip": "Grid scan up", "icon": icons.get("grid_up")},
+                                                                               {"name": "down", "color": sct_black, "tooltip": "Grid scan down", "icon": icons.get("grid_down")},
+                                                                               {"name": "nearest_tip", "color": sct_black, "tooltip": "Scan from corner\nnearest the tip", "icon": icons.get("nearest_tip")},
+                                                                               {"name": "gaussian_process", "color": sct_black, "tooltip": "Gaussian Process Regression scan", "icon": icons.get("gaussian_process")}]),
             
             # Locks
             "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
@@ -588,7 +593,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return layouts
 
-    def make_image_view(self) -> SCTWidgets.ImageView:
+    def make_views(self) -> tuple[SCTWidgets.ImageView, pg.RawImageWidget]:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
         image_view = SCTWidgets.ImageView(view = pg.PlotItem())
@@ -603,8 +608,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
         self.target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
         
-        self.saved_scans = []        
-        return image_view
+        camera_view = pg.RawImageWidget()
+        
+        self.saved_scans = []
+        return (image_view, camera_view)
 
     def make_rois(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
         piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
@@ -682,6 +689,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         consoles["input"].setReadOnly(False)
         consoles["input"].setMaximumHeight(30)
         [consoles[name].setStyleSheet("QTextEdit{ background-color: #101010; }") for name in ["output", "input"]]
+        consoles["output"].setMinimumHeight(150)
         
         # Add the handles to the tooltips
         [consoles[name].changeToolTip(f"gui.consoles[\"{name}\"]", line = 10) for name in consoles.keys()]
@@ -898,7 +906,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         
         # Scan
-        [layouts["scan_control"].addWidget(buttons[name], 0, index) for index, name in enumerate(["start_scan", "auto_paste"])]
+        [layouts["scan_control"].addWidget(buttons[name], 0, index) for index, name in enumerate(["start_scan", "scan_direction", "auto_paste"])]
         
         n_layout = layouts["navigation"]
         n_layout.addWidget(comboboxes["channels"], 4)
@@ -1002,12 +1010,14 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.splitters = {"image_graph": QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical), "camera_nanonis": QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)}
         self.splitters["image_graph"].addWidget(self.image_view)
         self.splitters["image_graph"].addWidget(widgets["graph"])
+        self.splitters["image_graph"].addWidget(self.consoles["output"])
         self.splitters["image_graph"].setStretchFactor(0, 4)
         self.splitters["image_graph"].setStretchFactor(1, 1)
+        self.splitters["image_graph"].setStretchFactor(2, 1)
         
-        layouts["left_side"].addWidget(self.splitters["image_graph"], stretch = 5)
+        layouts["left_side"].addWidget(self.splitters["image_graph"])
         #layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
-        layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
+        #layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
         layouts["left_side"].addWidget(self.line_edits["input"])
         self.widgets["left_side"].setLayout(layouts["left_side"])
         

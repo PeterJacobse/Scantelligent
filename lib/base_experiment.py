@@ -3,6 +3,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from datetime import datetime
 from .file_functions import FileFunctions
+from .data_processing import DataProcessing
 
 
 
@@ -31,6 +32,7 @@ class BaseExperiment(QObject):
         self.nanonis = kwargs.pop("nanonis", None)
         
         self.file_functions = FileFunctions()
+        self.data = DataProcessing()
         self.gui_setup = {}
         self.abort_requested = False
         self.current_spikes = 0

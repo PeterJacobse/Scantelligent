@@ -458,30 +458,6 @@ class Scantelligent(QtCore.QObject):
         self.redraw_graph()
         return
 
-    def redraw_graph(self): #, data_array: np.ndarray, max_length: int = 6000
-        if self.graph_buffer_index < 2: return # It takes at least two points to draw a graph
-        
-        x_data = None
-        if self.buffer_full: # Buffer full: roll around to capture all data points for th pdis
-            if self.x_channel > -1 and self.x_channel < self.graph_channels:
-                x_data = np.concatenate((self.graph_buffer[self.x_channel, self.graph_buffer_index :], self.graph_buffer[self.x_channel, : self.graph_buffer_index]))
-
-            for channel_index in range(self.graph_channels):
-                y_data = np.concatenate((self.graph_buffer[channel_index, self.graph_buffer_index :], self.graph_buffer[channel_index, : self.graph_buffer_index]))
-                
-                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
-                else: self.gui.pdis[channel_index].setData(y_data)
-        else:
-            if self.x_channel > -1 and self.x_channel < self.graph_channels:
-                x_data = self.graph_buffer[self.x_channel, : self.graph_buffer_index]
-            
-            for channel_index in range(self.graph_channels):
-                y_data = self.graph_buffer[channel_index, : self.graph_buffer_index]
-                
-                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
-                else: self.gui.pdis[channel_index].setData(y_data)
-        return
-
 
 
     # Miscellaneous
@@ -677,6 +653,33 @@ class Scantelligent(QtCore.QObject):
         self.gui.pdis[index].setVisible(checked)
         return
 
+    def redraw_graph(self): #, data_array: np.ndarray, max_length: int = 6000
+        if self.graph_buffer_index < 2: return # It takes at least two points to draw a graph
+        
+        x_data = None
+        if self.buffer_full: # Buffer full: roll around to capture all data points for th pdis
+            if self.x_channel > -1 and self.x_channel < self.graph_channels:
+                x_data = np.concatenate((self.graph_buffer[self.x_channel, self.graph_buffer_index :], self.graph_buffer[self.x_channel, : self.graph_buffer_index]))
+
+            for channel_index in range(self.graph_channels):
+                y_data = np.concatenate((self.graph_buffer[channel_index, self.graph_buffer_index :], self.graph_buffer[channel_index, : self.graph_buffer_index]))
+                
+                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
+                else: self.gui.pdis[channel_index].setData(y_data)
+        else:
+            if self.x_channel > -1 and self.x_channel < self.graph_channels:
+                x_data = self.graph_buffer[self.x_channel, : self.graph_buffer_index]
+            
+            for channel_index in range(self.graph_channels):
+                y_data = self.graph_buffer[channel_index, : self.graph_buffer_index]
+                
+                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
+                else: self.gui.pdis[channel_index].setData(y_data)
+        return
+
+    def set_x_axis(self):
+        pass
+
     def refresh_image(self, save: bool = True) -> None:
         # Replace the old item with a new item and relink the new item
         old_item = self.gui.image_view.getImageItem()
@@ -710,16 +713,17 @@ class Scantelligent(QtCore.QObject):
         if old_view == view: return # Return if the view is not changed
 
         # Determine the new view mode
-        if isinstance(view, str) and view in ["nanonis", "camera", "none"]: # Explicit selection
+        if isinstance(view, str) and view in ["nanonis", "camera", "graph", "none"]: # Explicit selection
             new_view = view
         else:
             match old_view: # Toggling to the next view mode
                 # Set to Camera
                 case "none": new_view = "camera"
                 case "camera": new_view = "nanonis"
-                case "nanonis": new_view = "none"
+                case "nanonis": new_view = "graph"
+                case "graph": new_view = "none"
                 case _: pass
-
+        
         # Clean up old processes
         if hasattr(self, "camera_thread"):
             try:
@@ -739,6 +743,8 @@ class Scantelligent(QtCore.QObject):
         match new_view:
             case "camera":
                 self.gui.buttons["view"].setState("camera")
+                self.gui.splitters["image_graph"].setStretchFactor(0, 4)
+                self.gui.splitters["image_graph"].setStretchFactor(1, 1)
                 self.refresh_image(save = False)
                 
                 camera_frame = self.camera.grab_frame()
@@ -764,11 +770,19 @@ class Scantelligent(QtCore.QObject):
 
             case "nanonis":
                 self.gui.buttons["view"].setState("nanonis")
+                self.gui.splitters["image_graph"].setStretchFactor(0, 4)
+                self.gui.splitters["image_graph"].setStretchFactor(1, 1)
                 self.refresh_image(save = False)
                 
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target]]
                 self.nanonis.hardware_update()
                 self.set_view_range("full")
+            
+            case "graph":
+                self.gui.buttons["view"].setState("graph")
+                self.gui.splitters["image_graph"].setStretchFactor(0, 1)
+                self.gui.splitters["image_graph"].setStretchFactor(1, 4)
+                return
 
             case _:
                 self.gui.buttons["view"].setState("none")                
@@ -1173,6 +1187,7 @@ class Scantelligent(QtCore.QObject):
                 spec_buttons.update({f"{quantity}_retrace": self.spt.gui.buttons[f"{quantity}_retrace"].isChecked() for quantity in ["V", "f", "z", "amp", "V_keithley"]}) # Bools desribing whether to retrace
                 spec_buttons.update({key: self.spt.gui.buttons[key].isChecked() for key in ["tia_correct", "intermediate_feedback", "blank_modulators"]}) # Spec settings: bools
                 spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["nanonis_mla", "spectroscopy_feedback"]})
+                spec_buttons.update({key: self.gui.buttons[key].state_name for key in ["scan_direction"]})
                 
                 modulators_bool_list = [self.spt.gui.checkboxes[f"modulator_{index}"].isChecked() for index in range(32)]
                 spec_modulators = [index for index, val in enumerate(modulators_bool_list) if val]
