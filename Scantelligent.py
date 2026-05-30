@@ -25,7 +25,7 @@ class Scantelligent(QtCore.QObject):
         self.connect_console()
         self.connect_buttons()
         self.connect_hardware()
-        #self.toggle_view("none")
+        self.toggle_view("none")
 
 
 
@@ -132,10 +132,9 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(self.set_x_axis)
         
         # Checkboxes and button groups
-        #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
         self.gui.limits_widget.stateChanged.connect(self.update_processing_flags)
-        self.gui.button_groups["channels"].clicked.connect(lambda index_str: self.set_pdi_visible(int(index_str)))
+        self.gui.button_groups["channels"].clicked.connect(self.update_pdi_visibility)
         
         
         
@@ -423,6 +422,7 @@ class Scantelligent(QtCore.QObject):
                 [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}") for channel_index in range(self.graph_channels)]
                 [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(False) for channel_index in range(self.graph_channels)]
                 self.buffer_full = False
+            self.update_pdi_visibility()
             self.redraw_graph()
             return
         
@@ -433,6 +433,7 @@ class Scantelligent(QtCore.QObject):
             self.gui.comboboxes["graph_x_axis"].renewItems(np.insert(np.astype(data_array[:, 0], object), 0, "index"))
             try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
             except: pass
+            self.update_pdi_visibility()
             self.redraw_graph()
             return
         elif data_array.dtype.kind == "b": # The data array has booleans. Check and uncheck according to the boolean values
@@ -776,12 +777,13 @@ class Scantelligent(QtCore.QObject):
 
 
     # Graphing
-    def set_pdi_visible(self, index: int = 0) -> None:
-        checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
-        self.gui.pdis[index].setVisible(checked)
+    def update_pdi_visibility(self) -> None:
+        for index in range(self.graph_channels):
+            checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
+            self.gui.pdis[index].setVisible(checked)
         return
 
-    def redraw_graph(self): #, data_array: np.ndarray, max_length: int = 6000
+    def redraw_graph(self):
         if self.graph_buffer_index < 2: return # It takes at least two points to draw a graph
         
         x_data = None

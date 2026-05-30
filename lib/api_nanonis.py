@@ -1138,7 +1138,7 @@ class NanonisAPI(QtCore.QObject):
     def jitter_tip(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         
-        [iterations, radius] = [parameters.get(parameter) for parameter in ["iterations", "radius"]]
+        [iterations, radius] = [parameters.get(parameter) for parameter in ["iterations", "radius (nm)"]]
         if not isinstance(iterations, int): iterations = 32
         if not isinstance(radius, float | int): radius = 1.
         

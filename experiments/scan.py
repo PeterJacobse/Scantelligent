@@ -1,7 +1,7 @@
 import sys, os, time, h5py
 import numpy as np
-from scipy.ndimage import gaussian_filter
 from datetime import datetime
+import sklearn.gaussian_process as gp
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
 from lib import BaseExperiment
@@ -54,14 +54,18 @@ class Experiment(BaseExperiment):
             nn.scan_action({"action": "start", "direction": direction})
             scan_image = self.monitor_scan(output_channel = feedback_channel_indices[0])
             time.sleep(1)
+
+
         
         elif direction == "gaussian_process":
-            n_points = 40
+            n_points = 20
             
             self.logprint(f"Starting the experiment with 20 random points in the scan frame", message_type = "message")
+            [x_grid, y_grid] = [grid.get(key) for key in ["x_grid (nm)", "y_grid (nm)"]]
             (lists, error) = nn.grids_to_lists(grid, direction = "down")
             tip_xy = [tip_status.get(key) for key in ["x (nm)", "y (nm)"]]
             [x_list, y_list] = [lists.get(key) for key in ["x_list (nm)", "y_list (nm)"]]
+            xy_list = np.array([x_list, y_list]).transpose()
             list_len = len(x_list)
 
             rng = np.random.default_rng()
@@ -69,26 +73,93 @@ class Experiment(BaseExperiment):
             random_coordinates = np.insert(np.array([[x_list[index], y_list[index]] for index in random_flat_indices]), 0, tip_xy, axis = 0)
             ordered_coordinates = self.data.find_shortest_path(random_coordinates)
             
-            self.parameters.emit({"dict_name": "path", "coordinates (nm)": ordered_coordinates, "visible": True})            
-            output_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
-            self.data_array.emit(np.array(output_channels))            
+            self.parameters.emit({"dict_name": "path", "coordinates (nm)": ordered_coordinates, "visible": True})
+            output_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "\u03C3\u00B2(z) (nm2)", "I (pA)"]
+            self.data_array.emit(np.array(output_channels))
 
-            measurement_array = np.zeros((n_points, len(output_channels)))            
+            measurement_array = np.zeros((n_points, len(output_channels)))
             t_start = time.time()
             t_elapsed = 0
             for iteration, coordinate in enumerate(ordered_coordinates[1:]):
                 self.check_abort_request()
                 (tip_status, error) = nn.tip_update({"x (nm)": coordinate[0], "y (nm)": coordinate[1]}, verbose = False, wait = True, fast_mode = True)
+                (jitter_dict, error) = nn.jitter_tip({"radius (nm)": .2, "iterations": 4}, verbose = False)
+                z_values = jitter_dict.get("z_values (nm)")
+                z_avg_nm = np.average(z_values)
+                z_var_nm2 = np.var(z_values, ddof = 1)
+                
                 t_elapsed = time.time() - t_start
                 if not error:
                     [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
-                    data_chunk = np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA])
+                    data_chunk = np.array([t_elapsed, x_nm, y_nm, z_avg_nm, z_var_nm2, I_pA])
                     
                     measurement_array[iteration] = data_chunk
                     self.data_array.emit(data_chunk)
             
-            self.logprint(f"{measurement_array = }")
+            # Apply the Gaussian process regression to the data
+            xy_coords_nm = measurement_array[:, 1:3]
+            z_coords_nm = measurement_array[:, 3]
+            z_vars_nm2 = measurement_array[:, 4] + .05
             
+            l_guess_nm = (2., 2.)
+            l_bounds_nm = ((1e-1, 100), (1e-1, 100))
+            kernel = gp.kernels.RBF(length_scale = l_guess_nm, length_scale_bounds = l_bounds_nm)
+            gpr = gp.GaussianProcessRegressor(kernel, normalize_y = True, alpha = z_vars_nm2)
+            gpr.fit(xy_coords_nm, z_coords_nm)
+            
+            # Extrapolate the GPR fit to model the entire surface
+            (z_fit_col, z_std_dev_col) = gpr.predict(xy_list, return_std = True)
+            z_fit_nm = z_fit_col.reshape(x_grid.shape)
+            self.image.emit(z_fit_nm)
+            
+            selected_indices = []
+            gpr.set_params(alpha = np.append(z_vars_nm2, 0))
+            for _ in range(n_points):
+                z_var_col = z_std_dev_col ** 2
+                best_index = np.argmax(z_var_col)
+                selected_indices.append(best_index)
+                next_coord = xy_list[best_index]
+                
+                # Recalculate the fit considering that measuring the new point would collapse the variance in that region
+                gpr.fit(np.vstack([xy_coords_nm, next_coord]), np.append(z_coords_nm, 0))
+                (z_fit_col, z_std_dev_col) = gpr.predict(xy_list, return_std = True)
+                z_fit_nm = z_fit_col.reshape(x_grid.shape)
+            
+            
+            
+            ordered_coordinates = self.data.find_shortest_path(np.insert(xy_list[selected_indices], 0, tip_xy, axis = 0))
+            self.parameters.emit({"dict_name": "path", "coordinates (nm)": ordered_coordinates, "visible": True})
+            
+            t_start = time.time()
+            t_elapsed = 0
+            for iteration, coordinate in enumerate(ordered_coordinates[1:]):
+                self.check_abort_request()
+                (tip_status, error) = nn.tip_update({"x (nm)": coordinate[0], "y (nm)": coordinate[1]}, verbose = False, wait = True, fast_mode = True)
+                (jitter_dict, error) = nn.jitter_tip({"radius (nm)": .2, "iterations": 4}, verbose = False)
+                z_values = jitter_dict.get("z_values (nm)")
+                z_avg_nm = np.average(z_values)
+                z_var_nm2 = np.var(z_values, ddof = 1)
+                
+                t_elapsed = time.time() - t_start
+                if not error:
+                    [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+                    data_chunk = np.array([t_elapsed, x_nm, y_nm, z_avg_nm, z_var_nm2, I_pA])
+                    
+                    measurement_array[iteration] = data_chunk
+                    self.data_array.emit(data_chunk)
+            
+            # Apply the Gaussian process regression to the data
+            xy_coords_nm = np.append(xy_coords_nm, measurement_array[:, 1:3])
+            z_coords_nm = np.append(xy_coords_nm, measurement_array[:, 3])
+            z_vars_nm2 = np.append(z_vars_nm2, measurement_array[:, 4]) + .05
+            
+            # Extrapolate the GPR fit to model the entire surface
+            gpr.set_params(alpha = z_vars_nm2)
+            gpr.fit(xy_coords_nm, z_coords_nm)
+            (z_fit_col, z_std_dev_col) = gpr.predict(xy_list, return_std = True)
+            z_fit_nm = z_fit_col.reshape(x_grid.shape)
+            self.image.emit(z_fit_nm)
+
         else:
             raise Exception("Unkown scan direction")
 

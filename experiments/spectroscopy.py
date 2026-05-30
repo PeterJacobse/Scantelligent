@@ -77,9 +77,10 @@ class Experiment(BaseExperiment):
                 if spec_button_states.get("V_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.voltage_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
-                                                                           tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance", tia_corrections = tia_corrections,
-                                                                           abort_callback = self.check_abort_request, data_callback = self.data_array.emit)
+                x_measurement = lambda insert_parameter, channel_names_callback: mla.voltage_sweep(
+                    x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
+                    tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, return_type = "conductance", tia_corrections = tia_corrections,
+                    abort_callback = self.check_abort_request, data_callback = self.data_array.emit, channel_names_callback = channel_names_callback)
             case "z":
                 x_axis_label = "tip height (nm)"
                 if spec_button_states.get("z_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
@@ -91,17 +92,19 @@ class Experiment(BaseExperiment):
                 if spec_button_states.get("f_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.frequency_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
-                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
-                                                                             abort_callback = self.check_abort_request, data_callback = self.data_array.emit)
+                x_measurement = lambda insert_parameter, channel_names_callback: mla.frequency_sweep(
+                    x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
+                    tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
+                    abort_callback = self.check_abort_request, data_callback = self.data_array.emit, channel_names_callback = channel_names_callback)
             case "amp":
                 x_axis_label = "amplitude (mV)"
                 if spec_button_states.get("amp_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps}
                 
-                x_measurement = lambda insert_parameter: mla.amplitude_sweep(x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
-                                                                             tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
-                                                                             abort_callback = self.check_abort_request, data_callback = self.data_array.emit)
+                x_measurement = lambda insert_parameter, channel_names_callback: mla.amplitude_sweep(
+                    x_values, settle_pixels = t_settle, pixels_per_datapoint = t_int, modulators = modulators, post_sweep_outputs = post_sweep_outputs,
+                    tia_gain_V_per_pA = tia_gain_V_per_pA, insert_parameter = insert_parameter, tia_corrections = tia_corrections,
+                    abort_callback = self.check_abort_request, data_callback = self.data_array.emit, channel_names_callback = channel_names_callback)
             case "V_keithley":
                 x_axis_label = "V_Keithley (V)"
                 if spec_button_states.get("V_keithley_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
@@ -167,7 +170,7 @@ class Experiment(BaseExperiment):
                 else: nn.tip_update({"feedback": False})
 
                 mla.bias_update({"port_1 (V)": voltage}, verbose = False)
-                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage), channel_names_callback = self.data_array.emit)
             
             case "z":
                 y_axis_label = "tip height (nm)"
@@ -183,7 +186,7 @@ class Experiment(BaseExperiment):
                 else: nn.tip_update({"feedback": False})
 
                 nn.tip_update({"feedback": False, "z_rel (nm)": tip_height}, verbose = False)
-                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("z (nm)", tip_height), channel_names_callback = self.data_array.emit)
             
             case "f":
                 y_axis_label = "frequency (Hz)"
@@ -199,7 +202,7 @@ class Experiment(BaseExperiment):
                 else: nn.tip_update({"feedback": False})
                 
                 mla.lockin_update({"df (Hz)": f_Hz, "numbers": [1, 1, 2, 3]}, verbose = False)
-                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz), channel_names_callback = self.data_array.emit)
             
             case "amp":
                 y_axis_label = "amplitude (mV)"
@@ -215,7 +218,7 @@ class Experiment(BaseExperiment):
                 else: nn.tip_update({"feedback": False})
                 
                 mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
-                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV), channel_names_callback = self.data_array.emit)
             
             case _: # No parameter on the y axis. Perform a 1D sweep instead
                 if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
@@ -223,7 +226,7 @@ class Experiment(BaseExperiment):
                 elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
                 else: nn.tip_update({"feedback": False})
                 
-                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = None)
+                (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = None, channel_names_callback = self.data_array.emit)
                 
                 measurement_ds = self.output_file.create_dataset("Sweep", data = single_sweep_array, dtype = float)
                 error_ds = self.output_file.create_dataset("Errors (std. dev.)", data = single_sweep_error_array, dtype = float)
@@ -275,7 +278,7 @@ class Experiment(BaseExperiment):
                     mla.bias_update({"port_1 (V)": voltage}, verbose = False)                    
                     if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
-                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage))
+                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage), channel_names_callback = None)
                     self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = voltage)
                     measurement_array[index] = single_sweep_array
             
@@ -292,7 +295,7 @@ class Experiment(BaseExperiment):
                     mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
                     if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
-                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV))
+                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV), channel_names_callback = None)
                     self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = amp_mV)
                     measurement_array[index] = single_sweep_array
 
@@ -312,7 +315,7 @@ class Experiment(BaseExperiment):
                     mla.frequencies_update({"numbers": numbers})
                     if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
-                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz))
+                    (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz), channel_names_callback = None)
                     self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = f_Hz)
                     measurement_array[index] = single_sweep_array
             
