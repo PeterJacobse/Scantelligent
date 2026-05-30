@@ -2,7 +2,7 @@ import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 from .sct_widgets import SCTWidgets, CurrentHeightIndicatorWidget, rotate_icon, make_layout, make_line
-
+import numpy as np
 
 
 class ScantelligentGUI(SCTWidgets.MainWindow):
@@ -36,8 +36,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
         (self.image_view, self.camera_view) = self.make_views()
-        (self.piezo_roi, self.frame_roi, self.new_frame_roi) = self.make_rois()
-        (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
+        (self.piezo_roi, self.frame_roi, self.new_frame_roi, self.tip_target, self.target0) = self.make_image_view_widgets()
+        (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis, self.path_pdi) = self.make_plot_widgets()
         self.widgets = self.make_custom_widgets()
         self.consoles = self.make_consoles()
         self.sliders = self.make_sliders()
@@ -596,24 +596,27 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def make_views(self) -> tuple[SCTWidgets.ImageView, pg.RawImageWidget]:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
-        image_view = SCTWidgets.ImageView(view = pg.PlotItem())
+        image_item = SCTWidgets.ImageItem(np.zeros((31, 31)))
+        plot_item = pg.PlotItem()
+        plot_item.addItem(image_item)
+        
+        image_view = SCTWidgets.ImageView(view = plot_item, imageItem = image_item)
+        image_view.ui.menuBtn.hide()
         view = image_view.getView()
         hist_widget = image_view.getHistogramWidget()
+        hist_widget.setMaximumWidth(70)
         view.invertY(False) # y increases towards the top of the screen
         self.view = view.getViewBox() # Since view = pg.PlotItem instead of ViewBox, the ViewBox is actually accessed by view.getViewBox()
         self.image_item = image_view.imageItem
         self.hist_item = hist_widget.item
         
-        # Make target item
-        self.tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
-        self.target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
-        
         camera_view = pg.RawImageWidget()
         
-        self.saved_scans = []
+        self.saved_items = []
         return (image_view, camera_view)
 
-    def make_rois(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
+    def make_image_view_widgets(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
+        # ROIs (frames)
         piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
         frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
         new_frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["light_blue"], width = 2), movable = True, resizable = True, rotatable = True)
@@ -621,8 +624,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         new_frame_roi.addScaleHandle([1, 0], [0, 1])
         new_frame_roi.addRotateHandle([0.5, 0], [0.5, 0.5])
         
+        # Target items
+        tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
+        target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
+        
         new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)        
-        return (piezo_roi, frame_roi, new_frame_roi)
+        return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0)
 
     def make_plot_widgets(self) -> tuple[pg.PlotWidget, list[pg.PlotDataItem], pg.PlotWidget, list[pg.PlotDataItem]]:
         plot_widget = pg.PlotWidget()
@@ -631,18 +638,18 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         pdis = [] # PlotDataItems
         for i in range(40):
             pen = pg.mkPen(self.color_list[i])
-            pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)
-            
+            pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)            
             pdis.append(pdi)
         
         waveforms = [] # PlotDataItems
         for i in range(4):
             pen = pg.mkPen(self.color_list[i])
-            waveform = waveform_widget.plot(x_data = [], y_data = [], pen = pen)
-            
+            waveform = waveform_widget.plot(x_data = [], y_data = [], pen = pen)            
             waveforms.append(waveform)
         
-        return (waveform_widget, waveforms, plot_widget, pdis)
+        path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
+        
+        return (waveform_widget, waveforms, plot_widget, pdis, path_pdi)
 
     def make_custom_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget

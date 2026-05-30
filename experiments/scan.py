@@ -35,7 +35,7 @@ class Experiment(BaseExperiment):
         self.data_array.emit(np.array(graph_channels)) # This triggers the GUI to start graphing data
                 
         # Determine the scan direction if 'nearest tip' is selected
-        if direction == "nearest tip":            
+        if direction == "nearest_tip":            
             tip_location = [tip_status[f"{dim} (nm)"] for dim in ["x", "y"]]
             [blc, tlc] = [grid.get(f"{side}_left_corner (nm)") for side in ["bottom", "top"]]
 
@@ -56,6 +56,8 @@ class Experiment(BaseExperiment):
             time.sleep(1)
         
         elif direction == "gaussian_process":
+            n_points = 40
+            
             self.logprint(f"Starting the experiment with 20 random points in the scan frame", message_type = "message")
             (lists, error) = nn.grids_to_lists(grid, direction = "down")
             tip_xy = [tip_status.get(key) for key in ["x (nm)", "y (nm)"]]
@@ -63,23 +65,29 @@ class Experiment(BaseExperiment):
             list_len = len(x_list)
 
             rng = np.random.default_rng()
-            random_flat_indices = rng.choice(a = list_len, size = 40, replace = False)
+            random_flat_indices = rng.choice(a = list_len, size = n_points, replace = False)
             random_coordinates = np.insert(np.array([[x_list[index], y_list[index]] for index in random_flat_indices]), 0, tip_xy, axis = 0)
             ordered_coordinates = self.data.find_shortest_path(random_coordinates)
             
+            self.parameters.emit({"dict_name": "path", "coordinates (nm)": ordered_coordinates, "visible": True})            
             output_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
-            self.data_array.emit(np.array(output_channels))
-            
+            self.data_array.emit(np.array(output_channels))            
+
+            measurement_array = np.zeros((n_points, len(output_channels)))            
             t_start = time.time()
             t_elapsed = 0
-            
-            for iteration, coordinate in enumerate(ordered_coordinates):
+            for iteration, coordinate in enumerate(ordered_coordinates[1:]):
                 self.check_abort_request()
                 (tip_status, error) = nn.tip_update({"x (nm)": coordinate[0], "y (nm)": coordinate[1]}, verbose = False, wait = True, fast_mode = True)
                 t_elapsed = time.time() - t_start
                 if not error:
                     [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
-                    self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA]))
+                    data_chunk = np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA])
+                    
+                    measurement_array[iteration] = data_chunk
+                    self.data_array.emit(data_chunk)
+            
+            self.logprint(f"{measurement_array = }")
             
         else:
             raise Exception("Unkown scan direction")

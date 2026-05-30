@@ -38,9 +38,10 @@ class CameraAPI(QtCore.QObject):
                 self.status = "offline"
                 self.send_status(self.status)
                 raise Exception("Unable to open the camera")            
-        except:
+        except Exception as e:
             self.status = "offline"
             self.send_status(self.status)
+            raise Exception(e)
         return
 
     def send_status(self, status: str = "") -> None:

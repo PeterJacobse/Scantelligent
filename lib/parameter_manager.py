@@ -356,7 +356,7 @@ class ParameterManager(QtCore.QObject):
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
 
-                # Update the frame 'roi' in the ImageView
+                # Update the frame 'roi' in the ImageView                
                 sct.gui.frame_roi.setSize([w_nm, h_nm])
                 sct.gui.frame_roi.setPos([0, 0])
                 sct.gui.frame_roi.setAngle(angle = -angle_deg)
@@ -365,16 +365,6 @@ class ParameterManager(QtCore.QObject):
                 local_center = bounding_rect.center()
                 abs_center = sct.gui.frame_roi.mapToParent(local_center)                
                 sct.gui.frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-                
-                # Refresh the transformations on the image_item
-                if sct.gui.buttons["view"].state_name == "nanonis":
-                    box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
-                    sct.gui.image_item.setRect(box)    
-                    
-                    center = sct.gui.image_item.boundingRect().center()
-                    sct.gui.image_item.setTransformOriginPoint(center)
-                    sct.gui.image_item.setRotation(90 - angle_deg)
-                    sct.gui.image_item.setPos(x_0_nm, y_0_nm)
 
             case "new_frame":
                 [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
@@ -425,8 +415,6 @@ class ParameterManager(QtCore.QObject):
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
                 
-                
-                
                 # Update the frame 'roi' in the ImageView
                 sct.gui.frame_roi.setSize([w_nm, h_nm])
                 sct.gui.frame_roi.setPos([0, 0])
@@ -448,14 +436,19 @@ class ParameterManager(QtCore.QObject):
                 sct.gui.new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
 
                 # Refresh the transformations on the image_item
-                if sct.gui.buttons["view"].state_name == "nanonis":
-                    box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
-                    sct.gui.image_item.setRect(box)    
+                if sct.gui.buttons["view"].state_name == "nanonis": sct.gui.image_item.setGrid(parameters)
+                    #box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
+                    #sct.gui.image_item.setRect(box)    
                     
-                    center = sct.gui.image_item.boundingRect().center()
-                    sct.gui.image_item.setTransformOriginPoint(center)
-                    sct.gui.image_item.setRotation(90 - angle_deg)
-                    sct.gui.image_item.setPos(x_0_nm, y_0_nm)
+                    #center = sct.gui.image_item.boundingRect().center()
+                    #sct.gui.image_item.setTransformOriginPoint(center)
+                    #sct.gui.image_item.setRotation(90 - angle_deg)
+                    #sct.gui.image_item.setPos(x_0_nm, y_0_nm)
+            
+            case "path":
+                [coords, visible] = [parameters.get(key, None) for key in ["coordinates (nm)", "hidden"]]
+                if isinstance(coords, np.ndarray): sct.gui.path_pdi.setData(coords[:, 0], coords[:, 1])
+                if isinstance(visible, bool): sct.gui.path_pdi.setVisible(visible)
 
             case "signal":
                 if "Current (A)" in parameters.keys():

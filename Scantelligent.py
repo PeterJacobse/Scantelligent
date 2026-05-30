@@ -129,7 +129,7 @@ class Scantelligent(QtCore.QObject):
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
-        self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda: setattr(self, "x_channel", self.gui.comboboxes["graph_x_axis"].currentIndex() - 1))
+        self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(self.set_x_axis)
         
         # Checkboxes and button groups
         #for index in range(len(self.gui.pdis)): self.gui.checkboxes[f"channel_{index}"].clicked.connect(lambda checked, i = index: self.set_pdi_visible(i))
@@ -216,6 +216,8 @@ class Scantelligent(QtCore.QObject):
             except Exception as e:
                 self.logprint(f"Camera: Unable to connect to camera: {e}", "warning")
                 self.gui.buttons["camera"].setState("offline")
+                self.camera = None
+                delattr(self, "camera")
 
 
 
@@ -266,6 +268,8 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["mla"].setState("online")
             except Exception as e:
                 self.logprint(f"MLA: Unable to connect to the MLA: {e}", "warning")
+                self.mla = None
+                delattr(self, "mla")
 
 
 
@@ -386,11 +390,10 @@ class Scantelligent(QtCore.QObject):
             
             match self.gui.buttons["view"].state_name:
                 case "nanonis":
-                    flipped_image = np.fliplr(image).T
-                    (processed_scan, statistics, limits, error) = self.data.process_scan(flipped_image)
+                    (processed_scan, statistics, limits, error) = self.data.process_scan(image)
                     [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
                     
-                    self.gui.image_item.setImage(processed_scan)                    
+                    self.gui.image_item.setImage(np.flipud(processed_scan))
                     self.gui.hist_item.setLevels(limits[0], limits[1])
                 
                 case "camera":
@@ -637,7 +640,7 @@ class Scantelligent(QtCore.QObject):
 
 
 
-    # Visual stuff: scan/spectroscopy/graphing
+    # Image_view functions
     def set_view_range(self, obj: str = "full") -> None:
         match obj:            
             case "frame":
@@ -648,6 +651,131 @@ class Scantelligent(QtCore.QObject):
                 self.gui.image_view.view.autoRange(item = self.gui.piezo_roi)
         return
 
+    def refresh_image(self, save: bool = True) -> None:
+        # Replace the old item with a new item and relink the new item
+        old_item = self.gui.image_view.getImageItem()
+        old_transform = old_item.transform()
+                
+        # Instantiate a new ImageItem using the old image data
+        new_item = SCTWidgets.ImageItem()
+        try:
+            (grid, error) = self.nanonis.grid_update(verbose = False)
+            new_item.setGrid(grid)
+        except:
+            pass
+        self.gui.image_view.addItem(new_item)
+        self.gui.image_view.imageItem = new_item # Update the main ImageItem of the ImageView
+        self.gui.image_item = self.gui.image_view.getImageItem()
+        self.gui.image_view.getHistogramWidget().setImageItem(self.gui.image_item)
+        self.gui.view = self.gui.image_view.getView().getViewBox()
+
+        # Save the old item if desired
+        if save:
+            old_item.setTransform(old_transform)
+            self.gui.saved_items.insert(0, old_item)
+            if len(self.gui.saved_items) > 6: self.gui.saved_items = self.gui.saved_items[:5]
+            for index, item in enumerate(self.gui.saved_items): item.setZValue(-1 - index)
+        return
+
+    def draw_old_items(self) -> None:
+        for item in self.gui.saved_items: self.gui.view.addItem(item)
+        return
+
+    def toggle_view(self, view: str = None, verbose: bool = True) -> None:
+        old_view = self.gui.buttons["view"].state_name
+        if old_view == view: return # Return if the view is not changed
+
+        # Determine the new view mode
+        if isinstance(view, str) and view in ["nanonis", "camera", "graph", "none"]: # Explicit selection
+            new_view = view
+        else:
+            match old_view: # Toggling to the next view mode
+                # Set to Camera
+                case "none": new_view = "camera"
+                case "camera": new_view = "nanonis"
+                case "nanonis": new_view = "graph"
+                case "graph": new_view = "none"
+                case _: pass
+
+        # Skip through view modes if hardware components are missing
+        if new_view == "camera" and not hasattr(self, "camera"): new_view = "nanonis"
+        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "graph"
+        
+        # Clean up old attributes and processes
+        if hasattr(self, "camera_thread"):
+            try:
+                self.camera_thread.requestInterruption()
+                time.sleep(.5)
+            except:
+                pass
+
+        if old_view in ["none", "camera"]: self.refresh_image(save = False)
+        elif old_view in ["nanonis", "graph"]: self.refresh_image(save = True)
+
+        # Reset ImageView. Remove old items. Prepare the QSplitters for resizing
+        [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
+        [min_view_height, min_graph_height, min_console_height] = [self.gui.splitters["image_graph"].widget(index).minimumSizeHint().height() for index in range(3)]
+        total_splitter_height = self.gui.splitters["image_graph"].height()
+
+        match new_view:
+            case "camera":
+                self.gui.buttons["view"].setState("camera")
+                self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
+                
+                # Grab a single frame and use it to reset the ImageView
+                camera_frame = self.camera.grab_frame()
+                self.gui.image_item.setImage(camera_frame)
+                self.gui.image_item.resetTransform()
+                self.gui.image_item.setRotation(0)
+                self.gui.image_item.setPos(0, 0)
+                self.gui.view.autoRange()
+                
+                # Set up the camera thread
+                self.camera_thread = QtCore.QThread()
+                self.camera.moveToThread(self.camera_thread)
+                self.camera_thread.finished.connect(self.camera_thread.deleteLater)
+                self.camera_thread.finished.connect(self.camera_finished)
+                
+                if not self.camera.thread() == self.camera_thread:
+                    self.logprint(f"Error moving the camera to the camera thread", message_type = "error")
+                    self.camera_thread.quit()
+                    return
+                
+                self.camera_thread.started.connect(self.camera.run)
+                self.camera.finished.connect(self.camera_thread.quit)
+                self.camera_thread.start()
+
+            case "nanonis":
+                self.gui.buttons["view"].setState("nanonis")
+                self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
+                
+                self.draw_old_items()
+                [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target, self.gui.path_pdi]]
+                self.nanonis.hardware_update()
+                self.set_view_range("full")
+            
+            case "graph":
+                self.gui.buttons["view"].setState("graph")
+                self.gui.splitters["image_graph"].setSizes([min_view_height, total_splitter_height - (min_console_height + min_view_height), min_console_height])
+                return
+
+            case _:
+                self.gui.buttons["view"].setState("none")
+                self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
+                
+                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
+                self.gui.image_item.setImage(self.splash_screen)
+                self.gui.image_item.resetTransform()
+                self.gui.image_item.setRotation(0)
+                self.gui.image_item.setPos(0, 0)                
+                self.gui.view.autoRange()
+
+        if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
+        return
+
+
+
+    # Graphing
     def set_pdi_visible(self, index: int = 0) -> None:
         checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
         self.gui.pdis[index].setVisible(checked)
@@ -678,125 +806,9 @@ class Scantelligent(QtCore.QObject):
         return
 
     def set_x_axis(self):
+        self.x_channel = self.gui.comboboxes["graph_x_axis"].currentIndex() - 1
+        self.redraw_graph()
         pass
-
-    def refresh_image(self, save: bool = True) -> None:
-        # Replace the old item with a new item and relink the new item
-        old_item = self.gui.image_view.getImageItem()
-        
-        if not hasattr(self, "nanonis"): return
-        (grid, error) = self.nanonis.grid_update(verbose = False)
-        [pixels, lines] = [grid.get(key) for key in ["pixels", "lines"]]
-        
-        # Make a new image with a target at its center
-        new_img = np.full((pixels, lines), np.nan)
-        for i in range(3): new_img[int((pixels - 1) / 2) + i - 1, int((lines - 1) / 2)] = 0
-        for i in range(3): new_img[int((pixels - 1) / 2), int((lines - 1) / 2) + i - 1] = 0
-        new_img[int((pixels - 1) / 2), int((lines - 1) / 2)] = 1
-        new_item = pg.ImageItem(new_img)
-        self.gui.image_view.addItem(new_item)
-        self.gui.image_view.imageItem = new_item
-        self.gui.image_item = self.gui.image_view.getImageItem()
-        self.gui.image_view.getHistogramWidget().setImageItem(self.gui.image_item)
-        self.nanonis.grid_update(verbose = False)
-        self.gui.view = self.gui.image_view.getView().getViewBox()
-        
-        # Save the old item if desired
-        self.gui.view.addItem(old_item)
-        if save: self.gui.saved_scans.insert(0, old_item)
-        if len(self.gui.saved_scans) > 6: self.gui.saved_scans = self.gui.saved_scans[:5]
-        for index, scan in enumerate(self.gui.saved_scans): scan.setZValue(-1 - index)
-        return
-
-    def toggle_view(self, view: str = None, verbose: bool = True) -> None:
-        old_view = self.gui.buttons["view"].state_name
-        if old_view == view: return # Return if the view is not changed
-
-        # Determine the new view mode
-        if isinstance(view, str) and view in ["nanonis", "camera", "graph", "none"]: # Explicit selection
-            new_view = view
-        else:
-            match old_view: # Toggling to the next view mode
-                # Set to Camera
-                case "none": new_view = "camera"
-                case "camera": new_view = "nanonis"
-                case "nanonis": new_view = "graph"
-                case "graph": new_view = "none"
-                case _: pass
-        
-        # Clean up old processes
-        if hasattr(self, "camera_thread"):
-            try:
-                self.camera_thread.requestInterruption()
-                time.sleep(.5)
-            except:
-                pass
-
-        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "none"
-        self.logprint(f"View set to {new_view}", message_type = "message")
-
-
-
-        # Reset ImageView. Remove old items
-        [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
-
-        match new_view:
-            case "camera":
-                self.gui.buttons["view"].setState("camera")
-                self.gui.splitters["image_graph"].setStretchFactor(0, 4)
-                self.gui.splitters["image_graph"].setStretchFactor(1, 1)
-                self.refresh_image(save = False)
-                
-                camera_frame = self.camera.grab_frame()
-                self.gui.image_item.setImage(camera_frame)
-                self.gui.image_item.resetTransform()
-                self.gui.image_item.setRotation(0)
-                self.gui.image_item.setPos(0, 0)
-                self.gui.view.autoRange()
-                
-                self.camera_thread = QtCore.QThread()
-                self.camera.moveToThread(self.camera_thread)
-                self.camera_thread.finished.connect(self.camera_thread.deleteLater)
-                self.camera_thread.finished.connect(self.camera_finished)
-                
-                if not self.camera.thread() == self.camera_thread:
-                    self.logprint(f"Error moving the camera to the camera thread", message_type = "error")
-                    self.camera_thread.quit()
-                    return
-                
-                self.camera_thread.started.connect(self.camera.run)
-                self.camera.finished.connect(self.camera_thread.quit)
-                self.camera_thread.start()
-
-            case "nanonis":
-                self.gui.buttons["view"].setState("nanonis")
-                self.gui.splitters["image_graph"].setStretchFactor(0, 4)
-                self.gui.splitters["image_graph"].setStretchFactor(1, 1)
-                self.refresh_image(save = False)
-                
-                [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target]]
-                self.nanonis.hardware_update()
-                self.set_view_range("full")
-            
-            case "graph":
-                self.gui.buttons["view"].setState("graph")
-                self.gui.splitters["image_graph"].setStretchFactor(0, 1)
-                self.gui.splitters["image_graph"].setStretchFactor(1, 4)
-                return
-
-            case _:
-                self.gui.buttons["view"].setState("none")                
-                self.refresh_image(save = False)
-                
-                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
-                self.gui.image_item.setImage(self.splash_screen)
-                self.gui.image_item.resetTransform()
-                self.gui.image_item.setRotation(0)
-                self.gui.image_item.setPos(0, 0)                
-                self.gui.view.autoRange()
-
-        if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
-        return
 
     def set_graph_buffer(self, value: int = 6000) -> None:
         self.graph_buffer_size = value
@@ -816,6 +828,8 @@ class Scantelligent(QtCore.QObject):
         
         self.spt.gui.show()
         return
+
+
 
     # Audio
     def toggle_audio(self) -> None:
@@ -1052,14 +1066,8 @@ class Scantelligent(QtCore.QObject):
 
             return False
 
-
-
-    # Nanonis/MLA functions
     def modulator_control(self, modulator_number: int = 1) -> None:
-        if not hasattr(self, "nanonis"): return
-        
-        style_sheets = self.gui.style_sheets
-        
+        if not hasattr(self, "nanonis"): return        
         try:
             mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
             mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
@@ -1068,26 +1076,6 @@ class Scantelligent(QtCore.QObject):
             
         except Exception as e:
             self.logprint(f"Error controlling modulator {modulator_number}: {e}", message_type = "error")
-        
-        return
-
-    def request_pixel(self, target: str = "mla") -> None:
-        match target:
-            case "nanonis":
-                try:
-                    pass
-                except Exception as e:
-                    self.logprint(f"Cannot request a pixel from Nanonis: {e}", message_type = "error")
-            case "mla":
-                try:
-                    self.mla.frequencies_update()
-                    self.mla.start_lockin()
-                    self.mla.get_pixels(1)
-                    self.mla.stop_lockin()
-                except Exception as e:
-                    self.logprint(f"Cannot request a pixel from the MLA: {e}", message_type = "error")
-            case _:
-                pass
         return
 
 

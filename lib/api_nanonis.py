@@ -268,7 +268,7 @@ class NanonisAPI(QtCore.QObject):
             completed_percentage = int(100 * (1 - n_nans / n_scan_image))
             self.task_progress.emit(completed_percentage)
             
-            if send_data: self.image.emit(np.flipud(scan_image))
+            if send_data: self.image.emit(scan_image)
 
         except Exception as e: error = e
         finally:
@@ -736,7 +736,7 @@ class NanonisAPI(QtCore.QObject):
             [width, height, angle] = [frame.get(key) for key in ["width (nm)", "height (nm)", "angle (deg)"]]
             [pixels, lines] = [buffer.get(key) for key in ["pixels", "lines"]]
             pix_width = pixels / width
-            pix_height = pixels / height
+            pix_height = lines / height
             grid = frame | buffer | {"pixel_width (nm)": pix_width, "pixel_height (nm)": pix_height, "dict_name": "grid"}
 
         except Exception as e: error = e

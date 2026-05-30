@@ -323,12 +323,10 @@ class BaseExperiment(QObject):
     def monitor_scan(self, output_channel = None, timeout_s: int = 100000) -> np.ndarray:
         (scan_metadata, error) = self.nanonis.scan_metadata_update() # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
         channel_dict = scan_metadata.get("channel_dict")
-        (frame, error) = self.nanonis.frame_update() # Calling frame_update refreshes the frame
 
         # Loop to check scan progress
         t_start = time.time()
         t_elapsed = 0
-
         while t_elapsed < timeout_s:
             t_elapsed = time.time() - t_start
             

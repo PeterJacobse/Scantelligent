@@ -72,6 +72,35 @@ class SCTWidgets:
             else:
                 super().mouseClickEvent(event)
 
+    class ImageItem(pg.ImageItem):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.setOpts(axisOrder = "row-major")
+
+        def setImage(self, image = None, *args, **kwargs) -> None:
+            super().setImage(image, *args, **kwargs)
+            return
+
+        def setGrid(self, grid: dict) -> None:
+            """
+            Parses the grid dictionary and applies the correct scaling, centering, and rotation transformations.
+            """
+            [pixels, lines, pixel_width, pixel_height, scan_range, offset, angle] = [grid.get(key, None) for key in ["pixels", "lines", "pixel_width (nm)", "pixel_height (nm)", "scan_range (nm)", "offset (nm)", "angle (deg)"]]
+            [width, height] = [scan_range[index] for index in range(2)]
+            [x, y] = [offset[index] for index in range(2)]
+                        
+            for value in [pixels, lines, width, height, angle]:
+                if not isinstance(value, float | int): return
+            
+            self.resetTransform()
+            transform = QtGui.QTransform()
+            transform.rotate(-angle)
+            transform.scale(1 / pixel_width, 1 / pixel_height)
+            transform.translate(-.5 * pixels, -.5 * lines)
+            self.setTransform(transform)
+            self.setPos(x, y)
+            return
+
     class MultiStateButton(QtWidgets.QToolButton):
         """
         A QToolButton that holds a number (list) of states, allows toggling through them, and changes the button according to the details of each state
