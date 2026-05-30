@@ -100,8 +100,7 @@ class Scantelligent(QtCore.QObject):
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         
-                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent
-                        }
+                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent}
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
         [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
@@ -123,7 +122,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.set_graph_buffer(buf_size))
         
         # Comboboxes
-        self.gui.comboboxes["channels"].currentIndexChanged.connect(self.update_processing_flags)
+        self.gui.comboboxes["slice"].currentIndexChanged.connect(self.update_processing_flags)
         experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
         self.experiments = [experiment for experiment in experiments if not experiment in ["spectroscopy", "auto_approach"]]
         self.experiments.append("")
@@ -135,6 +134,9 @@ class Scantelligent(QtCore.QObject):
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
         self.gui.limits_widget.stateChanged.connect(self.update_processing_flags)
         self.gui.button_groups["channels"].clicked.connect(self.update_pdi_visibility)
+        
+        # ImageView limits
+        self.gui.limits_button.clicked.connect(self.gui.dialogs["limits"].show)
         
         
         
@@ -858,7 +860,7 @@ class Scantelligent(QtCore.QObject):
             flags.update({"min_method": f"{min_method}", "min_method_value": f"{min_value}", "max_method": f"{max_method}", "max_method_value": f"{max_value}"})
 
             # Channel, direction, projection
-            selected_channel = self.gui.comboboxes["channels"].currentText()
+            selected_channel = self.gui.comboboxes["slice"].currentText()
             (quantity, unit, backward, error) = self.file_functions.split_physical_quantity(selected_channel)
             if isinstance(unit, str):
                 self.gui.limits_widget.setUnit("full", unit)

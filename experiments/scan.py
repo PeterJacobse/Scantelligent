@@ -44,7 +44,9 @@ class Experiment(BaseExperiment):
             
             if dist_to_tlc < dist_to_blc: direction = "down"
             else: direction = "up"
-
+        if direction not in ["up", "down", "gaussian_process"]: raise Exception("Unkown scan direction")
+        self.set_view("nanonis")
+        
         if direction in ["up", "down"]:
             self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
             self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S")})
@@ -54,9 +56,9 @@ class Experiment(BaseExperiment):
             nn.scan_action({"action": "start", "direction": direction})
             scan_image = self.monitor_scan(output_channel = feedback_channel_indices[0])
             time.sleep(1)
-
-
         
+
+
         elif direction == "gaussian_process":
             n_points = 20
             
@@ -160,6 +162,4 @@ class Experiment(BaseExperiment):
             z_fit_nm = z_fit_col.reshape(x_grid.shape)
             self.image.emit(z_fit_nm)
 
-        else:
-            raise Exception("Unkown scan direction")
 

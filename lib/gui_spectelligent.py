@@ -101,7 +101,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
                                          {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),
 
-            "start_spectroscopy": MSB(tooltip = "Acquire spectrum", icon = icons.get("start_spectrum"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}], click_to_toggle = False),
+            "start_spectroscopy": MSB(tooltip = "Acquire spectrum", size = 28, click_to_toggle = False, states = [{"name": "idle", "color": sct_black, "icon": icons.get("start_spectrum")},
+                                                                                                                  {"name": "running", "color": sct_blue, "icon": icons.get("stop_spectrum")}]),
             "tia_correct": MSB(icon = icons.get("tia_response"), size = 28, states = [{"name": "off", "color": sct_black, "tooltip": "Do not correct for the tia response"},
                                                                                       {"name": "on", "color": sct_blue, "tooltip": "Correct for the tia response"}]),
             

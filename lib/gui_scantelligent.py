@@ -5,6 +5,7 @@ from .sct_widgets import SCTWidgets, CurrentHeightIndicatorWidget, rotate_icon, 
 import numpy as np
 
 
+
 class ScantelligentGUI(SCTWidgets.MainWindow):
     def __init__(self):
         super().__init__()
@@ -14,7 +15,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                            "#CFCFCF", "#CFCF20", "#20CFCF", "#CF60CF", "#60CF60", "#CF6060", "#8080CF", "#909090", "#CFB010", "#C050FF",
                            "#606020", "#00C0C0", "#B030C0", "#409040", "#904040", "#505090", "#900000", "#605020", "#404000", "#2020Cf"]
         self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff", "off-black": "#101010",
-                       "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+                       "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080", "dark_gray": "#606060"}
         self.style_sheets = {
             "neutral": f"background-color: {self.colors["black"]};",
             "connected": f"background-color: {self.colors["dark_green"]};",
@@ -116,11 +117,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "nanonis": LB(text = "Nanonis"),
             "mla": LB(text = "MLA"),
             "keithley": LB(text = "Keithley"),
-
-            "scan_control": LB(text = "Navigation"),
-            "limits": LB(text = "Limits"),
-            "background_subtraction": LB(text = "Background subtraction"),
-            "matrix_operations": LB(text = "Matrix operations"),
+            
+            "quick_experiment": LB(text = "quick"),
+            "custom_experiment": LB(text = "custom"),
+            "experiment_settings": LB(text = "settings"),
 
             "move_horizontally": LB(text = "< horizontal motion >", tooltip = "In composite motion, horizontal motion\nis carried out between retract and advance\nSee 'horizontal'"),
         }
@@ -166,7 +166,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                     {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Camera: online (idle)"},
                                     {"name": "running", "color": sct_blue, "tooltip": "Camera: running"}]),
             "view": MSB(click_to_toggle = False, size = 28,
-                        states = [{"name": "none", "tooltip": "toggle the active view", "icon": icons.get("eye"), "color": sct_black},
+                        states = [{"name": "none", "tooltip": "toggle the active view", "icon": icons.get("view"), "color": sct_black},
                                   {"name": "camera", "tooltip": "active view: Camera", "icon": icons.get("view_camera"), "color": sct_black},
                                   {"name": "nanonis", "tooltip": "active view: Nanonis", "icon": icons.get("view_nanonis"), "color": sct_black},
                                   {"name": "graph", "tooltip": "active view: graph", "icon": icons.get("view_graph"), "color": sct_black}]),
@@ -176,6 +176,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                             {"name": "online", "color": self.colors["dark_green"], "tooltip": "Open the session folder"}]),
             "info": MSB(tooltip = "Info", icon = icons.get("i")),
             "spectelligent": MSB(tooltip = "Open Spectelligent", icon = icons.get("start_spectrum")),
+            "spectelligent_2": MSB(tooltip = "Open Spectelligent", icon = icons.get("start_spectrum"), size = 24),
             
             # Experiment
             "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy"), click_to_toggle = False,
@@ -215,9 +216,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                                                {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": sct_black}]),
             "retract": MSB(tooltip = "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
             "advance": MSB(tooltip = "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
-            "approach": MSB(size = 28,
-                            states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": sct_black},
-                                      {"name": "running", "tooltip": "Stop auto approach", "icon": icons.get("stop_approach"), "color": sct_blue}]),
+            "approach": MSB(size = 28, states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": sct_black},
+                                                 {"name": "running", "tooltip": "Stop auto approach", "icon": icons.get("stop_approach"), "color": sct_blue}]),
+            "approach_2": MSB(size = 28, states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": sct_black},
+                                                   {"name": "running", "tooltip": "Stop auto approach", "icon": icons.get("stop_approach"), "color": sct_blue}]),
 
             # Coarse horizontal
             "n": MSB(tooltip = mtt + "north\n(Ctrl + ↑ / Ctrl + 8)", icon = rotate_icon(arrow, angle = 270)),
@@ -250,8 +252,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             
             # Processing
             "direction": MSB(tooltip = "Change scan direction\n(X)",
-                             states = [{"name": "forward", "icon": icons.get("triple_arrow"), "color": sct_black},
-                                       {"name": "backward", "icon": rotate_icon(icons.get("triple_arrow"), angle = 180), "color": sct_blue}]),
+                             states = [{"name": "forward", "icon": icons.get("double_arrow"), "color": sct_black},
+                                       {"name": "backward", "icon": rotate_icon(icons.get("double_arrow"), angle = 180), "color": sct_blue}]),
             "fit_to_frame": MSB(tooltip = "Snap the view range to the scan frame", icon = icons.get("scan_frame")),
             "fit_to_range": MSB(tooltip = "Snap the view range to the total piezo range", icon = icons.get("piezo_range")),
             
@@ -275,6 +277,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}])
         }
+        self.limits_button = QtWidgets.QPushButton("limits")
         
         for parameter_type in ["bias", "mla_bias", "keithley_bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
             buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
@@ -349,10 +352,11 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         CB = SCTWidgets.ComboBox
         
         comboboxes = {
-            "channels": CB(tooltip = "Available scan channels"),
             "projection": CB(tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
             "experiment": CB(tooltip = "Select an experiment"),
             "direction": CB(tooltip = "Select a scan direction / pattern"),
+            "axis": CB(tooltip = "Select the view axis", items = ["(x, y)", "(x, channel)", "(channel, y)"]),
+            "slice": CB(tooltip = "Select the slice"),
             
             "tia_gain": CB(tooltip = "Transimpedance amplifier gain setting"),
             
@@ -419,6 +423,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             
             "I": LE(tooltip = "most recent current measurement", unit = "pA", digits = 1, edited_color = sct_black),
             "z": LE(tooltip = "most recent tip height measurement", unit = "nm", digits = 2, edited_color = sct_black),
+            "z_rel": LE(tooltip = "relative tip height setpoint", unit = "nm", digits = 2, edited_color = sct_black),
             
             # Feedback
             "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0),
@@ -520,22 +525,27 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         return progress_bars
 
     def make_layouts(self) -> dict:
-        
         layouts = {
             # Main
             "main": make_layout("h"),
             "left_side": make_layout("v"),
-            "toolbar": make_layout("v"),
+            "toolbar": make_layout("g"),
             "empty": make_layout("v"),            
             "input": make_layout("h"),            
             "graph": make_layout("h"),
             "channels": make_layout("g"),
             "connections": make_layout("g"),
+            "image_view_controls": make_layout("h"),
+            
+            "tip": make_layout("v"),
             
             # Experiment
-            "experiment": make_layout("g"),
-            "experiment_controls_0": make_layout("v"),
-            "experiment_controls_1": make_layout("h"),
+            "experiment": make_layout("v"),
+            "quick_experiments": make_layout("h"),
+            "experiment_progress": make_layout("h"),
+            "experiment_control": make_layout("h"),
+            "experiment_direction": make_layout("h"),
+            "experiment_io": make_layout("h"),
             "experiment_fields": make_layout("g"),
             "experiment_buttons": make_layout("h"),
             
@@ -590,7 +600,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "modulators": make_layout("g"),
             "mod_set_get": make_layout("h"),
         }
-        
         return layouts
 
     def make_views(self) -> tuple[SCTWidgets.ImageView, pg.RawImageWidget]:
@@ -601,7 +610,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         plot_item.addItem(image_item)
         
         image_view = SCTWidgets.ImageView(view = plot_item, imageItem = image_item)
-        image_view.ui.menuBtn.hide()
+        image_view.addWidget(self.limits_button)
+        
         view = image_view.getView()
         hist_widget = image_view.getHistogramWidget()
         hist_widget.setMaximumWidth(70)
@@ -660,7 +670,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "coarse_actions": QWgt(),
             "arrows": QWgt(),
             "graph": QWgt(),
-            "osc": QWgt(),
             "sts": QWgt(),
 
             "connections": QWgt(),
@@ -672,10 +681,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "scan": QWgt(),
             "experiment": QWgt(),
             "lockins": QWgt(),
-            "demodulators": QWgt()
+            "osc": QWgt(),
+            "image_view_controls": QWgt(),
+            "toolbar": QWgt()
         }
                
-        self.current_height_widget = CurrentHeightIndicatorWidget(feedback_button = self.buttons["tip"], current_le = self.line_edits["I"], height_le = self.line_edits["z"], color = self.colors["blue"])
+        self.current_height_widget = CurrentHeightIndicatorWidget(feedback_button = self.buttons["tip"], current_le = self.line_edits["I"], height_le = self.line_edits["z"],
+                                                                  fill_color = self.colors["blue"], background_color = self.colors["dark_gray"], warning_color = self.colors["orange"])
         
         sivr = "Set the image value range "
         self.limits_widget = SCTWidgets.MinMaxMethods()
@@ -683,7 +695,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.limits_widget.addMethod("full", 0, 1, digits = 4, unit = "nm", icon = self.icons.get("100"), tooltip = sivr + "to the full data range")
         self.limits_widget.addMethod("percentiles", 1, 99, digits = 1, limits = [0, 100], unit = "%", icon = self.icons.get("percentiles"), tooltip = sivr + "by percentiles")
         self.limits_widget.addMethod("deviations", 2, 2, digits = 1, limits = [0, 100], unit = "\u03C3", icon = self.icons.get("deviation"), tooltip = sivr + "by standard deviations")
-        self.limits_widget.addMethod("absolute", 0, 1, digits = 4, limits = [-10000, 10000], unit = "nm", icon = self.icons.get("numbers"), tooltip = sivr + "by absolute values")        
+        self.limits_widget.addMethod("absolute", 0, 1, digits = 4, limits = [-10000, 10000], unit = "nm", icon = self.icons.get("numbers"), tooltip = sivr + "by absolute values")
         return widgets
 
     def make_consoles(self) -> dict:
@@ -750,8 +762,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         dialogs = {
             "parameters": QtWidgets.QInputDialog(),
             "info": QtWidgets.QInputDialog(),
-            "open_file": QtWidgets.QFileDialog()
+            "open_file": QtWidgets.QFileDialog(),
+            "limits": QtWidgets.QDialog()
                    }
+        
+        dialogs["limits"].setLayout(self.layouts["limits"])
+        dialogs["limits"].setWindowTitle("limits")
+        dialogs["limits"].setWindowIcon(self.icons["deviation"])
         return dialogs
 
     def make_boxes(self) -> tuple[QtWidgets.QMessageBox, QtWidgets.QMessageBox]:
@@ -795,20 +812,37 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["connections"].addWidget(buttons["exit"], 0, 5, 2, 1)
         layouts["connections"].addWidget(self.current_height_widget, 2, 0, 1, 2)
 
+        # Tip
+        layouts["tip"].addWidget(self.current_height_widget)
+
         # Experiment
-        [layouts["experiment_controls_0"].addWidget(self.comboboxes[name]) for name in ["experiment", "direction"]]
-        
-        [layouts["experiment_controls_1"].addWidget(widget) for widget in [line_edits["experiment_filename"], buttons["save"]]]
-        [layouts["experiment_fields"].addWidget(widget, int(index / 3), index % 3) for index, widget in enumerate([line_edits[f"experiment_{i}"] for i in range(9)])] # Grid of experiment fields
-        [layouts["experiment_buttons"].addWidget(buttons[f"experiment_{i}"]) for i in range(6)] # Grid of experiment fields
         e_layout = layouts["experiment"]
+        [layouts["experiment_progress"].addWidget(self.progress_bars[name]) for name in ["task", "experiment"]]
+        e_layout.addLayout(layouts["experiment_progress"])
         
-        e_layout.addWidget(self.current_height_widget, 0, 0, 5, 1)
-        [e_layout.addWidget(widget, 0, index + 1) for index, widget in enumerate([buttons["start_stop"], self.progress_bars["task"], self.progress_bars["experiment"]])]
-        e_layout.addLayout(layouts["experiment_controls_1"], 1, 1, 1, 3)
-        e_layout.addLayout(layouts["experiment_controls_0"], 2, 1, 1, 3)
-        e_layout.addLayout(layouts["experiment_fields"], 3, 1, 1, 3)
-        e_layout.addLayout(layouts["experiment_buttons"], 4, 1, 1, 3)
+        [layouts["experiment_io"].addWidget(widget) for widget in [line_edits["experiment_filename"], buttons["save"]]]
+        e_layout.addLayout(layouts["experiment_io"])
+        
+        e_layout.addWidget(labels["quick_experiment"])
+        e_layout.addWidget(make_line("h", 1))
+        [layouts["quick_experiments"].addWidget(self.buttons[name]) for name in ["start_scan", "spectelligent_2", "approach_2"]]
+        e_layout.addLayout(layouts["quick_experiments"])
+        
+        e_layout.addWidget(labels["custom_experiment"])
+        e_layout.addWidget(make_line("h", 1))        
+        [layouts["experiment_control"].addWidget(widget) for widget in [comboboxes["experiment"], buttons["start_stop"]]]
+        e_layout.addLayout(layouts["experiment_control"])
+        
+        e_layout.addWidget(labels["experiment_settings"])
+        e_layout.addWidget(make_line("h", 1))        
+        [layouts["experiment_direction"].addWidget(widget) for widget in [buttons["scan_direction"], comboboxes["direction"]]]
+        e_layout.addLayout(layouts["experiment_direction"])
+        
+        [layouts["experiment_fields"].addWidget(widget, int(index / 3), index % 3) for index, widget in enumerate([line_edits[f"experiment_{i}"] for i in range(3)])] # Grid of experiment fields
+        [layouts["experiment_buttons"].addWidget(buttons[f"experiment_{i}"]) for i in range(6)] # Grid of experiment buttons
+
+        e_layout.addLayout(layouts["experiment_fields"])
+        e_layout.addLayout(layouts["experiment_buttons"])
         
         # Coarse
         [layouts["approach_percentiles"].addWidget(line_edits[f"approach_{name}_percentile"]) for name in ["min", "max"]]
@@ -911,26 +945,25 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_amp"], comboboxes[f"nanonis_mod{number + 1}"]])] for number in range(2)]
 
 
-        
-        # Scan
-        [layouts["scan_control"].addWidget(buttons[name], 0, index) for index, name in enumerate(["start_scan", "scan_direction", "auto_paste"])]
-        
-        n_layout = layouts["navigation"]
-        n_layout.addWidget(comboboxes["channels"], 4)
-        n_layout.addWidget(self.buttons["direction"], 1)
-        [n_layout.addWidget(self.buttons[name], 1) for name in ["fit_to_frame", "fit_to_range"]]
-        
-        # Operations
-        [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
-        layouts["background_buttons"].addWidget(buttons["rot_trans"])
-        o_layout = layouts["operations"]
-        o_layout.addLayout(layouts["background_buttons"], 0, 0, 1, 5)        
-        [o_layout.addWidget(buttons[name], 1, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
-        o_layout.addWidget(line_edits["gaussian_width"], 1, 5)
-        o_layout.addWidget(comboboxes["projection"], 2, 0, 1, 2)
-        o_layout.addWidget(self.sliders["phase"], 2, 2, 1, 4)
-
         layouts["limits"].addWidget(self.limits_widget)
+        
+        # Image_view
+        layouts["image_view_controls"].addWidget(buttons["auto_paste"])
+        
+        [layouts["navigation"].addWidget(comboboxes[name], 2 + 2 * index) for index, name in enumerate(["axis", "slice"])]
+        [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["direction", "fit_to_frame", "fit_to_range"]]        
+        layouts["image_view_controls"].addLayout(layouts["navigation"])
+        
+        [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
+        layouts["image_view_controls"].addLayout(layouts["background_buttons"])
+        
+        #layouts["background_buttons"].addWidget(buttons["rot_trans"])
+        o_layout = layouts["operations"]
+        [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
+        o_layout.addWidget(line_edits["gaussian_width"], 0, 5)
+        o_layout.addWidget(comboboxes["projection"], 0, 6)
+        o_layout.addWidget(self.sliders["phase"], 0, 7)
+        layouts["image_view_controls"].addLayout(o_layout)
         
         # Input console
         layouts["input"].addWidget(self.consoles["input"])
@@ -945,32 +978,26 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         groupboxes = {
             # Connections
-            "connections": SGB(title = "connections", tooltip = "connections to hardware (push to check/refresh)"),
+            "connections": SGB(title = "connections", tooltip = "connections to hardware (push to check/refresh)", checkable = True),            
+            "tip": SGB(title = "tip", tooltip = "tip status and current"),
             
             # Coarse
-            "coarse_vertical": SGB(title = "vertical", tooltip = "vertical coarse motion"),
-            "coarse_horizontal": SGB(title = "horizontal", tooltip = "horizontal coarse motion"),
+            "coarse_vertical": SGB(title = "vertical", tooltip = "vertical coarse motion", checkable = True),
+            "coarse_horizontal": SGB(title = "horizontal", tooltip = "horizontal coarse motion", checkable = True),
             
-            "tip_prep": SGB(title = "tip prep", tooltip = "tip preparation tools"),
+            "tip_prep": SGB(title = "tip prep", tooltip = "tip preparation tools", checkable = True),
+            "modulators": SGB(title = "modulators", tooltip = "modulators", checkable = True),
 
-            "frame_grid": SGB(title = "frame / grid", tooltip = "frame and grid parameters"),
-            "bias": SGB(title = "bias", tooltip = "bias and ramp parameters"),
-            "feedback": SGB(title = "feedback", tooltip = "feedback and gains"),
-            "modulators": SGB(title = "modulators", tooltip = "modulators"),
-            
-            "scan_control": SGB(title = "scan control", tooltip = "scan control"),
-            "navigation": SGB(title = "navigation", tooltip = "navigation"),
-            "background": SGB(title = "background subtraction", tooltip = "background subtraction"),
-            "operations": SGB(title = "image processing operations", tooltip = "image processing operations"),
-            "limits": SGB(title = "limits", tooltip = "limits"),
-
-            "speeds": SGB(title = "speeds", tooltip = "speeds"),
-            "experiment": SGB(title = "experiment", tooltip = "Perform experiment")
+            "frame_grid": SGB(title = "frame / grid", tooltip = "frame and grid parameters", checkable = True),
+            "bias": SGB(title = "bias", tooltip = "bias and ramp parameters", checkable = True),
+            "feedback": SGB(title = "feedback", tooltip = "feedback and gains", checkable = True),
+            "speeds": SGB(title = "speeds", tooltip = "speeds", checkable = True),
+            "experiment": SGB(title = "experiments", tooltip = "Perform experiments", checkable = True)
         }
 
         # Set layouts for the groupboxes
         #groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "spectroscopy", "modulators", "demodulators", "experiment", "limits"]
-        [layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupboxes.keys()]
+        #[layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupboxes.keys()]
         [groupboxes[name].setLayout(layouts[name]) for name in groupboxes.keys()]
 
         # Make layouts of several groupboxes
@@ -980,8 +1007,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         [layouts["parameters"].addWidget(groupboxes[name]) for name in ["bias", "feedback", "speeds", "frame_grid"]]
         [layouts["osc"].addWidget(groupboxes[name]) for name in ["modulators"]]
-        [layouts["scan"].addWidget(groupboxes[name]) for name in ["scan_control", "navigation", "operations", "limits"]]
-        [layouts[name].addStretch(1) for name in ["parameters", "osc", "coarse_prep", "scan"]]
+        [layouts[name].addStretch(1) for name in ["parameters", "osc", "coarse_prep", "tip"]]
         return groupboxes
 
 
@@ -990,9 +1016,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def make_tab_widget(self) -> QtWidgets.QTabWidget:
         tab_widget = QtWidgets.QTabWidget()
         
-        tabs = ["scan", "parameters", "coarse_prep", "osc"]
+        tabs = ["coarse_prep", "osc"]
         [self.widgets[name].setLayout(self.layouts[name]) for name in tabs]
-        tab_widget.addTab(self.widgets["parameters"], "params")
         [tab_widget.addTab(self.widgets[name], name) for name in tabs if not name == "parameters"]
         return tab_widget
 
@@ -1006,12 +1031,23 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         # Aesthetics
         layouts["left_side"].setContentsMargins(0, 0, 0, 0)
-        layouts["toolbar"].setContentsMargins(4, 4, 4, 4)
+        layouts["toolbar"].setContentsMargins(2, 2, 2, 2)
         
-        # Create the toolbar
-        [self.layouts["toolbar"].addWidget(groupboxes[name]) for name in ["connections", "experiment"]]
-        self.layouts["toolbar"].addWidget(self.tab_widget)
-        layouts["toolbar"].addStretch(1)
+        # Create the toolbar        
+        self.layouts["toolbar"].addWidget(groupboxes["connections"], 0, 0, 1, 2)
+        self.layouts["toolbar"].addWidget(groupboxes["tip"], 1, 0)
+        self.layouts["toolbar"].addWidget(groupboxes["experiment"], 1, 1)
+        [self.layouts["toolbar"].addWidget(groupboxes[name], 2 + index, 0, 1, 2) for index, name in enumerate(["bias", "feedback", "speeds", "frame_grid"])]
+        self.layouts["toolbar"].addWidget(self.tab_widget, 12, 0, 1, 2)
+        layouts["toolbar"].setRowStretch(13, 1)
+        widgets["toolbar"].setLayout(layouts["toolbar"])
+        
+        self.tool_scroller = QtWidgets.QScrollArea()
+        self.tool_scroller.setContentsMargins(0, 0, 0, 0)
+        self.tool_scroller.setWidgetResizable(True)
+        self.tool_scroller.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tool_scroller.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.tool_scroller.setWidget(widgets["toolbar"])
         
         # Compose the image_view plus consoles layout
         self.splitters = {"image_graph": QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical), "camera_nanonis": QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)}
@@ -1022,6 +1058,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.splitters["image_graph"].setStretchFactor(1, 1)
         self.splitters["image_graph"].setStretchFactor(2, 1)
         
+        layouts["left_side"].addLayout(layouts["image_view_controls"])
         layouts["left_side"].addWidget(self.splitters["image_graph"])
         #layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
         #layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
@@ -1029,8 +1066,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.widgets["left_side"].setLayout(layouts["left_side"])
         
         # Attach the toolbar
-        layouts["main"].addWidget(self.widgets["left_side"], stretch = 4)
-        layouts["main"].addLayout(layouts["toolbar"], 1)
+        layouts["main"].addWidget(self.widgets["left_side"], stretch = 3)
+        layouts["main"].addWidget(self.tool_scroller, 1)
         
         # Set the central widget of the QMainWindow
         widgets["central"].setLayout(layouts["main"])

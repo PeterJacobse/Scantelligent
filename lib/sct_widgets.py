@@ -125,7 +125,7 @@ class SCTWidgets:
             
             self.button_size = 22
             if isinstance(size, int): self.button_size = size
-            self.setFixedSize(self.button_size + 12, self.button_size + 12)
+            self.setFixedSize(self.button_size + 8, self.button_size + 8)
             if isinstance(tooltip, str): self.states[0].update({"tooltip": tooltip}) # If a global tooltip is provided, it is assigned to be the tooltip of state 0
             if isinstance(icon, QtGui.QIcon): self.states[0].update({"icon": icon}) # If a global icon is provided, it is assigned to be the icon of state 0
             if not isinstance(click_to_toggle, bool): click_to_toggle = True # click_to_toggle = True means that clicking the button automatically toggles its state
@@ -171,7 +171,7 @@ class SCTWidgets:
 
         def setSize(self, value: int = 0) -> None:
             self.button_size = value
-            self.setFixedSize(self.button_size + 12, self.button_size + 12)
+            self.setFixedSize(self.button_size + 8, self.button_size + 8)
             return
 
         def setState(self, value = 0) -> None:
@@ -1048,9 +1048,27 @@ class SCTWidgets:
         
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
+            self.setDefaults()
+        
+        def setDefaults(self) -> None:
             self.view.invertY(False)
+            self.ui.menuBtn.hide()
+            return
+        
+        def addWidget(self, widget: QtWidgets.QWidget) -> None:
+            layout = self.ui.gridLayout
+            
+            roi_button_index = layout.indexOf(self.ui.roiBtn)
+            r_roi, c_roi, r_span_roi, c_span_roi = layout.getItemPosition(roi_button_index)
+            layout.addWidget(widget, r_roi + 1, c_roi)
+            
+            graphics_view = self.ui.graphicsView
+            gv_idx = layout.indexOf(graphics_view)
+            r_gv, c_gv, r_span_gv, c_span_gv = layout.getItemPosition(gv_idx)
+            layout.addWidget(graphics_view, r_gv, c_gv, r_span_gv + 1, c_span_gv)
+            return
 
-        def mouseDoubleClickEvent(self, event):
+        def mouseDoubleClickEvent(self, event) -> QtCore.QEvent:
             # Ensure it's a left double-click
             if event.button() == QtCore.Qt.MouseButton.LeftButton:
                 # Get scene position
@@ -1062,7 +1080,7 @@ class SCTWidgets:
             # Call base class implementation
             return super().mouseDoubleClickEvent(event)
         
-        def mousePressEvent(self, event):
+        def mousePressEvent(self, event) -> QtCore.QEvent:
             if event.button() == QtCore.Qt.MouseButton.MiddleButton:
                 # Get scene position
                 pos = event.position()
@@ -1147,20 +1165,21 @@ class SCTWidgets:
             self.slider.setValue(180)
 
     class LevelIndicator(QtWidgets.QWidget):
-        def __init__(self, parent = None, color: str = "#4080FF", limits: list = [0, 100], tooltip: str = "", show_tick: bool = True):
+        def __init__(self, parent = None, fill_color: str = "#4080FF", background_color: str = "#404040", warning_color: str = "#A05000", limits: list = [0, 100], tooltip: str = "", show_tick: bool = True):
             super().__init__(parent)
             
-            self.setToolTip(tooltip)
             self.show_tick = show_tick
             self.min = limits[0]
             self.max = limits[1]
             self.total = self.max - self.min
             self.level = 0
             self.tick_level = 0
-            self.color = color
-            #self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+            self.fill_color = fill_color
+            self.background_color = background_color
+            self.warning_color = warning_color
             self.setFixedWidth(20)
             self.setMinimumHeight(80)
+            if isinstance(tooltip, str): self.setToolTip(tooltip)
 
 
 
@@ -1195,44 +1214,43 @@ class SCTWidgets:
             self.update() # Triggers repaint
             return
 
-        def paintEvent(self, event):
+        def paintEvent(self, event) -> None:
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
             
             width = self.width()
             height = self.height()
             
-            cyl_width = width * 0.6
-            cyl_height = height * 0.9
-            x_offset = (width - cyl_width) / 2
-            y_offset = (height - cyl_height) / 2
+            cyl_width = int(5)
+            cyl_height = int(height * 0.9)
+            x_offset = int((width - cyl_width) / 2)
+            y_offset = int((height - cyl_height) / 2)
             
-            # Draw Liquid
-            cylinder_fraction = (self.level - self.min) / (self.total)            
-            liquid_height = int(cylinder_fraction * cyl_height)
-            liquid_rect = QtCore.QRectF(x_offset, y_offset + (cyl_height - liquid_height), cyl_width, liquid_height)
+            # Rectangles denoting the 'fill level' and the outline
+            outline_rect = QtCore.QRectF(x_offset - 1, y_offset - 1, cyl_width + 1, cyl_height + 1)
+            fill_fraction = (self.level - self.min) / (self.total)
+            fill_height = int(fill_fraction * cyl_height)
+            fill_rect = QtCore.QRectF(x_offset - 1, y_offset + (cyl_height - fill_height) - 1, cyl_width + 1, fill_height + 1)
+            
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            painter.setBrush(QtGui.QBrush(QtGui.QColor(self.color)))
-            painter.drawRect(liquid_rect)
-            
-            # Draw Cylinder Outline
-            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.gray, 2))
-            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-            painter.drawRect(int(x_offset), int(y_offset), int(cyl_width), int(cyl_height + 1))
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(self.background_color)))
+            painter.drawRect(outline_rect)
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(self.fill_color)))
+            painter.drawRect(fill_rect)
             
             # Draw Graduations
-            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.gray, 2))
+            painter.setPen(QtGui.QPen(QtGui.QColor(self.background_color), 1))
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
             num_marks = 5
             for i in range(num_marks + 1):
-                y = y_offset + (i * (cyl_height / num_marks))
-                painter.drawLine(int(x_offset + cyl_width), int(y), int(x_offset + cyl_width - 4), int(y))
+                y = int(y_offset + (i * (cyl_height / num_marks)))
+                painter.drawLine(x_offset + cyl_width, y, x_offset + cyl_width + 4, y)
             
             # Draw tick
             if not self.show_tick: return
-            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.red, 2))
-            tick_height = cyl_height * (self.tick_level - self.min) / (self.total)
-            painter.drawLine(int(x_offset + cyl_width), int(y_offset - tick_height), int(x_offset + cyl_width - 6), int(y_offset - tick_height))
+            painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.red, 1))
+            tick_height = int(cyl_height * (self.tick_level - self.min) / self.total)
+            painter.drawLine(x_offset + cyl_width, y_offset - tick_height, x_offset + cyl_width + 4, y_offset - tick_height)
             return
 
         def changeToolTip(self, text: str, line: int = 0) -> None:
@@ -1290,11 +1308,29 @@ class SCTWidgets:
         def __init__(self, *args, **kwargs):
             title = kwargs.pop("title", None)
             tooltip = kwargs.pop("tooltip", None)
+            self.checkable = kwargs.pop("checkable", False)
             
             super().__init__(*args, **kwargs)
             
             if isinstance(title, str): self.setTitle(title)
             if isinstance(tooltip, str): self.setToolTip(tooltip)
+            
+            self.outer_layout = QtWidgets.QVBoxLayout(self)
+            self.outer_layout.setContentsMargins(0, 0, 0, 0)
+            self.content_container = QtWidgets.QWidget(self)
+            self.outer_layout.addWidget(self.content_container)
+            
+            if self.checkable:
+                self.setCheckable(True)
+                self.setChecked(True)
+                self.toggled.connect(lambda toggleState: self.content_container.setVisible(toggleState))
+        
+        def setLayout(self, layout: QtWidgets.QLayout) -> None:
+            """Overrides setLayout to apply layouts to the inner container instead."""
+            # Clean margins on user layouts so they align perfectly with the groupbox borders
+            layout.setContentsMargins(2, 0, 2, 0)
+            self.content_container.setLayout(layout)
+            return
 
     class Completer(QtWidgets.QCompleter):
         def __init__(self, *args, **kwargs):
@@ -1594,11 +1630,11 @@ class SCTWidgets:
 
 
         def addMethod(self, method_name: str = "", min_value: float = 0, max_value: float = 1, digits: int = None, limits: list = None, unit: str = "nm", icon: QtGui.QIcon = None, tooltip: str = "", max_width: int = 70) -> None:            
-            self.min_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = min_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width)})
+            self.min_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = min_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width, edited_color = "#101010")})
             self.min_checkboxes.update({f"{method_name}": SCTWidgets.CheckBox(tooltip = tooltip)})
             self.buttons.update({f"{method_name}": SCTWidgets.MultiStateButton(icon = icon, tooltip = tooltip)})
             self.max_checkboxes.update({f"{method_name}": SCTWidgets.CheckBox(tooltip = tooltip)})
-            self.max_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = max_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width)})
+            self.max_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = max_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width, edited_color = "#101010")})
             
             self.min_button_group.addButton(self.min_checkboxes[f"{method_name}"], name = f"{method_name}")
             self.max_button_group.addButton(self.max_checkboxes[f"{method_name}"], name = f"{method_name}")
@@ -1666,17 +1702,20 @@ class SCTWidgets:
 
 
 class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
-    def __init__(self, feedback_button: SCTWidgets.MultiStateButton, current_le: SCTWidgets.PhysicsLineEdit, height_le: SCTWidgets.PhysicsLineEdit, color: str = "#A0A0A0", show_height_tick: bool = True):
+    def __init__(self, feedback_button: SCTWidgets.MultiStateButton, current_le: SCTWidgets.PhysicsLineEdit, height_le: SCTWidgets.PhysicsLineEdit,
+                 fill_color: str = "#A0A0A0", background_color: str = "#A0A0A0", warning_color: str = "#A0A0A0", show_height_tick: bool = True):
         super().__init__()
         
-        self.color = color
+        self.fill_color = fill_color
+        self.background_color = background_color
+        self.warning_color = warning_color
         self.current_le = current_le
         self.height_le = height_le
         self.height_le.setMinimumWidth(70)
         self.current_le.setMinimumWidth(70)
         
-        self.current_indicator = SCTWidgets.LevelIndicator(color = color)
-        self.height_indicator = SCTWidgets.LevelIndicator(color = color, show_tick = False)
+        self.current_indicator = SCTWidgets.LevelIndicator(fill_color = fill_color, background_color = background_color, warning_color = warning_color, show_tick = True)
+        self.height_indicator = SCTWidgets.LevelIndicator(fill_color = fill_color, background_color = background_color, warning_color = warning_color, show_tick = False)
         self.feedback_button = feedback_button
         
         layout = make_layout("g")                

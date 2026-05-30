@@ -489,8 +489,8 @@ class ParameterManager(QtCore.QObject):
                 # Update the channels combobox with the channels that are being recorded if there is a change
                 if not old_channels == new_channels:
                     sct.data.scan_processing_flags.update({"channels": new_channels})
-                    sct.gui.comboboxes["channels"].renewItems(list(new_channels.keys()))
-                    [sct.gui.comboboxes["channels"].selectItem(preferred_channel) for preferred_channel in ["Current (A)", "LI Demod 1 X (A)", "Z (m)"]]
+                    sct.gui.comboboxes["slice"].renewItems(list(new_channels.keys()))
+                    [sct.gui.comboboxes["slice"].selectItem(preferred_channel) for preferred_channel in ["Current (A)", "LI Demod 1 X (A)", "Z (m)"]]
                     sct.update_processing_flags()
 
             case "lockin":
