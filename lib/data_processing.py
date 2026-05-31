@@ -49,8 +49,9 @@ class DataProcessing:
             "backward": False, # Forward is the left-to-right (trace) part of the scan; backward is right-to-left (retrace) part of the scan
             "up_or_down": "up", # Scan direction. Terminology 'direction' is avoided for up or down to avoid confusion
             "channels": [], # Available scan channels
-            "channel": "", # Selected scan channel
+            "channel_name": "", # Selected scan channel
             "channel_index": None, # Selected scan channel index
+            "channel_SI_multiplier": 1, # Multiplicative factor for bringing the data into the range of the preferred pA, nm units
             "background": "none", # Method for background subtraction. Can be 'none', 'plane', or 'linewise'
             "rotation": False, # Flag that determines whether the rotation of the scan frame should be shown
             "offset": False,

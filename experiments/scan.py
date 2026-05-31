@@ -47,22 +47,21 @@ class Experiment(BaseExperiment):
         if direction not in ["up", "down", "gaussian_process"]: raise Exception("Unkown scan direction")
         self.set_view("nanonis")
         
+        # Start writing initial data to file and then start the experiment
         if direction in ["up", "down"]:
-            self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
-            self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S")})
-
             # Starting the scan
             self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
-            nn.scan_action({"action": "start", "direction": direction})
-            scan_image = self.monitor_scan(output_channel = feedback_channel_indices[0])
-            time.sleep(1)
+            nn.scan_action({"action": "start", "direction": direction})            
+            (scan_image, scan_data) = self.monitor_scan(output_channel = feedback_channel_indices[0])
+            
+            self.output_file.create_dataset("scan", data = scan_data)
         
 
 
         elif direction == "gaussian_process":
-            n_points = 20
+            n_points = 40
             
-            self.logprint(f"Starting the experiment with 20 random points in the scan frame", message_type = "message")
+            self.logprint(f"Starting the Gaussian Process Regression experiment with {n_points} random points in the scan frame", message_type = "message")
             [x_grid, y_grid] = [grid.get(key) for key in ["x_grid (nm)", "y_grid (nm)"]]
             (lists, error) = nn.grids_to_lists(grid, direction = "down")
             tip_xy = [tip_status.get(key) for key in ["x (nm)", "y (nm)"]]
@@ -85,7 +84,7 @@ class Experiment(BaseExperiment):
             for iteration, coordinate in enumerate(ordered_coordinates[1:]):
                 self.check_abort_request()
                 (tip_status, error) = nn.tip_update({"x (nm)": coordinate[0], "y (nm)": coordinate[1]}, verbose = False, wait = True, fast_mode = True)
-                (jitter_dict, error) = nn.jitter_tip({"radius (nm)": .2, "iterations": 4}, verbose = False)
+                (jitter_dict, error) = nn.jitter_tip({"radius (nm)": .5, "iterations": 4}, verbose = False)
                 z_values = jitter_dict.get("z_values (nm)")
                 z_avg_nm = np.average(z_values)
                 z_var_nm2 = np.var(z_values, ddof = 1)

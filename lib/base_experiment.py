@@ -32,7 +32,7 @@ class BaseExperiment(QObject):
         self.nanonis = kwargs.pop("nanonis", None)
         
         self.file_functions = FileFunctions()
-        self.data = DataProcessing()
+        self.data = DataProcessing() # You can use self.data to access data processing functions. However, do not use self.data.scan_processing_flags to communicate with the GUI. Use self.scan_processing_flags instead
         self.gui_setup = {}
         self.abort_requested = False
         self.current_spikes = 0
@@ -42,6 +42,7 @@ class BaseExperiment(QObject):
         
         super().__init__()
         
+        # Read look-up tables
         self.tia_corrections = ""
         if isinstance(self.sct_folder, str) and os.path.isdir(self.sct_folder):
             try:
@@ -179,119 +180,6 @@ class BaseExperiment(QObject):
             self.logprint(f"The tip-sample capacitance as measured by Nanonis is {cap_fC:.4f} fC", message_type = "message")
         return "nanonis"
 
-    def mla_amplitude_sweep(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
-        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
-        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
-        measurement = lambda: 2 * self.mla.get_pixels(pixels_per_datapoint, average = True)
-        
-        # Initialize the MLA.
-        if setup_defaults:
-            input_mask = np.full((32), 2, dtype = int)
-            input_mask[0] = 1
-            self.mla.set_input_multiplexer(input_mask)
-            numbers = np.arange(0, 32)
-            numbers[0] = 1
-            self.mla.frequencies_update({"numbers": numbers})
-            self.mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
-        
-        # Read the TIA gain and oscillator amplitude to be able to convert values
-        (hardware_dict, error) = self.nanonis.hardware_update()
-        tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
-                
-        # Prepare to plot these channels
-        channel_names = ["amp (mV)", "|a1_ref| (mV)", "Re(a1) (nS)"]
-        [channel_names.append(f"|a{i + 2}| (nS)") for i in range (30)]
-        self.prepare_graph(channel_names)
-        
-        measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = float)
-
-
-
-        # Main loop
-        n_total = len(amplitudes)
-        self.mla.start_lockin()
-        for index, amp_mV in enumerate(amplitudes):
-            self.check_abort_request()
-            self.task_progress.emit(int(100 * index / n_total))
-            self.mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
-            
-            self.mla.get_pixels(settle_pixels)
-            (pix_V, pix_V_var) = measurement()
-            
-            pix_pA = pix_V / tia_gain_V_per_pA
-            pix_nS = pix_pA / amp_mV
-            
-            data_chunk = np.zeros((len(channel_names)), dtype = float)
-            data_chunk[0] = amp_mV
-            data_chunk[1] = np.abs(pix_nS[0])
-            data_chunk[2] = np.real(pix_nS[1])
-            data_chunk[3:] = np.abs(pix_nS[2:])
-            
-            self.data_array.emit(data_chunk)
-            measurement_array[index] = data_chunk
-        
-        self.task_progress.emit(100)
-        return (measurement_array, channel_names)
-
-    def mla_voltage_sweep(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, setup_defaults: bool = True) -> np.ndarray:
-        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
-        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
-        measurement = lambda: 2 * self.mla.get_pixels(pixels_per_datapoint, average = True)
-        
-        # Initialize the MLA.
-        if setup_defaults:
-            input_mask = np.full((32), 2, dtype = int)
-            input_mask[0] = 1
-            self.mla.set_input_multiplexer(input_mask)
-            numbers = np.arange(0, 32)
-            numbers[0] = 1
-            self.mla.frequencies_update({"numbers": numbers})
-            self.mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
-        
-        # Read the TIA gain and oscillator amplitude to be able to convert values
-        (hardware_dict, error) = self.nanonis.hardware_update()
-        tia_gain_V_per_pA = hardware_dict.get("gain (V/pA)")
-        (amplitudes_dict, error) = self.mla.amplitudes_update()
-        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
-        if mod_voltage_mV < .001:
-            (amplitudes_dict, error) = self.mla.amplitudes_update({"amplitudes (mV)": {0: .05}}) # Default to a minimum of 50 uV amplitude if the amplitude is too close to zero
-            self.logprint(f"Warning. Very low modulation amplitude set. Calculated conductance values may diverge.")
-        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
-
-        # Prepare to plot these channels
-        channel_names = ["V_port1 (V)", "Re(a1) (nS)"]
-        [channel_names.append(f"|a{i + 2}| (nS)") for i in range (31)]
-        self.prepare_graph(channel_names)
-        
-        measurement_array = np.empty((len(voltages), len(channel_names)), dtype = float)
-
-
-
-        # Main loop
-        self.mla.start_lockin()
-        for index, voltage in enumerate(voltages):
-            n_total = len(voltages)
-            self.check_abort_request()
-            self.task_progress.emit(int(100 * index / n_total))
-            self.mla.bias_update({"port_1 (V)": voltage}, verbose = False)
-            
-            self.mla.get_pixels(settle_pixels)
-            (pix_V, pix_V_var) = measurement()
-            
-            pix_pA = pix_V / tia_gain_V_per_pA
-            pix_nS = pix_pA / mod_voltage_mV
-            
-            data_chunk = np.zeros((len(channel_names)), dtype = float)
-            data_chunk[0] = voltage
-            data_chunk[1] = np.real(pix_nS[0])
-            data_chunk[2:] = np.abs(pix_nS[1:])
-            
-            self.data_array.emit(data_chunk)
-            measurement_array[index] = data_chunk
-        
-        self.task_progress.emit(100)
-        return (measurement_array, channel_names)
-
 
 
     def experiment_handler(run):
@@ -307,6 +195,10 @@ class BaseExperiment(QObject):
                 (mla_parameters, error) = self.mla.initialize(verbose = False)
                 self.start_parameters.update({"mla": mla_parameters})
             
+            # Create the experiment HDF5 file
+            self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
+            self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
+            
             try:
                 run(self)
             except AbortedError:
@@ -315,15 +207,18 @@ class BaseExperiment(QObject):
                 self.logprint(f"Error: {e}", message_type = "error")
                 self.abort_requested = True
             finally:
+                try: self.output_file.attrs.update({"end_time": datetime.now().strftime("%H:%M:%S"), "experiment_aborted": self.abort_requested})
+                except: pass
                 try: self.output_file.close()
                 except: pass
                 self.finish_experiment()
         return wrapper
 
     def monitor_scan(self, output_channel = None, timeout_s: int = 100000) -> np.ndarray:
-        (scan_metadata, error) = self.nanonis.scan_metadata_update() # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
+        (scan_metadata, error) = self.nanonis.scan_metadata_update(verbose = False) # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
         channel_dict = scan_metadata.get("channel_dict")
-
+        channel_indices = channel_dict.values()
+        
         # Loop to check scan progress
         t_start = time.time()
         t_elapsed = 0
@@ -339,9 +234,11 @@ class BaseExperiment(QObject):
             channel_index = self.scan_processing_flags.get("channel_index")
             backward = self.scan_processing_flags.get("backward")
             
-            (scan_image, error) = self.nanonis.scan_update(channel = channel_index, backward = backward, verbose = False)
-            nan_mask = np.isnan(scan_image)
-            scan_finished = not bool(np.any(nan_mask))
+            if channel_index in channel_indices:
+                (scan_image, error) = self.nanonis.scan_update(channel = channel_index, backward = backward, verbose = False)
+                nan_mask = np.isnan(scan_image)
+                scan_finished = not bool(np.any(nan_mask))
+            
             self.check_abort_request()
             time.sleep(.05)
             
@@ -349,11 +246,18 @@ class BaseExperiment(QObject):
                 self.logprint("Scan finished", message_type = "message")
                 break
         
+        scan_data = np.empty((2, len(channel_indices)) + scan_image.shape)
+        for index, channel_index in enumerate(channel_indices):
+            (forward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = False, verbose = False)
+            (backward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = False, verbose = False)
+            scan_data[0, index] = forward_scan
+            scan_data[1, index] = backward_scan
+        
         # When the scan is finished, return the scan image
         if isinstance(output_channel, str) and output_channel in channel_dict.keys(): channel_index = channel_dict[output_channel]
         if isinstance(output_channel, int) and output_channel in channel_dict.values(): (scan_image, error) = self.nanonis.scan_update(channel = output_channel, send_data = False, backward = backward, verbose = False)
     
-        return scan_image
+        return (scan_image, scan_data)
 
     def check_abort_request(self, withdraw: bool = False) -> None:
         if self.thread().isInterruptionRequested():

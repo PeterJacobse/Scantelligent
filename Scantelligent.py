@@ -67,6 +67,7 @@ class Scantelligent(QtCore.QObject):
         self.graph_buffer_index = 0
         self.x_channel = -1 # x channel for graphing. An index of -1 means graphing parameters as a function of index, rolling when more than 6000 buffer values are filled
         self.graph_channels = 35
+        self.channel_names = np.arange(35)
         self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size))
         self.buffer_full = False
 
@@ -95,12 +96,14 @@ class Scantelligent(QtCore.QObject):
 
     def connect_buttons(self) -> None:
         button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
-                        "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"), "approach": self.start_auto_approach,
+                        "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"),
+                        "approach": self.start_auto_approach, "approach_2": self.start_auto_approach,
                         
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
+                        "frame": self.toggle_items, "path": self.toggle_items,
                         
-                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent}
+                        "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
         [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
@@ -776,6 +779,11 @@ class Scantelligent(QtCore.QObject):
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
         return
 
+    def toggle_items(self) -> None:
+        self.gui.path_pdi.setVisible(self.gui.buttons["path"].isChecked())
+        self.gui.new_frame_roi.setVisible(self.gui.buttons["frame"].isChecked())
+        return
+
 
 
     # Graphing
@@ -811,6 +819,8 @@ class Scantelligent(QtCore.QObject):
 
     def set_x_axis(self):
         self.x_channel = self.gui.comboboxes["graph_x_axis"].currentIndex() - 1
+        cbb_items = self.gui.comboboxes["graph_x_axis"].getItems()
+        self.gui.plot_widget.setLabel("bottom", cbb_items[self.x_channel + 1])        
         self.redraw_graph()
         pass
 
@@ -882,7 +892,7 @@ class Scantelligent(QtCore.QObject):
         channels = self.data.scan_processing_flags.get("channels")
         if channels:
             channel_index = channels.get(selected_channel, None)
-            if isinstance(channel_index, int): flags.update({"channel": selected_channel, "channel_index": channel_index})
+            if isinstance(channel_index, int): flags.update({"channel_name": selected_channel, "channel_index": channel_index})
 
         self.data.scan_processing_flags.update(flags)
         return
@@ -1112,9 +1122,17 @@ class Scantelligent(QtCore.QObject):
                 self.gui.comboboxes["direction"].renewItems([])
                 for i in range(9):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
-                    #self.gui.line_edits[f"experiment_{i}"].setValue("")
-                    #self.gui.line_edits[f"experiment_{i}"].setUnit()
                 
+                
+                
+                # Set the file name of the experiment result. If the experiment is spectroscopy, then decorate the file name with the spectroscopic axes
+                if experiment_name == "spectroscopy":
+                    x_axis_name = self.spt.gui.buttons["sts_x_axis"].state_name
+                    y_axis_name = self.spt.gui.buttons["sts_y_axis"].state_name
+                    
+                    if x_axis_name in ["V", "z", "f", "amp"]:
+                        if y_axis_name in ["V", "z", "f", "amp"]: experiment_name = "_".join([x_axis_name, y_axis_name, "spectroscopy"]) # 2D spectroscopy
+                        else: experiment_name = "_".join([x_axis_name, "spectroscopy"]) # 1D spectroscopy
                 [previous_filename, next_filename] = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
                 
                 experiment_filename = next_filename
@@ -1141,7 +1159,7 @@ class Scantelligent(QtCore.QObject):
                     self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
                     self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
                     self.experiment_thread.finished.connect(lambda: self.spt.gui.buttons["start_spectroscopy"].setState(0))
-                    [self.experiment_thread.finished.connect(lambda name0 = name: self.gui.buttons[name0].setState(0)) for name in ["start_scan", "approach"]]
+                    [self.experiment_thread.finished.connect(lambda name0 = name: self.gui.buttons[name0].setState(0)) for name in ["start_scan", "approach", "approach_2"]]
                     
                     # Progress
                     self.experiment.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
@@ -1164,7 +1182,7 @@ class Scantelligent(QtCore.QObject):
                 start_button.setState("ready")
             
             case "ready": # Experiment is loaded and ready. Start it
-                if not hasattr(self, "experiment") or not hasattr(self, "experiment_thread"):
+                if not hasattr(self, "experiment") or not hasattr(self, "experiment_thread"): # Abort if the experiment wasn't properly loaded
                     self.logprint("Error. No experiment object or thread initialized", message_type = "error")
                     start_button.setState("load")
                     return False
@@ -1180,17 +1198,15 @@ class Scantelligent(QtCore.QObject):
                 spec_buttons.update({key: self.spt.gui.buttons[key].isChecked() for key in ["tia_correct", "intermediate_feedback", "blank_modulators"]}) # Spec settings: bools
                 spec_buttons.update({key: self.spt.gui.buttons[key].state_name for key in ["nanonis_mla", "spectroscopy_feedback"]})
                 spec_buttons.update({key: self.gui.buttons[key].state_name for key in ["scan_direction"]})
-                
                 modulators_bool_list = [self.spt.gui.checkboxes[f"modulator_{index}"].isChecked() for index in range(32)]
                 spec_modulators = [index for index, val in enumerate(modulators_bool_list) if val]
-                
                 gui_parameters = {"combobox": self.gui.comboboxes["direction"].currentText(),
                                   "line_edits": [self.gui.line_edits[f"experiment_{index}"].getValue() for index in range(9)],
                                   "buttons": [self.gui.buttons[f"experiment_{index}"].state_name for index in range(6)],
                                   "spectroscopy_line_edits": spec_line_edits, "spectroscopy_buttons": spec_buttons, "modulators": spec_modulators}
-
-                self.experiment.gui_parameters = copy.deepcopy(gui_parameters)
+                self.experiment.gui_parameters = copy.deepcopy(gui_parameters) # Pass a copy of (not a reference to) these parameters to the experiment object, so they can be read out locally
                 
+                self.receive_data(np.array(["clear"])) # Clear the grapher widget
                 start_button.setState("running")
                 self.gui.buttons["save"].setState("data_present")
                 self.experiment_thread.start()
@@ -1228,6 +1244,7 @@ class Scantelligent(QtCore.QObject):
         experiment_loaded = self.control_experiment("auto_approach")
         if not experiment_loaded: return False
         self.gui.buttons["approach"].setState(1)
+        self.gui.buttons["approach_2"].setState(1)
         return self.control_experiment("auto_approach")
 
 

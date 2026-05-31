@@ -231,7 +231,7 @@ class SCTWidgets:
         
         def setDefaults(self) -> None:
             if isinstance(self.name, str): self.setObjectName(self.name)
-            if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
+            #if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
             if isinstance(self.max_width, int):
                 self.setMaximumWidth(self.max_width)
             else:

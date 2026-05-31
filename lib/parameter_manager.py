@@ -377,8 +377,6 @@ class ParameterManager(QtCore.QObject):
                 
                 # Update the frame 'roi' in the ImageView
                 new_frame_roi = sct.gui.new_frame_roi
-                try: sct.gui.image_view.view.removeItem(new_frame_roi)
-                except: pass
                 
                 if sct.gui.buttons["view"].state_name == "nanonis":
                     new_frame_roi.blockSignals(True)
@@ -386,8 +384,6 @@ class ParameterManager(QtCore.QObject):
                     new_frame_roi.setSize([w_nm, h_nm])
                     new_frame_roi.setPos([0, 0])
                     new_frame_roi.setAngle(angle = -angle_deg)
-
-                    sct.gui.image_view.addItem(new_frame_roi)
                     
                     bounding_rect = new_frame_roi.boundingRect()
                     local_center = bounding_rect.center()
@@ -462,8 +458,6 @@ class ParameterManager(QtCore.QObject):
 
             case "hardware":
                 piezo_roi = sct.gui.piezo_roi
-                try: sct.gui.image_view.view.removeItem(piezo_roi)
-                except: pass
 
                 piezo_range_nm = [parameters.get(dim) for dim in ["x_range (nm)", "y_range (nm)"]]
                 piezo_lower_left_nm = [parameters.get(dim) for dim in ["x_min (nm)", "y_min (nm)"]]

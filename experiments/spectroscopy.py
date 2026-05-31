@@ -117,15 +117,7 @@ class Experiment(BaseExperiment):
 
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         
-        
-        
-        # Create the experiment HDF5 file
-        experiment_folder = os.path.dirname(self.experiment_file)
-        if spec_button_states["y_axis"] in ["V", "z", "f", "amp"]: experiment_filename = "_".join([spec_button_states["x_axis"], spec_button_states["y_axis"], "spectroscopy"]) # 2D spectroscopy
-        else: experiment_filename = "_".join([spec_button_states["x_axis"], "spectroscopy"]) # 1D spectroscopy
-        
-        self.experiment_file = os.path.join(experiment_folder, self.file_functions.get_next_indexed_filename(experiment_folder, experiment_filename, ".hdf5")[1])
-        self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
+
                 
         # Write metadata
         self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S"),
