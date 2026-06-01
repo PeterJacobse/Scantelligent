@@ -62,6 +62,7 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
+        #self.monitor_thread = QtCore.QThread()
         
         self.graph_buffer_size = 4000
         self.graph_buffer_index = 0
@@ -138,8 +139,9 @@ class Scantelligent(QtCore.QObject):
         self.gui.limits_widget.stateChanged.connect(self.update_processing_flags)
         self.gui.button_groups["channels"].clicked.connect(self.update_pdi_visibility)
         
-        # ImageView limits
+        # ImageView
         self.gui.limits_button.clicked.connect(self.gui.dialogs["limits"].show)
+        self.gui.image_view.scan_file_signal.connect(lambda: self.toggle_view("nanonis")) # Set view to Nanonis whenever a scan file is loaded into the image view
         
         
         
@@ -663,7 +665,7 @@ class Scantelligent(QtCore.QObject):
         old_transform = old_item.transform()
                 
         # Instantiate a new ImageItem using the old image data
-        new_item = SCTWidgets.ImageItem()
+        new_item = SCTWidgets.ScanItem()
         try:
             (grid, error) = self.nanonis.grid_update(verbose = False)
             new_item.setGrid(grid)
@@ -895,6 +897,15 @@ class Scantelligent(QtCore.QObject):
             if isinstance(channel_index, int): flags.update({"channel_name": selected_channel, "channel_index": channel_index})
 
         self.data.scan_processing_flags.update(flags)
+        
+        
+        
+        # Apply the processing to the image
+        self.gui.image_item = self.gui.image_view.getImageItem()
+        (processed_scan, statistics, limits, error) = self.data.process_scan(self.gui.image_item)
+        [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]        
+        self.gui.image_item.setImage(processed_scan)
+        self.gui.hist_item.setLevels(limits[0], limits[1])
         return
 
 
@@ -1154,12 +1165,7 @@ class Scantelligent(QtCore.QObject):
                     self.experiment_thread.started.connect(self.experiment.run)
                     self.experiment.finished.connect(self.experiment_thread.quit)
                     self.experiment.finished.connect(self.refresh_image)
-                    self.experiment_thread.finished.connect(self.experiment.deleteLater)
-                    #self.experiment_thread.finished.connect(lambda: self.gui.buttons["save"].setState("data_saved"))
-                    self.experiment_thread.finished.connect(self.experiment_thread.deleteLater)
-                    self.experiment_thread.finished.connect(lambda: start_button.setState("load"))
-                    self.experiment_thread.finished.connect(lambda: self.spt.gui.buttons["start_spectroscopy"].setState(0))
-                    [self.experiment_thread.finished.connect(lambda name0 = name: self.gui.buttons[name0].setState(0)) for name in ["start_scan", "approach", "approach_2"]]
+                    self.experiment_thread.finished.connect(self.experiment_cleanup)
                     
                     # Progress
                     self.experiment.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
@@ -1207,6 +1213,7 @@ class Scantelligent(QtCore.QObject):
                 self.experiment.gui_parameters = copy.deepcopy(gui_parameters) # Pass a copy of (not a reference to) these parameters to the experiment object, so they can be read out locally
                 
                 self.receive_data(np.array(["clear"])) # Clear the grapher widget
+                self.gui.image_view.blockDrops = True
                 start_button.setState("running")
                 self.gui.buttons["save"].setState("data_present")
                 self.experiment_thread.start()
@@ -1222,6 +1229,15 @@ class Scantelligent(QtCore.QObject):
                 pass
                 
         return True
+
+    def experiment_cleanup(self) -> None:
+        self.experiment.deleteLater()
+        self.experiment_thread.deleteLater()
+        self.gui.buttons["start_stop"].setState("load")
+        self.spt.gui.buttons["start_spectroscopy"].setState(0)
+        self.gui.image_view.blockDrops = True
+        [self.gui.buttons[name].setState(0) for name in ["start_scan", "approach", "approach_2"]]
+        return
 
     def save_experiment(self) -> None:
         if self.gui.buttons["save"].state_name == "data_present":

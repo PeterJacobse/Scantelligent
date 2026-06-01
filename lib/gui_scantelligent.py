@@ -1,7 +1,7 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from .sct_widgets import SCTWidgets, CurrentHeightIndicatorWidget, rotate_icon, make_layout, make_line
+from .sct_widgets import SCTWidgets, CurrentHeightIndicatorWidget, MinMaxMethods, rotate_icon, make_layout, make_line
 import numpy as np
 
 
@@ -10,10 +10,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def __init__(self):
         super().__init__()
         
-        self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
-                           "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#C00000", "#905020", "#707000", "#2020ff",
-                           "#CFCFCF", "#CFCF20", "#20CFCF", "#CF60CF", "#60CF60", "#CF6060", "#8080CF", "#909090", "#CFB010", "#C050FF",
-                           "#606020", "#00C0C0", "#B030C0", "#409040", "#904040", "#505090", "#900000", "#605020", "#404000", "#2020Cf"]
+        self.color_list = ["#FFFFFF", "#FF0000", "#00FF00", "#00FFFF", "#FF9900", "#FFFF00", "#0066FF", "#FF00FF", "#99FF00", "#00FFCC", "#FF0066", "#CCFF00", "#CC00FF",
+                           "#FF5500", "#33FF00", "#0099FF", "#FF00AA", "#66FF66", "#3300FF", "#FFCC00", "#00FF66", "#9900FF", "#FF3333", "#A8FF33", "#00CCFF",
+                           "#FF8888", "#88FF88", "#8888FF", "#FFBB55", "#D4FF88", "#88FFFF", "#FF88FF", "#FFCC99", "#99FFCC", "#CC99FF"]
         self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff", "off-black": "#101010",
                        "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080", "dark_gray": "#606060"}
         self.style_sheets = {
@@ -214,6 +213,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             # Coarse vertical
             "withdraw": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": sct_blue},
                                                                {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": sct_black}]),
+            "withdraw_2": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": sct_blue},
+                                                                 {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": sct_black}]),
             "retract": MSB(tooltip = "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
             "advance": MSB(tooltip = "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
             "approach": MSB(size = 28, states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": sct_black},
@@ -329,7 +330,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "min_absolute": CB(tooltip = "Set minimum to an absolute value"),
             "max_absolute": CB(tooltip = "Set maximum to an absolute value"),
         }        
-        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index % 40])}) for index in range(45)] # Channels
+        [checkboxes.update({f"channel_{index}": CB(tooltip = f"channel {index}", color = self.color_list[index])}) for index in range(35)] # Channels
 
         # Named groups
         self.action_checkboxes = [checkboxes[name] for name in ["withdraw", "retract", "advance", "approach"]]
@@ -350,7 +351,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [self.button_groups["min"].addButton(checkboxes[f"min_{method}"], f"min_{method}") for method in limit_methods]
         [self.button_groups["max"].addButton(checkboxes[f"max_{method}"], f"max_{method}") for method in limit_methods]
         [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise"]]
-        [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(45)]
+        [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(35)]
         
         # Initialize
         checked_buttons = [checkboxes[name] for name in ["min_full", "max_full"]]
@@ -616,11 +617,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def make_views(self) -> tuple[SCTWidgets.ImageView, pg.RawImageWidget]:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
-        image_item = SCTWidgets.ImageItem(np.zeros((31, 31)))
+        scan_item = SCTWidgets.ScanItem()
+        scan_item.setImage(np.zeros((2, 2)))
         plot_item = pg.PlotItem()
-        plot_item.addItem(image_item)
+        plot_item.addItem(scan_item)
         
-        image_view = SCTWidgets.ImageView(view = plot_item, imageItem = image_item)
+        image_view = SCTWidgets.ImageView(view = plot_item, imageItem = scan_item)
         image_view.addWidget(self.limits_button)
         
         view = image_view.getView()
@@ -657,7 +659,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         waveform_widget = pg.PlotWidget()
 
         pdis = [] # PlotDataItems
-        for i in range(40):
+        for i in range(35):
             pen = pg.mkPen(self.color_list[i])
             pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)            
             pdis.append(pdi)
@@ -701,7 +703,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                                                   fill_color = self.colors["blue"], background_color = self.colors["dark_gray"], warning_color = self.colors["orange"])
         
         sivr = "Set the image value range "
-        self.limits_widget = SCTWidgets.MinMaxMethods()
+        self.limits_widget = MinMaxMethods()
 
         self.limits_widget.addMethod("full", 0, 1, digits = 4, unit = "nm", icon = self.icons.get("100"), tooltip = sivr + "to the full data range")
         self.limits_widget.addMethod("percentiles", 1, 99, digits = 1, limits = [0, 100], unit = "%", icon = self.icons.get("percentiles"), tooltip = sivr + "by percentiles")

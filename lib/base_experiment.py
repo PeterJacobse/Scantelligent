@@ -4,6 +4,8 @@ import numpy as np
 from datetime import datetime
 from .file_functions import FileFunctions
 from .data_processing import DataProcessing
+from .api_mla import MLAAPI # For type checking only
+from .api_nanonis import NanonisAPI # For type checking only
 
 
 
@@ -28,8 +30,8 @@ class BaseExperiment(QObject):
         self.experiment_file = kwargs.pop("experiment_file", None)
         self.sct_folder = kwargs.pop("scantelligent_folder", None)
         
-        self.mla = kwargs.pop("mla", None)
-        self.nanonis = kwargs.pop("nanonis", None)
+        self.mla: MLAAPI = kwargs.pop("mla", None)
+        self.nanonis: NanonisAPI = kwargs.pop("nanonis", None)
         
         self.file_functions = FileFunctions()
         self.data = DataProcessing() # You can use self.data to access data processing functions. However, do not use self.data.scan_processing_flags to communicate with the GUI. Use self.scan_processing_flags instead
@@ -48,8 +50,11 @@ class BaseExperiment(QObject):
             try:
                 sys_folder = os.path.join(self.sct_folder, "sys")
                 with h5py.File(os.path.join(sys_folder, "LUTs.hdf5"), "r") as f:
-                    datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
-                    self.tia_corrections = {key: datasets[key][:] for key in datasets.keys()}
+                    datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)} # Filter out datasets from the items in the HDF5 file
+                    self.tia_corrections = {key: datasets[key][:] for key in datasets.keys() if key in ["LN 10^9", "LN 10^8", "LN 10^7"]} # Transimpedance amplifier corrections are stored as a dict with key given by the TIA setting name
+                    
+                    if "DT-670" in datasets.keys(): # Retrieve the temperature diode calibration
+                        self.temp_calib = datasets["DT-670"][:]
             except:
                 pass
 
@@ -197,8 +202,44 @@ class BaseExperiment(QObject):
             
             # Create the experiment HDF5 file
             self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
-            self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
+            date_time_group = self.output_file.create_group("date_time")
+            date_time_group.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
             
+            # Fetch the temperature using a Nanonis call and conversion using a lookup table
+            if hasattr(self, "temp_calib"):
+                try:
+                    metadata = self.start_parameters["nanonis"].get("scan_metadata")
+                    signal_dict = metadata.get("signal_dict")
+                    
+                    for key, value in signal_dict.items():
+                        if "temperature" in key.lower():
+                            temp_channel = value
+                            break
+                    
+                    if temp_channel:
+                        (result, error) = self.nanonis.signals_update([temp_channel], samples = 4, verbose = False)
+                        temp_V = result[temp_channel][1]
+                        temp_K = float(np.interp(temp_V, self.temp_calib[:, 0][::-1], self.temp_calib[:, 1][::-1]))
+                        temp_group = self.output_file.create_group("temperature")
+                        temp_group.attrs.update({"temperature (K)": temp_K})
+                except:
+                    pass
+            
+            # Add the bias, grid and tip data
+            [bias, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "grid", "tip_status", "hardware"]]
+            grid_group = self.output_file.create_group("grid")
+            grid_group.attrs.update({key: grid.get(key) for key in ["offset (nm)", "scan_range (nm)", "angle (deg)"]})
+            tip_group = self.output_file.create_group("tip_status")
+            tip_group.attrs.update({"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
+            feedback_group = self.output_file.create_group("bias_feedback")
+            feedback_group.attrs.update({"V_Nanonis (V)": bias.get(f"V_nanonis (V)")})
+            tia_group = self.output_file.create_group("transimpedance_amplifier")
+            [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "") for key in ["tia_gain", "tia_gain_V_per_pA"]]
+            tia_group.attrs.update({"tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pa})
+
+
+            
+            # Run the core experiment
             try:
                 run(self)
             except AbortedError:
@@ -207,7 +248,7 @@ class BaseExperiment(QObject):
                 self.logprint(f"Error: {e}", message_type = "error")
                 self.abort_requested = True
             finally:
-                try: self.output_file.attrs.update({"end_time": datetime.now().strftime("%H:%M:%S"), "experiment_aborted": self.abort_requested})
+                try: self.output_file["date_time"].attrs.update({"end_time": datetime.now().strftime("%H:%M:%S"), "experiment_aborted": self.abort_requested})
                 except: pass
                 try: self.output_file.close()
                 except: pass
@@ -249,7 +290,7 @@ class BaseExperiment(QObject):
         scan_data = np.empty((2, len(channel_indices)) + scan_image.shape)
         for index, channel_index in enumerate(channel_indices):
             (forward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = False, verbose = False)
-            (backward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = False, verbose = False)
+            (backward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = True, verbose = False)
             scan_data[0, index] = forward_scan
             scan_data[1, index] = backward_scan
         

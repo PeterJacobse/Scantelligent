@@ -104,15 +104,6 @@ class DataProcessing:
         
         return spec_processing_flags
 
-    def find_shortest_path(self, coordinates: np.ndarray) -> np.ndarray:
-        """
-        Solves the traveling salesman problem to return the shortest path over a number of coordinates.
-        Returns the input coordinates ordered by the shortest path.
-        """
-        dist_matrix = distance_matrix(coordinates, coordinates)
-        (index_list, distance_list) = solve_tsp_simulated_annealing(dist_matrix)
-        return coordinates[index_list]
-
 
 
     # Misc
@@ -168,6 +159,15 @@ class DataProcessing:
             error = e
 
         return (image, selected_channel, frame, error)
+
+    def find_shortest_path(self, coordinates: np.ndarray) -> np.ndarray:
+        """
+        Solves the traveling salesman problem to return the shortest path over a number of coordinates.
+        Returns the input coordinates ordered by the shortest path.
+        """
+        dist_matrix = distance_matrix(coordinates, coordinates)
+        (index_list, distance_list) = solve_tsp_simulated_annealing(dist_matrix)
+        return coordinates[index_list]
 
 
 
@@ -773,7 +773,7 @@ class DataProcessing:
                 case "plane":
                     processed_image = image - plane - avg_image
                 case "linewise":
-                    (processed_image, error) = self.line_subtract(image, transpose = True)
+                    (processed_image, error) = self.line_subtract(image, transpose = False)
                 case "average":
                     processed_image = image - avg_image
                 case _:

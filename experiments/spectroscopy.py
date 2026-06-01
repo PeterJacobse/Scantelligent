@@ -120,9 +120,8 @@ class Experiment(BaseExperiment):
 
                 
         # Write metadata
-        self.output_file.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "time": datetime.now().strftime("%H:%M:%S"),
-                                       "device": "MLA", "MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
-                                       "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA, "f / df": 1, "setling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int,
+        self.output_file.attrs.update({"device": "MLA", "MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
+                                       "f / df": 1, "settling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int,
                                        "intermediate_feedback": intermediate_feedback, "spectroscopy_feedback": spectroscopy_feedback})
         self.output_file.attrs.update(x_axis_info)
         mla_settings_ds = self.output_file.create_dataset("MLA settings", data = mla_setup_array)

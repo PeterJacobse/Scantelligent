@@ -1,4 +1,4 @@
-import re, types
+import re, types, os, h5py
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 import numpy as np
@@ -72,22 +72,85 @@ class SCTWidgets:
             else:
                 super().mouseClickEvent(event)
 
-    class ImageItem(pg.ImageItem):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+    class ScanItem(pg.ImageItem):
+        def __init__(self, scan: np.ndarray = None, grid: dict = {}):            
+            super().__init__()
             self.setOpts(axisOrder = "row-major")
+            
+            # Instantiate with dummy data. To be overridden later
+            if isinstance(scan, np.ndarray): self.scan = scan
+            else: self.scan = np.zeros((2, 2, 2, 2), dtype = float)
+            self.pixels = 2
+            self.lines = 2
+            self.directions = 2
+            self.direction_names = np.array(["forward", "backward"])
+            self.n_channels = 2
+            self.channel_names = np.array(["channel 0", "channel 1"])
+            self.setImage(self.scan[0, 0])
+            
+            if isinstance(grid, dict) and "offset (nm)" in grid.keys() and "scan_range (nm)" in grid.keys() and "angle (deg)" in grid.keys():
+                self.grid = grid
+                self.setGrid(grid)
 
-        def setImage(self, image = None, *args, **kwargs) -> None:
-            super().setImage(image, *args, **kwargs)
+
+
+        #def setImage(self, image: np.ndarray = np.empty((0, 0), dtype = float), *args, **kwargs) -> None: # Calling setImage will directly set the image regardless of what scan is present
+        #    shape = image.shape
+        #    self.rank = len(shape)
+            
+        #    print(f"I received an image of rank {self.rank}")
+        #    if not isinstance(image, np.ndarray): image = np.zeros((2, 2))
+            
+        #    print(f"{image = }")
+        #    return super().setImage(image, *args, **kwargs)
+        
+        def setScan(self, scan: np.ndarray) -> None: # Saves a 4D scan array, from which slices can be retrieved
+            shape = scan.shape
+            self.rank = len(shape)
+            
+            if self.rank < 2 or self.rank > 4: return # Only 2D images, 3D and 4D arrays supported at this time
+            self.scan = scan
+            
+            self.directions = 1
+            self.n_channels = 1
+            match self.rank:
+                case 2: # Flat image
+                    self.pixels = shape[0]
+                    self.lines = shape[1]
+                    self.setImage(scan)
+                case 3: # x, y and channel axes
+                    self.n_channels = shape[0]
+                    self.pixels = shape[1]
+                    self.lines = shape[2]
+                    self.setImage(scan[0])
+                case 4: # x, y and channel axes and forward/backward
+                    self.directions = 2
+                    self.n_channels = shape[1]
+                    self.pixels = shape[2]
+                    self.lines = shape[3]
+                    self.setImage(scan[0, 0])
+            return
+
+        def setChannels(self, channels: list | np.ndarray) -> None:
+            self.channels = np.array(channels, dtype = str)
+            return
+
+        def showImage(self, axis: int = 0, channel: int | str = 0, direction: str = "forward") -> None:
+            if np.linalg.matrix_rank(self.scan) == 3: print(f"Showing image at axis {axis}, channel {channel}, direction {direction}")
             return
 
         def setGrid(self, grid: dict) -> None:
             """
-            Parses the grid dictionary and applies the correct scaling, centering, and rotation transformations.
+            Parses the provided grid dictionary and applies the correct scaling, centering, and rotation transformations.
             """
             [pixels, lines, pixel_width, pixel_height, scan_range, offset, angle] = [grid.get(key, None) for key in ["pixels", "lines", "pixel_width (nm)", "pixel_height (nm)", "scan_range (nm)", "offset (nm)", "angle (deg)"]]
             [width, height] = [scan_range[index] for index in range(2)]
             [x, y] = [offset[index] for index in range(2)]
+            
+            pixels = self.pixels
+            lines = self.lines
+            pixel_width = width / pixels
+            pixel_height = height / pixels
                         
             for value in [pixels, lines, width, height, angle]:
                 if not isinstance(value, float | int): return
@@ -1045,16 +1108,24 @@ class SCTWidgets:
     class ImageView(pg.ImageView):
         position_signal = QtCore.pyqtSignal(float, float)
         position_signal_middle_button = QtCore.pyqtSignal(float, float)
+        scan_file_signal = QtCore.pyqtSignal()
         
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.setDefaults()
         
         def setDefaults(self) -> None:
-            self.view.invertY(False)
+            if isinstance(self.view, pg.PlotItem): self.view.invertY(False)
+            self.getViewBox().setBackgroundColor("#000000")
             self.ui.menuBtn.hide()
+            self.setAcceptDrops(True)
+            self.blockDrops = False
             return
-        
+
+        def getViewBox(self):
+            if isinstance(self.view, pg.PlotItem): return self.view.getViewBox()
+            else: return self.view
+
         def addWidget(self, widget: QtWidgets.QWidget) -> None:
             layout = self.ui.gridLayout
             
@@ -1090,6 +1161,69 @@ class SCTWidgets:
                 
             # Call base class implementation
             return super().mousePressEvent(event)
+        
+        def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
+            try:
+                urls: list[QtCore.QUrl] = event.mimeData().urls()
+                file_path = urls[0].toLocalFile()
+                if os.path.splitext(file_path)[1] in [".hdf5"]:
+                    self.scan_file_signal.emit()
+                    self.getViewBox().setBackgroundColor("#202020")
+            except:
+                pass
+            event.accept()
+            return
+        
+        def dragLeaveEvent(self, event):
+            self.getViewBox().setBackgroundColor("#000000")
+            event.accept()
+            return
+        
+        def dropEvent(self, event: QtGui.QDropEvent):
+            self.getViewBox().setBackgroundColor("#000000")
+            event.accept()
+            if self.blockDrops:
+                print("Cannot open scan files while an experiment is running")
+                return
+            
+            try:
+                urls: list[QtCore.QUrl] = event.mimeData().urls()
+                file_path = urls[0].toLocalFile()
+                if os.path.splitext(file_path)[1] == ".hdf5": self.openScanFile(file_path)
+            except:
+                pass
+            return
+        
+        def openScanFile(self, file_path: str = "") -> None:
+            try:
+                with h5py.File(file_path, "r") as f:
+                    datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
+                    groups = {key: value for key, value in f.items() if isinstance(value, h5py.Group)}
+                    
+                    grid = False
+                    if "grid" in groups.keys():
+                        grid_view = f["grid"].attrs
+                        grid = {key: value for key, value in grid_view.items()}
+                    if not isinstance(grid, dict): raise Exception("This HDF5 file does not have a valid \"grid\" group")
+                    for key in ["offset (nm)", "scan_range (nm)", "angle (deg)"]:
+                        if not key in grid: raise Exception(f"This HDF5 file has a \"grid\" group, but it is missing the following parameter: {key}")
+                    
+                    scan = False
+                    if "scan" in datasets.keys():
+                        scan = datasets["scan"][:]
+                    if not isinstance(scan, np.ndarray): raise Exception("This HDF5 file does not have a valid \"scan\" dataset")
+                
+                scan_item = SCTWidgets.ScanItem()
+                scan_item.setScan(scan)
+                scan_item.setGrid(grid)
+                self.view.addItem(scan_item)
+                self.imageItem = scan_item
+                self.getHistogramWidget().setImageItem(scan_item)
+                    
+                print(f"Successfully loaded HDF5 scan file {file_path}")
+            except Exception as e:
+                print(f"Could not open this HDF5 file: {e}")
+            return
 
     class GridItem(pg.ScatterPlotItem):
         def __init__(self, x_values: np.ndarray = np.linspace(0, 1, 3), y_values: np.ndarray = np.linspace(0, 1, 3), size: int = 2, color: str = "#FFFFFF"):
@@ -1606,98 +1740,100 @@ class SCTWidgets:
         def __init__(self):
             super().__init__()
 
-    class MinMaxMethods(QtWidgets.QWidget):
-        stateChanged = QtCore.pyqtSignal()
-
-        def __init__(self):
-            super().__init__()
-            
-            self.widget_layout = make_layout("g")
-            self.widget_layout.setContentsMargins(2, 0, 2, 0)
-            self.setLayout(self.widget_layout)
-            
-            self.methods = []
-            self.min_line_edits = {}
-            self.min_checkboxes = {}
-            self.buttons = {}
-            self.max_checkboxes = {}
-            self.max_line_edits = {}
-            self.min_button_group = SCTWidgets.ButtonGroup(exclusive = True)
-            self.max_button_group = SCTWidgets.ButtonGroup(exclusive = True)
-            self.min_button_group.clicked.connect(lambda button_name: self.stateChanged.emit())
-            self.max_button_group.clicked.connect(lambda button_name: self.stateChanged.emit())
 
 
+class MinMaxMethods(QtWidgets.QWidget):
+    stateChanged = QtCore.pyqtSignal()
 
-        def addMethod(self, method_name: str = "", min_value: float = 0, max_value: float = 1, digits: int = None, limits: list = None, unit: str = "nm", icon: QtGui.QIcon = None, tooltip: str = "", max_width: int = 70) -> None:            
-            self.min_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = min_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width, edited_color = "#101010")})
-            self.min_checkboxes.update({f"{method_name}": SCTWidgets.CheckBox(tooltip = tooltip)})
-            self.buttons.update({f"{method_name}": SCTWidgets.MultiStateButton(icon = icon, tooltip = tooltip)})
-            self.max_checkboxes.update({f"{method_name}": SCTWidgets.CheckBox(tooltip = tooltip)})
-            self.max_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = max_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width, edited_color = "#101010")})
-            
-            self.min_button_group.addButton(self.min_checkboxes[f"{method_name}"], name = f"{method_name}")
-            self.max_button_group.addButton(self.max_checkboxes[f"{method_name}"], name = f"{method_name}")
-            self.methods.append(method_name)
-            if len(self.methods) < 2:
-                self.min_checkboxes[f"{method_name}"].setState(1)
-                self.max_checkboxes[f"{method_name}"].setState(1)
-            
-            row_widgets = [self.min_line_edits[f"{method_name}"], self.min_checkboxes[f"{method_name}"], self.buttons[f"{method_name}"], self.max_checkboxes[f"{method_name}"], self.max_line_edits[f"{method_name}"]]
-            row_index = self.widget_layout.rowCount()
-            [self.widget_layout.addWidget(widget, row_index, column_index, QtCore.Qt.AlignmentFlag.AlignCenter) for column_index, widget in enumerate(row_widgets)]
-            
-            self.widget_layout.setSpacing(0)
-            self.widget_layout.update()
-            self.setLayout(self.widget_layout)
-            
-            self.buttons[f"{method_name}"].clicked.connect(lambda checked: self.setMinMax(method_name))
-            return
+    def __init__(self):
+        super().__init__()
         
-        def setUnit(self, method_name: str = "", unit: str = "") -> None:
-            try: self.min_line_edits[f"{method_name}"].setUnit(unit)
-            except: pass
-            return
-
-        def setValue(self, method_name: str = "", side: str = "min", value: float = 0) -> None:
-            try:
-                match side:
-                    case "min": self.min_line_edits[f"{method_name}"].setValue(value)
-                    case "max": self.max_line_edits[f"{method_name}"].setValue(value)
-                    case _: pass
-            except:
-                pass
-            return
+        self.widget_layout = make_layout("g")
+        self.widget_layout.setContentsMargins(2, 0, 2, 0)
+        self.setLayout(self.widget_layout)
         
-        @QtCore.pyqtSlot(str)
-        def setMinMax(self, method: str = ""):
-            try:
-                [group.blockSignals(True) for group in [self.min_button_group, self.max_button_group]]
-                self.min_button_group.widgetClicked(name = f"{method}")
-                self.max_button_group.widgetClicked(name = f"{method}")
-                [group.blockSignals(False) for group in [self.min_button_group, self.max_button_group]]
-                self.stateChanged.emit()
-            except:
-                print(f"Error. Cannot find the checkboxes corresponding to method {method} of the clicked button")
-            return
+        self.methods = []
+        self.min_line_edits = {}
+        self.min_checkboxes = {}
+        self.buttons = {}
+        self.max_checkboxes = {}
+        self.max_line_edits = {}
+        self.min_button_group = SCTWidgets.ButtonGroup(exclusive = True)
+        self.max_button_group = SCTWidgets.ButtonGroup(exclusive = True)
+        self.min_button_group.clicked.connect(lambda button_name: self.stateChanged.emit())
+        self.max_button_group.clicked.connect(lambda button_name: self.stateChanged.emit())
 
-        def getMax(self):
-            try:
-                max_method  = self.max_button_group.getSelectedWidget()
-                max_value = self.max_line_edits[f"{max_method}"].getValue()
-                return [f"{max_method}", f"{max_value}"]
-            except:
-                print(f"Error retrieving the maximum value")
-                return False
+
+
+    def addMethod(self, method_name: str = "", min_value: float = 0, max_value: float = 1, digits: int = None, limits: list = None, unit: str = "nm", icon: QtGui.QIcon = None, tooltip: str = "", max_width: int = 70) -> None:            
+        self.min_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = min_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width, edited_color = "#101010")})
+        self.min_checkboxes.update({f"{method_name}": SCTWidgets.CheckBox(tooltip = tooltip)})
+        self.buttons.update({f"{method_name}": SCTWidgets.MultiStateButton(icon = icon, tooltip = tooltip)})
+        self.max_checkboxes.update({f"{method_name}": SCTWidgets.CheckBox(tooltip = tooltip)})
+        self.max_line_edits.update({f"{method_name}": SCTWidgets.PhysicsLineEdit(value = max_value, digits = digits, limits = limits, unit = unit, tooltip = tooltip, max_width = max_width, edited_color = "#101010")})
         
-        def getMin(self):
-            try:
-                min_method  = self.min_button_group.getSelectedWidget()
-                min_value = self.min_line_edits[f"{min_method}"].getValue()
-                return [f"{min_method}", f"{min_value}"]
-            except:
-                print(f"Error retrieving the minimum value")
-                return False
+        self.min_button_group.addButton(self.min_checkboxes[f"{method_name}"], name = f"{method_name}")
+        self.max_button_group.addButton(self.max_checkboxes[f"{method_name}"], name = f"{method_name}")
+        self.methods.append(method_name)
+        if len(self.methods) < 2:
+            self.min_checkboxes[f"{method_name}"].setState(1)
+            self.max_checkboxes[f"{method_name}"].setState(1)
+        
+        row_widgets = [self.min_line_edits[f"{method_name}"], self.min_checkboxes[f"{method_name}"], self.buttons[f"{method_name}"], self.max_checkboxes[f"{method_name}"], self.max_line_edits[f"{method_name}"]]
+        row_index = self.widget_layout.rowCount()
+        [self.widget_layout.addWidget(widget, row_index, column_index, QtCore.Qt.AlignmentFlag.AlignCenter) for column_index, widget in enumerate(row_widgets)]
+        
+        self.widget_layout.setSpacing(0)
+        self.widget_layout.update()
+        self.setLayout(self.widget_layout)
+        
+        self.buttons[f"{method_name}"].clicked.connect(lambda checked: self.setMinMax(method_name))
+        return
+    
+    def setUnit(self, method_name: str = "", unit: str = "") -> None:
+        try: self.min_line_edits[f"{method_name}"].setUnit(unit)
+        except: pass
+        return
+
+    def setValue(self, method_name: str = "", side: str = "min", value: float = 0) -> None:
+        try:
+            match side:
+                case "min": self.min_line_edits[f"{method_name}"].setValue(value)
+                case "max": self.max_line_edits[f"{method_name}"].setValue(value)
+                case _: pass
+        except:
+            pass
+        return
+    
+    @QtCore.pyqtSlot(str)
+    def setMinMax(self, method: str = ""):
+        try:
+            [group.blockSignals(True) for group in [self.min_button_group, self.max_button_group]]
+            self.min_button_group.widgetClicked(name = f"{method}")
+            self.max_button_group.widgetClicked(name = f"{method}")
+            [group.blockSignals(False) for group in [self.min_button_group, self.max_button_group]]
+            self.stateChanged.emit()
+        except:
+            print(f"Error. Cannot find the checkboxes corresponding to method {method} of the clicked button")
+        return
+
+    def getMax(self):
+        try:
+            max_method  = self.max_button_group.getSelectedWidget()
+            max_value = self.max_line_edits[f"{max_method}"].getValue()
+            return [f"{max_method}", f"{max_value}"]
+        except:
+            print(f"Error retrieving the maximum value")
+            return False
+    
+    def getMin(self):
+        try:
+            min_method  = self.min_button_group.getSelectedWidget()
+            min_value = self.min_line_edits[f"{min_method}"].getValue()
+            return [f"{min_method}", f"{min_value}"]
+        except:
+            print(f"Error retrieving the minimum value")
+            return False
 
 
 
