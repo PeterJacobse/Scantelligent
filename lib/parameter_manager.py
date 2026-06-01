@@ -431,15 +431,8 @@ class ParameterManager(QtCore.QObject):
                 abs_center = sct.gui.new_frame_roi.mapToParent(local_center)
                 sct.gui.new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
 
-                # Refresh the transformations on the image_item
-                if sct.gui.buttons["view"].state_name == "nanonis": sct.gui.image_item.setGrid(parameters)
-                    #box = QtCore.QRectF(-w_nm / 2, -h_nm / 2, w_nm, h_nm)
-                    #sct.gui.image_item.setRect(box)    
-                    
-                    #center = sct.gui.image_item.boundingRect().center()
-                    #sct.gui.image_item.setTransformOriginPoint(center)
-                    #sct.gui.image_item.setRotation(90 - angle_deg)
-                    #sct.gui.image_item.setPos(x_0_nm, y_0_nm)
+                # Refresh the transformations on the scan_item
+                if sct.gui.buttons["view"].state_name == "nanonis": sct.gui.scan_item.setGrid(parameters)
             
             case "path":
                 [coords, visible] = [parameters.get(key, None) for key in ["coordinates (nm)", "hidden"]]

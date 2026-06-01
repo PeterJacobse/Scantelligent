@@ -93,16 +93,6 @@ class SCTWidgets:
                 self.setGrid(grid)
 
 
-
-        #def setImage(self, image: np.ndarray = np.empty((0, 0), dtype = float), *args, **kwargs) -> None: # Calling setImage will directly set the image regardless of what scan is present
-        #    shape = image.shape
-        #    self.rank = len(shape)
-            
-        #    print(f"I received an image of rank {self.rank}")
-        #    if not isinstance(image, np.ndarray): image = np.zeros((2, 2))
-            
-        #    print(f"{image = }")
-        #    return super().setImage(image, *args, **kwargs)
         
         def setScan(self, scan: np.ndarray) -> None: # Saves a 4D scan array, from which slices can be retrieved
             shape = scan.shape
@@ -132,18 +122,31 @@ class SCTWidgets:
             return
 
         def setChannels(self, channels: list | np.ndarray) -> None:
-            self.channels = np.array(channels, dtype = str)
+            self.channel_names = np.array(channels, dtype = str)
             return
 
         def showImage(self, axis: int = 0, channel: int | str = 0, direction: str = "forward") -> None:
-            if np.linalg.matrix_rank(self.scan) == 3: print(f"Showing image at axis {axis}, channel {channel}, direction {direction}")
+            if isinstance(channel, str):
+                print(f"Channel requested: {channel}")
+                print(f"Channels available: {self.channel_names}")
+                        
+            match self.rank:
+                case 2: # The scan is a flat image
+                    self.setImage(self.scan)
+                case 3:
+                    self.setImage(self.scan[0])
+                case 4:
+                    self.setImage(self.scan[0, 0])
+                case _:
+                    pass
+            print(f"Showing image at axis {axis}, channel {channel}, direction {direction}")
             return
 
         def setGrid(self, grid: dict) -> None:
             """
             Parses the provided grid dictionary and applies the correct scaling, centering, and rotation transformations.
             """
-            [pixels, lines, pixel_width, pixel_height, scan_range, offset, angle] = [grid.get(key, None) for key in ["pixels", "lines", "pixel_width (nm)", "pixel_height (nm)", "scan_range (nm)", "offset (nm)", "angle (deg)"]]
+            [scan_range, offset, angle] = [grid.get(key, None) for key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]]
             [width, height] = [scan_range[index] for index in range(2)]
             [x, y] = [offset[index] for index in range(2)]
             
@@ -154,11 +157,11 @@ class SCTWidgets:
                         
             for value in [pixels, lines, width, height, angle]:
                 if not isinstance(value, float | int): return
-            
+                        
             self.resetTransform()
             transform = QtGui.QTransform()
             transform.rotate(-angle)
-            transform.scale(1 / pixel_width, 1 / pixel_height)
+            transform.scale(pixel_width, pixel_height)
             transform.translate(-.5 * pixels, -.5 * lines)
             self.setTransform(transform)
             self.setPos(x, y)
@@ -1108,7 +1111,7 @@ class SCTWidgets:
     class ImageView(pg.ImageView):
         position_signal = QtCore.pyqtSignal(float, float)
         position_signal_middle_button = QtCore.pyqtSignal(float, float)
-        scan_file_signal = QtCore.pyqtSignal()
+        scan_file_signal = QtCore.pyqtSignal(str)
         
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -1167,7 +1170,6 @@ class SCTWidgets:
                 urls: list[QtCore.QUrl] = event.mimeData().urls()
                 file_path = urls[0].toLocalFile()
                 if os.path.splitext(file_path)[1] in [".hdf5"]:
-                    self.scan_file_signal.emit()
                     self.getViewBox().setBackgroundColor("#202020")
             except:
                 pass
@@ -1189,40 +1191,9 @@ class SCTWidgets:
             try:
                 urls: list[QtCore.QUrl] = event.mimeData().urls()
                 file_path = urls[0].toLocalFile()
-                if os.path.splitext(file_path)[1] == ".hdf5": self.openScanFile(file_path)
+                if os.path.splitext(file_path)[1] == ".hdf5": self.scan_file_signal.emit(file_path)
             except:
                 pass
-            return
-        
-        def openScanFile(self, file_path: str = "") -> None:
-            try:
-                with h5py.File(file_path, "r") as f:
-                    datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
-                    groups = {key: value for key, value in f.items() if isinstance(value, h5py.Group)}
-                    
-                    grid = False
-                    if "grid" in groups.keys():
-                        grid_view = f["grid"].attrs
-                        grid = {key: value for key, value in grid_view.items()}
-                    if not isinstance(grid, dict): raise Exception("This HDF5 file does not have a valid \"grid\" group")
-                    for key in ["offset (nm)", "scan_range (nm)", "angle (deg)"]:
-                        if not key in grid: raise Exception(f"This HDF5 file has a \"grid\" group, but it is missing the following parameter: {key}")
-                    
-                    scan = False
-                    if "scan" in datasets.keys():
-                        scan = datasets["scan"][:]
-                    if not isinstance(scan, np.ndarray): raise Exception("This HDF5 file does not have a valid \"scan\" dataset")
-                
-                scan_item = SCTWidgets.ScanItem()
-                scan_item.setScan(scan)
-                scan_item.setGrid(grid)
-                self.view.addItem(scan_item)
-                self.imageItem = scan_item
-                self.getHistogramWidget().setImageItem(scan_item)
-                    
-                print(f"Successfully loaded HDF5 scan file {file_path}")
-            except Exception as e:
-                print(f"Could not open this HDF5 file: {e}")
             return
 
     class GridItem(pg.ScatterPlotItem):

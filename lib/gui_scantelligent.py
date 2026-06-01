@@ -630,7 +630,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         hist_widget.setMaximumWidth(70)
         view.invertY(False) # y increases towards the top of the screen
         self.view = view.getViewBox() # Since view = pg.PlotItem instead of ViewBox, the ViewBox is actually accessed by view.getViewBox()
-        self.image_item = image_view.imageItem
+        self.scan_item = image_view.imageItem
         self.hist_item = hist_widget.item
         
         camera_view = pg.RawImageWidget()

@@ -1,4 +1,4 @@
-import os, sys, html, atexit, re, copy, time
+import os, sys, html, atexit, re, copy, time, h5py
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore
@@ -141,7 +141,7 @@ class Scantelligent(QtCore.QObject):
         
         # ImageView
         self.gui.limits_button.clicked.connect(self.gui.dialogs["limits"].show)
-        self.gui.image_view.scan_file_signal.connect(lambda: self.toggle_view("nanonis")) # Set view to Nanonis whenever a scan file is loaded into the image view
+        self.gui.image_view.scan_file_signal.connect(self.open_scan_file)
         
         
         
@@ -399,11 +399,11 @@ class Scantelligent(QtCore.QObject):
                     (processed_scan, statistics, limits, error) = self.data.process_scan(image)
                     [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
                     
-                    self.gui.image_item.setImage(np.flipud(processed_scan))
+                    self.gui.scan_item.setImage(np.flipud(processed_scan))
                     self.gui.hist_item.setLevels(limits[0], limits[1])
                 
                 case "camera":
-                    self.gui.image_item.setImage(np.flipud(image), autoRange = False)
+                    self.gui.scan_item.setImage(np.flipud(image), autoRange = False)
                                     
                 case _:
                     pass
@@ -467,6 +467,41 @@ class Scantelligent(QtCore.QObject):
             self.graph_buffer_index = new_buffer_index
         
         self.redraw_graph()
+        return
+
+    @QtCore.pyqtSlot(str)
+    def open_scan_file(self, file_path: str) -> None:
+        self.toggle_view("nanonis")
+        
+        try:
+            with h5py.File(file_path, "r") as f:
+                datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
+                groups = {key: value for key, value in f.items() if isinstance(value, h5py.Group)}
+                
+                grid = False
+                if "grid" in groups.keys():
+                    grid_view = f["grid"].attrs
+                    grid = {key: value for key, value in grid_view.items()}
+                if not isinstance(grid, dict): raise Exception("This HDF5 file does not have a valid \"grid\" group")
+                for key in ["offset (nm)", "scan_range (nm)", "angle (deg)"]:
+                    if not key in grid: raise Exception(f"This HDF5 file has a \"grid\" group, but it is missing the following parameter: {key}")
+                
+                scan = False
+                if "scan" in datasets.keys():
+                    scan = datasets["scan"][:]
+                if not isinstance(scan, np.ndarray): raise Exception("This HDF5 file does not have a valid \"scan\" dataset")
+            
+            scan_item = SCTWidgets.ScanItem()
+            scan_item.setScan(scan)
+            self.gui.image_view.addItem(scan_item)
+            self.gui.image_view.imageItem = scan_item
+            self.gui.scan_item = self.gui.image_view.getImageItem()
+            self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
+            self.nanonis.grid_update(grid) # This calls setGrid on the new scan_item
+                
+            self.logprint(f"Successfully loaded HDF5 scan file {file_path}", message_type = "success")
+        except Exception as e:
+            self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
         return
 
 
@@ -673,8 +708,8 @@ class Scantelligent(QtCore.QObject):
             pass
         self.gui.image_view.addItem(new_item)
         self.gui.image_view.imageItem = new_item # Update the main ImageItem of the ImageView
-        self.gui.image_item = self.gui.image_view.getImageItem()
-        self.gui.image_view.getHistogramWidget().setImageItem(self.gui.image_item)
+        self.gui.scan_item = self.gui.image_view.getImageItem()
+        self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
         self.gui.view = self.gui.image_view.getView().getViewBox()
 
         # Save the old item if desired
@@ -721,7 +756,7 @@ class Scantelligent(QtCore.QObject):
         elif old_view in ["nanonis", "graph"]: self.refresh_image(save = True)
 
         # Reset ImageView. Remove old items. Prepare the QSplitters for resizing
-        [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
+        [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.scan_item]
         [min_view_height, min_graph_height, min_console_height] = [self.gui.splitters["image_graph"].widget(index).minimumSizeHint().height() for index in range(3)]
         total_splitter_height = self.gui.splitters["image_graph"].height()
 
@@ -732,10 +767,10 @@ class Scantelligent(QtCore.QObject):
                 
                 # Grab a single frame and use it to reset the ImageView
                 camera_frame = self.camera.grab_frame()
-                self.gui.image_item.setImage(camera_frame)
-                self.gui.image_item.resetTransform()
-                self.gui.image_item.setRotation(0)
-                self.gui.image_item.setPos(0, 0)
+                self.gui.scan_item.setImage(camera_frame)
+                self.gui.scan_item.resetTransform()
+                self.gui.scan_item.setRotation(0)
+                self.gui.scan_item.setPos(0, 0)
                 self.gui.view.autoRange()
                 
                 # Set up the camera thread
@@ -771,11 +806,11 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["view"].setState("none")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
-                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.image_item]
-                self.gui.image_item.setImage(self.splash_screen)
-                self.gui.image_item.resetTransform()
-                self.gui.image_item.setRotation(0)
-                self.gui.image_item.setPos(0, 0)                
+                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.scan_item]
+                self.gui.scan_item.setImage(self.splash_screen)
+                self.gui.scan_item.resetTransform()
+                self.gui.scan_item.setRotation(0)
+                self.gui.scan_item.setPos(0, 0)                
                 self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
@@ -900,12 +935,12 @@ class Scantelligent(QtCore.QObject):
         
         
         
-        # Apply the processing to the image
-        self.gui.image_item = self.gui.image_view.getImageItem()
-        (processed_scan, statistics, limits, error) = self.data.process_scan(self.gui.image_item)
-        [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]        
-        self.gui.image_item.setImage(processed_scan)
-        self.gui.hist_item.setLevels(limits[0], limits[1])
+        if self.gui.buttons["view"].state_name == "nanonis":
+            (processed_scan, statistics, limits, error) = self.data.process_scan(self.gui.scan_item.image)
+            [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
+                    
+            self.gui.scan_item.setImage(np.flipud(processed_scan))
+            self.gui.hist_item.setLevels(limits[0], limits[1])
         return
 
 
