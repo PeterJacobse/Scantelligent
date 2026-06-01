@@ -175,7 +175,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "spectelligent_2": MSB(tooltip = "Open Spectelligent", icon = icons.get("start_spectrum"), size = 28),
             
             # Experiment
-            "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy"), click_to_toggle = False,
+            "save": MSB(tooltip = "Save the experiment results to file", icon = icons.get("floppy"), click_to_toggle = True,
                         states = [{"name": "idle", "color": sct_black, "tooltip": "Click this button to save experiment data"},
                                   {"name": "data_present", "color": sct_blue, "tooltip": "Experiment data is present. Click to save"},
                                   {"name": "data_saved", "color": self.colors["dark_green"], "tooltip": "Experiment data was saved"}]),
@@ -287,7 +287,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                                                     {"name": "on", "tooltip": "Click to hide the tip path", "color": sct_blue}]),
             
             "slice": MSB(icon = icons.get("slice_xy"), tooltip = "Select which plane to slice the scan over"),
-            "set_dz": MSB(icon = icons.get("set_dz"), tooltip = "Push to set delta_z\nSee value below")
+            "set_dz": MSB(icon = icons.get("set_dz"), tooltip = "Push to set delta_z\nSee value below"),
+            "trash": MSB(icon = icons.get("trash"), tooltip = "Discard the currently selected scan_item")
         }
         self.limits_button = QtWidgets.QPushButton("limits")
         
@@ -655,20 +656,21 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
         return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0)
 
-    def make_plot_widgets(self) -> tuple[pg.PlotWidget, list[pg.PlotDataItem], pg.PlotWidget, list[pg.PlotDataItem]]:
+    def make_plot_widgets(self) -> tuple[SCTWidgets.PlotWidget, list[pg.PlotDataItem], SCTWidgets.PlotWidget, list[pg.PlotDataItem]]:
         plot_widget = SCTWidgets.PlotWidget(colors = self.color_list)
-        waveform_widget = pg.PlotWidget()
+        waveform_widget = SCTWidgets.PlotWidget(colors = self.color_list)
 
-        pdis = [] # PlotDataItems
-        for i in range(35):
-            pen = pg.mkPen(self.color_list[i])
-            pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)            
-            pdis.append(pdi)
-        
+        #pdis = [] # PlotDataItems
+        #for i in range(35):
+        #    pen = pg.mkPen(self.color_list[i], width = 1)
+        #    pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)
+        #    plot_widget.addItem(pdi)
+        #    pdis.append(pdi)
+        pdis = []
         waveforms = [] # PlotDataItems
         for i in range(4):
-            pen = pg.mkPen(self.color_list[i])
-            waveform = waveform_widget.plot(x_data = [], y_data = [], pen = pen)            
+            pen = pg.mkPen(self.color_list[i], width = 1)
+            waveform = waveform_widget.plot(x_data = [], y_data = [], pen = pen)
             waveforms.append(waveform)
         
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
@@ -809,9 +811,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        layouts["channels"].addWidget(comboboxes["graph_x_axis"], 1, 0, 1, 5)
+        layouts["channels"].addWidget(line_edits["graph_buffer_size"], 1, 0, 1, 5)
         [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], 2 + i % 7, int(i / 7)) for i in range(35)]
-        layouts["channels"].addWidget(line_edits["graph_buffer_size"], 9, 0, 1, 5)
+        layouts["channels"].addWidget(comboboxes["graph_x_axis"], 9, 0, 1, 5)
         layouts["channels"].setRowStretch(0, 1)
         
         layouts["graph"].addWidget(self.plot_widget, 5)

@@ -13,8 +13,8 @@ class AbortedError(Exception):
     def __init__(self):
         super().__init__()
 
-
-
+    
+    
 class BaseExperiment(QObject):
     task_progress = pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of a task
     exp_progress = pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of the experiment
@@ -303,8 +303,8 @@ class BaseExperiment(QObject):
         scan_data = np.zeros(dataset.shape, dtype = np.float32)
         
         for index, channel_index in enumerate(channel_indices):
-            (forward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = False, verbose = False)
-            (backward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = True, verbose = False)
+            (forward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = False, verbose = False, emit_image = False)
+            (backward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = True, verbose = False, emit_image = False)
             dataset[0, index] = forward_scan
             dataset[1, index] = backward_scan
             scan_data[0, index] = forward_scan

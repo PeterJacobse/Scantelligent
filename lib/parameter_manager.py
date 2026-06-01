@@ -468,8 +468,8 @@ class ParameterManager(QtCore.QObject):
                 if current_gain: sct.gui.comboboxes["tia_gain"].selectItem(current_gain)
 
             case "scan_metadata":
-                signals = parameters.get("signal_dict")
-                [sct.gui.comboboxes[f"nanonis_mod{index + 1}"].renewItems(list(signals.keys())) for index in range(2)]
+                signals = parameters.get("signal_dict", None)
+                if isinstance(signals, dict): [sct.gui.comboboxes[f"nanonis_mod{index + 1}"].renewItems(list(signals.keys())) for index in range(2)]
 
                 # Refresh the recorded channels
                 old_channels = sct.data.scan_processing_flags.get("channels")

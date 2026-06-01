@@ -80,14 +80,19 @@ class SCTWidgets:
             # Instantiate with dummy data. To be overridden later
             self.name = name
             if isinstance(scan, np.ndarray): self.scan = scan
-            else: self.scan = np.zeros((2, 2, 2, 2), dtype = float)
+            else: self.scan = np.empty((2, 2, 2, 2), dtype = float)
             self.pixels = 2
             self.lines = 2
             self.directions = 2
             self.direction_names = np.array(["forward", "backward"])
+            self.direction_index = 0
+            self.direction = "forward"
             self.n_channels = 2
             self.channel_names = np.array(["channel 0", "channel 1"])
+            self.channel_index = 0
+            self.channel = "channel 0"
             self.setImage(self.scan[0, 0])
+            self.rank = 4
             
             if isinstance(grid, dict) and "offset (nm)" in grid.keys() and "scan_range (nm)" in grid.keys() and "angle (deg)" in grid.keys():
                 self.grid = grid
@@ -129,23 +134,36 @@ class SCTWidgets:
         def setChannels(self, channels: list | np.ndarray) -> None:
             self.channel_names = np.array(channels, dtype = str)
             return
+        
+        def setChannel(self, channel: str | int) -> None:
+            if isinstance(channel, str) and channel in self.channel_names:
+                for index, name in enumerate(self.channel_names):
+                    if name == channel:
+                        self.channel_index = index
+                        break
+            elif isinstance(channel, int) and -1 < channel < len(self.channel_names):
+                self.channel_index = channel
+            return
 
-        def showImage(self, axis: int = 0, channel: int | str = 0, direction: str = "forward") -> None:
-            if isinstance(channel, str):
-                print(f"Channel requested: {channel}")
-                print(f"Channels available: {self.channel_names}")
+        def setDirection(self, direction: str | int) -> None:
+            if direction == "forward" or direction == 0: self.direction_index = 0
+            else: self.direction_index = 1
+            return
 
+        def getImage(self, axis: int = 0, channel: str | int = None, direction: str | int = None) -> np.ndarray:
+            if isinstance(channel, str | int): self.setChannel(channel)
+            if isinstance(direction, str | int): self.setDirection(direction)
+            
             match self.rank:
                 case 2: # The scan is a flat image
-                    self.setImage(self.scan)
+                    data_slice = self.scan
                 case 3:
-                    self.setImage(self.scan[0])
+                    data_slice = self.scan[self.channel_index]
                 case 4:
-                    self.setImage(self.scan[int(direction == "backward"), channel])
+                    data_slice = self.scan[self.direction_index, self.channel_index]
                 case _:
                     pass
-            print(f"Showing image at axis {axis}, channel {channel}, direction {direction}")
-            return
+            return data_slice
 
         def setGrid(self, grid: dict) -> None:
             """
@@ -162,7 +180,7 @@ class SCTWidgets:
             lines = self.lines
             
             pixel_width = width / pixels
-            pixel_height = height / pixels
+            pixel_height = height / lines
                         
             for value in [pixels, lines, width, height, angle]:
                 if not isinstance(value, float | int): return
@@ -1726,12 +1744,13 @@ class SCTWidgets:
             self.n_channels = n_channels
             self.channel_names = np.array([f"channel_{index}" for index in range(n_channels)], dtype = str)
             self.x_channel = -1
-            
+
             # Make PlotDataItems
-            if len(colors) > 0: self.pdis = [self.plot(x_data = [], y_data = [], pen = pg.mkPen(colors[i % len(colors)])) for i in range(self.n_channels)]
-            else: self.pdis = [self.plot(x_data = [], y_data = [], pen = pg.mkPen(QtGui.QColor("#FFFFFF"))) for _ in range(self.n_channels)]
+            if len(colors) > 0: self.pdis = [self.plot(np.array([]), np.array([]), pen = pg.mkPen(colors[i % len(colors)], width = 1)) for i in range(self.n_channels)]
+            else: self.pdis = [self.plot(np.array([]), np.array([]), pen = pg.mkPen("#FFFFFF", width = 1)) for i in range(self.n_channels)]
+            [self.addItem(pdi) for pdi in self.pdis]
             
-            self.clear()
+            self.clearBuffer()
 
 
             
@@ -1750,16 +1769,27 @@ class SCTWidgets:
             else:
                 self.buffer[:n_channels, self.buffer_index : new_buffer_index] = data
                 self.buffer_index = new_buffer_index
-                return
+            self.plotData()
+            return
         
-        def clear(self) -> None:
+        def clearBuffer(self) -> None:
             self.buffer_full = False
             self.buffer_index = 0
             self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float16)
+            self.plotData()
+            return
+        
+        def setBufferSize(self, value: int = 6000) -> None:
+            self.buffer_size = value
+            self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float16)
+            self.buffer_full = False
+            self.buffer_index = 0
+            self.plotData()
             return
         
         def setChannelNames(self, channel_names: list | np.ndarray) -> None:
             self.channel_names = np.array(channel_names, dtype = str)
+            self.plotData()
             return
         
         def setXAxis(self, channel_index: int = -1) -> None:
@@ -1768,10 +1798,10 @@ class SCTWidgets:
             else:
                 try: self.setLabel("bottom", self.channel_names[self.x_channel])
                 except: pass
-            self.plot()
+            self.plotData()
             return
 
-        def plotData(self) -> None:
+        def plotData(self) -> None:           
             x_data = None
             if self.buffer_full: # Buffer full: roll around to capture all data points for the pdis
                 if self.x_channel > -1 and self.x_channel < self.n_channels:
@@ -1781,7 +1811,7 @@ class SCTWidgets:
                     y_data = np.concatenate((self.buffer[channel_index, self.buffer_index :], self.buffer[channel_index, : self.buffer_index]))
                     
                     if isinstance(x_data, np.ndarray): self.pdis[channel_index].setData(x_data, y_data)
-                    else: self.gui.pdis[channel_index].setData(y_data)
+                    else: self.pdis[channel_index].setData(y_data)
             else:
                 if self.x_channel > -1 and self.x_channel < self.n_channels:
                     x_data = self.buffer[self.x_channel, : self.buffer_index]

@@ -1,7 +1,7 @@
 import os, sys, html, atexit, re, copy, time, h5py
 from PIL import Image
 import numpy as np
-from PyQt6 import QtGui, QtCore
+from PyQt6 import QtGui, QtCore, sip
 import pyqtgraph as pg
 from lib import Spectelligent, SCTWidgets, ScantelligentGUI
 from lib import DataProcessing, FileFunctions, ParameterManager, UserData, AudioGenerator
@@ -62,16 +62,7 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
-        #self.monitor_thread = QtCore.QThread()
-        
-        self.graph_buffer_size = 4000
-        self.graph_buffer_index = 0
-        self.x_channel = -1 # x channel for graphing. An index of -1 means graphing parameters as a function of index, rolling when more than 6000 buffer values are filled
-        self.graph_channels = 35
-        self.channel_names = np.arange(35)
-        self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size), dtype = np.float16)
-        self.buffer_full = False
-
+                
         # Dict to keep track of the hardware and experiment status
         self.status = {
             "initialization": True,
@@ -123,7 +114,7 @@ class Scantelligent(QtCore.QObject):
 
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
-        self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.set_graph_buffer(buf_size))
+        self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.gui.plot_widget.setBufferSize(buf_size))
         
         # Comboboxes
         self.gui.comboboxes["slice"].currentIndexChanged.connect(self.update_processing_flags)
@@ -132,7 +123,7 @@ class Scantelligent(QtCore.QObject):
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
-        self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(self.set_x_axis)
+        self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda cbb = self.gui.comboboxes["graph_x_axis"].currentIndex(): self.gui.plot_widget.setXAxis(cbb - 1))
         
         # Checkboxes and button groups
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
@@ -399,11 +390,11 @@ class Scantelligent(QtCore.QObject):
                     (processed_scan, statistics, limits, error) = self.data.process_scan(image)
                     [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
                     
-                    self.gui.scan_item.setImage(np.flipud(processed_scan))
+                    self.gui.scan_item.setImage(processed_scan)
                     self.gui.hist_item.setLevels(limits[0], limits[1])
                 
                 case "camera":
-                    self.gui.scan_item.setImage(np.flipud(image), autoRange = False)
+                    self.gui.camera_item.setImage(np.flipud(image), autoRange = False)
                                     
                 case _:
                     pass
@@ -415,23 +406,24 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data: np.ndarray) -> None:
-        data_array = np.atleast_2d(data).transpose()[:self.graph_channels] # Cast the data into a 2D np.ndarray, if it isn't in that form yet
+        data_array = np.atleast_2d(data).transpose()[:self.gui.plot_widget.n_channels] # Cast the data into a 2D np.ndarray, if it isn't in that form yet
         
         # Single elements can be used to signal the grapher
         if data_array.shape == (1, 1):
-            if isinstance(data_array[0, 0], int) and data_array[0, 0] < self.graph_channels and data_array[0, 0] > -2:
+            if isinstance(data_array[0, 0], int) and data_array[0, 0] < self.gui.plot_widget.n_channels and data_array[0, 0] > -2:
                 self.x_channel = data_array[0, 0]
                 self.gui.plot_widget.setXAxis(data_array[0, 0])
                 try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
                 except: pass
             elif isinstance(data_array[0, 0], str) and data_array[0, 0] == "clear": # Magic word to clear the buffer
-                self.graph_buffer *= 0
-                self.graph_buffer_index = 0
-                [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}") for channel_index in range(self.graph_channels)]
-                [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(False) for channel_index in range(self.graph_channels)]
+                self.gui.plot_widget.clearBuffer()
+                #self.graph_buffer *= 0
+                #self.graph_buffer_index = 0
+                [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}") for channel_index in range(self.gui.plot_widget.n_channels)]
+                [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(False) for channel_index in range(self.gui.plot_widget.n_channels)]
                 self.buffer_full = False
             self.update_pdi_visibility()
-            self.redraw_graph()
+            self.gui.plot_widget.plotData()
             return
         
         # String and bool arrays can be passed to give information about channels and their checked state
@@ -442,41 +434,28 @@ class Scantelligent(QtCore.QObject):
             try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
             except: pass
             self.update_pdi_visibility()
-            self.redraw_graph()
+            self.gui.plot_widget.plotData()
             return
         elif data_array.dtype.kind == "b": # The data array has booleans. Check and uncheck according to the boolean values
             [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(value) for channel_index, value in enumerate(data_array[:, 0])]
-            self.redraw_graph()
+            self.gui.plot_widget.plotData()
             return
 
         
         
         # Numeric data is added to the buffer
-        (n_channels, n_datapoints) = data_array.shape # Read how many channels and data points are given        
-        new_buffer_index = self.graph_buffer_index + n_datapoints # Calculate where the buffer fills up to
-        
-        if new_buffer_index > self.graph_buffer_size: # If the buffer is full: roll over
-            self.buffer_full = True
-            overflow = new_buffer_index - self.graph_buffer_size
-            
-            self.graph_buffer[:n_channels, self.graph_buffer_index : self.graph_buffer_size] = data_array[:, : n_datapoints - overflow] # Fill up the remainder
-            self.graph_buffer[:n_channels, : overflow] = data_array[:, n_datapoints - overflow :] # Roll over and overwrite
-            self.graph_buffer_index = overflow
-        
-        else:
-            self.graph_buffer[:n_channels, self.graph_buffer_index : new_buffer_index] = data_array
-            self.graph_buffer_index = new_buffer_index
-        
-        self.redraw_graph()
+        self.gui.plot_widget.addData(data_array)
+        self.gui.plot_widget.plotData()
         return
 
     @QtCore.pyqtSlot(str)
     def open_scan_file(self, file_path: str) -> None:
-        if hasattr(self, "experiment_thread") and self.experiment_thread.isRunning():
-            self.logprint(f"Cannot load files while an experiment is active", message_type = "error")
-            return
+        if hasattr(self, "experiment_thread") and self.experiment_thread is not None:
+            if not sip.isdeleted(self.experiment_thread):
+                self.logprint(f"Cannot load files while an experiment is active", message_type = "error")
+                return
         
-        self.toggle_view("nanonis")        
+        self.toggle_view("nanonis")
         try:
             with h5py.File(file_path, "r") as f:
                 datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
@@ -491,18 +470,31 @@ class Scantelligent(QtCore.QObject):
                     if not key in grid: raise Exception(f"This HDF5 file has a \"grid\" group, but it is missing the following parameter: {key}")
                 
                 scan = False
+                channels = False
                 if "scan" in datasets.keys():
                     scan = datasets["scan"][:]
-                if not isinstance(scan, np.ndarray): raise Exception("This HDF5 file does not have a valid \"scan\" dataset")
+                    if "channel axis" in datasets.keys(): channels = datasets["channel axis"].asstr()[:]
+                    if "direction axis" in datasets.keys(): direction = datasets["direction axis"].asstr()[:]
+                elif "scan_group" in groups.keys():
+                    datasets = {key: value for key, value in groups["scan_group"].items() if isinstance(value, h5py.Dataset)}
+                    if "scan" in datasets.keys(): scan = datasets["scan"][:]
+                    if "channel axis" in datasets.keys(): channels = datasets["channel axis"].asstr()[:]
+                    if "direction axis" in datasets.keys(): direction = datasets["direction axis"].asstr()[:]
+                if not isinstance(scan, np.ndarray): raise Exception("The provided HDF5 file does not have a valid \"scan\" dataset")
             
             scan_item = SCTWidgets.ScanItem()
             scan_item.setScan(scan)
+            if isinstance(channels, np.ndarray):
+                channel_dict = {channels[i]: i for i in range(len(channels))}
+                self.parameters.receive({"dict_name": "scan_metadata", "channel_dict": channel_dict})
+                scan_item.setChannels(channels)
             self.gui.image_view.addItem(scan_item)
             self.gui.image_view.imageItem = scan_item
             self.gui.scan_item = self.gui.image_view.getImageItem()
             self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
             self.nanonis.grid_update(grid) # This calls setGrid on the new scan_item
-                
+            
+            self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index"))
             self.logprint(f"Successfully loaded HDF5 scan file {file_path}", message_type = "success")
         except Exception as e:
             self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
@@ -838,51 +830,10 @@ class Scantelligent(QtCore.QObject):
         self.gui.new_frame_roi.setVisible(self.gui.buttons["frame"].isChecked())
         return
 
-
-
-    # Graphing
     def update_pdi_visibility(self) -> None:
-        for index in range(self.graph_channels):
+        for index in range(self.gui.plot_widget.n_channels):
             checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
-            self.gui.pdis[index].setVisible(checked)
-        return
-
-    def redraw_graph(self):
-        if self.graph_buffer_index < 2: return # It takes at least two points to draw a graph
-        
-        x_data = None
-        if self.buffer_full: # Buffer full: roll around to capture all data points for th pdis
-            if self.x_channel > -1 and self.x_channel < self.graph_channels:
-                x_data = np.concatenate((self.graph_buffer[self.x_channel, self.graph_buffer_index :], self.graph_buffer[self.x_channel, : self.graph_buffer_index]))
-
-            for channel_index in range(self.graph_channels):
-                y_data = np.concatenate((self.graph_buffer[channel_index, self.graph_buffer_index :], self.graph_buffer[channel_index, : self.graph_buffer_index]))
-                
-                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
-                else: self.gui.pdis[channel_index].setData(y_data)
-        else:
-            if self.x_channel > -1 and self.x_channel < self.graph_channels:
-                x_data = self.graph_buffer[self.x_channel, : self.graph_buffer_index]
-            
-            for channel_index in range(self.graph_channels):
-                y_data = self.graph_buffer[channel_index, : self.graph_buffer_index]
-                
-                if isinstance(x_data, np.ndarray): self.gui.pdis[channel_index].setData(x_data, y_data)
-                else: self.gui.pdis[channel_index].setData(y_data)
-        return
-
-    def set_x_axis(self):
-        self.x_channel = self.gui.comboboxes["graph_x_axis"].currentIndex() - 1
-        cbb_items = self.gui.comboboxes["graph_x_axis"].getItems()
-        self.gui.plot_widget.setLabel("bottom", cbb_items[self.x_channel + 1])
-        self.redraw_graph()
-        pass
-
-    def set_graph_buffer(self, value: int = 6000) -> None:
-        self.graph_buffer_size = value
-        self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size))
-        self.buffer_full = False
-        self.graph_buffer_index = 0
+            self.gui.plot_widget.pdis[index].setVisible(checked)
         return
 
 
@@ -953,11 +904,15 @@ class Scantelligent(QtCore.QObject):
         
         
         if self.gui.buttons["view"].state_name == "nanonis":
-            (processed_scan, statistics, limits, error) = self.data.process_scan(self.gui.scan_item.image)
-            [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
-                    
-            self.gui.scan_item.setImage(np.flipud(processed_scan))
-            self.gui.hist_item.setLevels(limits[0], limits[1])
+            try:
+                self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index"))
+                self.gui.scan_item.setDirection(self.data.scan_processing_flags.get("backward"))
+                image = self.gui.scan_item.getImage()
+                (image, statistics, limits, error) = self.data.process_scan(image)
+                self.gui.scan_item.setImage(image)
+                
+            except Exception as e:
+                self.logprint(f"{e}")
         return
 
 
@@ -998,12 +953,12 @@ class Scantelligent(QtCore.QObject):
             
             if tip_withdrawn:
                 (tip_status, error) = self.nanonis.tip_update({"feedback": True}, unlink = True)
-                if error: raise
+                if error: raise Exception(error)
             else:
                 (tip_status, error) = self.nanonis.tip_update({"withdraw": True}, unlink = False)
                 time.sleep(.2)
                 (tip_status, error) = self.nanonis.tip_update(unlink = True, verbose = False)
-                if error: raise
+                if error: raise Exception(error)
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")
@@ -1195,8 +1150,7 @@ class Scantelligent(QtCore.QObject):
                 for i in range(9):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
                 
-                
-                
+                                
                 # Set the file name of the experiment result. If the experiment is spectroscopy, then decorate the file name with the spectroscopic axes
                 if experiment_name == "spectroscopy":
                     x_axis_name = self.spt.gui.buttons["sts_x_axis"].state_name

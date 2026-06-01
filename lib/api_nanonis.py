@@ -235,7 +235,7 @@ class NanonisAPI(QtCore.QObject):
 
         return (session_path, error)
 
-    def scan_update(self, channel: int | str, backward: bool = False, send_data: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, bool | str]:
+    def scan_update(self, channel: int | str, backward: bool = False, emit_image: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, bool | str]:
         # Initalize outputs
         scan_data = None
         error = False
@@ -260,7 +260,7 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             
             scan_data = nhw.get_scan_data(channel_index, not backward)
-            scan_image = scan_data.get("scan_data")
+            scan_image = np.flipud(scan_data.get("scan_data"))
 
             n_scan_image = np.size(scan_image)
             n_nans = np.count_nonzero(np.isnan(scan_image))
@@ -268,7 +268,7 @@ class NanonisAPI(QtCore.QObject):
             completed_percentage = int(100 * (1 - n_nans / n_scan_image))
             self.task_progress.emit(completed_percentage)
             
-            if send_data: self.image.emit(scan_image)
+            if emit_image: self.image.emit(scan_image)
 
         except Exception as e: error = e
         finally:
