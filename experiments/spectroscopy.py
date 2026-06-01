@@ -12,9 +12,7 @@ class Experiment(BaseExperiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.gui_setup = {"combobox": {},
-                          "line_edits": {"tooltips": ["1", "2"], "values": [-2, 10, 2, 100], "units": ["V", "mV", "V", "ms"], "digits": [3, 2, 1, 0, 4], "tooltips": ["bla"]},
-                          "buttons": {}}
+        self.gui_setup = {}
 
     @BaseExperiment.experiment_handler
     def run(self):
@@ -42,7 +40,7 @@ class Experiment(BaseExperiment):
         # Read parameters from Nanonis
         nanonis_parameters = self.start_parameters["nanonis"]
         nn_hardware_dict = nanonis_parameters.get("hardware", {})
-        [tia_gain, tia_gain_V_per_pA] = [nn_hardware_dict.get(key) for key in ["current_gain", "gain (V/pA)"]]
+        [tia_gain, tia_gain_V_per_pA] = [nn_hardware_dict.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
         start_feedback = nanonis_parameters.get("tip_status").get("feedback")
         
         # Read parameters from the MLA
@@ -54,10 +52,9 @@ class Experiment(BaseExperiment):
         mla_output_masks = mla_parameters.get("outputs").get("output_masks")
         if not V_fb: V_fb = mla_bias.get("port_1 (V)", 1.0)
         
+        # Retrieve the tia corrections
         tia_corrections = None
-        if tia_correct:
-            try: tia_corrections = self.tia_corrections.get(tia_gain)[1]
-            except: pass
+        if tia_correct and tia_gain in self.luts.keys(): tia_corrections = self.luts.get(tia_gain)
         
         # Set up spectroscopy x axis
         x_values = None
@@ -219,8 +216,8 @@ class Experiment(BaseExperiment):
                 
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = None, channel_names_callback = self.data_array.emit)
                 
-                measurement_ds = self.output_file.create_dataset("Sweep", data = single_sweep_array, dtype = float)
-                error_ds = self.output_file.create_dataset("Errors (std. dev.)", data = single_sweep_error_array, dtype = float)
+                measurement_ds = self.output_file.create_dataset("sweep", data = single_sweep_array, dtype = float)
+                error_ds = self.output_file.create_dataset("errors (std. dev.)", data = single_sweep_error_array, dtype = float)
                 channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
                 channels_ds.make_scale("channels")
                 
@@ -247,9 +244,9 @@ class Experiment(BaseExperiment):
         measurement_array[0] = single_sweep_array
         error_array = np.zeros_like(measurement_array)
         
-        measurement_ds = self.output_file.create_dataset("Sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
-        error_ds = self.output_file.create_dataset("Errors (std. dev.)", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
-        channels_ds = self.output_file.create_dataset("Channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
+        measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
+        error_ds = self.output_file.create_dataset("errors (std. dev.)", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
+        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
         channels_ds.make_scale("channels")
         [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
         [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]

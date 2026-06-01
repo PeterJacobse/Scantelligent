@@ -1049,7 +1049,7 @@ class NanonisHardware:
         index += 4
         n_columns = self.conv.hex_to_int32(response[index : index + 4])
 
-        scan_data = np.empty((n_rows, n_columns))
+        scan_data = np.empty((n_rows, n_columns), dtype = np.float32)
         for i in range(n_rows):
             for j in range(n_columns):
                 index += 4

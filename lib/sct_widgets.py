@@ -73,11 +73,12 @@ class SCTWidgets:
                 super().mouseClickEvent(event)
 
     class ScanItem(pg.ImageItem):
-        def __init__(self, scan: np.ndarray = None, grid: dict = {}):            
+        def __init__(self, name: str = "", scan: np.ndarray = None, grid: dict = {}):            
             super().__init__()
             self.setOpts(axisOrder = "row-major")
             
             # Instantiate with dummy data. To be overridden later
+            self.name = name
             if isinstance(scan, np.ndarray): self.scan = scan
             else: self.scan = np.zeros((2, 2, 2, 2), dtype = float)
             self.pixels = 2
@@ -93,6 +94,10 @@ class SCTWidgets:
                 self.setGrid(grid)
 
 
+        
+        def setName(self, name: str = "") -> None:
+            self.name = name
+            return
         
         def setScan(self, scan: np.ndarray) -> None: # Saves a 4D scan array, from which slices can be retrieved
             shape = scan.shape
@@ -129,14 +134,14 @@ class SCTWidgets:
             if isinstance(channel, str):
                 print(f"Channel requested: {channel}")
                 print(f"Channels available: {self.channel_names}")
-                        
+
             match self.rank:
                 case 2: # The scan is a flat image
                     self.setImage(self.scan)
                 case 3:
                     self.setImage(self.scan[0])
                 case 4:
-                    self.setImage(self.scan[0, 0])
+                    self.setImage(self.scan[int(direction == "backward"), channel])
                 case _:
                     pass
             print(f"Showing image at axis {axis}, channel {channel}, direction {direction}")
@@ -1128,7 +1133,6 @@ class SCTWidgets:
             self.getViewBox().setBackgroundColor("#000000")
             self.ui.menuBtn.hide()
             self.setAcceptDrops(True)
-            self.blockDrops = False
             return
 
         def getViewBox(self):
@@ -1190,9 +1194,6 @@ class SCTWidgets:
         def dropEvent(self, event: QtGui.QDropEvent):
             self.getViewBox().setBackgroundColor("#000000")
             event.accept()
-            if self.blockDrops:
-                print("Cannot open scan files while an experiment is running")
-                return
             
             try:
                 urls: list[QtCore.QUrl] = event.mimeData().urls()
@@ -1716,6 +1717,81 @@ class SCTWidgets:
     class MainWindow(QtWidgets.QMainWindow):
         def __init__(self):
             super().__init__()
+
+    class PlotWidget(pg.PlotWidget):
+        def __init__(self, buffer_size: int = 4000, n_channels: int = 35, colors: list = []):
+            super().__init__()
+            
+            self.buffer_size = buffer_size
+            self.n_channels = n_channels
+            self.channel_names = np.array([f"channel_{index}" for index in range(n_channels)], dtype = str)
+            self.x_channel = -1
+            
+            # Make PlotDataItems
+            if len(colors) > 0: self.pdis = [self.plot(x_data = [], y_data = [], pen = pg.mkPen(colors[i % len(colors)])) for i in range(self.n_channels)]
+            else: self.pdis = [self.plot(x_data = [], y_data = [], pen = pg.mkPen(QtGui.QColor("#FFFFFF"))) for _ in range(self.n_channels)]
+            
+            self.clear()
+
+
+            
+        def addData(self, data: np.ndarray) -> None:
+            (n_channels, n_datapoints) = data.shape # Read how many channels and data points are given
+            if n_channels > self.n_channels: data = data[:n_channels]
+            new_buffer_index = self.buffer_index + n_datapoints # Calculate where the buffer fills up to
+            
+            if new_buffer_index > self.buffer_size: # If the buffer is full: roll over
+                overflow = new_buffer_index - self.buffer_size
+                
+                self.buffer[:n_channels, self.buffer_index : self.buffer_size] = data[:, : n_datapoints - overflow] # Fill up the remainder
+                self.buffer_full = True
+                self.buffer[:n_channels, : overflow] = data[:, n_datapoints - overflow :] # Roll over and overwrite
+                self.buffer_index = overflow
+            else:
+                self.buffer[:n_channels, self.buffer_index : new_buffer_index] = data
+                self.buffer_index = new_buffer_index
+                return
+        
+        def clear(self) -> None:
+            self.buffer_full = False
+            self.buffer_index = 0
+            self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float16)
+            return
+        
+        def setChannelNames(self, channel_names: list | np.ndarray) -> None:
+            self.channel_names = np.array(channel_names, dtype = str)
+            return
+        
+        def setXAxis(self, channel_index: int = -1) -> None:
+            if channel_index > -2 and channel_index < self.n_channels: self.x_channel = channel_index
+            if self.x_channel == -1: self.setLabel("bottom", "index")
+            else:
+                try: self.setLabel("bottom", self.channel_names[self.x_channel])
+                except: pass
+            self.plot()
+            return
+
+        def plotData(self) -> None:
+            x_data = None
+            if self.buffer_full: # Buffer full: roll around to capture all data points for the pdis
+                if self.x_channel > -1 and self.x_channel < self.n_channels:
+                    x_data = np.concatenate((self.buffer[self.x_channel, self.buffer_index :], self.buffer[self.x_channel, : self.buffer_index]))
+
+                for channel_index in range(self.n_channels):
+                    y_data = np.concatenate((self.buffer[channel_index, self.buffer_index :], self.buffer[channel_index, : self.buffer_index]))
+                    
+                    if isinstance(x_data, np.ndarray): self.pdis[channel_index].setData(x_data, y_data)
+                    else: self.gui.pdis[channel_index].setData(y_data)
+            else:
+                if self.x_channel > -1 and self.x_channel < self.n_channels:
+                    x_data = self.buffer[self.x_channel, : self.buffer_index]
+                
+                for channel_index in range(self.n_channels):
+                    y_data = self.buffer[channel_index, : self.buffer_index]
+                    
+                    if isinstance(x_data, np.ndarray): self.pdis[channel_index].setData(x_data, y_data)
+                    else: self.pdis[channel_index].setData(y_data)
+            return
 
 
 

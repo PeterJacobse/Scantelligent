@@ -40,21 +40,21 @@ class BaseExperiment(QObject):
         self.current_spikes = 0
         self.feedback_changed = False
         self.start_parameters = {}
-        self.gui_parameters = {"combobox": None, "line_edits": [None], "buttons": [None]}
+        self.luts = {}
+        self.gui_parameters = {}
         
         super().__init__()
         
         # Read look-up tables
-        self.tia_corrections = ""
         if isinstance(self.sct_folder, str) and os.path.isdir(self.sct_folder):
             try:
                 sys_folder = os.path.join(self.sct_folder, "sys")
                 with h5py.File(os.path.join(sys_folder, "LUTs.hdf5"), "r") as f:
                     datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)} # Filter out datasets from the items in the HDF5 file
-                    self.tia_corrections = {key: datasets[key][:] for key in datasets.keys() if key in ["LN 10^9", "LN 10^8", "LN 10^7"]} # Transimpedance amplifier corrections are stored as a dict with key given by the TIA setting name
+                    self.luts.update({key: datasets[key][:] for key in datasets.keys() if key in ["LN 10^9", "LN 10^8", "LN 10^7"]}) # Transimpedance amplifier corrections are stored as a dict with key given by the TIA setting name
                     
-                    if "DT-670" in datasets.keys(): # Retrieve the temperature diode calibration
-                        self.temp_calib = datasets["DT-670"][:]
+                    # Retrieve the temperature diode calibration
+                    if "DT-670" in datasets.keys(): self.luts.update({"DT-670": datasets["DT-670"][:]})
             except:
                 pass
 
@@ -72,18 +72,13 @@ class BaseExperiment(QObject):
         return
 
     def set_view(self, view_name: str = "none") -> None:
-        if view_name in ["none", "nanonis", "camera"]:
-            self.parameters.emit({"dict_name": "view_request", "view": view_name})
+        if view_name in ["none", "nanonis", "camera", "graph"]: self.parameters.emit({"dict_name": "view_request", "view": view_name})
         return
 
     def prepare_gui(self) -> None:
         self.gui_setup.update({"dict_name": "gui_setup"})
         self.parameters.emit(self.gui_setup)
         return
-
-    def prepare_graph(self, entries: list = []) -> None:
-        channels_dict = {i: name for i, name in enumerate(entries)} | {"dict_name": "channels"}
-        self.parameters.emit(channels_dict)
 
     def prepare_scan_channels(self, entries: list = []) -> None:
         channels_dict = {name: i for i, name in enumerate(entries)} | {"dict_name": "channels"}
@@ -188,7 +183,7 @@ class BaseExperiment(QObject):
 
 
     def experiment_handler(run):
-        def wrapper(self):
+        def wrapper(self: BaseExperiment):
             self.logprint("Starting the experiment", "success")
             self.start_parameters.update({"gui": self.gui_parameters})
             
@@ -206,8 +201,10 @@ class BaseExperiment(QObject):
             date_time_group.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
             
             # Fetch the temperature using a Nanonis call and conversion using a lookup table
-            if hasattr(self, "temp_calib"):
+            if "DT-670" in self.luts.keys():
+                temp_calib = self.luts["DT-670"]
                 try:
+                    # Find the signal index corresponding to the temperature sensor
                     metadata = self.start_parameters["nanonis"].get("scan_metadata")
                     signal_dict = metadata.get("signal_dict")
                     
@@ -219,22 +216,29 @@ class BaseExperiment(QObject):
                     if temp_channel:
                         (result, error) = self.nanonis.signals_update([temp_channel], samples = 4, verbose = False)
                         temp_V = result[temp_channel][1]
-                        temp_K = float(np.interp(temp_V, self.temp_calib[:, 0][::-1], self.temp_calib[:, 1][::-1]))
+                        temp_K = float(np.interp(temp_V, temp_calib[:, 0][::-1], temp_calib[:, 1][::-1]))
                         temp_group = self.output_file.create_group("temperature")
                         temp_group.attrs.update({"temperature (K)": temp_K})
                 except:
                     pass
             
             # Add the bias, grid and tip data
-            [bias, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "grid", "tip_status", "hardware"]]
+            [bias, feedback, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "grid", "tip_status", "hardware"]]
             grid_group = self.output_file.create_group("grid")
             grid_group.attrs.update({key: grid.get(key) for key in ["offset (nm)", "scan_range (nm)", "angle (deg)"]})
             tip_group = self.output_file.create_group("tip_status")
             tip_group.attrs.update({"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
-            feedback_group = self.output_file.create_group("bias_feedback")
-            feedback_group.attrs.update({"V_Nanonis (V)": bias.get(f"V_nanonis (V)")})
+                        
+            feedback.pop("dict_name")
+            feedback_group = self.output_file.create_group("bias_feedback_settings")
+            feedback_group.attrs.update({"V_Nanonis (V)": bias.get(f"V_nanonis (V)")} | feedback)
+            feedback_group.attrs.update({"feedback on": tip.get("feedback")})
+            if "mla" in self.start_parameters.keys():
+                mla_bias = self.start_parameters["mla"].get("mla_bias", {})
+                feedback_group.attrs.update({"port_1 (V)": mla_bias.get("port_1 (V)", "unknown"), "port_1 (V)": mla_bias.get("port_1 (V)", "unknown")})
+            
             tia_group = self.output_file.create_group("transimpedance_amplifier")
-            [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "") for key in ["tia_gain", "tia_gain_V_per_pA"]]
+            [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "unknown") for key in ["tia_gain", "tia_gain_V_per_pA"]]
             tia_group.attrs.update({"tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pa})
 
 
@@ -255,7 +259,10 @@ class BaseExperiment(QObject):
                 self.finish_experiment()
         return wrapper
 
-    def monitor_scan(self, output_channel = None, timeout_s: int = 100000) -> np.ndarray:
+    def nanonis_scan(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset = None, iterations: int = 10, verbose: bool = True) -> np.ndarray:
+        if verbose: self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
+        self.nanonis.scan_action({"action": "start", "direction": direction})
+        
         (scan_metadata, error) = self.nanonis.scan_metadata_update(verbose = False) # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
         channel_dict = scan_metadata.get("channel_dict")
         channel_indices = channel_dict.values()
@@ -263,14 +270,12 @@ class BaseExperiment(QObject):
         # Loop to check scan progress
         t_start = time.time()
         t_elapsed = 0
-        while t_elapsed < timeout_s:
-            t_elapsed = time.time() - t_start
-            
+        for iteration in range(1000000):
             # Monitor and emit data while scanning
             (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)
             if not error:
                 [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
-                self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA]))
+                self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA], dtype = np.float16))
             
             channel_index = self.scan_processing_flags.get("channel_index")
             backward = self.scan_processing_flags.get("backward")
@@ -280,25 +285,31 @@ class BaseExperiment(QObject):
                 nan_mask = np.isnan(scan_image)
                 scan_finished = not bool(np.any(nan_mask))
             
-            self.check_abort_request()
-            time.sleep(.05)
+            if iteration % iterations == 0: self.scan_data_update(channel_indices, dataset) # Every so many iterations, retrieve all data by looping over all recorded channels and scan directions and save to the dataset
             
+            self.check_abort_request()
+            time.sleep(.05)            
+            t_elapsed = time.time() - t_start
+            if t_elapsed > timeout_s: break
             if scan_finished:
                 self.logprint("Scan finished", message_type = "message")
                 break
         
-        scan_data = np.empty((2, len(channel_indices)) + scan_image.shape)
+        scan_data = self.scan_data_update(channel_indices, dataset)        
+        if verbose: self.logprint(f"Scan completed", message_type = "success")
+        return (scan_image, scan_data)
+
+    def scan_data_update(self, channel_indices: list | np.ndarray, dataset: h5py.Dataset) -> None:
+        scan_data = np.zeros(dataset.shape, dtype = np.float32)
+        
         for index, channel_index in enumerate(channel_indices):
             (forward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = False, verbose = False)
             (backward_scan, error) = self.nanonis.scan_update(channel = channel_index, backward = True, verbose = False)
+            dataset[0, index] = forward_scan
+            dataset[1, index] = backward_scan
             scan_data[0, index] = forward_scan
             scan_data[1, index] = backward_scan
-        
-        # When the scan is finished, return the scan image
-        if isinstance(output_channel, str) and output_channel in channel_dict.keys(): channel_index = channel_dict[output_channel]
-        if isinstance(output_channel, int) and output_channel in channel_dict.values(): (scan_image, error) = self.nanonis.scan_update(channel = output_channel, send_data = False, backward = backward, verbose = False)
-    
-        return (scan_image, scan_data)
+        return scan_data
 
     def check_abort_request(self, withdraw: bool = False) -> None:
         if self.thread().isInterruptionRequested():

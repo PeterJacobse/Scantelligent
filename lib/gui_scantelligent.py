@@ -245,7 +245,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                 states = [{"name": "off", "tooltip": "Nanonis modulator 2 OFF", "color": sct_black},
                                           {"name": "on", "tooltip": "Nanonis modulator 2 ON", "color": sct_blue}]),
 
-            "start_scan": MSB(tooltip = "Start scan", icon = icons.get("start_scan"), size = 28, states = [{"color": sct_black}, {"color": sct_blue}]),
+            "start_scan": MSB(size = 28, states = [{"name": "idle", "tooltip": "Start scan", "icon": icons.get("start_scan"), "color": sct_black},
+                                                   {"name": "running", "tooltip": "Stop scan", "icon": icons.get("stop_scan"), "color": sct_blue}]),
             "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
             
             # Speeds
@@ -619,12 +620,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def make_views(self) -> tuple[SCTWidgets.ImageView, pg.RawImageWidget]:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
-        scan_item = SCTWidgets.ScanItem()
-        scan_item.setImage(np.zeros((2, 2)))
+        camera_item = SCTWidgets.ScanItem(name = "camera")
+        camera_item.setImage(np.empty((2, 2), dtype = np.float16))
         plot_item = pg.PlotItem()
-        plot_item.addItem(scan_item)
+        plot_item.addItem(camera_item)
         
-        image_view = SCTWidgets.ImageView(view = plot_item, imageItem = scan_item)
+        image_view = SCTWidgets.ImageView(view = plot_item, imageItem = camera_item)
         image_view.addWidget(self.limits_button)
         
         view = image_view.getView()
@@ -632,7 +633,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         hist_widget.setMaximumWidth(70)
         view.invertY(False) # y increases towards the top of the screen
         self.view = view.getViewBox() # Since view = pg.PlotItem instead of ViewBox, the ViewBox is actually accessed by view.getViewBox()
-        self.scan_item = image_view.imageItem
+        self.camera_item = image_view.imageItem
         self.hist_item = hist_widget.item
         
         camera_view = pg.RawImageWidget()
@@ -645,19 +646,17 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
         frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
         new_frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["light_blue"], width = 2), movable = True, resizable = True, rotatable = True)
-        
         new_frame_roi.addScaleHandle([1, 0], [0, 1])
         new_frame_roi.addRotateHandle([0.5, 0], [0.5, 0.5])
+        new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
         
         # Target items
         tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
         target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
-        
-        new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)        
         return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0)
 
     def make_plot_widgets(self) -> tuple[pg.PlotWidget, list[pg.PlotDataItem], pg.PlotWidget, list[pg.PlotDataItem]]:
-        plot_widget = pg.PlotWidget()
+        plot_widget = SCTWidgets.PlotWidget(colors = self.color_list)
         waveform_widget = pg.PlotWidget()
 
         pdis = [] # PlotDataItems
@@ -1029,18 +1028,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         #layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])        
         [layouts[name].addStretch(1) for name in ["parameters", "osc", "coarse_prep", "tip"]]
         return groupboxes
-
-
-
-    # 5: Make the tab widget
-    def make_tab_widget(self) -> QtWidgets.QTabWidget:
-        pass
-        #tab_widget = QtWidgets.QTabWidget()
-        
-        #tabs = ["coarse_prep", "osc"]
-        #[self.widgets[name].setLayout(self.layouts[name]) for name in tabs]
-        #[tab_widget.addTab(self.widgets[name], name) for name in tabs if not name == "parameters"]
-        #return tab_widget
 
 
 

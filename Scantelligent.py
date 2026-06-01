@@ -69,7 +69,7 @@ class Scantelligent(QtCore.QObject):
         self.x_channel = -1 # x channel for graphing. An index of -1 means graphing parameters as a function of index, rolling when more than 6000 buffer values are filled
         self.graph_channels = 35
         self.channel_names = np.arange(35)
-        self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size))
+        self.graph_buffer = np.zeros((self.graph_channels, self.graph_buffer_size), dtype = np.float16)
         self.buffer_full = False
 
         # Dict to keep track of the hardware and experiment status
@@ -421,6 +421,7 @@ class Scantelligent(QtCore.QObject):
         if data_array.shape == (1, 1):
             if isinstance(data_array[0, 0], int) and data_array[0, 0] < self.graph_channels and data_array[0, 0] > -2:
                 self.x_channel = data_array[0, 0]
+                self.gui.plot_widget.setXAxis(data_array[0, 0])
                 try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
                 except: pass
             elif isinstance(data_array[0, 0], str) and data_array[0, 0] == "clear": # Magic word to clear the buffer
@@ -471,8 +472,11 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(str)
     def open_scan_file(self, file_path: str) -> None:
-        self.toggle_view("nanonis")
+        if hasattr(self, "experiment_thread") and self.experiment_thread.isRunning():
+            self.logprint(f"Cannot load files while an experiment is active", message_type = "error")
+            return
         
+        self.toggle_view("nanonis")        
         try:
             with h5py.File(file_path, "r") as f:
                 datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
@@ -737,7 +741,7 @@ class Scantelligent(QtCore.QObject):
                 case "none": new_view = "camera"
                 case "camera": new_view = "nanonis"
                 case "nanonis": new_view = "graph"
-                case "graph": new_view = "none"
+                case "graph": new_view = "camera"
                 case _: pass
 
         # Skip through view modes if hardware components are missing
@@ -765,12 +769,21 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["view"].setState("camera")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
-                # Grab a single frame and use it to reset the ImageView
+                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:]]
+                self.gui.image_view.addItem(self.gui.camera_item)
+                self.gui.image_view.imageItem = self.gui.camera_item
+                self.gui.camera_item = self.gui.image_view.getImageItem()
+                self.gui.image_view.getHistogramWidget().setImageItem(self.gui.camera_item)
+                
                 camera_frame = self.camera.grab_frame()
-                self.gui.scan_item.setImage(camera_frame)
-                self.gui.scan_item.resetTransform()
-                self.gui.scan_item.setRotation(0)
-                self.gui.scan_item.setPos(0, 0)
+                (pixels, lines) = camera_frame.shape
+                self.nanonis.grid_update({"offset (nm)": [0, 0], "scan_range": [200, 100], "angle": 0, "pixels": pixels, "lines": lines}) # This calls setGrid on the new scan_item
+                
+                # Grab a single frame and use it to reset the ImageView
+                #self.gui.scan_item.setImage(camera_frame)
+                #self.gui.scan_item.resetTransform()
+                #self.gui.scan_item.setRotation(0)
+                #self.gui.scan_item.setPos(0, 0)
                 self.gui.view.autoRange()
                 
                 # Set up the camera thread
@@ -792,6 +805,9 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["view"].setState("nanonis")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
+                try: self.gui.view.removeItem(self.gui.camera_item)
+                except: pass
+                
                 self.draw_old_items()
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target, self.gui.path_pdi]]
                 self.nanonis.hardware_update()
@@ -806,11 +822,12 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["view"].setState("none")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
-                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.scan_item]
-                self.gui.scan_item.setImage(self.splash_screen)
-                self.gui.scan_item.resetTransform()
-                self.gui.scan_item.setRotation(0)
-                self.gui.scan_item.setPos(0, 0)                
+                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:]]
+                self.gui.view.addItem(self.gui.camera_item)
+                self.gui.camera_item.setImage(self.splash_screen)
+                self.gui.camera_item.resetTransform()
+                self.gui.camera_item.setRotation(0)
+                self.gui.camera_item.setPos(0, 0)                
                 self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
@@ -857,7 +874,7 @@ class Scantelligent(QtCore.QObject):
     def set_x_axis(self):
         self.x_channel = self.gui.comboboxes["graph_x_axis"].currentIndex() - 1
         cbb_items = self.gui.comboboxes["graph_x_axis"].getItems()
-        self.gui.plot_widget.setLabel("bottom", cbb_items[self.x_channel + 1])        
+        self.gui.plot_widget.setLabel("bottom", cbb_items[self.x_channel + 1])
         self.redraw_graph()
         pass
 

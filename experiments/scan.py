@@ -29,11 +29,12 @@ class Experiment(BaseExperiment):
         feedback_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]] # Retrieve the channel indices from the signal_dict
         feedback_channel_indices = [index for index in feedback_channel_indices if index is not None]
         [recorded_channel_indices.append(channel_index) for channel_index in feedback_channel_indices if channel_index not in recorded_channel_indices] # Add the z channel to the list of recorded channels
+        [pixels, lines] = [grid.get(key) for key in ["pixels", "lines"]]
         nn.scan_metadata_update({"channel_indices": recorded_channel_indices}, verbose = False) # Make sure the correct channel is being recorded
         
         graph_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
         self.data_array.emit(np.array(graph_channels)) # This triggers the GUI to start graphing data
-                
+
         # Determine the scan direction if 'nearest tip' is selected
         if direction == "nearest_tip":            
             tip_location = [tip_status[f"{dim} (nm)"] for dim in ["x", "y"]]
@@ -50,12 +51,9 @@ class Experiment(BaseExperiment):
         # Start writing initial data to file and then start the experiment
         if direction in ["up", "down"]:
             # Starting the scan
-            self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
-            nn.scan_action({"action": "start", "direction": direction})            
-            (scan_image, scan_data) = self.monitor_scan(output_channel = feedback_channel_indices[0])
-            
-            self.output_file.create_dataset("scan", data = scan_data)
-        
+            scan_ds = self.output_file.create_dataset("scan", shape = ((2, len(recorded_channel_indices), pixels, lines)), dtype = np.float32)
+            scan_data = self.nanonis_scan(direction = direction, dataset = scan_ds)
+
 
 
         elif direction == "gaussian_process":
