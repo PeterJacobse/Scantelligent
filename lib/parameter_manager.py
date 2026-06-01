@@ -307,12 +307,14 @@ class ParameterManager(QtCore.QObject):
                         sct.gui.tip_target.setPen(sct.gui.colors["green"])
                         sct.gui.current_height_widget.feedback_button.setState("feedback")
                         sct.gui.buttons["withdraw"].setState("landed")
+                        sct.gui.buttons["withdraw_2"].setState("landed")
                     else:
                         withdrawn = tip_status.get("withdrawn")
                         if withdrawn:
                             sct.gui.tip_target.setPen(sct.gui.colors["red"])
                             sct.gui.current_height_widget.feedback_button.setState("unknown")
                             sct.gui.buttons["withdraw"].setState("withdrawn")
+                            sct.gui.buttons["withdraw_2"].setState("withdrawn")
                         else:
                             sct.gui.tip_target.setPen(sct.gui.colors["orange"])
                             sct.gui.current_height_widget.feedback_button.setState("constant_height")

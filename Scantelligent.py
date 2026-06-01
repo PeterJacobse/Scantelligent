@@ -97,12 +97,12 @@ class Scantelligent(QtCore.QObject):
 
     def connect_buttons(self) -> None:
         button_slots = {"scanalyzer": self.launch_scanalyzer, "session_folder": self.open_session_folder, "view": self.toggle_view, "info": self.gui.info_box.exec, "exit": self.exit,
-                        "tip": self.change_tip_status, "withdraw": self.toggle_withdraw, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"),
-                        "approach": self.start_auto_approach, "approach_2": self.start_auto_approach,
+                        "tip": self.change_tip_status, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"),
+                        "approach": self.start_auto_approach, "approach_2": self.start_auto_approach, "withdraw": self.toggle_withdraw, "withdraw_2": self.toggle_withdraw,
                         
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
-                        "frame": self.toggle_items, "path": self.toggle_items,
+                        "frame": self.toggle_items, "path": self.toggle_items, "set_dz": self.set_dz,
                         
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
         
@@ -699,7 +699,7 @@ class Scantelligent(QtCore.QObject):
         old_item = self.gui.image_view.getImageItem()
         old_transform = old_item.transform()
                 
-        # Instantiate a new ImageItem using the old image data
+        # Instantiate a new ScanItem using the old image data
         new_item = SCTWidgets.ScanItem()
         try:
             (grid, error) = self.nanonis.grid_update(verbose = False)
@@ -707,7 +707,7 @@ class Scantelligent(QtCore.QObject):
         except:
             pass
         self.gui.image_view.addItem(new_item)
-        self.gui.image_view.imageItem = new_item # Update the main ImageItem of the ImageView
+        self.gui.image_view.imageItem = new_item # Update the main ScanItem of the ImageView
         self.gui.scan_item = self.gui.image_view.getImageItem()
         self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
         self.gui.view = self.gui.image_view.getView().getViewBox()
@@ -1127,7 +1127,7 @@ class Scantelligent(QtCore.QObject):
             return False
 
     def modulator_control(self, modulator_number: int = 1) -> None:
-        if not hasattr(self, "nanonis"): return        
+        if not hasattr(self, "nanonis"): return
         try:
             mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
             mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
@@ -1136,6 +1136,15 @@ class Scantelligent(QtCore.QObject):
             
         except Exception as e:
             self.logprint(f"Error controlling modulator {modulator_number}: {e}", message_type = "error")
+        return
+
+    def set_dz(self) -> None:
+        if not hasattr(self, "nanonis"): return
+        try:
+            z_rel_nm = self.gui.line_edits["z_rel"].getValue()
+            self.nanonis.tip_update({"z_rel (nm)": z_rel_nm})
+        except Exception as e:
+            self.logprint(f"Error: {e}", message_type = "error")
         return
 
 

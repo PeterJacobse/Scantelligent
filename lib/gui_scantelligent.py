@@ -50,10 +50,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         # 4: Make groupboxes and set their layouts. Requires populated layouts.
         self.groupboxes = self.make_groupboxes()
-        
-        # 5: Make the tab widget
-        self.tab_widget = self.make_tab_widget()
-        
+                
         # 5: Set up the main window layout
         self.setup_main_window()
 
@@ -286,7 +283,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "frame": MSB(icon = icons.get("guide_frame"), states = [{"name": "off", "tooltip": "Click to show the guide frame\nMouse wheel click confirms the frame", "color": sct_black},
                                                                     {"name": "on", "tooltip": "Click to hide the guide frame\nMouse wheel click confirms the frame", "color": sct_blue}]),
             "path": MSB(icon = icons.get("path"), states = [{"name": "off", "tooltip": "Click to show the tip path", "color": sct_black},
-                                                                    {"name": "on", "tooltip": "Click to hide the tip path", "color": sct_blue}])
+                                                                    {"name": "on", "tooltip": "Click to hide the tip path", "color": sct_blue}]),
+            
+            "slice": MSB(icon = icons.get("slice_xy"), tooltip = "Select which plane to slice the scan over"),
+            "set_dz": MSB(icon = icons.get("set_dz"), tooltip = "Push to set delta_z\nSee value below")
         }
         self.limits_button = QtWidgets.QPushButton("limits")
         
@@ -387,6 +387,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "mla_mod2": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             "mla_mod3": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             
+            "scan_items": CB(tooltip = "Scan items"),
             "graph_x_axis": CB(tooltip = "Channel to use for the x axis")
         }
         
@@ -434,7 +435,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             
             "I": LE(tooltip = "most recent current measurement", unit = "pA", digits = 1, edited_color = sct_black),
             "z": LE(tooltip = "most recent tip height measurement", unit = "nm", digits = 2, edited_color = sct_black),
-            "z_rel": LE(tooltip = "relative tip height setpoint", unit = "nm", digits = 2, edited_color = sct_black),
+            "z_rel": LE(tooltip = "relative tip height setpoint", value = 1, unit = "nm", digits = 2, edited_color = sct_black, min_width = 70, max_width = 70),
             
             # Feedback
             "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0),
@@ -549,6 +550,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "image_view_controls": make_layout("h"),
             
             "tip": make_layout("v"),
+            "tip_deltaz": make_layout("h"),
             
             # Experiment
             "experiment": make_layout("v"),
@@ -826,7 +828,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["connections"].addWidget(self.current_height_widget, 2, 0, 1, 2)
 
         # Tip
-        layouts["tip"].addWidget(self.current_height_widget)
+        [layouts["tip_deltaz"].addWidget(self.buttons[name]) for name in ["withdraw_2", "set_dz"]]
+        layouts["tip"].addLayout(layouts["tip_deltaz"])
+        layouts["tip"].addWidget(self.line_edits["z_rel"], QtCore.Qt.AlignmentFlag.AlignHCenter)
+        layouts["tip"].addWidget(self.current_height_widget,)
 
         # Experiment
         e_layout = layouts["experiment"]
@@ -965,7 +970,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         # Image_view
         layouts["image_view_controls"].addWidget(buttons["auto_paste"])
         
-        [layouts["navigation"].addWidget(comboboxes[name], 2 + 2 * index) for index, name in enumerate(["axis", "slice"])]
+        #[layouts["navigation"].addWidget(comboboxes[name], 2 + 2 * index) for index, name in enumerate(["axis", "slice"])]
+        layouts["navigation"].addWidget(self.comboboxes["scan_items"])
+        layouts["navigation"].addWidget(self.buttons["slice"])
+        layouts["navigation"].addWidget(self.comboboxes["slice"])
         [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["direction", "fit_to_frame", "fit_to_range", "frame", "path"]]        
         layouts["image_view_controls"].addLayout(layouts["navigation"])
         
@@ -1026,12 +1034,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
     # 5: Make the tab widget
     def make_tab_widget(self) -> QtWidgets.QTabWidget:
-        tab_widget = QtWidgets.QTabWidget()
+        pass
+        #tab_widget = QtWidgets.QTabWidget()
         
-        tabs = ["coarse_prep", "osc"]
+        #tabs = ["coarse_prep", "osc"]
         #[self.widgets[name].setLayout(self.layouts[name]) for name in tabs]
         #[tab_widget.addTab(self.widgets[name], name) for name in tabs if not name == "parameters"]
-        return tab_widget
+        #return tab_widget
 
 
 

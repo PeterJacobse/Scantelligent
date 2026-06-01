@@ -146,12 +146,16 @@ class SCTWidgets:
             """
             Parses the provided grid dictionary and applies the correct scaling, centering, and rotation transformations.
             """
-            [scan_range, offset, angle] = [grid.get(key, None) for key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]]
+            [pixels, lines, scan_range, offset, angle] = [grid.get(key, None) for key in ["pixels", "lines", "scan_range (nm)", "offset (nm)", "angle (deg)"]]
             [width, height] = [scan_range[index] for index in range(2)]
             [x, y] = [offset[index] for index in range(2)]
             
+            if isinstance(pixels, int): self.pixels = pixels # Update the pixels and lines attributes if explicitly passed
+            if isinstance(lines, int): self.lines = lines
+            
             pixels = self.pixels
             lines = self.lines
+            
             pixel_width = width / pixels
             pixel_height = height / pixels
                         
@@ -683,8 +687,10 @@ class SCTWidgets:
                 self.setText(f"{value}")
             return
 
-        def wheelEvent(self, event) -> None:
-            if not self.hasFocus(): return # Only accept scrolling if it is selected
+        def wheelEvent(self, event: QtGui.QMouseEvent) -> None:
+            if not self.hasFocus(): # Only accept scrolling if it is selected
+                event.ignore()
+                return
             
             (pos, number, error) = self.move_cursor()
             if bool(error): return
