@@ -23,7 +23,7 @@ class Experiment(BaseExperiment):
         # Aliases
         nn = self.nanonis
         mla = self.mla
-        
+                
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
@@ -34,42 +34,60 @@ class Experiment(BaseExperiment):
         
         # Read from Nanonis
         [scan_metadata, grid, tip_status, nn_bias, nn_hardware] = [self.start_parameters["nanonis"].get(parameter) for parameter in ["scan_metadata", "grid", "tip_status", "bias", "hardware"]]
-        [pixels, lines, x_grid, y_grid] = [grid.get(key) for key in ["pixels", "lines", "x_grid (nm)", "y_grid (nm)"]]
+        [pixels, lines, x_grid, y_grid, scan_range_nm] = [grid.get(key) for key in ["pixels", "lines", "x_grid (nm)", "y_grid (nm)", "scan_range (nm)"]]
         [tia_gain, tia_gain_V_per_pA] = [nn_hardware.get(key) for key in ["current_gain", "gain (V/pA)"]]
         (list_data, error) = nn.grids_to_lists(grid, direction = direction)
         [x_list_nm, y_list_nm] = [list_data[f"{dim}_list (nm)"] for dim in ["x", "y"]]
         n_pixels = len(x_list_nm)
+        [width_nm, height_nm] = [scan_range_nm[0], scan_range_nm[1]]
         
         # Read from the MLA
-        [V_dc, amplitudes, df, tm] = [self.start_parameters["mla"].get(key) for key in ["port_1 (V)", "amplitudes (mV)", "df (Hz)", "tm (ms)"]]
-        V_ac = amplitudes[0]
+        [mla_bias, amplitudes_dict, time_constant_dict, frequency_dict, mla_setup_array] = [self.start_parameters["mla"].get(key) for key in ["mla_bias", "amplitudes", "time_constant", "frequencies", "array"]]
+        amplitudes = amplitudes_dict.get("amplitudes (mV)")
+        frequencies_Hz = frequency_dict.get("frequencies (Hz)")
+        V_dc = mla_bias.get("port_1 (V)", 0)
+        V_ac_mV = amplitudes[0]
 
-        # Prepare the output        
-        channels_list = ["t (s)", "V (V)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
-        [channels_list.extend([f"Re(G{demod_index + 1}) (nS)", f"Im(G{demod_index + 1}) (nS)"]) for demod_index in range(32)]
-        n_channels = len(channels_list)
-        channels_dict = {i: name for i, name in enumerate(channels_list)} | {"dict_name": "channels"}
-        self.parameters.emit(channels_dict) # This triggers the GUI to start graphing data
+        # Prepare the output
+        channel_names = ["t (s)", "V (V)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
+        [channel_names.extend([f"Re(G{demod_index + 1}) (nS)", f"Im(G{demod_index + 1}) (nS)"]) for demod_index in range(32)]
+        n_channels = len(channel_names)
+        self.data_array.emit(np.array(channel_names)) # This triggers the GUI to start graphing data
+        self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": {channel_name: index for index, channel_name in enumerate(channel_names)}}) # This triggers the GUI and scan_processing_flags to assign the correct scan channels to the slices of the data array
 
 
 
-        # Action
-        input_mask = 2 * np.ones(32)
-        input_mask[0] = 1 # Measure the output voltage against demod 0 as a reference
-        mla.set_input_multiplexer(input_mask)
-        freq_numbers = np.arange(0, 32, 1) # Use demod 1 to measure the base frequency (f1), then demod 2 to measure f2, etc.
-        freq_numbers[0] = 1 # Base frequency to demodulate the output voltage
-        (f_dict, error) = mla.frequencies_update({"numbers": freq_numbers})
-        mla.outputs_update({"blank": True, "mod0": {"on": True, "port": 1}}) # Output modulator 1 onto port 1
+        # Set up the HDF5 datasets and groups
+        spectroscopy_group: h5py.Group = self.output_file.create_group("spectrocopy_settings")
+        spectroscopy_group.attrs.update({"device": "MLA", "MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
+                                         "f / df": 1, "settling time (1 / df)": t_settle, "pixels per datapoint (1 / df)": t_int, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA})
+        mla_settings_ds = spectroscopy_group.create_dataset("MLA settings", data = mla_setup_array)
+
+        map_group: h5py.Group = self.output_file.create_group("map_group")
+        map_group.attrs.update({"NX_class": "NXdata"})
         
-        measurement_array = np.empty((lines, pixels, n_channels), dtype = float)
-        self.output_file.attrs.update({"V_dc (V)": V_dc, "V_ac (V)": V_ac, "df (Hz)": df, "tm (ms)": tm, "t_settle (tm)": t_settle, "t_int (tm)": t_int, "t_settle (ms)": t_settle * tm, "t_int (ms)": t_int * tm})
-        self.output_file.attrs.update({"frequencies (Hz)": f_dict["frequencies (Hz)"], "numbers (f / df)": f_dict["numbers"], "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA})
-        measurement_ds = self.output_file.create_dataset("MLA map", shape = measurement_array.shape, dtype = float, chunks = True)
-        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channels_list]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        channels_ds.make_scale("channels")
-        measurement_ds.dims[2].attach_scale(channels_ds)
-
+        channels_ds = map_group.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+        channel_indices_ds = map_group.create_dataset("channel index axis", data = np.arange(len(channel_names), dtype = np.int32))
+        channel_indices_ds.make_scale("channel indices")
+        x_ds = map_group.create_dataset("x axis", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
+        x_ds.make_scale("x values")
+        y_ds = map_group.create_dataset("y axis", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
+        y_ds.make_scale("y values")
+        
+        map_array = np.empty((n_channels, lines, pixels), dtype = np.float32)
+        map_ds = map_group.create_dataset("map", shape = ((n_channels, lines, pixels)), dtype = np.float32)
+        map_ds.dims[0].attach_scale(channel_indices_ds)
+        map_ds.dims[1].attach_scale(y_ds)
+        map_ds.dims[2].attach_scale(x_ds)
+        map_errors_ds = map_group.create_dataset("map_errors", shape = ((n_channels, lines, pixels)), dtype = np.float32)
+        map_errors_ds.dims[0].attach_scale(channel_indices_ds)
+        map_errors_ds.dims[1].attach_scale(y_ds)
+        map_errors_ds.dims[2].attach_scale(x_ds)
+        
+        map_group.attrs.update({"signal": "map"})
+        map_group.attrs.update({"axes": ["channel index axis", "y axis", "x axis"]})
+        map_group.attrs.update({"units": ["", "nm", "nm"]})
+        
 
 
         # Main loop
@@ -77,9 +95,10 @@ class Experiment(BaseExperiment):
         t_elapsed = 0
         mla.start_lockin()
         for line_index in range(lines):
-            for pixel_index in range(pixels):
-                x_nm = x_grid[line_index, pixel_index]
-                y_nm = y_grid[line_index, pixel_index]
+            pixel_list = range(pixels)
+            for pix_index in pixel_list:
+                x_nm = x_grid[line_index, pix_index]
+                y_nm = y_grid[line_index, pix_index]
 
                 (tip_status, error) = nn.tip_update({"x (nm)": x_nm, "y (nm)": y_nm}, wait = True, fast_mode = True, verbose = False) # Wait for move
                 mla.get_pixels(1 + t_settle) # Settle
@@ -96,25 +115,33 @@ class Experiment(BaseExperiment):
                     raise Exception("Aborting")
 
                 data_chunk = np.array([t_elapsed, V_dc, x_nm, y_nm, z_nm, I_pA])
-                pixel_V = mla.get_pixels(t_int, average = True)
+                (pixel_V, pixel_var_V2) = mla.get_pixels(t_int, average = True)
+                pixel_std_dev_V = np.sqrt(pixel_var_V2)
                 
-                pixel_nS = pixel_V / (tia_gain_V_per_pA * V_ac)
+                pixel_nS = 2 * pixel_V / (tia_gain_V_per_pA * V_ac_mV)
+                pixel_std_dev_nS = 2 * pixel_std_dev_V / (tia_gain_V_per_pA * V_ac_mV)
                 
                 in_phase = np.real(pixel_nS)
                 quadrature = np.imag(pixel_nS)
-                ext_pix = np.zeros(2 * len(pixel_V), dtype = float)
+                ext_pix = np.zeros(2 * len(pixel_V), dtype = np.float32)
                 ext_pix[0::2] = in_phase
                 ext_pix[1::2] = quadrature
                 
                 combined_pixel = np.concatenate((data_chunk, ext_pix))
                 self.data_array.emit(combined_pixel)
-                measurement_array[line_index, pixel_index] = combined_pixel
-                self.image.emit(measurement_array[:, :, 8])
-                measurement_ds[line_index, pixel_index, :] = combined_pixel
+                
+                error_pixel = np.zeros_like(combined_pixel)
+                error_pixel[6 : len(pixel_std_dev_nS) + 6] = pixel_std_dev_nS
+                
+                map_ds[:, line_index, pix_index] = combined_pixel
+                map_array[:, line_index, pix_index] = combined_pixel
+                
+                channel_index = self.scan_processing_flags.get("channel_index")                
+                try: self.image.emit(map_array[channel_index])
+                except: pass                
             
                 self.check_abort_request()
 
-        mla.stop_lockin()
-        nn.tip_update({"withdraw": True})
+        nn.tip_update({"z_rel (nm)": 5})
 
 

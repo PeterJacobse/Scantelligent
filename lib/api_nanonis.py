@@ -735,8 +735,8 @@ class NanonisAPI(QtCore.QObject):
             # Save the data to a dictionary
             [width, height, angle] = [frame.get(key) for key in ["width (nm)", "height (nm)", "angle (deg)"]]
             [pixels, lines] = [buffer.get(key) for key in ["pixels", "lines"]]
-            pix_width = pixels / width
-            pix_height = lines / height
+            pix_width = width / pixels
+            pix_height = height / lines
             grid = frame | buffer | {"pixel_width (nm)": pix_width, "pixel_height (nm)": pix_height, "dict_name": "grid"}
 
         except Exception as e: error = e
@@ -748,8 +748,8 @@ class NanonisAPI(QtCore.QObject):
         # Append the grid data with calculated information
         try:
             # Construct a local grid with the same size as the Nanonis grid, with center is at (0, 0)            
-            x_coords_local = np.linspace(-width / 2, width / 2, pixels)
-            y_coords_local = np.linspace(-height / 2, height / 2, lines)
+            x_coords_local = np.linspace(pix_width / 2 -width / 2, width / 2 - pix_width / 2, pixels)
+            y_coords_local = np.linspace(pix_height / 2 -height / 2, height / 2 - pix_height / 2, lines)
             x_grid_local, y_grid_local = np.meshgrid(x_coords_local, y_coords_local)
 
             # Apply a rotation
