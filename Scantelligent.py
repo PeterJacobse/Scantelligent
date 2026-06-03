@@ -433,7 +433,7 @@ class Scantelligent(QtCore.QObject):
             except: pass
             self.update_pdi_visibility()
             self.gui.grapher.plotData()
-            self.gui.grapher.setChannelNames(np.insert(np.astype(data_array[:, 0], object), 0, "index"))
+            self.gui.grapher.setChannelNames(np.astype(data_array[:, 0], object))
             return
         elif data_array.dtype.kind == "b": # The data array has booleans. Check and uncheck according to the boolean values
             [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(value) for channel_index, value in enumerate(data_array[:, 0])]

@@ -238,7 +238,7 @@ class BaseExperiment(QObject):
                 feedback_group.attrs.update({"port_1 (V)": mla_bias.get("port_1 (V)", "unknown"), "port_1 (V)": mla_bias.get("port_1 (V)", "unknown")})
             
             tia_group = self.output_file.create_group("transimpedance_amplifier")
-            [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "unknown") for key in ["tia_gain", "tia_gain_V_per_pA"]]
+            [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
             tia_group.attrs.update({"tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pa})
 
 

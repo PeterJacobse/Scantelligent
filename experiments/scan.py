@@ -76,6 +76,7 @@ class Experiment(BaseExperiment):
             
             scan_group.attrs.update({"signal": "scan"})
             scan_group.attrs.update({"axes": ["direction index axis", "channel index axis", "y axis", "x axis"]})
+            scan_group.attrs.update({"units": ["", "nm", "nm"]})
             
             # Start the scan. Passing the dataset will allow it to be updated during scanning
             scan_data = self.nanonis_scan(direction = direction, dataset = scan_ds, iterations = 20) # Save the entire dataset every 20 iterations

@@ -1828,10 +1828,8 @@ class SCTWidgets:
         
         def setXAxis(self, channel_index: int = -1) -> None:
             if channel_index > -2 and channel_index < self.n_channels: self.x_channel = channel_index
-            if self.x_channel == -1: self.setLabel("bottom", "index")
-            else:
-                try: self.setLabel("bottom", self.channel_names[self.x_channel])
-                except: pass
+            try: self.setLabel("bottom", self.channel_names[self.x_channel])
+            except: self.setLabel("bottom", "index")
             self.plotData()
             return
 

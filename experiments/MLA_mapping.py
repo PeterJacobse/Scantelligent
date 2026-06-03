@@ -28,6 +28,7 @@ class Experiment(BaseExperiment):
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
+        [nanonis_or_mla, tia_correct] = [spec_button_states.get(key) for key in ["nanonis_mla", "tia_correct"]]
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
         if nanonis_or_mla == "nanonis": self.logprint(f"Nanonis sweep not yet implemented. Try setting the spectroscopy to MLA")
         direction = gui_parameters.get("direction_combobox")
@@ -44,9 +45,15 @@ class Experiment(BaseExperiment):
         # Read from the MLA
         [mla_bias, amplitudes_dict, time_constant_dict, frequency_dict, mla_setup_array] = [self.start_parameters["mla"].get(key) for key in ["mla_bias", "amplitudes", "time_constant", "frequencies", "array"]]
         amplitudes = amplitudes_dict.get("amplitudes (mV)")
-        frequencies_Hz = frequency_dict.get("frequencies (Hz)")
+        freqs = frequency_dict.get("frequencies (Hz)")
         V_dc = mla_bias.get("port_1 (V)", 0)
         V_ac_mV = amplitudes[0]
+
+        # Retrieve the tia corrections
+        tia_corrections = None
+        if tia_correct and tia_gain in self.luts.keys():
+            self.logprint(f"TIA corrections requested. I found them")
+            tia_corrections = self.luts.get(tia_gain)
 
         # Prepare the output
         channel_names = ["t (s)", "V (V)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
@@ -102,7 +109,7 @@ class Experiment(BaseExperiment):
 
                 (tip_status, error) = nn.tip_update({"x (nm)": x_nm, "y (nm)": y_nm}, wait = True, fast_mode = True, verbose = False) # Wait for move
                 mla.get_pixels(1 + t_settle) # Settle
-                [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(key) for key in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+                if not error: [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(key) for key in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
                 t_elapsed = time.time() - t_start
                 
                 # Safetip
@@ -115,15 +122,23 @@ class Experiment(BaseExperiment):
                     raise Exception("Aborting")
 
                 data_chunk = np.array([t_elapsed, V_dc, x_nm, y_nm, z_nm, I_pA])
-                (pixel_V, pixel_var_V2) = mla.get_pixels(t_int, average = True)
-                pixel_std_dev_V = np.sqrt(pixel_var_V2)
+                (pix_V, pix_V_var) = mla.get_pixels(t_int, average = True)
+                pix_V_std_dev = np.sqrt(pix_V_var)
                 
-                pixel_nS = 2 * pixel_V / (tia_gain_V_per_pA * V_ac_mV)
-                pixel_std_dev_nS = 2 * pixel_std_dev_V / (tia_gain_V_per_pA * V_ac_mV)
+                if isinstance(tia_corrections, list | np.ndarray): # Apply correction for tia response if desired
+                    for tone in range(len(pix_V)):
+                        freq_int = int(round(freqs[tone]))
+                        if freq_int < len(tia_corrections):
+                            tone_correction = tia_corrections[freq_int]
+                            pix_V[tone] *= tone_correction
+                            pix_V_std_dev *= np.abs(tone_correction)
                 
-                in_phase = np.real(pixel_nS)
-                quadrature = np.imag(pixel_nS)
-                ext_pix = np.zeros(2 * len(pixel_V), dtype = np.float32)
+                pix_nS = 2 * pix_V / (tia_gain_V_per_pA * V_ac_mV)
+                pix_nS_std_dev = 2 * pix_V_std_dev / (tia_gain_V_per_pA * V_ac_mV)
+                
+                in_phase = np.real(pix_nS)
+                quadrature = np.imag(pix_nS)
+                ext_pix = np.zeros(2 * len(pix_V), dtype = np.float32)
                 ext_pix[0::2] = in_phase
                 ext_pix[1::2] = quadrature
                 
@@ -131,7 +146,7 @@ class Experiment(BaseExperiment):
                 self.data_array.emit(combined_pixel)
                 
                 error_pixel = np.zeros_like(combined_pixel)
-                error_pixel[6 : len(pixel_std_dev_nS) + 6] = pixel_std_dev_nS
+                error_pixel[6 : len(pix_nS_std_dev) + 6] = pix_nS_std_dev
                 
                 map_ds[:, line_index, pix_index] = combined_pixel
                 map_array[:, line_index, pix_index] = combined_pixel
