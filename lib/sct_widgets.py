@@ -1751,9 +1751,43 @@ class SCTWidgets:
             [self.addItem(pdi) for pdi in self.pdis]
             
             self.clearBuffer()
+            self.h_lines = []
+            self.v_lines = []
 
 
+
+        def setVLines(self, x_coords: list | int | float) -> None:
+            if isinstance(x_coords, int | float): x_coords = [x_coords]
+            if not isinstance(x_coords, list): return
             
+            for v_line in self.v_lines:
+                try: self.removeItem(v_line)
+                except: pass
+            
+            self.v_lines = []
+            for coord in x_coords:
+                v_line = pg.InfiniteLine(angle = 90, movable = False, pen = "#404040")
+                v_line.setPos((coord, 0))                
+                self.v_lines.append(v_line)
+                self.getViewBox().addItem(v_line, ignoreBounds = True)
+            return
+        
+        def setHLines(self, y_coords: list | int | str) -> None:
+            if isinstance(y_coords, int | float): y_coords = [y_coords]
+            if not isinstance(y_coords, list): return
+            
+            for h_line in self.h_lines:
+                try: self.removeItem(h_line)
+                except: pass
+            
+            self.h_lines = []
+            for coord in y_coords:
+                h_line = pg.InfiniteLine(angle = 0, movable = False, pen = "#404040")
+                h_line.setPos((0, coord))
+                self.h_lines.append(h_line)
+                self.getViewBox().addItem(h_line, ignoreBounds = True)
+            return
+        
         def addData(self, data: np.ndarray) -> None:
             (n_channels, n_datapoints) = data.shape # Read how many channels and data points are given
             if n_channels > self.n_channels: data = data[:n_channels]

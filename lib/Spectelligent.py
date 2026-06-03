@@ -166,37 +166,37 @@ class Spectelligent(QtCore.QObject):
                 
                 [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["x_start", "x_end", "dx"], ["V", "V", "mV"])]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [3, 3, 2])]
-                self.gui.plot_widget.setLabel("bottom", "V (V)")
+                self.gui.parameter_space_plot.setLabel("bottom", "V (V)")
             case "amp":
                 x_limits = [line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_amp_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit("mV") for side in ["x_start", "x_end", "dx"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [1, 1, 2])]
-                self.gui.plot_widget.setLabel("bottom", "amp (mV)")
+                self.gui.parameter_space_plot.setLabel("bottom", "amp (mV)")
             case "f":
                 x_limits = [line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_f_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit("Hz") for side in ["x_start", "x_end", "dx"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [1, 1, 2])]
-                self.gui.plot_widget.setLabel("bottom", "f (Hz)")
+                self.gui.parameter_space_plot.setLabel("bottom", "f (Hz)")
             case "z":
                 x_limits = [line_edits[f"sts_z_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_z_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit("nm") for side in ["x_start", "x_end", "dx"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [2, 2, 2])]
-                self.gui.plot_widget.setLabel("bottom", "z (nm)")
+                self.gui.parameter_space_plot.setLabel("bottom", "z (nm)")
             case "V_keithley":
                 x_limits = [line_edits[f"sts_V_keithley_{side}"].getValue() for side in ["start", "end"]]
                 x_points = line_edits["sts_V_keithley_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["x_start", "x_end", "dx"], ["V", "V", "mV"])]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["x_start", "x_end", "dx"], [3, 3, 2])]
-                self.gui.plot_widget.setLabel("bottom", "V_Keithley (V)")
+                self.gui.parameter_space_plot.setLabel("bottom", "V_Keithley (V)")
             case _:
-                self.gui.plot_widget.setLabel("bottom", "")
+                self.gui.parameter_space_plot.setLabel("bottom", "")
         
         y_limits = None
         match self.gui.buttons["sts_y_axis"].state_name:
@@ -206,43 +206,43 @@ class Spectelligent(QtCore.QObject):
                 
                 [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["y_start", "y_end", "dy"], ["V", "V", "mV"])]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [3, 3, 2])]
-                self.gui.plot_widget.setLabel("left", "V (V)")
+                self.gui.parameter_space_plot.setLabel("left", "V (V)")
             case "amp":
                 y_limits = [line_edits[f"sts_amp_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_amp_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit("mV") for side in ["y_start", "y_end", "dy"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [1, 1, 2])]
-                self.gui.plot_widget.setLabel("left", "amp (mV)")
+                self.gui.parameter_space_plot.setLabel("left", "amp (mV)")
             case "f":
                 y_limits = [line_edits[f"sts_f_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_f_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit("Hz") for side in ["y_start", "y_end", "dy"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [1, 1, 2])]
-                self.gui.plot_widget.setLabel("left", "f (Hz)")
+                self.gui.parameter_space_plot.setLabel("left", "f (Hz)")
             case "z":
                 y_limits = [line_edits[f"sts_z_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_z_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit("nm") for side in ["y_start", "y_end", "dy"]]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [2, 2, 2])]
-                self.gui.plot_widget.setLabel("left", "z (nm)")
+                self.gui.parameter_space_plot.setLabel("left", "z (nm)")
             case "V_keithley":
                 y_limits = [line_edits[f"sts_V_keithley_{side}"].getValue() for side in ["start", "end"]]
                 y_points = line_edits["sts_V_keithley_points"].getValue()
                 
                 [line_edits[f"sts_{side}"].setUnit(unit) for side, unit in zip(["y_start", "y_end", "dy"], ["V", "V", "mV"])]
                 [line_edits[f"sts_{side}"].setDigits(digits) for side, digits in zip(["y_start", "y_end", "dy"], [3, 3, 2])]
-                self.gui.plot_widget.setLabel("left", "V_Keithley (V)")
+                self.gui.parameter_space_plot.setLabel("left", "V_Keithley (V)")
             case _:
-                self.gui.plot_widget.setLabel("left", "")
+                self.gui.parameter_space_plot.setLabel("left", "")
 
         try:
             x_min = min(x_limits)
             x_max = max(x_limits)
             dx = (x_max - x_min) / (x_points - 1)
-            self.gui.plot_widget.setXRange(x_min - dx, x_max + dx)            
+            self.gui.parameter_space_plot.setXRange(x_min - dx, x_max + dx)            
             [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["x_start", "x_end", "dx", "x_points"], [x_limits[0], x_limits[1], dx, x_points])]
             
             if y_limits:
@@ -252,12 +252,12 @@ class Spectelligent(QtCore.QObject):
                 [line_edits[f"sts_{side}"].setValue(value) for side, value in zip(["y_start", "y_end", "dy", "y_points"], [y_limits[0], y_limits[1], dy, y_points])]
                 
                 self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.linspace(y_min, y_max, y_points))
-                self.gui.plot_widget.setYRange(y_min - dy, y_max + dy)
+                self.gui.parameter_space_plot.setYRange(y_min - dy, y_max + dy)
             
             else:
                 [line_edits[f"sts_{side}"].setText("") for side in ["y_start", "y_end", "dy", "y_points"]]
                 self.gui.grid_item.setValues(x_values = np.linspace(x_min, x_max, x_points), y_values = np.zeros((1), dtype = float))
-                self.gui.plot_widget.setYRange(-1, 1)
+                self.gui.parameter_space_plot.setYRange(-1, 1)
         except Exception as e:
             self.logprint(f"{e}", message_type = "error")
         return
@@ -266,8 +266,10 @@ class Spectelligent(QtCore.QObject):
         df = self.gui.lockin_widget.getdf()
         if not isinstance(df, float | int): return
         tm = 1000 / df
-        self.gui.waveform_widget.setXRange(0, tm)
+        self.gui.wave_plot.setXRange(0, tm)
+        self.gui.wave_plot.setVLines([0, tm])
         [mla_bias_1, mla_bias_2] = [self.sct.gui.line_edits[f"V_mla_port{port}"].getValue() for port in [1, 2]]
+        if not isinstance(mla_bias_1, int | float) or not isinstance(mla_bias_2, int | float): return
         
         wave_t_ms = np.linspace(0, tm, 500)
         wave_1_mV = np.full_like(wave_t_ms, 1000 * mla_bias_1, dtype = float)
@@ -335,50 +337,6 @@ class Spectelligent(QtCore.QObject):
 
     def zero_volumes(self) -> None:
         [self.gui.sliders[f"f{index}"].setValue(0) for index in range(32)]
-        return
-
-
-
-    # Read the GUI to set processing flags for image/spectrum processing
-    def update_processing_flags(self) -> None:
-        flags = {}
-
-        try:
-            # Background
-            bg_method = self.gui.button_groups["background"].getSelectedWidget()
-            flags.update({"background": f"{bg_method[3:]}", "rotation": True, "offset": True})        
-            
-            # Limits
-            [min_method, min_value] = self.gui.limits_widget.getMin()
-            [max_method, max_value] = self.gui.limits_widget.getMax()
-            flags.update({"min_method": f"{min_method}", "min_method_value": f"{min_value}", "max_method": f"{max_method}", "max_method_value": f"{max_value}"})
-
-            # Channel, direction, projection
-            selected_channel = self.gui.comboboxes["channels"].currentText()
-            (quantity, unit, backward, error) = self.file_functions.split_physical_quantity(selected_channel)
-            if isinstance(unit, str):
-                self.gui.limits_widget.setUnit("full", unit)
-                self.gui.limits_widget.setUnit("absolute", unit)
-            
-            backward = bool(self.gui.buttons["direction"].state_index)
-            projection = self.gui.comboboxes["projection"].currentText()
-            flags.update({"backward": backward, "projection": projection})
-            
-            # Operations
-            [flags.update({operation: self.gui.buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
-            
-            phase = self.gui.sliders["phase"].getValue()
-            flags.update({"phase (deg)": phase})        
-        except Exception as e:
-            self.logprint(f"Error updating the image processing flags: {e}", message_type = "error")
-
-        # Channels
-        channels = self.data.scan_processing_flags.get("channels")
-        if channels:
-            channel_index = channels.get(selected_channel, None)
-            if isinstance(channel_index, int): flags.update({"channel": selected_channel, "channel_index": channel_index})
-
-        self.data.scan_processing_flags.update(flags)
         return
 
 

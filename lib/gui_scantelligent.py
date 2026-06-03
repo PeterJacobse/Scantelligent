@@ -36,8 +36,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
         (self.image_view, self.camera_view) = self.make_views()
-        (self.piezo_roi, self.frame_roi, self.new_frame_roi, self.tip_target, self.target0) = self.make_image_view_widgets()
-        (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis, self.path_pdi) = self.make_plot_widgets()
+        (self.piezo_roi, self.frame_roi, self.new_frame_roi, self.tip_target, self.target0, self.path_pdi) = self.make_image_view_widgets()
+        self.grapher = self.make_plot_widget()
         self.widgets = self.make_custom_widgets()
         self.consoles = self.make_consoles()
         self.sliders = self.make_sliders()
@@ -654,28 +654,17 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         # Target items
         tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
         target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
-        return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0)
-
-    def make_plot_widgets(self) -> tuple[SCTWidgets.PlotWidget, list[pg.PlotDataItem], SCTWidgets.PlotWidget, list[pg.PlotDataItem]]:
-        plot_widget = SCTWidgets.PlotWidget(colors = self.color_list)
-        waveform_widget = SCTWidgets.PlotWidget(colors = self.color_list)
-
-        #pdis = [] # PlotDataItems
-        #for i in range(35):
-        #    pen = pg.mkPen(self.color_list[i], width = 1)
-        #    pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)
-        #    plot_widget.addItem(pdi)
-        #    pdis.append(pdi)
-        pdis = []
-        waveforms = [] # PlotDataItems
-        for i in range(4):
-            pen = pg.mkPen(self.color_list[i], width = 1)
-            waveform = waveform_widget.plot(x_data = [], y_data = [], pen = pen)
-            waveforms.append(waveform)
         
+        # Path
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
         
-        return (waveform_widget, waveforms, plot_widget, pdis, path_pdi)
+        return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0, path_pdi)
+
+    def make_plot_widget(self) -> SCTWidgets.PlotWidget:
+        grapher = SCTWidgets.PlotWidget(colors = self.color_list)
+        grapher.setVLines(0) # Create axes through the origin
+        grapher.setHLines(0)        
+        return grapher
 
     def make_custom_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget
@@ -816,7 +805,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["channels"].addWidget(comboboxes["graph_x_axis"], 9, 0, 1, 5)
         layouts["channels"].setRowStretch(0, 1)
         
-        layouts["graph"].addWidget(self.plot_widget, 5)
+        layouts["graph"].addWidget(self.grapher, 5)
         layouts["graph"].addLayout(layouts["channels"], 1)
         self.widgets["graph"].setLayout(layouts["graph"])
         

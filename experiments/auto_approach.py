@@ -126,8 +126,8 @@ class Experiment(BaseExperiment):
                 nn.feedback_update(start_feedback, verbose = False)
             
             case "mla":
-                if tia_gain_V_per_pA: self.prepare_graph(["t (s)", "z (nm)", "I (pA)", "Re(a1) (nS)", "Im(a1) (fF)"])
-                else: self.prepare_graph(["t (s)", "z (nm)", "I (pA)", "Re(a1) (mV)", "Im(a1) (mV)"])
+                if tia_gain_V_per_pA: self.data_array.emit(np.array(["t (s)", "z (nm)", "I (pA)", "Re(a1) (nS)", "Im(a1) (fF)"]))
+                else: self.data_array.emit(np.aray(["t (s)", "z (nm)", "I (pA)", "Re(a1) (mV)", "Im(a1) (mV)"]))
                 amplitudes = np.zeros(32)
                 mla.autophase()
                 mla.lockin_update({"df (Hz)": f_approach_Hz, "amplitudes (mV)": [amp_approach_mV, 0, 0, 0], "numbers": [1, 1, 2, 3], "mod0": {"on": True, "port": 1}, "input_mask": [1, 2, 2, 2]})

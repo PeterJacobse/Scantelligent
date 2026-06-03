@@ -85,7 +85,7 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
         return
 
-    def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = True) -> str:
+    def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = False) -> str:
         """
         Returns which device the STM bias cable is connected to, and autophases the lockin amplifier for the corresponding device
         """

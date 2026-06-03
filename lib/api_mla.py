@@ -124,6 +124,8 @@ class MLAAPI(QtCore.QObject):
         input_mask = np.full((self.mla.lockin.nr_input_freq), 2, dtype = int)
         input_mask[0] = 1
         self.lockin_update({"df (Hz)": 220, "numbers": numbers, "amplitudes (mV)": {0: 100}, "input_mask": input_mask}, verbose = False)
+        
+        self.expose_dIdV()
         return
 
     def reset_outputs(self) -> None:
@@ -187,8 +189,8 @@ class MLAAPI(QtCore.QObject):
 
     def set_output_masks(self, output_masks: np.ndarray | list) -> None:
         if len(output_masks) == 2:
-            self.mla.lockin.set_output_mask(output_masks[0], port = 1)
-            self.mla.lockin.set_output_mask(output_masks[1], port = 2)
+            self.mla.lockin.set_output_mask(output_masks[0], port = 1, wait_for_effect = True)
+            self.mla.lockin.set_output_mask(output_masks[1], port = 2, wait_for_effect = True)
         else:
             self.logprint("Output masks have the wrong shape")
         return
@@ -217,6 +219,12 @@ class MLAAPI(QtCore.QObject):
         self.amplitudes_update({"amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)")}, verbose = False)
         self.get_pixels(3, average = True, wait_for_new = True)
         self.stop_lockin()
+        return
+
+    def expose_dIdV(self, output_port: str = "A") -> None:
+        if not output_port in ["A", "B", "C", "D"]: return
+        self.mla.feedback.setup(gain = 1.0, offset = 0.0, output_port = "A")
+        self.mla.feedback.set_feedback_type_slow(7)
         return
 
 
@@ -626,7 +634,7 @@ class MLAAPI(QtCore.QObject):
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
         if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
-        if not channel_names_callback: channel_names_callback = lambda channels: self.logprint(f"{channels = }", message_type = "result")
+        if not channel_names_callback: channel_names_callback = None # lambda channels: self.logprint(f"{channels = }", message_type = "result")
 
         (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
         measurement_output_masks = np.copy(start_outputs.get("output_masks"))
@@ -734,7 +742,7 @@ class MLAAPI(QtCore.QObject):
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
         if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
-        if not channel_names_callback: channel_names_callback = lambda channels: self.logprint(f"{channels = }", message_type = "result")
+        if not channel_names_callback: channel_names_callback = None # lambda channels: self.logprint(f"{channels = }", message_type = "result")
         
         (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
         measurement_output_masks = np.copy(start_outputs.get("output_masks"))
@@ -820,7 +828,7 @@ class MLAAPI(QtCore.QObject):
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
         if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
-        if not channel_names_callback: channel_names_callback = lambda channels: self.logprint(f"{channels = }", message_type = "result")
+        if not channel_names_callback: channel_names_callback = None # lambda channels: self.logprint(f"{channels = }", message_type = "result")
         
         (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
         measurement_output_masks = np.copy(start_outputs.get("output_masks"))

@@ -1,6 +1,8 @@
 import os, yaml
 from PyQt6 import QtCore, QtGui
 import numpy as np
+from .gui_scantelligent import ScantelligentGUI
+from .gui_spectelligent import SpectelligentGUI
 
 
 
@@ -46,7 +48,9 @@ class ParameterManager(QtCore.QObject):
     def set(self, parameter_type: str = "frame") -> None:
         # It is noted that the nomenclature 'set' causes shadowing of the built-in 'set' method, but I decided to keep this regardless
         sct = self.scantelligent
-        line_edits = sct.gui.line_edits
+        sctgui: ScantelligentGUI = sct.gui
+        sptgui: SpectelligentGUI = sct.spt.gui
+        line_edits = sctgui.line_edits
         
         # Abort if the relevant hardware objects are missing
         if parameter_type in ["feedback", "frame", "grid", "speeds", "gain"] and not hasattr(sct, "nanonis"):
@@ -116,12 +120,12 @@ class ParameterManager(QtCore.QObject):
                     sct.nanonis.lockin_update(parameters, unlink = True)
                 """
                 if hasattr(sct, "mla"):
-                    df = sct.spt.gui.lockin_widget.getdf()
-                    frequencies = sct.spt.gui.lockin_widget.getFrequencies()
-                    amplitudes = sct.spt.gui.lockin_widget.getAmplitudes()
-                    phases = sct.spt.gui.lockin_widget.getPhases()
-                    outputs = sct.spt.gui.lockin_widget.getOutputs()
-                    inputs = sct.spt.gui.lockin_widget.getInputs()
+                    df = sptgui.lockin_widget.getdf()
+                    frequencies = sptgui.lockin_widget.getFrequencies()
+                    amplitudes = sptgui.lockin_widget.getAmplitudes()
+                    phases = sptgui.lockin_widget.getPhases()
+                    outputs = sptgui.lockin_widget.getOutputs()
+                    inputs = sptgui.lockin_widget.getInputs()
                     sct.mla.lockin_update({"df (Hz)": df, "frequencies (Hz)": frequencies, "amplitudes (mV)": amplitudes, "phases (deg)": phases, "output_masks": outputs, "input_mask": inputs}, unlink = False)
                     sct.mla.start_lockin()
                     sct.mla.get_pixels(1)
@@ -173,7 +177,9 @@ class ParameterManager(QtCore.QObject):
     @QtCore.pyqtSlot(dict)
     def receive(self, parameters: dict) -> None:
         sct = self.scantelligent
-        line_edits = sct.gui.line_edits
+        sctgui: ScantelligentGUI = sct.gui
+        sptgui: SpectelligentGUI = sct.spt.gui
+        line_edits = sctgui.line_edits
         dict_name = parameters.get("dict_name")
 
         match dict_name:
@@ -195,8 +201,8 @@ class ParameterManager(QtCore.QObject):
                         if isinstance(values, int | float | str): values = [values]
                         if not isinstance(values, list): continue
                         match key:
-                            case "tooltip": sct.gui.comboboxes["direction"].changeToolTip(values)
-                            case "items": sct.gui.comboboxes["direction"].renewItems(values)
+                            case "tooltip": sctgui.comboboxes["direction"].changeToolTip(values)
+                            case "items": sctgui.comboboxes["direction"].renewItems(values)
                             case _: pass
 
             case "nanonis_status":
@@ -216,7 +222,7 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"mla": "idle"})
                     case "offline": sct.status.update({"mla": "offline"})
                     case _: pass
-                try: sct.gui.buttons["mla"].setState(status)
+                try: sctgui.buttons["mla"].setState(status)
                 except: pass
 
             case "keithley_status":
@@ -226,7 +232,7 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"keithley": "idle"})
                     case "offline": sct.status.update({"keithley": "offline"})
                     case _: pass
-                try: sct.gui.buttons["keithley"].setState(status)
+                try: sctgui.buttons["keithley"].setState(status)
                 except: pass
 
             case "camera_status":
@@ -236,13 +242,13 @@ class ParameterManager(QtCore.QObject):
                     case "online" | "idle": sct.status.update({"camera": "idle"})
                     case "offline": sct.status.update({"camera": "offline"})
                     case _: pass
-                try: sct.gui.buttons["camera"].setState(status)
+                try: sctgui.buttons["camera"].setState(status)
                 except: pass
 
             case "session_path":
                 session_path = parameters.get("path")
                 sct.paths.update({"session_path": session_path})
-                try: sct.gui.buttons["session_folder"].setState("online")
+                try: sctgui.buttons["session_folder"].setState("online")
                 except: pass
             
             case "view_request":
@@ -261,20 +267,22 @@ class ParameterManager(QtCore.QObject):
                 abs_values = np.abs(2000 * pixel)
                 arg_values = np.rad2deg(np.angle(pixel))
                 
-                sct.spt.gui.lockin_widget.setMeasuredAmplitudes(abs_values)
-                sct.spt.gui.lockin_widget.setMeasuredPhases(arg_values)
+                sptgui.lockin_widget.setMeasuredAmplitudes(abs_values)
+                sptgui.lockin_widget.setMeasuredPhases(arg_values)
                 sct.amplitudes.emit(100 * abs_values)
 
             case "frequencies":
                 freqs = parameters.get("frequencies (Hz)")
-                sct.frequencies.emit(freqs)
-                sct.spt.gui.lockin_widget.setFrequencies(freqs)
+                sct.frequencies.emit(freqs) # To be captured by the audio generator
+                sptgui.lockin_widget.setFrequencies(freqs)
             
-            case "time_constant": sct.spt.gui.lockin_widget.setdf(parameters.get("df (Hz)"))
-            case "amplitudes": sct.spt.gui.lockin_widget.setAmplitudes(parameters.get("amplitudes (mV)"))            
-            case "phases": sct.spt.gui.lockin_widget.setPhases(parameters.get("phases (deg)"))            
-            case "outputs": sct.spt.gui.lockin_widget.setOutputs(parameters.get("output_masks"))
-            case "inputs": sct.spt.gui.lockin_widget.setInputs(parameters.get("input_mask"))
+            case "time_constant":
+                sptgui.lockin_widget.setdf(parameters.get("df (Hz)"))
+                sct.spt.update_waveforms()
+            case "amplitudes": sptgui.lockin_widget.setAmplitudes(parameters.get("amplitudes (mV)"))            
+            case "phases": sptgui.lockin_widget.setPhases(parameters.get("phases (deg)"))            
+            case "outputs": sptgui.lockin_widget.setOutputs(parameters.get("output_masks"))
+            case "inputs": sptgui.lockin_widget.setInputs(parameters.get("input_mask"))
     
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)
@@ -293,7 +301,7 @@ class ParameterManager(QtCore.QObject):
                     sct.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}: {value}")
                     sct.gui.checkboxes[f"channel_{channel_index}"].setChecked(True)
                     sct.gui.pdis[channel_index].setVisible(True)
-                    line = sct.gui.plot_widget.plot()
+                    line = sct.gui.grapher.plot()
                     sct.lines.append(line)
 
             case "tip_status":

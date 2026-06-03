@@ -114,7 +114,7 @@ class Scantelligent(QtCore.QObject):
 
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
-        self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.gui.plot_widget.setBufferSize(buf_size))
+        self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.gui.grapher.setBufferSize(buf_size))
         
         # Comboboxes
         self.gui.comboboxes["slice"].currentIndexChanged.connect(self.update_processing_flags)
@@ -123,7 +123,7 @@ class Scantelligent(QtCore.QObject):
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
-        self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda cbb = self.gui.comboboxes["graph_x_axis"].currentIndex(): self.gui.plot_widget.setXAxis(cbb - 1))
+        self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda cbb = self.gui.comboboxes["graph_x_axis"].currentIndex(): self.gui.grapher.setXAxis(cbb - 1))
         
         # Checkboxes and button groups
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
@@ -406,24 +406,22 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data: np.ndarray) -> None:
-        data_array = np.atleast_2d(data).transpose()[:self.gui.plot_widget.n_channels] # Cast the data into a 2D np.ndarray, if it isn't in that form yet
+        data_array = np.atleast_2d(data).transpose()[:self.gui.grapher.n_channels] # Cast the data into a 2D np.ndarray, if it isn't in that form yet
         
         # Single elements can be used to signal the grapher
         if data_array.shape == (1, 1):
-            if isinstance(data_array[0, 0], int) and data_array[0, 0] < self.gui.plot_widget.n_channels and data_array[0, 0] > -2:
+            if isinstance(data_array[0, 0], int) and data_array[0, 0] < self.gui.grapher.n_channels and data_array[0, 0] > -2:
                 self.x_channel = data_array[0, 0]
-                self.gui.plot_widget.setXAxis(data_array[0, 0])
+                self.gui.grapher.setXAxis(data_array[0, 0])
                 try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
                 except: pass
             elif isinstance(data_array[0, 0], str) and data_array[0, 0] == "clear": # Magic word to clear the buffer
-                self.gui.plot_widget.clearBuffer()
-                #self.graph_buffer *= 0
-                #self.graph_buffer_index = 0
-                [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}") for channel_index in range(self.gui.plot_widget.n_channels)]
-                [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(False) for channel_index in range(self.gui.plot_widget.n_channels)]
+                self.gui.grapher.clearBuffer()
+                [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}") for channel_index in range(self.gui.grapher.n_channels)]
+                [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(False) for channel_index in range(self.gui.grapher.n_channels)]
                 self.buffer_full = False
             self.update_pdi_visibility()
-            self.gui.plot_widget.plotData()
+            self.gui.grapher.plotData()
             return
         
         # String and bool arrays can be passed to give information about channels and their checked state
@@ -434,18 +432,19 @@ class Scantelligent(QtCore.QObject):
             try: self.gui.comboboxes["graph_x_axis"].selectIndex(self.x_channel + 1)
             except: pass
             self.update_pdi_visibility()
-            self.gui.plot_widget.plotData()
+            self.gui.grapher.plotData()
+            self.gui.grapher.setChannelNames(np.insert(np.astype(data_array[:, 0], object), 0, "index"))
             return
         elif data_array.dtype.kind == "b": # The data array has booleans. Check and uncheck according to the boolean values
             [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(value) for channel_index, value in enumerate(data_array[:, 0])]
-            self.gui.plot_widget.plotData()
+            self.gui.grapher.plotData()
             return
 
         
         
         # Numeric data is added to the buffer
-        self.gui.plot_widget.addData(data_array)
-        self.gui.plot_widget.plotData()
+        self.gui.grapher.addData(data_array)
+        self.gui.grapher.plotData()
         return
 
     @QtCore.pyqtSlot(str)
@@ -831,9 +830,9 @@ class Scantelligent(QtCore.QObject):
         return
 
     def update_pdi_visibility(self) -> None:
-        for index in range(self.gui.plot_widget.n_channels):
+        for index in range(self.gui.grapher.n_channels):
             checked = bool(self.gui.checkboxes[f"channel_{index}"].state_index)
-            self.gui.plot_widget.pdis[index].setVisible(checked)
+            self.gui.grapher.pdis[index].setVisible(checked)
         return
 
 

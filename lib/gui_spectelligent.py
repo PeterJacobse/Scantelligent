@@ -34,7 +34,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         self.line_edits = self.make_line_edits()
         #self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
-        (self.waveform_widget, self.waveforms, self.plot_widget, self.pdis) = self.make_plot_widgets()
+        (self.parameter_space_plot, self.wave_plot, self.fourier_plot, self.waveforms) = self.make_plot_widgets()
         self.widgets = self.make_widgets()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
@@ -371,28 +371,29 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         }        
         return layouts
 
-    def make_plot_widgets(self) -> tuple[pg.PlotWidget, list[pg.PlotDataItem], pg.PlotWidget, list[pg.PlotDataItem]]:
-        plot_widget = pg.PlotWidget()
-        waveform_widget = pg.PlotWidget()
-        waveform_widget.setLabel("bottom", "t (ms)")
-        waveform_widget.setLabel("left", "V (mV)")
-
-        pdis = [] # PlotDataItems
-        for i in range(40):
-            pen = pg.mkPen(self.color_list[i])
-            pdi = plot_widget.plot(x_data = [], y_data = [], pen = pen)
-            pdis.append(pdi)
+    def make_plot_widgets(self) -> tuple[SCTWidgets.PlotWidget, SCTWidgets.PlotWidget, SCTWidgets.PlotWidget, list[pg.PlotDataItem]]:
+        parameter_space_plot = SCTWidgets.PlotWidget(colors = self.color_list)
+        wave_plot = SCTWidgets.PlotWidget(colors = self.color_list)
+        fourier_plot = SCTWidgets.PlotWidget(colors = self.color_list)
+        wave_plot.setLabel("bottom", "t (ms)")
+        wave_plot.setLabel("left", "V (mV)")
+        fourier_plot.setLabel("bottom", "f (Hz)")
+        fourier_plot.setLabel("left", "V (mV)")
         
-        self.grid_item = SCTWidgets.GridItem()
-        plot_widget.addItem(self.grid_item)
+        wave_plot.setHLines(0)
+        wave_plot.setVLines(0)
+        fourier_plot.setHLines(0)
+        fourier_plot.setVLines(0)
         
         waveforms = [] # PlotDataItems
         for i in range(4):
             pen = pg.mkPen(self.color_list[i + 1], size = 2)
-            waveform = waveform_widget.plot(x_data = [], y_data = [], pen = pen, legend = f"port {i}")
+            waveform = wave_plot.plot(x_data = [], y_data = [], pen = pen, legend = f"port {i}")
             waveforms.append(waveform)
-                
-        return (waveform_widget, waveforms, plot_widget, pdis)
+        
+        self.grid_item = SCTWidgets.GridItem()
+        parameter_space_plot.addItem(self.grid_item)
+        return (parameter_space_plot, wave_plot, fourier_plot, waveforms)
 
     def make_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget
@@ -466,7 +467,10 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["lockin"].addWidget(self.lockin_widget)
         layouts["lockin"].addStretch(1)
         
-        layouts["waveforms"].addWidget(self.waveform_widget)
+        self.plot_splitter = QtWidgets.QSplitter(orientation = QtCore.Qt.Orientation.Horizontal)
+        self.plot_splitter.addWidget(self.wave_plot)
+        self.plot_splitter.addWidget(self.fourier_plot)
+        layouts["waveforms"].addWidget(self.plot_splitter)
         
         # STS controls
         [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectroscopy", "nanonis_mla", "exit"]]
@@ -508,7 +512,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         [layouts["xy_plot_y"].addWidget(widget) for widget in [line_edits["sts_y_end"], buttons["sts_y_axis"], line_edits["sts_y_points"], line_edits["sts_y_start"]]]
         [layouts["xy_plot_x"].addWidget(widget) for widget in [line_edits["sts_x_start"], buttons["sts_x_axis"], line_edits["sts_x_points"], line_edits["sts_x_end"]]]
         layouts["xy_plot"].addLayout(layouts["xy_plot_y"], 0, 0)
-        layouts["xy_plot"].addWidget(self.plot_widget, 0, 1)
+        layouts["xy_plot"].addWidget(self.parameter_space_plot, 0, 1)
         layouts["xy_plot"].addLayout(layouts["xy_plot_x"], 1, 1)
         
         layouts["parameter_space"].addLayout(layouts["xy_plot"])

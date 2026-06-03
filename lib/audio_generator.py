@@ -54,7 +54,7 @@ class AudioGenerator(QObject):
     def volumes_update(self, values: list | np.ndarray = []) -> None:
         self.volumes = np.array(values, dtype = int)
         self.amps_old = np.copy(self.amps_new)
-        self.amps_new = self.amplitudes * self.volumes * 1E-8
+        self.amps_new = self.amplitudes * self.volumes * 3E-8
         self.new_amps = True
         return
 
@@ -62,7 +62,7 @@ class AudioGenerator(QObject):
     def amplitudes_update(self, values: list | np.ndarray = []) -> None:
         self.amplitudes = np.array(values, dtype = float)
         self.amps_old = self.amps_new.copy()
-        self.amps_new = self.amplitudes * self.volumes * 1E-8
+        self.amps_new = self.amplitudes * self.volumes * 3E-8
         self.new_amps = True
         return
 
