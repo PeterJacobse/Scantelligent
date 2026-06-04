@@ -137,10 +137,11 @@ class Scantelligent(QtCore.QObject):
         
         
         # Spectelligent
-        self.spt.gui.lockin_widget.get_button.clicked.connect(self.spt.update_waveforms)
-        self.spt.gui.lockin_widget.set_button.clicked.connect(self.spt.update_waveforms)
         self.spt.gui.lockin_widget.get_button.clicked.connect(lambda: self.parameters.get("lockin"))
         self.spt.gui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.set("lockin"))
+        self.spt.gui.lockin_widget.set_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
+        self.spt.gui.lockin_widget.get_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
+        
         self.spt.gui.lockin_widget.audio_button.clicked.connect(self.toggle_audio)
         self.spt.gui.buttons["start_spectroscopy"].clicked.connect(self.start_spectroscopy)
         return
@@ -419,7 +420,6 @@ class Scantelligent(QtCore.QObject):
                 self.gui.grapher.clearBuffer()
                 [self.gui.checkboxes[f"channel_{channel_index}"].setToolTip(f"channel {channel_index}") for channel_index in range(self.gui.grapher.n_channels)]
                 [self.gui.checkboxes[f"channel_{channel_index}"].setChecked(False) for channel_index in range(self.gui.grapher.n_channels)]
-                self.buffer_full = False
             self.update_pdi_visibility()
             self.gui.grapher.plotData()
             return

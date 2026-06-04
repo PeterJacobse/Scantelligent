@@ -51,14 +51,15 @@ class MLAAPI(QtCore.QObject):
         self.output_masks = np.zeros((2, 32), dtype = int)
         self.input_mask = np.zeros((32), dtype = int)
         self.status = "online"
-        self.status_callback(self.status)        
+        self.status_callback(self.status)
         return
 
     def link(self) -> None:
         try:
             self.logprint("mla.link()", message_type = "code")
             time.sleep(.2)
-            self.mla.connect(server_text_callback = lambda text: self.logprint(text, message_type = "result"), ping_attempts = 4)
+            # self.mla.connect(server_text_callback = lambda text: self.logprint(text, message_type = "result"), ping_attempts = 4)
+            raise Exception("Going into test mode")
             self.status = "running"
             self.set_defaults()
             try:
@@ -143,10 +144,10 @@ class MLAAPI(QtCore.QObject):
         
         if self.test_mode:
             rng = np.random.default_rng()
-            pix = rng.random((32, number), dtype = float) + 1j * rng.random((32, number), dtype = float)
+            pix = .01 * rng.random((32, number), dtype = float) + .01j * rng.random((32, number), dtype = float)
             if average: pix = np.average(pix, axis = 1)
             self.parameters.emit({"dict_name": "pixels", "pixels": pix})
-            return pix
+            return (pix, None)
         
         if wait_for_new: self.mla.lockin.wait_for_new_pixels(number)
         if data_format == "phase": (pix, _) = self.mla.lockin.get_pixels(number, data_format == "phase", unit = "deg")
@@ -393,7 +394,7 @@ class MLAAPI(QtCore.QObject):
             if not self.test_mode: self.mla.lockin.set_frequencies(new_frequencies, wait_for_effect = True)
             
             # Read
-            if self.test_mode: read_frequencies = np.random.random(32) * 1000
+            if self.test_mode: read_frequencies = np.sort(np.random.random(32) * 1000)
             else: read_frequencies = np.round(self.mla.lockin.get_frequencies(), 5)
             read_numbers = np.round(np.array([frequency / self.df for frequency in read_frequencies]), 5)
             osc_times = np.round(np.array([1000 / frequency if not frequency == 0 else 0 for frequency in read_frequencies]), 5)
@@ -439,7 +440,7 @@ class MLAAPI(QtCore.QObject):
             if not self.test_mode: self.mla.lockin.set_amplitudes(new_amplitudes / 1000, wait_for_effect = True)
             
             # Read
-            if self.test_mode: read_amplitudes = np.random.random(32)
+            if self.test_mode: read_amplitudes = np.random.random((32)) * 500
             else: read_amplitudes = np.round(self.mla.lockin.get_amplitudes() * 1000, 5)
 
             amp_dict.update({"amplitudes (mV)": read_amplitudes})
@@ -483,7 +484,7 @@ class MLAAPI(QtCore.QObject):
             if not self.test_mode: self.mla.lockin.set_phases(new_phases, unit = "degree", wait_for_effect = True)
             
             # Read
-            if self.test_mode: read_phases = np.random.random(32)
+            if self.test_mode: read_phases = np.random.random((32)) * 360
             else: read_phases = self.mla.lockin.get_phases(unit = "degree")
 
             phase_dict.update({"phases (deg)": read_phases})
@@ -595,21 +596,23 @@ class MLAAPI(QtCore.QObject):
             if not self.status == "running" and not self.test_mode: self.link()
             
             [port1, port2] = [parameters.get(f"port_{index + 1} (V)", None) for index in range(2)]
-            if isinstance(port1, float | int) and not self.test_mode:
-                if port1 < self.V[0]: dV *= -1
-                slew = np.arange(self.V[0], port1, dV)
-                for V_t in slew: # Perform the slew to the new bias voltage
-                    self.set_bias(port = 1, value = V_t)
-                    time.sleep(dt)
-                self.set_bias(port = 1, value = port1)
+            if isinstance(port1, float | int):
+                if not self.test_mode:
+                    if port1 < self.V[0]: dV *= -1
+                    slew = np.arange(self.V[0], port1, dV)
+                    for V_t in slew: # Perform the slew to the new bias voltage
+                        self.set_bias(port = 1, value = V_t)
+                        time.sleep(dt)
+                    self.set_bias(port = 1, value = port1)
                 self.V[0] = port1
-            if isinstance(port2, float | int) and not self.test_mode:
-                if port2 < self.V[1]: dV *= -1
-                slew = np.arange(self.V[1], port2, dV)
-                for V_t in slew: # Perform the slew to the new bias voltage
-                    self.set_bias(port = 2, value = V_t)
-                    time.sleep(dt)
-                self.set_bias(port = 2, value = port2)
+            if isinstance(port2, float | int):
+                if not self.test_mode:
+                    if port2 < self.V[1]: dV *= -1
+                    slew = np.arange(self.V[1], port2, dV)
+                    for V_t in slew: # Perform the slew to the new bias voltage
+                        self.set_bias(port = 2, value = V_t)
+                        time.sleep(dt)
+                    self.set_bias(port = 2, value = port2)
                 self.V[1] = port2
             
             bias_dict.update({"port_1 (V)": self.V[0], "port_2 (V)": self.V[1]})

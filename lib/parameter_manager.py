@@ -260,29 +260,39 @@ class ParameterManager(QtCore.QObject):
             case "mla_bias":
                 biases = [parameters.get(f"port_{index + 1} (V)") for index in range(2)]
                 [line_edits[f"V_mla_port{index + 1}"].setValue(val, edited_color = False) for index, val in enumerate(biases)]
-
+                sptgui.waveform_widget.setDCBiases(biases)
             case "pixels":
                 pixel = parameters.get("pixels")
                 if pixel.ndim > 1: pixel = pixel[:, 0]
                 abs_values = np.abs(2000 * pixel)
-                arg_values = np.rad2deg(np.angle(pixel))
-                
+                arg_values = np.rad2deg(np.angle(pixel))                
                 sptgui.lockin_widget.setMeasuredAmplitudes(abs_values)
                 sptgui.lockin_widget.setMeasuredPhases(arg_values)
+                sptgui.waveform_widget.setMeasuredAmplitudes(abs_values)
                 sct.amplitudes.emit(100 * abs_values)
-
             case "frequencies":
                 freqs = parameters.get("frequencies (Hz)")
-                sct.frequencies.emit(freqs) # To be captured by the audio generator
                 sptgui.lockin_widget.setFrequencies(freqs)
-            
+                sptgui.waveform_widget.setFrequencies(freqs)
+                sct.frequencies.emit(freqs) # To be captured by the audio generator
             case "time_constant":
-                sptgui.lockin_widget.setdf(parameters.get("df (Hz)"))
-                sct.spt.update_waveforms()
-            case "amplitudes": sptgui.lockin_widget.setAmplitudes(parameters.get("amplitudes (mV)"))            
-            case "phases": sptgui.lockin_widget.setPhases(parameters.get("phases (deg)"))            
-            case "outputs": sptgui.lockin_widget.setOutputs(parameters.get("output_masks"))
-            case "inputs": sptgui.lockin_widget.setInputs(parameters.get("input_mask"))
+                df_Hz = parameters.get("df (Hz)")
+                sptgui.lockin_widget.setdf(df_Hz)
+                sptgui.waveform_widget.setdf(df_Hz)
+            case "amplitudes":
+                amplitudes = parameters.get("amplitudes (mV)")
+                sptgui.lockin_widget.setAmplitudes(amplitudes)
+                sptgui.waveform_widget.setAmplitudes(amplitudes)
+            case "phases":
+                sptgui.lockin_widget.setPhases(parameters.get("phases (deg)"))
+            case "outputs":
+                output_masks = parameters.get("output_masks")
+                sptgui.lockin_widget.setOutputs(output_masks)
+                sptgui.waveform_widget.setOutputs(output_masks)
+            case "inputs":
+                input_mask = parameters.get("input_mask")
+                sptgui.lockin_widget.setInputs(input_mask)
+                sptgui.waveform_widget.setInputs(input_mask)
     
             case "coarse_parameters":
                 sct.user.coarse_parameters[0].update(parameters)

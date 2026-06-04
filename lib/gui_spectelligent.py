@@ -1,7 +1,7 @@
 import os, sys
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
-from .sct_widgets import SCTWidgets, ModulatorWidget, LockinWidget, rotate_icon, make_layout, make_line
+from .sct_widgets import SCTWidgets, ModulatorWidget, LockinWidget, WaveFormWidget, rotate_icon, make_layout, make_line
 
 
 
@@ -9,12 +9,11 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.color_list = ["#FFFFFF", "#FFFF20", "#20FFFF", "#FF80FF", "#60FF60", "#FF6060", "#8080FF", "#B0B0B0", "#FFB010", "#A050FF",
-                           "#909020", "#00A0A0", "#B030A0", "#40B040", "#B04040", "#5050E0", "#C00000", "#905020", "#707000", "#2020ff",
-                           "#CFCFCF", "#CFCF20", "#20CFCF", "#CF60CF", "#60CF60", "#CF6060", "#8080CF", "#909090", "#CFB010", "#C050FF",
-                           "#606020", "#00C0C0", "#B030C0", "#409040", "#904040", "#505090", "#900000", "#605020", "#404000", "#2020Cf"]
+        self.color_list = ["#FFFFFF", "#FF0000", "#00FF00", "#0066FF", "#FFFF00", "#00FFFF", "#FF00FF", "#FF9900", "#99FF00", "#00FFCC", "#FF0066", "#CCFF00", "#CC00FF",
+                           "#FF5500", "#33FF00", "#0099FF", "#FF00AA", "#66FF66", "#3300FF", "#FFCC00", "#00FF66", "#9900FF", "#FF3333", "#A8FF33", "#00CCFF",
+                           "#FF8888", "#88FF88", "#8888FF", "#FFBB55", "#D4FF88", "#88FFFF", "#FF88FF", "#FFCC99", "#99FFCC", "#CC99FF"]
         self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff", "off-black": "#101010",
-                       "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080"}
+                       "white": "#ffffff", "blue": "#2090ff", "orange": "#FFA000","dark_orange": "#A05000", "black": "#000000", "purple": "#700080", "dark_gray": "#606060"}
         self.style_sheets = {
             "neutral": f"background-color: {self.colors["black"]};",
             "connected": f"background-color: {self.colors["dark_green"]};",
@@ -32,9 +31,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         self.checkboxes = self.make_checkboxes()
         self.comboboxes = self.make_comboboxes()
         self.line_edits = self.make_line_edits()
-        #self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
-        (self.parameter_space_plot, self.wave_plot, self.fourier_plot, self.waveforms) = self.make_plot_widgets()
+        (self.parameter_space_plot, self.waveform_widget) = self.make_plot_widgets()
         self.widgets = self.make_widgets()
                 
         # 3: Populate layouts with GUI items. Requires GUI items.
@@ -372,28 +370,14 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         return layouts
 
     def make_plot_widgets(self) -> tuple[SCTWidgets.PlotWidget, SCTWidgets.PlotWidget, SCTWidgets.PlotWidget, list[pg.PlotDataItem]]:
-        parameter_space_plot = SCTWidgets.PlotWidget(colors = self.color_list)
-        wave_plot = SCTWidgets.PlotWidget(colors = self.color_list)
-        fourier_plot = SCTWidgets.PlotWidget(colors = self.color_list)
-        wave_plot.setLabel("bottom", "t (ms)")
-        wave_plot.setLabel("left", "V (mV)")
-        fourier_plot.setLabel("bottom", "f (Hz)")
-        fourier_plot.setLabel("left", "V (mV)")
-        
-        wave_plot.setHLines(0)
-        wave_plot.setVLines(0)
-        fourier_plot.setHLines(0)
-        fourier_plot.setVLines(0)
-        
-        waveforms = [] # PlotDataItems
-        for i in range(4):
-            pen = pg.mkPen(self.color_list[i + 1], size = 2)
-            waveform = wave_plot.plot(x_data = [], y_data = [], pen = pen, legend = f"port {i}")
-            waveforms.append(waveform)
+        parameter_space_plot = SCTWidgets.PlotWidget(colors = self.color_list, buffer_size = 0, n_channels = 0)
         
         self.grid_item = SCTWidgets.GridItem()
         parameter_space_plot.addItem(self.grid_item)
-        return (parameter_space_plot, wave_plot, fourier_plot, waveforms)
+        
+        waveform_widget = WaveFormWidget(colors = self.color_list, orientation = "h", n_outputs = 2, n_inputs = 4, n_modulators = 32)
+        waveform_widget.wave_plot.setYRange(-2000, 2000)
+        return (parameter_space_plot, waveform_widget)
 
     def make_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget
@@ -466,11 +450,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         # Lockin
         layouts["lockin"].addWidget(self.lockin_widget)
         layouts["lockin"].addStretch(1)
-        
-        self.plot_splitter = QtWidgets.QSplitter(orientation = QtCore.Qt.Orientation.Horizontal)
-        self.plot_splitter.addWidget(self.wave_plot)
-        self.plot_splitter.addWidget(self.fourier_plot)
-        layouts["waveforms"].addWidget(self.plot_splitter)
+        layouts["waveforms"].addWidget(self.waveform_widget)
         
         # STS controls
         [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectroscopy", "nanonis_mla", "exit"]]
@@ -586,71 +566,5 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         self.setFocus()
         self.activateWindow()
         
-        return
-
-
-
-    # 6: Interconnect interdependent widgets
-    def update_lock(self, name: str = "frame") -> None:
-        if bool(self.buttons[f"{name}_aspect"].state_index): self.frame_rg.setLock("factor1") # Lock the aspect ratio
-        else: self.frame_rg.setLock("factor0") # Lock the width
-        return
-
-    def limit_roi_angle(self) -> None:
-        angle = self.new_frame_roi.angle()
-        new_angle = (angle + 180) % 360 - 180
-
-        self.new_frame_roi.blockSignals(True)
-        self.new_frame_roi.setAngle(new_angle)
-        self.new_frame_roi.blockSignals(False)
-        return
-
-    def update_fields_from_frame_change(self) -> None:
-        [self.line_edits[name].blockSignals(True) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
-        
-        self.limit_roi_angle()
-        
-        new_width = self.new_frame_roi.size().x()
-        self.line_edits["frame_width"].setValue(new_width, edited_color = False)
-        
-        if bool(self.buttons["frame_aspect"].state_index):
-            new_height = new_width * self.line_edits["frame_aspect"].getValue()
-            
-            self.new_frame_roi.blockSignals(True)
-            self.new_frame_roi.setSize([new_width, new_height])
-            self.new_frame_roi.blockSignals(False)
-        else:
-            new_height = self.new_frame_roi.size().y()
-            self.line_edits["frame_aspect"].setValue(new_height / new_width, edited_color = False)
-        
-        self.line_edits["frame_height"].setValue(new_height, edited_color = False)
-                
-        bounding_rect = self.new_frame_roi.boundingRect()
-        local_center = bounding_rect.center()
-        abs_center = self.new_frame_roi.mapToParent(local_center)
-        
-        self.line_edits["frame_x"].setValue(abs_center.x(), edited_color = False)
-        self.line_edits["frame_y"].setValue(abs_center.y(), edited_color = False)
-        
-        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle(), edited_color = False)
-        
-        [self.line_edits[name].blockSignals(False) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
-        return
-
-    def update_frame_from_fields(self) -> None:
-        self.new_frame_roi.blockSignals(True)
-        
-        [new_width, new_height, new_angle, new_x, new_y] = [self.line_edits[f"frame_{key}"].getValue() for key in ["width", "height", "angle", "x", "y"]]
-
-        self.new_frame_roi.setPos([0, 0])
-        self.new_frame_roi.setSize([new_width, new_height])
-        self.new_frame_roi.setAngle(-new_angle)
-        
-        bounding_rect = self.new_frame_roi.boundingRect()
-        local_center = bounding_rect.center()
-        abs_center = self.new_frame_roi.mapToParent(local_center)
-
-        self.new_frame_roi.setPos(new_x - abs_center.x(), new_y - abs_center.y())
-        self.new_frame_roi.blockSignals(False)
         return
 

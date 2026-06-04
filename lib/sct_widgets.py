@@ -1753,15 +1753,20 @@ class SCTWidgets:
             self.clearBuffer()
             self.h_lines = []
             self.v_lines = []
+            self.log_scale = False
 
 
+
+        def setLogScale(self, value: bool = True):
+            
+            return
 
         def setVLines(self, x_coords: list | int | float) -> None:
             if isinstance(x_coords, int | float): x_coords = [x_coords]
             if not isinstance(x_coords, list): return
             
             for v_line in self.v_lines:
-                try: self.removeItem(v_line)
+                try: self.getViewBox().removeItem(v_line)
                 except: pass
             
             self.v_lines = []
@@ -1777,7 +1782,7 @@ class SCTWidgets:
             if not isinstance(y_coords, list): return
             
             for h_line in self.h_lines:
-                try: self.removeItem(h_line)
+                try: self.getViewBox().removeItem(h_line)
                 except: pass
             
             self.h_lines = []
@@ -1811,6 +1816,11 @@ class SCTWidgets:
             self.buffer_index = 0
             self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float16)
             self.plotData()
+            return
+        
+        def setData(self, data: np.ndarray) -> None:
+            self.clearBuffer()
+            self.addData(data)
             return
         
         def setBufferSize(self, value: int = 6000) -> None:
@@ -2337,8 +2347,218 @@ class LockinWidget(QtWidgets.QWidget):
 
     def sendVolumes(self) -> None:
         overal_volume = int(self.volume.line_edit.getValue())
+        audio_button_state_index = self.audio_button.state_index
+        
+        if overal_volume == 0 and audio_button_state_index == 1:
+            self.audio_button.clicked.emit()
+            self.audio_button.setState(0)
+        elif overal_volume > 0 and audio_button_state_index == 0:
+            self.audio_button.clicked.emit()
+            self.audio_button.setState(1)
+        
         volumes = [int(modulator.volume.line_edit.getValue() * overal_volume) for modulator in self.modulators]
         self.volumes.emit(volumes)
+        return
+
+
+
+class WaveFormWidget(QtWidgets.QWidget):
+    def __init__(self, colors: list = [], orientation: str = "h", n_outputs = 2, n_inputs = 4, n_modulators: int = 32):
+        super().__init__()
+        
+        self.n_outputs = n_outputs
+        self.n_inputs = n_inputs
+        self.n_modulators = n_modulators
+        self.buffer_size = 256
+        
+        self.wave_plot = SCTWidgets.PlotWidget(colors = colors, buffer_size = self.buffer_size, n_channels = n_outputs + n_inputs + 1)
+        self.fourier_plot = SCTWidgets.PlotWidget(colors = colors, buffer_size = self.buffer_size, n_channels = n_outputs + n_inputs + 1)
+        if orientation == "h": self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        else: self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        
+        self.wave_plot.setHLines(0)
+        self.wave_plot.setVLines(0)
+        self.fourier_plot.setHLines(0)
+        self.fourier_plot.setVLines(0)
+        
+        self.wave_plot.setLabel("left", "V (mV)")
+        self.fourier_plot.setLabel("left", "V (mV)")
+        self.wave_plot.setXAxis(0)
+        self.fourier_plot.setXAxis(0)
+        self.wave_plot.setLabel("bottom", "t (ms)")
+        self.fourier_plot.setLabel("bottom", "f (Hz)")
+        self.wave_plot.pdis[0].setVisible(False)
+        self.fourier_plot.pdis[0].setVisible(False)
+        
+        self.splitter.addWidget(self.wave_plot)
+        self.splitter.addWidget(self.fourier_plot)
+        layout = make_layout("h")
+        layout.addWidget(self.splitter)
+        self.setLayout(layout)
+        
+        self.df = 10
+        self.max_freq = 100
+        self.f_amp_buffer = np.zeros((n_outputs + n_inputs + 1, n_modulators + 2))
+        self.dc_biases_mV = np.zeros((n_outputs), dtype = float)
+        self.dc_center_mV = 0
+        self.input_mask = np.full((n_modulators), 1, dtype = int)
+        self.output_masks = np.full((n_outputs, n_modulators), 0, dtype = int)
+        
+        # Scaling
+        self.wave_plot_vb = self.wave_plot.getViewBox()
+        self.fourier_plot_vb = self.fourier_plot.getViewBox()
+        self.wave_plot_vb.sigYRangeChanged.connect(self.wavePlotYRangeChanged)
+        self.fourier_plot_vb.sigYRangeChanged.connect(self.fourierPlotYRangeChanged)
+        self.wave_plot_vb.sigXRangeChanged.connect(self.wavePlotTRangeChanged)
+        self.fourier_plot_vb.sigXRangeChanged.connect(self.fourierPlotFRangeChanged)
+        self.updating_range = False
+
+
+
+    def wavePlotTRangeChanged(self, viewbox, t_range) -> None:
+        if self.updating_range: return
+        self.updating_range = True
+
+        t_min, t_max = t_range
+        if t_min < 0: t_min = 0 # Do not allow going left of the origin
+        self.wave_plot.setXRange(t_min, t_max, padding = 0)
+        
+        t_total = t_max - t_min
+        f_total = (self.max_freq / self.df) * (1000 / t_total)
+        self.fourier_plot.setXRange(0, f_total, padding = 0)
+
+        self.updating_range = False
+        return
+
+    def fourierPlotFRangeChanged(self, viewbox, f_range) -> None:
+        if self.updating_range: return
+        self.updating_range = True
+
+        f_min, f_max = f_range
+        if f_min < 0: f_min = 0 # Do not allow going left of the origin
+        self.fourier_plot.setXRange(f_min, f_max, padding = 0)
+        
+        f_total = f_max - f_min
+        t_total = (self.max_freq / self.df) * (1000 / f_total)
+        self.wave_plot.setXRange(0, t_total, padding = 0)
+
+        self.updating_range = False
+        return
+
+    def wavePlotYRangeChanged(self, viewbox, y_range) -> None:
+        if self.updating_range: return
+        self.updating_range = True
+
+        y_min, y_max = y_range
+        y_below_center = y_min - self.dc_center_mV
+        y_above_center = y_max - self.dc_center_mV
+        max_val_from_center = max(abs(y_above_center), abs(y_below_center))
+        self.wave_plot.setYRange(self.dc_center_mV - max_val_from_center, self.dc_center_mV + max_val_from_center, padding = 0)
+        self.fourier_plot.setYRange(0, max_val_from_center, padding = 0)
+
+        self.updating_range = False
+        return
+
+    def fourierPlotYRangeChanged(self, viewbox, y_range) -> None:
+        if self.updating_range: return
+        self.updating_range = True
+
+        y_min, y_max = y_range
+        max_val = max(0, y_max)
+        self.fourier_plot.setYRange(0, max_val, padding = 0)
+        self.wave_plot.setYRange(self.dc_center_mV - max_val, self.dc_center_mV + max_val, padding = 0)
+
+        self.updating_range = False
+        return
+
+    def setDCBiases(self, values: list | np.ndarray) -> None:
+        for index in range(self.n_outputs): self.dc_biases_mV[index] = 1000 * values[index]
+        self.f_amp_buffer[1, 0] = self.dc_biases_mV[0]
+        self.f_amp_buffer[2, 0] = self.dc_biases_mV[1]
+        
+        dc_min = min(self.dc_biases_mV)
+        dc_max = max(self.dc_biases_mV)
+        self.dc_center_mV = (dc_max + dc_min) / 2
+        return
+
+    def setdf(self, df_Hz: int | float) -> None:
+        self.df = df_Hz
+        t_ms = 1000 / df_Hz
+        self.wave_plot.setVLines([0, t_ms])
+        max_n = int(self.max_freq / df_Hz)
+        
+        vlines = self.df * np.arange(max_n + 2)
+        if len(vlines) > 20: vlines = vlines[1::2]
+        vline_list = list(vlines)
+        self.fourier_plot.setVLines(vline_list)
+        return
+    
+    def setInputs(self, input_mask: np.ndarray) -> None:
+        self.input_mask = input_mask.copy()
+        return
+
+    def setOutputs(self, output_masks: np.ndarray) -> None:
+        self.output_masks = output_masks.copy()
+        return
+
+    def setFrequencies(self, frequencies: np.ndarray) -> None:
+        freqs = frequencies.copy()
+        self.max_freq = max(freqs) + self.df
+        f_data = np.append(freqs, self.max_freq) # Add padding frequencies to flank the data
+        self.f_amp_buffer[0, 1 : len(f_data) + 1] = f_data
+        return
+
+    def setAmplitudes(self, amplitudes: np.ndarray) -> None:
+        for row in range(1, 1 + self.n_outputs): self.f_amp_buffer[row] *= 0 # clear
+        self.f_amp_buffer[1, 0] = self.dc_biases_mV[0]
+        self.f_amp_buffer[2, 0] = self.dc_biases_mV[1]
+        
+        for mod_index, amplitude in enumerate(amplitudes):
+            if mod_index > self.n_modulators: break
+            
+            output_channels = self.output_masks[:, mod_index]
+            if np.sum(output_channels) < 1: continue
+            
+            for channel_index, value in enumerate(output_channels):
+                if value == 1: self.f_amp_buffer[1 + channel_index, mod_index + 1] += amplitude
+        return
+
+    def setMeasuredAmplitudes(self, amplitudes: np.ndarray) -> None:
+        for row in range(1 + self.n_outputs, 1 + self.n_outputs + self.n_inputs): self.f_amp_buffer[row] *= 0
+                
+        for mod_index, amplitude in enumerate(amplitudes):
+            if mod_index > self.n_modulators: break
+            input_channel = self.input_mask[mod_index]
+            self.f_amp_buffer[self.n_outputs + input_channel, mod_index + 1] += amplitude
+        return
+
+    def updatePlots(self) -> None:
+        self.updateFourierPlot()
+        self.updateWavePlot()
+        return
+
+    def updateFourierPlot(self) -> None:
+        self.fourier_plot.setData(self.f_amp_buffer)
+        self.fourier_plot.plotData()
+        return
+
+    def updateWavePlot(self) -> None:
+        t_ms = 1000 / self.df
+        
+        wave_data = np.zeros((self.n_outputs + self.n_inputs + 1, self.buffer_size))
+        t = np.linspace(0, t_ms, self.buffer_size, dtype = np.float32)
+        wave_data[0] = t
+        
+        for wave_index in range(self.n_outputs + self.n_inputs):
+            wave = np.zeros_like(t, dtype = np.float32)
+            
+            for freq_Hz, amp_mV in zip(self.f_amp_buffer[0], self.f_amp_buffer[wave_index + 1]):
+                if np.abs(amp_mV) < .0001: continue
+                w = 2 * np.pi * freq_Hz / 1000
+                wave += amp_mV * np.cos(w * t)
+            wave_data[wave_index + 1] = wave
+        self.wave_plot.setData(wave_data)
+        self.wave_plot.plotData()
         return
 
 

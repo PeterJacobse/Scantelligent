@@ -10,7 +10,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def __init__(self):
         super().__init__()
         
-        self.color_list = ["#FFFFFF", "#FF0000", "#00FF00", "#00FFFF", "#FF9900", "#FFFF00", "#0066FF", "#FF00FF", "#99FF00", "#00FFCC", "#FF0066", "#CCFF00", "#CC00FF",
+        self.color_list = ["#FFFFFF", "#FF0000", "#00FF00", "#0066FF", "#FFFF00", "#00FFFF", "#FF00FF", "#FF9900", "#99FF00", "#00FFCC", "#FF0066", "#CCFF00", "#CC00FF",
                            "#FF5500", "#33FF00", "#0099FF", "#FF00AA", "#66FF66", "#3300FF", "#FFCC00", "#00FF66", "#9900FF", "#FF3333", "#A8FF33", "#00CCFF",
                            "#FF8888", "#88FF88", "#8888FF", "#FFBB55", "#D4FF88", "#88FFFF", "#FF88FF", "#FFCC99", "#99FFCC", "#CC99FF"]
         self.colors = {"red": "#ff5050", "dark_red": "#800000", "green": "#00ff00", "dark_green": "#005000", "light_blue": "#30d0ff", "off-black": "#101010",

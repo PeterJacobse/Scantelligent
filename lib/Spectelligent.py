@@ -262,33 +262,6 @@ class Spectelligent(QtCore.QObject):
             self.logprint(f"{e}", message_type = "error")
         return
 
-    def update_waveforms(self) -> None:
-        df = self.gui.lockin_widget.getdf()
-        if not isinstance(df, float | int): return
-        tm = 1000 / df
-        self.gui.wave_plot.setXRange(0, tm)
-        self.gui.wave_plot.setVLines([0, tm])
-        [mla_bias_1, mla_bias_2] = [self.sct.gui.line_edits[f"V_mla_port{port}"].getValue() for port in [1, 2]]
-        if not isinstance(mla_bias_1, int | float) or not isinstance(mla_bias_2, int | float): return
-        
-        wave_t_ms = np.linspace(0, tm, 500)
-        wave_1_mV = np.full_like(wave_t_ms, 1000 * mla_bias_1, dtype = float)
-        wave_2_mV = np.full_like(wave_t_ms, 1000 * mla_bias_2, dtype = float)
-        
-        for mod in self.gui.lockin_widget.modulators:
-            if not mod.state_button.isChecked(): continue
-            
-            amp_mV = mod.getAmplitude()
-            freq_Hz = mod.getFrequency()
-            w_rad_per_ms = np.pi * freq_Hz / 500
-            
-            if mod.output.state_index == 0: wave_1_mV += amp_mV * np.cos(wave_t_ms * w_rad_per_ms)
-            elif mod.output.state_index == 1: wave_2_mV += amp_mV * np.cos(wave_t_ms * w_rad_per_ms)
-        
-        self.gui.waveforms[0].setData(wave_t_ms, wave_1_mV)
-        self.gui.waveforms[1].setData(wave_t_ms, wave_2_mV)
-        return
-
     def get_fb_parameters(self) -> None:
         try:
             V_fb = self.sct.gui.line_edits["V_mla_port1"].getValue()
