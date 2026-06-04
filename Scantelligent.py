@@ -801,6 +801,7 @@ class Scantelligent(QtCore.QObject):
                 
                 self.draw_old_items()
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target, self.gui.path_pdi]]
+                self.gui.path_pdi.setZValue(10)
                 self.nanonis.hardware_update()
                 self.set_view_range("full")
             
@@ -818,7 +819,7 @@ class Scantelligent(QtCore.QObject):
                 self.gui.camera_item.setImage(self.splash_screen)
                 self.gui.camera_item.resetTransform()
                 self.gui.camera_item.setRotation(0)
-                self.gui.camera_item.setPos(0, 0)                
+                self.gui.camera_item.setPos(0, 0)
                 self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
