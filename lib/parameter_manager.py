@@ -269,6 +269,7 @@ class ParameterManager(QtCore.QObject):
                 sptgui.lockin_widget.setMeasuredAmplitudes(abs_values)
                 sptgui.lockin_widget.setMeasuredPhases(arg_values)
                 sptgui.waveform_widget.setMeasuredAmplitudes(abs_values)
+                sptgui.waveform_widget.setMeasuredPhases(arg_values)
                 sct.amplitudes.emit(100 * abs_values)
             case "frequencies":
                 freqs = parameters.get("frequencies (Hz)")
@@ -285,6 +286,7 @@ class ParameterManager(QtCore.QObject):
                 sptgui.waveform_widget.setAmplitudes(amplitudes)
             case "phases":
                 sptgui.lockin_widget.setPhases(parameters.get("phases (deg)"))
+                sptgui.waveform_widget.setPhases(parameters.get("phases (deg)"))
             case "outputs":
                 output_masks = parameters.get("output_masks")
                 sptgui.lockin_widget.setOutputs(output_masks)

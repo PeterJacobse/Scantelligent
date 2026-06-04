@@ -58,8 +58,7 @@ class MLAAPI(QtCore.QObject):
         try:
             self.logprint("mla.link()", message_type = "code")
             time.sleep(.2)
-            # self.mla.connect(server_text_callback = lambda text: self.logprint(text, message_type = "result"), ping_attempts = 4)
-            raise Exception("Going into test mode")
+            self.mla.connect(server_text_callback = lambda text: self.logprint(text, message_type = "result"), ping_attempts = 4)
             self.status = "running"
             self.set_defaults()
             try:

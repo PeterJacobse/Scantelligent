@@ -139,6 +139,7 @@ class Scantelligent(QtCore.QObject):
         # Spectelligent
         self.spt.gui.lockin_widget.get_button.clicked.connect(lambda: self.parameters.get("lockin"))
         self.spt.gui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.set("lockin"))
+        self.spt.gui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.get("lockin"))
         self.spt.gui.lockin_widget.set_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
         self.spt.gui.lockin_widget.get_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
         

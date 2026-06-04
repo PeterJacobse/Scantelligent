@@ -461,6 +461,7 @@ class SCTWidgets:
         A MultiStateButton implementation of a checkBox
         """
         def __init__(self, *args, **kwargs):
+            name = kwargs.pop("name", None)
             size = kwargs.pop("size", None)
             color = kwargs.pop("color", None)            
             if not isinstance(size, int): size = 8
@@ -469,6 +470,7 @@ class SCTWidgets:
             
             self.setStates([{"name": "unchecked", "color": "#101010"}, {"name": "checked", "color": "#2090ff"}])
             if isinstance(color, str): self.setColor(color)
+            if isinstance(name, str): self.setText(name)
             self.setToggleable()
             self.setState(0)
 
@@ -2363,18 +2365,28 @@ class LockinWidget(QtWidgets.QWidget):
 
 
 class WaveFormWidget(QtWidgets.QWidget):
-    def __init__(self, colors: list = [], orientation: str = "h", n_outputs = 2, n_inputs = 4, n_modulators: int = 32):
+    def __init__(self, colors: list = [], orientation: str = "h", n_outputs = 2, n_inputs = 4, n_modulators: int = 32, buffer_size: int = 256):
         super().__init__()
         
         self.n_outputs = n_outputs
         self.n_inputs = n_inputs
         self.n_modulators = n_modulators
-        self.buffer_size = 256
+        self.buffer_size = buffer_size
+        if len(colors) < 1: colors = ["#ffffff"]
         
         self.wave_plot = SCTWidgets.PlotWidget(colors = colors, buffer_size = self.buffer_size, n_channels = n_outputs + n_inputs + 1)
         self.fourier_plot = SCTWidgets.PlotWidget(colors = colors, buffer_size = self.buffer_size, n_channels = n_outputs + n_inputs + 1)
         if orientation == "h": self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
-        else: self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        else: self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        self.widget_layout = make_layout("h")
+        self.checkboxes = [SCTWidgets.CheckBox(color = colors[index + 1 % len(colors)]) for index in range(n_outputs)] + [SCTWidgets.CheckBox(color = colors[index + 1 % len(colors)]) for index in range(n_outputs, n_outputs + n_inputs)]
+        self.checkbox_labels = [SCTWidgets.Label(text = f"output {index + 1}") for index in range(n_outputs)]
+        self.checkbox_labels.extend([SCTWidgets.Label(text = f"input {index - n_outputs + 1}") for index in range(n_outputs, n_inputs + n_outputs)])
+        self.checkboxes_layout = make_layout("g")
+        [self.checkboxes_layout.addWidget(self.checkboxes[index], index, 0) for index in range(len(self.checkboxes))]
+        [self.checkboxes_layout.addWidget(self.checkbox_labels[index], index, 1) for index in range(len(self.checkbox_labels))]
+        self.checkboxes_layout.setRowStretch(len(self.checkboxes), 1)
+        [self.checkboxes[index].setState(1) for index in range(len(self.checkboxes))]
         
         self.wave_plot.setHLines(0)
         self.wave_plot.setVLines(0)
@@ -2390,16 +2402,15 @@ class WaveFormWidget(QtWidgets.QWidget):
         self.wave_plot.pdis[0].setVisible(False)
         self.fourier_plot.pdis[0].setVisible(False)
         
-        self.splitter.addWidget(self.wave_plot)
-        self.splitter.addWidget(self.fourier_plot)
-        layout = make_layout("h")
-        layout.addWidget(self.splitter)
-        self.setLayout(layout)
+        [self.splitter.addWidget(plot) for plot in [self.wave_plot, self.fourier_plot]]
+        self.widget_layout.addWidget(self.splitter)
+        self.widget_layout.addLayout(self.checkboxes_layout)
+        self.setLayout(self.widget_layout)
         
         self.df = 10
         self.max_freq = 100
-        self.f_amp_buffer = np.zeros((n_outputs + n_inputs + 1, n_modulators + 2))
-        self.dc_biases_mV = np.zeros((n_outputs), dtype = float)
+        self.f_amp_phase_buffer = np.zeros((2* n_outputs + 2 * n_inputs + 1, n_modulators + 2), dtype = np.float32)
+        self.dc_biases_mV = np.zeros((n_outputs), dtype = np.float32)
         self.dc_center_mV = 0
         self.input_mask = np.full((n_modulators), 1, dtype = int)
         self.output_masks = np.full((n_outputs, n_modulators), 0, dtype = int)
@@ -2412,8 +2423,16 @@ class WaveFormWidget(QtWidgets.QWidget):
         self.wave_plot_vb.sigXRangeChanged.connect(self.wavePlotTRangeChanged)
         self.fourier_plot_vb.sigXRangeChanged.connect(self.fourierPlotFRangeChanged)
         self.updating_range = False
+        [self.checkboxes[index].clicked.connect(self.updateVisiblePDIS) for index in range(len(self.checkboxes))]
 
 
+
+    def updateVisiblePDIS(self) -> None:
+        for index in range(self.n_outputs + self.n_inputs):
+            trace_checked = self.checkboxes[index].isChecked()
+            self.wave_plot.pdis[index + 1].setVisible(trace_checked)
+            self.fourier_plot.pdis[index + 1].setVisible(trace_checked)
+        return
 
     def wavePlotTRangeChanged(self, viewbox, t_range) -> None:
         if self.updating_range: return
@@ -2473,8 +2492,8 @@ class WaveFormWidget(QtWidgets.QWidget):
 
     def setDCBiases(self, values: list | np.ndarray) -> None:
         for index in range(self.n_outputs): self.dc_biases_mV[index] = 1000 * values[index]
-        self.f_amp_buffer[1, 0] = self.dc_biases_mV[0]
-        self.f_amp_buffer[2, 0] = self.dc_biases_mV[1]
+        self.f_amp_phase_buffer[1, 0] = self.dc_biases_mV[0]
+        self.f_amp_phase_buffer[2, 0] = self.dc_biases_mV[1]
         
         dc_min = min(self.dc_biases_mV)
         dc_max = max(self.dc_biases_mV)
@@ -2505,13 +2524,13 @@ class WaveFormWidget(QtWidgets.QWidget):
         freqs = frequencies.copy()
         self.max_freq = max(freqs) + self.df
         f_data = np.append(freqs, self.max_freq) # Add padding frequencies to flank the data
-        self.f_amp_buffer[0, 1 : len(f_data) + 1] = f_data
+        self.f_amp_phase_buffer[0, 1 : len(f_data) + 1] = f_data
         return
 
     def setAmplitudes(self, amplitudes: np.ndarray) -> None:
-        for row in range(1, 1 + self.n_outputs): self.f_amp_buffer[row] *= 0 # clear
-        self.f_amp_buffer[1, 0] = self.dc_biases_mV[0]
-        self.f_amp_buffer[2, 0] = self.dc_biases_mV[1]
+        for row in range(1, 1 + self.n_outputs): self.f_amp_phase_buffer[row] *= 0 # clear
+        self.f_amp_phase_buffer[1, 0] = self.dc_biases_mV[0]
+        self.f_amp_phase_buffer[2, 0] = self.dc_biases_mV[1]
         
         for mod_index, amplitude in enumerate(amplitudes):
             if mod_index > self.n_modulators: break
@@ -2520,16 +2539,40 @@ class WaveFormWidget(QtWidgets.QWidget):
             if np.sum(output_channels) < 1: continue
             
             for channel_index, value in enumerate(output_channels):
-                if value == 1: self.f_amp_buffer[1 + channel_index, mod_index + 1] += amplitude
+                if value == 1: self.f_amp_phase_buffer[1 + channel_index, mod_index + 1] += amplitude
+        return
+
+    def setPhases(self, phases: np.ndarray) -> None:
+        for row in range(1 + self.n_outputs + self.n_inputs, 1 + 2 * self.n_outputs + self.n_inputs): self.f_amp_phase_buffer[row] *= 0 # clear
+        self.f_amp_phase_buffer[1, 0] = self.dc_biases_mV[0]
+        self.f_amp_phase_buffer[2, 0] = self.dc_biases_mV[1]
+        
+        for mod_index, phase in enumerate(phases):
+            if mod_index > self.n_modulators: break
+            
+            output_channels = self.output_masks[:, mod_index]
+            if np.sum(output_channels) < 1: continue
+            
+            for channel_index, value in enumerate(output_channels):
+                if value == 1: self.f_amp_phase_buffer[1 + self.n_outputs + self.n_inputs + channel_index, mod_index + 1] += phase
         return
 
     def setMeasuredAmplitudes(self, amplitudes: np.ndarray) -> None:
-        for row in range(1 + self.n_outputs, 1 + self.n_outputs + self.n_inputs): self.f_amp_buffer[row] *= 0
-                
+        for row in range(1 + self.n_outputs, 1 + self.n_outputs + self.n_inputs): self.f_amp_phase_buffer[row] *= 0
+    
         for mod_index, amplitude in enumerate(amplitudes):
             if mod_index > self.n_modulators: break
             input_channel = self.input_mask[mod_index]
-            self.f_amp_buffer[self.n_outputs + input_channel, mod_index + 1] += amplitude
+            self.f_amp_phase_buffer[self.n_outputs + input_channel, mod_index + 1] += amplitude
+        return
+
+    def setMeasuredPhases(self, phases: np.ndarray) -> None:
+        for row in range(1 + 2 * self.n_outputs + self.n_inputs, 1 + 2 * self.n_outputs + 2 * self.n_inputs): self.f_amp_phase_buffer[row] *= 0
+    
+        for mod_index, phase in enumerate(phases):
+            if mod_index > self.n_modulators: break
+            input_channel = self.input_mask[mod_index]
+            self.f_amp_phase_buffer[self.n_inputs + 2 * self.n_outputs + input_channel, mod_index + 1] += phase
         return
 
     def updatePlots(self) -> None:
@@ -2538,7 +2581,7 @@ class WaveFormWidget(QtWidgets.QWidget):
         return
 
     def updateFourierPlot(self) -> None:
-        self.fourier_plot.setData(self.f_amp_buffer)
+        self.fourier_plot.setData(self.f_amp_phase_buffer[: self.n_outputs + self.n_inputs + 1])
         self.fourier_plot.plotData()
         return
 
@@ -2552,10 +2595,10 @@ class WaveFormWidget(QtWidgets.QWidget):
         for wave_index in range(self.n_outputs + self.n_inputs):
             wave = np.zeros_like(t, dtype = np.float32)
             
-            for freq_Hz, amp_mV in zip(self.f_amp_buffer[0], self.f_amp_buffer[wave_index + 1]):
+            for freq_Hz, amp_mV, phase_deg in zip(self.f_amp_phase_buffer[0], self.f_amp_phase_buffer[wave_index + 1], self.f_amp_phase_buffer[wave_index + self.n_outputs + self.n_inputs + 1]):
                 if np.abs(amp_mV) < .0001: continue
                 w = 2 * np.pi * freq_Hz / 1000
-                wave += amp_mV * np.cos(w * t)
+                wave += amp_mV * np.cos(w * t + np.deg2rad(phase_deg))
             wave_data[wave_index + 1] = wave
         self.wave_plot.setData(wave_data)
         self.wave_plot.plotData()
