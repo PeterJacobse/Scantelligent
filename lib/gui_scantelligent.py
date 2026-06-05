@@ -690,6 +690,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "image_view_controls": QWgt(),
             "toolbar": QWgt()
         }
+        widgets["toolbar"].setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Preferred)
                
         self.current_height_widget = CurrentHeightIndicatorWidget(feedback_button = self.buttons["tip"], current_le = self.line_edits["I"], height_le = self.line_edits["z"],
                                                                   fill_color = self.colors["blue"], background_color = self.colors["dark_gray"], warning_color = self.colors["orange"])
@@ -856,12 +857,14 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [layouts["approach_percentiles"].addWidget(line_edits[f"approach_{name}_percentile"]) for name in ["min", "max"]]
 
         ch_layout = layouts["coarse_horizontal"]
-        ch_layout.addWidget(line_edits["V_hor"], 0, 0, 1, 3, alignment = align_center)
-        ch_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3, alignment = align_center)
-        ch_layout.addWidget(line_edits["h_steps"], 2, 0, 1, 3, alignment = align_center)
-        [ch_layout.addWidget(button, 3 + int(i / 3), i % 3) for i, button in enumerate(self.arrow_buttons)]
-        ch_layout.addWidget(buttons["composite_motion"], 6, 0, 1, 3, alignment = align_center)
+        ch_layout.addWidget(line_edits["V_hor"], 0, 1, 1, 3, alignment = align_center)
+        ch_layout.addWidget(line_edits["f_motor"], 1, 1, 1, 3, alignment = align_center)
+        ch_layout.addWidget(line_edits["h_steps"], 2, 1, 1, 3, alignment = align_center)
+        [ch_layout.addWidget(button, 3 + int(i / 3), 1 + i % 3) for i, button in enumerate(self.arrow_buttons)]
+        ch_layout.addWidget(buttons["composite_motion"], 6, 1, 1, 3, alignment = align_center)
         ch_layout.setRowStretch(ch_layout.rowCount(), 1)
+        ch_layout.setColumnStretch(0, 1)
+        ch_layout.setColumnStretch(5, 1)
 
         cv_layout = layouts["coarse_vertical"]
         cv_layout.addWidget(line_edits["V_ver"], 0, 0, 1, 3, alignment = align_center)
@@ -904,10 +907,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         # Speeds
         [layouts["speeds_getset"].addWidget(widget) for widget in [buttons["get_speed_parameters"], buttons["set_speed_parameters"]]]
-        #layouts["speeds"].addWidget(labels["forward"])
-        #[layouts["speeds"].addWidget(labels[name], 0, index + 2) for index, name in enumerate(["backward", "tip"])]
-        #[layouts["speeds"].addWidget(make_line("h", 1), 1, index) for index in range(4)]
-        #[layouts["speeds"].addWidget(widget, 2, index) for index, widget in enumerate([line_edits["v_fwd"], buttons["speed_lock"], line_edits["v_bwd"], line_edits["v_tip"]])]
         for index, name in enumerate(["v_fwd", "v_bwd", "v_tip"]):
             layouts["speeds"].addWidget(buttons[name], index, 0)
             layouts["speeds"].addWidget(line_edits[name], index, 1)
@@ -1045,6 +1044,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["toolbar"].setRowStretch(8, 1)
         layouts["toolbar"].setColumnStretch(2, 1)
         widgets["toolbar"].setLayout(layouts["toolbar"])
+        widgets["toolbar"].adjustSize()
+        toolbar_width = widgets["toolbar"].minimumSizeHint().width()
         
         self.tool_scroller = QtWidgets.QScrollArea()
         self.tool_scroller.setContentsMargins(0, 0, 0, 0)
@@ -1052,6 +1053,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.tool_scroller.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.tool_scroller.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.tool_scroller.setWidget(widgets["toolbar"])
+        scrollbar_width = self.tool_scroller.verticalScrollBar().sizeHint().width()
+        self.tool_scroller.setFixedWidth(toolbar_width + scrollbar_width)
+        #self.tool_scroller.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Expanding)
         
         # Compose the image_view plus consoles layout
         self.splitters = {"image_graph": QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical), "camera_nanonis": QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)}
@@ -1064,14 +1068,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         layouts["left_side"].addLayout(layouts["image_view_controls"])
         layouts["left_side"].addWidget(self.splitters["image_graph"])
-        #layouts["left_side"].addWidget(widgets["graph"], stretch = 1)
-        #layouts["left_side"].addWidget(self.consoles["output"], stretch = 1)
         layouts["left_side"].addWidget(self.line_edits["input"])
         self.widgets["left_side"].setLayout(layouts["left_side"])
         
         # Attach the toolbar
-        layouts["main"].addWidget(self.widgets["left_side"], stretch = 3)
-        layouts["main"].addWidget(self.tool_scroller, 1)
+        layouts["main"].addWidget(self.widgets["left_side"], stretch = 1)
+        layouts["main"].addWidget(self.tool_scroller, stretch = 0)
         
         # Set the central widget of the QMainWindow
         widgets["central"].setLayout(layouts["main"])

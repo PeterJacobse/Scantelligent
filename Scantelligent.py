@@ -1017,35 +1017,6 @@ class Scantelligent(QtCore.QObject):
             # Retrieve the line_edit values
             [V_hor, V_ver, f_motor] = [line_edits[name].getValue() for name in ["V_hor", "V_ver", "f_motor"]] # Frequency and amplitude
             [z_steps, h_steps, minus_z_steps] = [line_edits[name].getValue() for name in ["z_steps", "h_steps", "minus_z_steps"]] # Steps
-            """
-            numbers = self.data.extract_numbers_from_str(line_edits["V_hor"].text())
-            if len(numbers) > 0: V_hor = float(numbers[0])
-            else: V_hor = None
-            numbers = self.data.extract_numbers_from_str(line_edits["V_ver"].text())
-            if len(numbers) > 0: V_ver = float(numbers[0])
-            else: V_ver = None
-            numbers = self.data.extract_numbers_from_str(line_edits["f_motor"].text())
-            if len(numbers) > 0: f_motor = float(numbers[0])
-            else: f_motor = None
-            
-            # The number of steps up
-            numbers = self.data.extract_numbers_from_str(line_edits["z_steps"].text())
-            if len(numbers) > 0: z_steps = int(numbers[0])
-            else: z_steps = 0
-            if z_steps < 1: retract = False
-           
-            # The number of steps horizontally
-            numbers = self.data.extract_numbers_from_str(line_edits["h_steps"].text())
-            if len(numbers) > 0: h_steps = int(numbers[0])
-            else: h_steps = 0
-            if h_steps < 1: move = False
-
-            # The number of steps down
-            numbers = self.data.extract_numbers_from_str(line_edits["minus_z_steps"].text())
-            if len(numbers) > 0: minus_z_steps = int(numbers[0])
-            else: minus_z_steps = 0
-            if minus_z_steps < 1: advance = False
-            """
 
             # Toggle the view feed
             if hasattr(self, "camera"): self.toggle_view("camera")
@@ -1095,7 +1066,7 @@ class Scantelligent(QtCore.QObject):
             return True
         
         except Exception as e:
-            self.logprint("Error. Unable to execute tip move.", message_type = "error")
+            self.logprint(f"Unable to execute tip move: {e}", message_type = "error")
 
             return False
 
