@@ -96,8 +96,8 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                                   {"name": "data_saved", "color": self.colors["dark_green"], "tooltip": "Experiment data was saved"}]),
 
             # Lockins
-            "nanonis_mla": MSB(states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
-                                         {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),
+            "nanonis_mla": MSB(size = 28, states = [{"name": "mla", "icon": icons.get("imp"), "tooltip": "Use the MLA for spectroscopy"},
+                                                    {"name": "nanonis", "icon": icons.get("nanonis"), "tooltip": "Use Nanonis for spectroscopy"}]),
 
             "start_spectroscopy": MSB(tooltip = "Acquire spectrum", size = 28, click_to_toggle = False, states = [{"name": "idle", "color": sct_black, "icon": icons.get("start_spectrum")},
                                                                                                                   {"name": "running", "color": sct_blue, "icon": icons.get("stop_spectrum")}]),
@@ -120,11 +120,16 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
                                             {"name": "x", "tooltip": "Keithley voltage sweep selected for the x-axis (fast/primary axis)", "color": sct_blue, "icon": icons.get("V_x")},
                                             {"name": "y", "tooltip": "Keithley voltage sweep selected for the y-axis (slow/secondary axis)", "color": sct_blue, "icon": icons.get("V_y")}], click_to_toggle = False),
             
-            "V_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
-            "f_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
-            "amp_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
-            "z_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
-            "V_keithley_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")}, {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "V_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")},
+                                       {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "f_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")},
+                                       {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "amp_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")},
+                                         {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "z_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")},
+                                       {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
+            "V_keithley_retrace": MSB(states = [{"name": "off", "tooltip": "Do not include a backward sweep", "color": sct_black, "icon": icons.get("fwd")},
+                                                {"name": "on", "tooltip": "Include a backward sweep", "color": sct_blue, "icon": icons.get("fwd_bwd")}]),
             
             "sts_x_axis": MSB(size = 28, states = [{"name": "V", "icon": icons.get("V"), "tooltip": "Perform a voltage sweep on the x axis (fast axis)"},
                                                    {"name": "amp", "icon": icons.get("A"), "tooltip": "Perform an amplitude sweep on the x axis (fast axis)"},
@@ -159,6 +164,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
             
             "no_modulators": MSB(size = 28, tooltip = "Click to uncheck all modulators", icon = icons.get("0")),
             "all_modulators": MSB(size = 28, tooltip = "Click to check all modulators", icon = icons.get("100")),
+            "expose_dIdV": MSB(size = 28, tooltip = "Expose the MLA in-phase dIdV to analog output A", icon = icons.get("expose_dIdV"))
         }
         
         for parameter_type in ["lockin", "parameter_space", "spectroscopy"]:
@@ -453,7 +459,7 @@ class SpectelligentGUI(QtWidgets.QMainWindow):
         layouts["waveforms"].addWidget(self.waveform_widget)
         
         # STS controls
-        [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectroscopy", "nanonis_mla", "exit"]]
+        [layouts["spectroscopy_controls"].addWidget(buttons[name]) for name in ["start_spectroscopy", "nanonis_mla", "expose_dIdV", "exit"]]
         
         # Settings
         layouts["spectroscopy_settings"].addWidget(buttons["tia_correct"], 0, 0, 2, 1)

@@ -62,6 +62,8 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
+        self.gui.groupboxes["connections"].setFocused()
+        self.focus_group = "connections"
                 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -137,14 +139,19 @@ class Scantelligent(QtCore.QObject):
         
         
         # Spectelligent
-        self.spt.gui.lockin_widget.get_button.clicked.connect(lambda: self.parameters.get("lockin"))
-        self.spt.gui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.set("lockin"))
-        self.spt.gui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.get("lockin"))
-        self.spt.gui.lockin_widget.set_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
-        self.spt.gui.lockin_widget.get_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
+        sptgui = self.spt.gui
+        sptgui.lockin_widget.get_button.clicked.connect(lambda: self.parameters.get("lockin"))
+        sptgui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.set("lockin"))
+        sptgui.lockin_widget.set_button.clicked.connect(lambda: self.parameters.get("lockin"))
+        sptgui.lockin_widget.set_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
+        sptgui.lockin_widget.get_button.clicked.connect(self.spt.gui.waveform_widget.updatePlots)
         
-        self.spt.gui.lockin_widget.audio_button.clicked.connect(self.toggle_audio)
-        self.spt.gui.buttons["start_spectroscopy"].clicked.connect(self.start_spectroscopy)
+        sptgui.lockin_widget.audio_button.clicked.connect(self.toggle_audio)
+        sptgui.buttons["start_spectroscopy"].clicked.connect(self.start_spectroscopy)
+        sptgui.buttons["expose_dIdV"].clicked.connect(self.expose_dIdV)
+        
+        # Key presses
+        self.gui.key_pressed.connect(self.keyPressEvent)
         return
 
     def connect_hardware(self, target: str = "all") -> None:
@@ -498,6 +505,34 @@ class Scantelligent(QtCore.QObject):
             self.logprint(f"Successfully loaded HDF5 scan file {file_path}", message_type = "success")
         except Exception as e:
             self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
+        return
+
+    @QtCore.pyqtSlot(int)
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        QKey = QtCore.Qt.Key
+
+        if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
+            if event.key() in [QKey.Key_T, QKey.Key_C, QKey.Key_E, QKey.Key_B, QKey.Key_S, QKey.Key_F, QKey.Key_G, QKey.Key_H, QKey.Key_V, QKey.Key_P, QKey.Key_M]:
+                [groupbox.setFocused(False) for groupbox in self.gui.groupboxes.values()]
+            
+            match event.key():
+                case QKey.Key_T: self.gui.groupboxes["tip"].setFocused()
+                case QKey.Key_C: self.gui.groupboxes["connections"].setFocused()
+                case QKey.Key_E: self.gui.groupboxes["experiment"].setFocused()
+                case QKey.Key_B: self.gui.groupboxes["bias"].setFocused()
+                case QKey.Key_S: self.gui.groupboxes["speeds"].setFocused()
+                case QKey.Key_F: self.gui.groupboxes["feedback"].setFocused()
+                case QKey.Key_G: self.gui.groupboxes["frame_grid"].setFocused()
+                case QKey.Key_H: self.gui.groupboxes["horizontal"].setFocused()
+                case QKey.Key_V: self.gui.groupboxes["vertical"].setFocused()
+                case QKey.Key_P: self.gui.groupboxes["tip_prep"].setFocused()
+                case QKey.Key_M: self.gui.groupboxes["modulators"].setFocused()
+                
+                case _:
+                    print(f"Key {event.key()} pressed with modifier {event.modifiers()}")
+        
+        else:
+            print(f"Key {event.key()} pressed with modifier {event.modifiers()}")
         return
 
 
@@ -1089,6 +1124,15 @@ class Scantelligent(QtCore.QObject):
             self.nanonis.tip_update({"z_rel (nm)": z_rel_nm})
         except Exception as e:
             self.logprint(f"Error: {e}", message_type = "error")
+        return
+
+
+
+    # Simple MLA functions
+    def expose_dIdV(self) -> None:
+        if not hasattr(self, "mla"): return
+        try: self.mla.expose_dIdV()
+        except Exception as e: self.logprint(f"{e}", message_type = "error")
         return
 
 

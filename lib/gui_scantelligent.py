@@ -7,6 +7,8 @@ import numpy as np
 
 
 class ScantelligentGUI(SCTWidgets.MainWindow):
+    key_pressed = QtCore.pyqtSignal(QtGui.QKeyEvent)
+    
     def __init__(self):
         super().__init__()
         
@@ -371,6 +373,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "axis": CB(tooltip = "Select the view axis", items = ["(x, y)", "(x, channel)", "(channel, y)"]),
             "slice": CB(tooltip = "Select the slice"),
             
+            "controller": CB(tooltip = "Name of the active z controller"),
             "tia_gain": CB(tooltip = "Transimpedance amplifier gain setting"),
             
             "bias": CB(tooltip = "Load bias parameters"),
@@ -440,7 +443,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "z_rel": LE(tooltip = "relative tip height setpoint", value = 1, unit = "nm", digits = 2, edited_color = sct_black, min_width = 70, max_width = 70),
             
             # Feedback
-            "I_fb": LE(tooltip = "feedback current", unit = "pA", digits = 0),
+            "fb": LE(tooltip = "feedback current", unit = "pA", digits = 0),
             "I_keithley": LE(tooltip = "keithley current", unit = "pA", digits = 0),
             "I_keithley_limit": LE(tooltip = "maximum Keithley current", unit = "pA", digits = 0),
 
@@ -896,7 +899,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         b_layout.addLayout(layouts["bias_getset"], 6, 0, 1, 4)
         
         # Feedback
-        [layouts["currents"].addWidget(line_edits[name]) for name in ["I_fb", "I_keithley_limit"]]
+        [layouts["currents"].addWidget(line_edits[name]) for name in ["fb", "I_keithley_limit"]]
+        layouts["currents"].addWidget(comboboxes["controller"])
         [layouts["feedback_gains"].addWidget(line_edits[name]) for name in ["p_gain", "t_const", "i_gain"]]
         layouts["feedback_gains"].addWidget(comboboxes["tia_gain"])
         [layouts["feedback_getset"].addWidget(widget) for widget in [buttons["get_feedback_parameters"], buttons["set_feedback_parameters"], comboboxes["feedback"]]]
@@ -1156,3 +1160,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.new_frame_roi.blockSignals(False)
         return
 
+
+
+    def keyPressEvent(self, event):
+        self.key_pressed.emit(event)
+        return super().keyPressEvent(event)

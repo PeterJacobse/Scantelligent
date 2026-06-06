@@ -266,7 +266,7 @@ class Spectelligent(QtCore.QObject):
         try:
             V_fb = self.sct.gui.line_edits["V_mla_port1"].getValue()
             if isinstance(V_fb, int | float): self.gui.line_edits["sts_V_feedback"].setValue(V_fb)
-            I_fb = self.sct.gui.line_edits["I_fb"].getValue()
+            I_fb = self.sct.gui.line_edits["fb"].getValue()
             if isinstance(I_fb, int | float): self.gui.line_edits["sts_I_feedback"].setValue(I_fb)
             p_gain = self.sct.gui.line_edits["p_gain"].getValue()
             if isinstance(p_gain, int | float): self.gui.line_edits["sts_p_feedback"].setValue(p_gain)

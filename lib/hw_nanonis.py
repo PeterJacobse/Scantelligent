@@ -39,16 +39,15 @@ class Conversions:
         if(f64 == 0): return "0000000000000000"
         return hex(struct.unpack('<Q', struct.pack('<d', f64))[0])[2:]
 
-    def string_to_hex(self, string):
+    def string_to_hex(self, string: str):
         return string.encode('utf-8').hex()
 
-    def make_header(self, command_name, body_size, resp = True):
+    def make_header(self, command_name: str, body_size: int, resp = True):
         hex_rep = command_name.encode('utf-8').hex()                            # command name
         hex_rep += "{0:#0{1}}".format(0,(64 - len(hex_rep)))                    # command name (fixed 32)
         hex_rep += self.to_hex(body_size, 4)                                    # Body size (fixed 4)
         hex_rep += self.to_hex(resp, 2)                                         # Send response (fixed 2)
         hex_rep += "{0:#0{1}}".format(0, 4)                                     # not used (fixed 2)
-        
         return hex_rep
 
 
@@ -145,6 +144,8 @@ class NanonisHardware:
             "set_z_home": make_header('ZCtrl.Home', body_size = 0),
             "withdraw": make_header('ZCtrl.Withdraw', body_size = 8),
             "get_z_limits": make_header('ZCtrl.LimitsGet', body_size = 0),
+            "get_z_controllers": make_header('ZCtrl.CtrlListGet', body_size = 0),
+            "set_z_controller": make_header('ZCtrl.ActiveCtrlSet', body_size = 4),
             
             ##
             "ZSwitchOffDelaySet": make_header('ZCtrl.SwitchOffDelaySet', body_size = 4),
@@ -220,7 +221,7 @@ class NanonisHardware:
         return headers
 
     def send_command(self, message) -> None:
-        self.s.send(bytes.fromhex(message))
+        return self.s.send(bytes.fromhex(message))
 
     def receive_response(self, error_index: int = -1, keep_header: bool = False) -> str:
         response = self.s.recv(self.max_buf_size)
@@ -283,11 +284,9 @@ class NanonisHardware:
             return
                                # raise the exception
 
-    def check_version(self):
-        try:
-            self.get_signals_in_slots()
-        except:
-            self.version = 15000 # Newer Nanonis versions do not work with this function
+    def check_version(self) -> None:
+        try: self.get_signals_in_slots()
+        except: self.version = 15000 # Newer Nanonis versions do not work with this function
         return
 
     def link(self) -> bool | Exception:
@@ -812,6 +811,31 @@ class NanonisHardware:
         
         return
 
+    def get_z_controllers(self) -> tuple[list, str]:
+        self.send_command(self.headers["get_z_controllers"])
+        response = self.receive_response()
+        
+        n_controllers = self.conv.hex_to_int16(response[4 : 8])
+        if n_controllers < 1: return [[], -1]
+        
+        idx = 8
+        controllers = []
+        for _ in range(n_controllers):
+            size = self.conv.hex_to_int16(response[idx : idx + 4])
+            controllers.append(response[idx + 4 : idx + 4 + size].decode())
+            idx += size + 4
+        
+        active_controller_index = self.conv.hex_to_int32(response[idx : idx + 4])
+        active_controller = controllers[active_controller_index]        
+        return [controllers, active_controller]
+
+    def set_z_controller(self, index: int) -> None:
+        self.send_command(self.headers["set_z_controller"] + self.conv.to_hex(index, 4))
+        self.receive_response(0)
+        return
+
+
+
     # Scan
     def get_v_scan(self) -> dict:
         command = self.headers["get_v_scan"]
@@ -1104,6 +1128,8 @@ class NanonisHardware:
         
         return
 
+
+
     # Signals
     def get_signals_in_slots(self) -> dict:
         command = self.headers["get_signals_in_slots"]
@@ -1180,6 +1206,8 @@ class NanonisHardware:
 
         return signal_value        
 
+
+
     # Motor
     def get_motor_f_A(self) -> dict:
         command = self.headers["get_motor_f_A"]        
@@ -1236,6 +1264,8 @@ class NanonisHardware:
         
         return
 
+
+
     # Piezo
     def get_xyz_range(self) -> str:
         command = self.headers["get_range"]
@@ -1251,6 +1281,8 @@ class NanonisHardware:
         xyz_nm = [self.conv.hex_to_float32(range_str[i : i + 4]) * 1E9 for i in range(0, 12, 4)]
 
         return xyz_nm
+
+
 
     # Tip shaper
     def get_tip_shaper(self) -> dict:
@@ -1318,6 +1350,8 @@ class NanonisHardware:
             self.s.settimeout(timeout_old)
 
         return
+
+
 
     # Lock-in
     def get_mod_on(self, mod_number: int = 1) -> bool:

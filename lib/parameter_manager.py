@@ -60,22 +60,27 @@ class ParameterManager(QtCore.QObject):
         match parameter_type:
             case "bias":
                 parameters = {"dict_name": "bias"}                
-                for parameter in ["V_nanonis (V)", "I_fb (pA)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
+                for parameter in ["V_nanonis (V)", "dV_nanonis (mV)", "dz_nanonis (nm)", "dt_nanonis (ms)"]:
                     quantity = parameter.split()[0]
                     val = line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
+                parameters.update({"I_fb (pA)": line_edits["fb"].getValue()})
 
                 sct.nanonis.bias_update(parameters, unlink = True)
 
             case "feedback":
-                parameters = {"dict_name": "feedback"}                
-                for parameter in ["I_fb (pA)", "p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]:
+                parameters = {"dict_name": "feedback"}
+                parameters.update({"active_controller": sctgui.comboboxes["controller"].currentIndex()})
+                for parameter in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]:
                     quantity = parameter.split()[0]
                     val = line_edits[quantity].getValue()
                     if isinstance(val, int | float): parameters.update({parameter: val})
-                gain = sct.gui.comboboxes["tia_gain"].currentText()
-                
+                    
+                    val = line_edits["fb"].getValue()
+                    parameters.update({"I_fb (pA)": val, "dIdV_fb (nS)": val})
+                                
                 sct.nanonis.feedback_update(parameters, unlink = False)
+                gain = sctgui.comboboxes["tia_gain"].currentText()
                 sct.nanonis.hardware_update({"dict_name": "hardware", "gain": gain}, unlink = True)                
 
             case "frame":
@@ -320,7 +325,7 @@ class ParameterManager(QtCore.QObject):
                 tip_status = parameters
                 sct.status.update({"tip": tip_status})
                 
-                # Update the position visible in the image_view
+                # Update the tip position visible in the image_view
                 if "feedback" in tip_status.keys():
                     feedback = tip_status.get("feedback")
                     if feedback:
@@ -339,10 +344,11 @@ class ParameterManager(QtCore.QObject):
                             sct.gui.tip_target.setPen(sct.gui.colors["orange"])
                             sct.gui.current_height_widget.feedback_button.setState("constant_height")
                     
-                    # Update the slider
+                    # Update the tip height widget
                     z_limits_nm = tip_status.get("z_limits (nm)")
                     sct.gui.current_height_widget.setHeightLimits(z_limits_nm)
 
+                # Update the target location in the ImageView
                 [x_tip_nm, y_tip_nm, z_tip_nm, I_pA] = [tip_status.get(dim, 0) for dim in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
                 sct.gui.tip_target.setPos(x_tip_nm, y_tip_nm)
                 sct.gui.tip_target.text_item.setText(f"tip location\n({x_tip_nm:.2f}, {y_tip_nm:.2f}, {z_tip_nm:.2f}) nm")
@@ -363,9 +369,20 @@ class ParameterManager(QtCore.QObject):
 
             case "feedback":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "i_gain", "t_const"], [parameters.get(name) for name in ["p_gain (pm)", "i_gain (nm/s)", "t_const (us)"]])]
-                I_fb_pA = parameters.get("I_fb (pA)")
-                line_edits["I_fb"].setValue(I_fb_pA)
+                [I_fb_pA, dIdV_fb_nS] = [parameters.get(key, None) for key in ["I_fb (pA)", "dIdV (nS)"]]
+                if I_fb_pA:
+                    line_edits["fb"].setUnit("pA")
+                    line_edits["fb"].setValue(I_fb_pA)
+                if dIdV_fb_nS:
+                    line_edits["fb"].setUnit("nS")
+                    line_edits["fb"].setValue(dIdV_fb_nS)
                 sct.gui.current_height_widget.setCurrentTick(I_fb_pA)
+                
+                # Display the controllers
+                controllers = parameters.get("controllers")
+                active_controller = parameters.get("active_controller")
+                sctgui.comboboxes["controller"].renewItems(controllers)
+                sctgui.comboboxes["controller"].selectItem(active_controller)
 
             case "frame":
                 sct.user.frames[0].update(parameters)

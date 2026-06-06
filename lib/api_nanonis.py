@@ -114,9 +114,9 @@ class NanonisAPI(QtCore.QObject):
             if error: raise Exception(error)
             else: parameters.update({scan_metadata.get("dict_name"): scan_metadata})
             
-            (sts_parameters, error) = self.sts_update(verbose = verbose)
-            if error: raise Exception(error)
-            else: parameters.update({sts_parameters.get("dict_name"): sts_parameters})
+            #(sts_parameters, error) = self.sts_update(verbose = verbose)
+            #if error: raise Exception(error)
+            #else: parameters.update({sts_parameters.get("dict_name"): sts_parameters})
             
             (coarse_parameters, error) = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error:
@@ -211,6 +211,19 @@ class NanonisAPI(QtCore.QObject):
         output_dict = {"minimum": {"pixel": int(min_pixel), "line": int(min_line), "value": float(min_value), "x (nm)": float(x_min_nm), "y (nm)": float(y_min_nm)},
                        "maximum": {"pixel": int(max_pixel), "line": int(max_line), "value": float(max_value), "x (nm)": float(x_max_nm), "y (nm)": float(y_max_nm)}}
         return output_dict
+
+    def signal_lookup(self, signals: str | list | np.ndarray) -> dict:
+        return_dict = {}
+        if isinstance(signals, str): signals = [signals]
+        if not isinstance(signals, list | np.ndarray): return return_dict
+
+        (scan_metadata, error) = self.scan_metadata_update()
+        signal_dict = scan_metadata.get("signal_dict")
+        
+        for signal in signals:
+            for key, value in signal_dict.items():
+                if signal.lower() in key.lower(): return_dict.update({key: value})
+        return return_dict
 
 
 
@@ -578,7 +591,8 @@ class NanonisAPI(QtCore.QObject):
         feedback_dict = {"dict_name": "feedback"}
         
         # Extract numbers from parameters input
-        I_fb_pA = parameters.get("I_fb (pA)", None)
+        feedback = parameters.get("feedback", None)
+        controller = parameters.get("active_controller", None)
 
         try:
             if verbose:
@@ -586,16 +600,33 @@ class NanonisAPI(QtCore.QObject):
                 else: self.logprint(f"nanonis.feedback_update()", "code")
             if not self.status == "running": self.link()
             
+            # Controller
+            if isinstance(controller, int): nhw.set_z_controller(controller)
+
             # Gains
             (gains_dict, error) = self.gains_update(parameters, unlink = False, verbose = False)
+            [controllers, active_controller] = nhw.get_z_controllers()
 
             # Feedback current
-            if I_fb_pA: nhw.set_I_fb_pA(I_fb_pA)
-            else: I_fb_pA = nhw.get_I_fb_pA()
+            if "current" in active_controller.lower(): # A -> pA
+                fb_setpoint = parameters.get("I_fb (pA)", None)
+                if fb_setpoint: nhw.set_I_fb(nhw.conv.float32_to_hex(fb_setpoint * 1E-12))                
+                
+                fb_setpoint = nhw.conv.hex_to_float32(nhw.get_I_fb()) * 1E12                
+                feedback_dict.update({"I_fb (pA)": fb_setpoint})
+            if "dIdV" in active_controller.lower(): # S -> nS
+                fb_setpoint = parameters.get("dIdV_fb (nS)", None)
+                if fb_setpoint: nhw.set_I_fb(nhw.conv.float32_to_hex(fb_setpoint * 1E-9))
+                
+                fb_setpoint = nhw.conv.hex_to_float32(nhw.get_I_fb()) * 1E9
+                feedback_dict.update({"dIdV_fb (nS)": fb_setpoint})
+            
+            if isinstance(feedback, bool): nhw.set_fb(feedback)
+            else: feedback = nhw.get_fb()
 
             gains_dict.pop("dict_name")
             feedback_dict.update(gains_dict)
-            feedback_dict.update({"I_fb (pA)": I_fb_pA})
+            feedback_dict.update({"feedback": feedback, "controllers": controllers, "active_controller": active_controller})
             
             self.parameters.emit(feedback_dict)
             if verbose and len(parameters) < 1: self.logprint(f"{feedback_dict}", message_type = "result")
@@ -1184,6 +1215,74 @@ class NanonisAPI(QtCore.QObject):
 
 
 
+    # Advanced actions. Can be incorporated in experiments, with a reference to an abort function passed to it to enable aborting
+    def auto_approach(self, amp_approach_mV: float = 2, f_approach_Hz: float = 600, I_fb_pA: float = 400, max_steps: int = 1000, max_observations: int = 100,
+                      abort_callback: object = None, data_callback: object = None, channel_names_callback: object = None) -> None:
+        try:
+            if channel_names_callback: channel_names_callback(np.array(["t (s)", "z (nm)", "I (pA)", "Re(a1) (nS)", "Im(a1) (fF)"]))
+            self.parameters.emit({"dict_name": "view_request", "view": "camera"})
+            
+            [LI_X_index, LI_Y_index] = self.signal_lookup(["LI demod 1 x", "LI demod 1 y"])
+            (lockin, error) = self.lockin_update({"mod1": {"on": True, "amplitude (mV)": amp_approach_mV, "frequency (Hz)": f_approach_Hz}})
+            (tip_status, error) = self.tip_update({"feedback": True}, fast_mode = True)
+            z_tip_nm = tip_status.get("z (nm)")
+            [z_min_nm, z_max_nm] = tip_status.get("z_limits (nm)")
+            
+            # Main approach loop
+            t0 = time.time()            
+            for step in range(max_steps + 10):
+                if step > max_steps:
+                    self.logprint(f"Walked the maximum number of steps ({max_steps}) down without detecting the surface", message_type = "error")
+                    self.parameters.emit({"dict_name": "view_request", "view": "nanonis"})
+                    break
+                
+                self.logprint(f"Auto approach step {step}", message_type = "message")
+                counter = 0
+                (tip_status, error) = self.tip_update({"feedback": True}, fast_mode = False, verbose = False) # Switch fb on
+                
+                for observation in range(max_observations):
+                    (tip_status, error) = self.tip_update(fast_mode = True, verbose = False) # Get tip status
+                    if error: break
+                    (signal_dict, error) = self.signals_update([LI_X_index, LI_Y_index], name_lookup = False, verbose = False)
+                    if error: break
+                    t_elapsed = time.time() - t0
+                    
+                    LI_I_pA = signal_dict.get(LI_X_index)[1] * 1E12
+                    LI_Q_pA = signal_dict.get(LI_Y_index)[1] * 1E12
+                    LI_I_nS = LI_I_pA / amp_approach_mV # Displacement current
+                    LI_Q_fF = LI_Q_pA * 1E6 / (amp_approach_mV * 2 * np.pi * f_approach_Hz) # Effective capacitance
+                    
+                    I_pA = tip_status.get("I (pA)")
+                    z_tip_nm = tip_status.get("z (nm)")
+                    
+                    if data_callback: data_callback(np.array([t_elapsed, z_tip_nm, I_pA, LI_I_nS, LI_Q_fF]))
+                    
+                    if np.abs(I_pA) > I_fb_pA: counter += 1
+                    else: counter = 0
+                    if counter > 3:
+                        surface_reached = True
+                        break
+                    if z_tip_nm < z_min_nm + 1: break
+                    if abort_callback: abort_callback(withdraw = True)
+
+                self.tip_update({"withdraw": True}, verbose = False)
+                
+                if surface_reached:
+                    self.logprint(f"Surface detected!", message_type = "message")
+                    self.parameters.emit({"dict_name": "view_request", "view": "nanonis"})
+                    break
+                
+                self.coarse_move({"minus_z_steps": 1}, verbose = False)
+        
+        except Exception as e:
+            self.logprint(f"Error encountered when performing auto-approach: {e}")
+        finally:
+            try: self.tip_update({"withdraw": True}, verbose = False) # End by withdrawing
+            except: pass
+        return
+
+
+
     # Convenience functions
     def shape_tip(self) -> None:
         self.tip_prep({"action": "poke"})
@@ -1191,45 +1290,6 @@ class NanonisAPI(QtCore.QObject):
     
     def pulse_tip(self, V_V: float = 6, t_ms: float = 300) -> None:
         self.tip_prep({"action": "pulse", "V_pulse (V)": V_V, "t_pulse (ms)": t_ms})
-        return
-
-    # Idling
-    def tip_tracker(self, timeout = 6000, unlink = False) -> None:
-        error = False
-        nhw = self.nanonis_hardware
-        
-        # Emit the parameters to be captured to the GUI
-        recorded_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)", "v_xy (nm/s)", "v_z (nm/s)"]
-        channel_dict = {index: channel for index, channel in enumerate(recorded_channels)}
-        channel_dict.update({"dict_name": "channels"})
-        self.parameters.emit(channel_dict)
-        
-        chunk_size = 10
-        data = np.zeros((chunk_size, len(recorded_channels)), dtype = float)
-        
-        try:
-            if not self.status == "running": self.link()
-            
-            t0 = time.time() # Start time
-            
-            for iteration in range(100):
-                mod_iteration = iteration % chunk_size
-                
-                t = time.time() - t0
-                xy_nm = nhw.get_xy_nm()
-                z_nm = nhw.get_z_nm()
-                I_pA = nhw.get_I_pA()
-                                
-                data[mod_iteration] = [t, xy_nm[0], xy_nm[1], z_nm, I_pA, 0, 0]
-                if mod_iteration == chunk_size - 1: self.data_array.emit(data)
-                
-                if t > timeout: break
-        
-        except Exception as e:
-            error = e
-            if unlink: self.unlink()
-            return error    
-        
         return
 
 

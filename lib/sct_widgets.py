@@ -1441,6 +1441,8 @@ class SCTWidgets:
             title = kwargs.pop("title", None)
             tooltip = kwargs.pop("tooltip", None)
             self.checkable = kwargs.pop("checkable", False)
+            self.background_color = kwargs.pop("background_color", "#202020")
+            self.focus_color = kwargs.pop("focus_color", "#404040")
             
             super().__init__(*args, **kwargs)
             
@@ -1456,12 +1458,20 @@ class SCTWidgets:
                 self.setCheckable(True)
                 self.setChecked(True)
                 self.toggled.connect(lambda toggleState: self.content_container.setVisible(toggleState))
+            
+            
         
         def setLayout(self, layout: QtWidgets.QLayout) -> None:
             """Overrides setLayout to apply layouts to the inner container instead."""
             # Clean margins on user layouts so they align perfectly with the groupbox borders
             layout.setContentsMargins(2, 0, 2, 0)
             self.content_container.setLayout(layout)
+            return
+
+        def setFocused(self, value: bool = True) -> None:
+            if value: color = self.focus_color
+            else: color = self.background_color
+            self.setStyleSheet("QGroupBox {background-color: " + color + "; }")
             return
 
     class Completer(QtWidgets.QCompleter):
