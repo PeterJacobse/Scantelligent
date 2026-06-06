@@ -256,6 +256,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "v_tip": MSB(icon = icons.get("v_tip")),
             
             # Processing
+            "limits": MSB(tooltip = "Show / hide image limits controls", icon = icons.get("numbers"), states = [{"name": "hidden", "color": sct_black}, {"name": "shown", "color": sct_blue}]),
             "direction": MSB(tooltip = "Change scan direction\n(X)",
                              states = [{"name": "forward", "icon": icons.get("double_arrow"), "color": sct_black},
                                        {"name": "backward", "icon": rotate_icon(icons.get("double_arrow"), angle = 180), "color": sct_blue}]),
@@ -291,7 +292,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "set_dz": MSB(icon = icons.get("set_dz"), tooltip = "Push to set delta_z\nSee value below"),
             "trash": MSB(icon = icons.get("trash"), tooltip = "Discard the currently selected scan_item")
         }
-        self.limits_button = QtWidgets.QPushButton("limits")
         
         for parameter_type in ["bias", "mla_bias", "keithley_bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
             buttons.update({f"get_{parameter_type}_parameters": MSB(tooltip = "Get parameters", icon = icons.get("get"))})
@@ -483,7 +483,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             
             # Processing
             "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70, edited_color = sct_black),
-            "graph_buffer_size": LE(value = 4000, tooltip = "graph buffer size", digits = 0, max_width = 70, edited_color = sct_black),
+            "graph_buffer_size": LE(value = 2000, tooltip = "graph buffer size", digits = 0, max_width = 70, edited_color = sct_black),
             
             # Lockins
             "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70),
@@ -595,9 +595,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             # Coarse / Prep
             "coarse_control": make_layout("h"),
             "coarse_prep": make_layout("v"),
-            "coarse_vertical": make_layout("g"),
-            "coarse_horizontal": make_layout("g"),
+            "vertical": make_layout("g"),
+            "horizontal": make_layout("g"),
             "approach_percentiles": make_layout("h"),
+            "pulse_parameters": make_layout("v"),
             "tip_prep": make_layout("g"),
             "shaper_getset": make_layout("h"),
             
@@ -629,7 +630,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         plot_item.addItem(camera_item)
         
         image_view = SCTWidgets.ImageView(view = plot_item, imageItem = camera_item)
-        image_view.addWidget(self.limits_button)
+        image_view.addWidget(self.buttons["limits"], 1, 1, 1, 2)
         
         view = image_view.getView()
         hist_widget = image_view.getHistogramWidget()
@@ -736,7 +737,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "limits": QtWidgets.QDialog()
                    }
         
-        dialogs["limits"].setLayout(self.layouts["limits"])
+        #dialogs["limits"].setLayout(self.layouts["limits"])
         dialogs["limits"].setWindowTitle("limits")
         dialogs["limits"].setWindowIcon(self.icons["deviation"])
         return dialogs
@@ -820,7 +821,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         # Coarse
         [layouts["approach_percentiles"].addWidget(line_edits[f"approach_{name}_percentile"]) for name in ["min", "max"]]
 
-        ch_layout = layouts["coarse_horizontal"]
+        ch_layout = layouts["horizontal"]
         ch_layout.addWidget(line_edits["V_hor"], 0, 1, 1, 3, alignment = align_center)
         ch_layout.addWidget(line_edits["f_motor"], 1, 1, 1, 3, alignment = align_center)
         ch_layout.addWidget(line_edits["h_steps"], 2, 1, 1, 3, alignment = align_center)
@@ -830,7 +831,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         ch_layout.setColumnStretch(0, 1)
         ch_layout.setColumnStretch(5, 1)
 
-        cv_layout = layouts["coarse_vertical"]
+        cv_layout = layouts["vertical"]
         cv_layout.addWidget(line_edits["V_ver"], 0, 0, 1, 3, alignment = align_center)
         cv_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3, alignment = align_center)
         [cv_layout.addWidget(checkbox, 2 + i + int(i / 2), 0) for i, checkbox in enumerate(self.action_checkboxes)]
@@ -900,15 +901,16 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [layouts["shaper_getset"].addWidget(buttons[f"{letter}et_tip_shaper_parameters"]) for letter in ["g", "s"]]
         tp_layout = layouts["tip_prep"]
         [tp_layout.addWidget(widget, index, 0, 1, 2) for index, widget in enumerate([labels["pulse"], make_line("h", 1)])]
-        [tp_layout.addWidget(widget, index, 2, 1, 3) for index, widget in enumerate([labels["shape"], make_line("h", 1)])]
+        [tp_layout.addWidget(widget, index, 3, 1, 3) for index, widget in enumerate([labels["shape"], make_line("h", 1)])]
+                
+        tp_layout.addWidget(buttons["bias_pulse"], 2, 0, 3, 1, align_center)
+        tp_layout.addWidget(buttons["tip_shape"], 2, 5, 3, 1, align_center)
         
-        tp_layout.addWidget(buttons["bias_pulse"], 3, 0, 3, 1, align_center)
-        tp_layout.addWidget(buttons["tip_shape"], 3, 4, 3, 1, align_center)
-        
-        [tp_layout.addWidget(line_edits[name], 4 + index, 1) for index, name in enumerate(["pulse_voltage", "pulse_duration"])]
-        [tp_layout.addWidget(line_edits[name], 3 + index, 2) for index, name in enumerate(["poke_depth", "poke_voltage", "poke_time"])]
-        [tp_layout.addWidget(line_edits[name], 3 + index, 3) for index, name in enumerate(["lift_height", "lift_voltage", "lift_time"])]
-        tp_layout.addLayout(layouts["shaper_getset"], 6, 2, 1, 3)
+        [layouts["pulse_parameters"].addWidget(line_edits[name]) for name in ["pulse_voltage", "pulse_duration"]]
+        tp_layout.addLayout(layouts["pulse_parameters"], 2, 1, 3, 1)
+        [tp_layout.addWidget(line_edits[name], 2 + index, 3) for index, name in enumerate(["poke_depth", "poke_voltage", "poke_time"])]
+        [tp_layout.addWidget(line_edits[name], 2 + index, 4) for index, name in enumerate(["lift_height", "lift_voltage", "lift_time"])]
+        tp_layout.addLayout(layouts["shaper_getset"], 5, 3, 1, 3)
         
         # Modulators
         [layouts["mod_set_get"].addWidget(buttons[name]) for name in ["get_lockin_parameters", "set_lockin_parameters"]]
@@ -919,10 +921,11 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_amp"], comboboxes[f"nanonis_mod{number + 1}"]])] for number in range(2)]
 
         layouts["limits"].addWidget(self.limits_widget)
+        self.limits_widget.hide()
         
         # Image_view
         layouts["image_view_controls"].addWidget(buttons["auto_paste"])
-        
+                
         #[layouts["navigation"].addWidget(comboboxes[name], 2 + 2 * index) for index, name in enumerate(["axis", "slice"])]
         layouts["navigation"].addWidget(self.comboboxes["scan_items"])
         layouts["navigation"].addWidget(self.buttons["slice"])
@@ -932,6 +935,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
         layouts["image_view_controls"].addLayout(layouts["background_buttons"])
+        
+        self.image_view.addWidget(self.limits_widget, 0, 3)
         
         #layouts["background_buttons"].addWidget(buttons["rot_trans"])
         o_layout = layouts["operations"]
@@ -958,8 +963,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "tip": SGB(title = "tip", tooltip = "tip status and current", checkable = True),
             
             # Coarse
-            "coarse_vertical": SGB(title = "vertical", tooltip = "vertical coarse motion", checkable = True),
-            "coarse_horizontal": SGB(title = "horizontal", tooltip = "horizontal coarse motion", checkable = True),
+            "vertical": SGB(title = "vertical", tooltip = "vertical coarse motion", checkable = True),
+            "horizontal": SGB(title = "horizontal", tooltip = "horizontal coarse motion", checkable = True),
             
             "tip_prep": SGB(title = "prep", tooltip = "tip preparation tools", checkable = True),
             "modulators": SGB(title = "modulators", tooltip = "modulators", checkable = True),
@@ -970,15 +975,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "speeds": SGB(title = "speeds", tooltip = "speeds", checkable = True),
             "experiment": SGB(title = "experiments", tooltip = "Perform experiments", checkable = True)
         }
-        groupboxes["connections"].setFocused()
 
         # Set layouts for the groupboxes
-        #groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "spectroscopy", "modulators", "demodulators", "experiment", "limits"]
-        #[layouts[name].setContentsMargins(2, 0, 2, 0) for name in groupboxes.keys()]
         [groupboxes[name].setLayout(layouts[name]) for name in groupboxes.keys()]
 
         # Make layouts of several groupboxes
-        [layouts["coarse_control"].addWidget(groupboxes[name], 1) for name in ["coarse_horizontal", "coarse_vertical"]]
+        [layouts["coarse_control"].addWidget(groupboxes[name], 1) for name in ["horizontal", "vertical"]]
         #layouts["coarse_prep"].addLayout(layouts["coarse_control"])
         #layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])        
         [layouts[name].addStretch(1) for name in ["parameters", "osc", "coarse_prep", "tip"]]
@@ -1120,3 +1122,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def keyPressEvent(self, event):
         self.key_pressed.emit(event)
         return super().keyPressEvent(event)
+
+        # 1. Install an event filter onto the group box
+        self.group_box.installEventFilter(self)
+

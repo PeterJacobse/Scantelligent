@@ -246,11 +246,34 @@ class Experiment(BaseExperiment):
         
         measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
         error_ds = self.output_file.create_dataset("errors (std. dev.)", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
-        channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
-        channels_ds.make_scale("channels")
+        
         [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
         [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
-       
+        
+        sweep_group: h5py.Group = self.output_file.create_group("sweep_group")
+        sweep_group.attrs.update({"NX_class": "NXdata"})
+        channels_ds = sweep_group.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
+        channels_ds.make_scale("channels")
+        channel_indices_ds = sweep_group.create_dataset("channel index axis", data = np.arange(len(channel_names), dtype = np.int32))
+        channel_indices_ds.make_scale("channel indices")
+        
+        x_ds = scan_group.create_dataset("x axis", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
+        x_ds.make_scale("x values")
+        y_ds = scan_group.create_dataset("y axis", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
+        y_ds.make_scale("y values")
+        
+        sweep_ds = sweep_group.create_dataset("sweep", shape = ((2, len(channel_names), lines, pixels)), dtype = np.float32)
+        scan_ds.dims[0].attach_scale(dir_indices_ds)
+        scan_ds.dims[1].attach_scale(channel_indices_ds)
+        scan_ds.dims[2].attach_scale(y_ds)
+        scan_ds.dims[3].attach_scale(x_ds)
+        
+        sweep_group.attrs.update({"signal": "sweep"})
+        sweep_group.attrs.update({"axes": ["direction index axis", "channel index axis", "y axis", "x axis"]})
+        sweep_group.attrs.update({"units": ["", "nm", "nm"]})
+
+
+
         n_total = len(y_values)
         match y_axis_label:
             case "voltage (V)": # Experiments that sweep along one parameter while slowly ramping the bias

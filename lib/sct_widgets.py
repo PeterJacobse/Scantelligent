@@ -371,7 +371,7 @@ class SCTWidgets:
         def getItems(self) -> list:
             return [self.itemText(index) for index in range(self.count())]
 
-        def toggleIndex(self, delta_index) -> None:
+        def toggleIndex(self, delta_index: int = 1) -> None:
             if not isinstance(delta_index, int) or isinstance(delta_index, float): return
             delta_i = int(delta_index)
             
@@ -1161,24 +1161,35 @@ class SCTWidgets:
             if isinstance(self.view, pg.PlotItem): self.view.invertY(False)
             self.getViewBox().setBackgroundColor("#000000")
             self.ui.menuBtn.hide()
+            self.ui.roiBtn.hide()
             self.setAcceptDrops(True)
+            
+            layout = self.ui.gridLayout
+            layout.setColumnStretch(0, 1)
+            layout.setColumnStretch(1, 0)
+            layout.setColumnStretch(2, 0)
             return
 
         def getViewBox(self):
             if isinstance(self.view, pg.PlotItem): return self.view.getViewBox()
             else: return self.view
 
-        def addWidget(self, widget: QtWidgets.QWidget) -> None:
+        def addWidget(self, widget: QtWidgets.QWidget, row: int = 0, column: int = 0, rowSpan: int = 1, columnSpan: int = 1) -> None:
+            self.ui.gridLayout.addWidget(widget, row, column, rowSpan, columnSpan)
+            return
+        
+        def addWidgetUnderneathHistogram(self, widget: QtWidgets.QWidget) -> None:
             layout = self.ui.gridLayout
             
             roi_button_index = layout.indexOf(self.ui.roiBtn)
             r_roi, c_roi, r_span_roi, c_span_roi = layout.getItemPosition(roi_button_index)
             layout.addWidget(widget, r_roi + 1, c_roi)
             
+            # Reset the graphicsView
             graphics_view = self.ui.graphicsView
             gv_idx = layout.indexOf(graphics_view)
             r_gv, c_gv, r_span_gv, c_span_gv = layout.getItemPosition(gv_idx)
-            layout.addWidget(graphics_view, r_gv, c_gv, r_span_gv + 1, c_span_gv)
+            layout.addWidget(graphics_view, r_gv, c_gv, r_span_gv + 1, c_span_gv + 1)
             return
 
         def mouseDoubleClickEvent(self, event) -> QtCore.QEvent:
@@ -1306,7 +1317,8 @@ class SCTWidgets:
             self.slider.setValue(180)
 
     class LevelIndicator(QtWidgets.QWidget):
-        def __init__(self, parent = None, fill_color: str = "#4080FF", background_color: str = "#404040", warning_color: str = "#A05000", limits: list = [0, 100], tooltip: str = "", show_tick: bool = True):
+        def __init__(self, parent = None, fill_color: str = "#4080FF", background_color: str = "#404040", limits: list = [0, 100], warning_color: str = "#A05000", min_warning: float = -1E6, max_warning: float = 1E6,
+                     tooltip: str = "", show_tick: bool = True):
             super().__init__(parent)
             
             self.show_tick = show_tick
@@ -1317,7 +1329,12 @@ class SCTWidgets:
             self.tick_level = 0
             self.fill_color = fill_color
             self.background_color = background_color
+            
             self.warning_color = warning_color
+            self.min_warning = min_warning
+            self.max_warning = max_warning
+            self.set_warning = False
+
             self.setFixedWidth(20)
             self.setMinimumHeight(80)
             if isinstance(tooltip, str): self.setToolTip(tooltip)
@@ -1344,6 +1361,8 @@ class SCTWidgets:
 
         def setValue(self, value: float = 0) -> None:
             self.level = max(self.min, min(value, self.max))
+            if self.level > self.max_warning or self.level < self.min_warning: self.set_warning = True
+            else: self.set_warning = False
             self.update() # Triggers repaint
             return
         
@@ -1376,7 +1395,8 @@ class SCTWidgets:
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.setBrush(QtGui.QBrush(QtGui.QColor(self.background_color)))
             painter.drawRect(outline_rect)
-            painter.setBrush(QtGui.QBrush(QtGui.QColor(self.fill_color)))
+            if self.set_warning: painter.setBrush(QtGui.QBrush(QtGui.QColor(self.warning_color)))
+            else: painter.setBrush(QtGui.QBrush(QtGui.QColor(self.fill_color)))
             painter.drawRect(fill_rect)
             
             # Draw Graduations
@@ -1451,7 +1471,7 @@ class SCTWidgets:
             tooltip = kwargs.pop("tooltip", None)
             self.checkable = kwargs.pop("checkable", False)
             self.background_color = kwargs.pop("background_color", "#202020")
-            self.focus_color = kwargs.pop("focus_color", "#404040")
+            self.focus_color = kwargs.pop("focus_color", "#353535")
             
             super().__init__(*args, **kwargs)
             
@@ -1468,6 +1488,8 @@ class SCTWidgets:
                 self.setChecked(True)
                 self.toggled.connect(lambda toggleState: self.content_container.setVisible(toggleState))
             
+            self.setFocused(False)
+            
             
         
         def setLayout(self, layout: QtWidgets.QLayout) -> None:
@@ -1480,7 +1502,11 @@ class SCTWidgets:
         def setFocused(self, value: bool = True) -> None:
             if value: color = self.focus_color
             else: color = self.background_color
-            self.setStyleSheet("QGroupBox {background-color: " + color + "; }")
+            
+            style_sheet = "QGroupBox {background-color: " + color + "; }"
+            style_sheet += "QGroupBox::indicator {width: 8px; height: 8px; border: 2px solid #ffffff; border-radius: 3px; background-color: " + self.background_color + "; }"
+            style_sheet += "QGroupBox::indicator:checked {border-color: #2020C0; background-color: #2020C0; }"
+            self.setStyleSheet(style_sheet)
             return
         
         def maximize(self) -> None:
@@ -1490,6 +1516,8 @@ class SCTWidgets:
         def minimize(self) -> None:
             self.content_container.setVisible(False)
             return
+
+
 
     class Completer(QtWidgets.QCompleter):
         def __init__(self, *args, **kwargs):
@@ -1766,7 +1794,7 @@ class SCTWidgets:
             super().__init__()
 
     class PlotWidget(pg.PlotWidget):
-        def __init__(self, buffer_size: int = 4000, n_channels: int = 35, colors: list = []):
+        def __init__(self, buffer_size: int = 2000, n_channels: int = 35, colors: list = []):
             super().__init__()
             
             self.buffer_size = buffer_size
@@ -1843,7 +1871,7 @@ class SCTWidgets:
         def clearBuffer(self) -> None:
             self.buffer_full = False
             self.buffer_index = 0
-            self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float16)
+            self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float32)
             self.plotData()
             return
         
@@ -1854,7 +1882,7 @@ class SCTWidgets:
         
         def setBufferSize(self, value: int = 6000) -> None:
             self.buffer_size = value
-            self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float16)
+            self.buffer = np.zeros((self.n_channels, self.buffer_size), dtype = np.float32)
             self.buffer_full = False
             self.buffer_index = 0
             self.plotData()
@@ -2031,8 +2059,8 @@ class CurrentHeightIndicatorWidget(QtWidgets.QWidget):
         self.height_le.setMinimumWidth(70)
         self.current_le.setMinimumWidth(70)
         
-        self.current_indicator = SCTWidgets.LevelIndicator(fill_color = fill_color, background_color = background_color, warning_color = warning_color, show_tick = True)
-        self.height_indicator = SCTWidgets.LevelIndicator(fill_color = fill_color, background_color = background_color, warning_color = warning_color, show_tick = False)
+        self.current_indicator = SCTWidgets.LevelIndicator(fill_color = fill_color, background_color = background_color, warning_color = warning_color, show_tick = True, max_warning = 40)
+        self.height_indicator = SCTWidgets.LevelIndicator(fill_color = fill_color, background_color = background_color, warning_color = warning_color, show_tick = False, min_warning = -100, max_warning = 100)
         self.feedback_button = feedback_button
         
         layout = make_layout("g")                

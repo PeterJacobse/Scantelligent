@@ -2,7 +2,6 @@ import os, sys, html, atexit, re, copy, time, h5py
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
-import pyqtgraph as pg
 from lib import Spectelligent, SCTWidgets, ScantelligentGUI
 from lib import DataProcessing, FileFunctions, ParameterManager, UserData, AudioGenerator
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
@@ -94,7 +93,7 @@ class Scantelligent(QtCore.QObject):
                         
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
-                        "frame": self.toggle_items, "path": self.toggle_items, "set_dz": self.set_dz,
+                        "frame": self.toggle_items, "path": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
                         
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
         
@@ -128,8 +127,8 @@ class Scantelligent(QtCore.QObject):
         self.gui.button_groups["channels"].clicked.connect(self.update_pdi_visibility)
         
         # ImageView
-        self.gui.limits_button.clicked.connect(self.gui.dialogs["limits"].show)
         self.gui.image_view.scan_file_signal.connect(self.open_scan_file)
+        [self.gui.groupboxes[name].clicked.connect(lambda name0 = name: self.focus_on_groupbox(name0)) for name in self.gui.groupboxes.keys()]
         
         
         
@@ -510,75 +509,77 @@ class Scantelligent(QtCore.QObject):
         
         try:
             if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
-                if event.key() in [QKey.Key_T, QKey.Key_C, QKey.Key_E, QKey.Key_B, QKey.Key_S, QKey.Key_F, QKey.Key_G, QKey.Key_H, QKey.Key_V, QKey.Key_P, QKey.Key_M]:
-                    [groupbox.setFocused(False) for groupbox in self.gui.groupboxes.values()]
+                #if event.key() in [QKey.Key_T, QKey.Key_C, QKey.Key_E, QKey.Key_B, QKey.Key_S, QKey.Key_F, QKey.Key_G, QKey.Key_H, QKey.Key_V, QKey.Key_P, QKey.Key_M]:
+                [groupbox.setFocused(False) for groupbox in self.gui.groupboxes.values()]
                 
                 match event.key():
-                    case QKey.Key_T:
-                        self.gui.groupboxes["tip"].setFocused()
-                        self.focus_group = "tip"
-                    case QKey.Key_C:
-                        self.gui.groupboxes["connections"].setFocused()
-                        self.focus_group = "connections"
-                    case QKey.Key_E:
-                        self.gui.groupboxes["experiment"].setFocused()
-                        self.focus_group = "experiment"
-                    case QKey.Key_B:
-                        self.gui.groupboxes["bias"].setFocused()
-                        self.focus_group = "bias"
-                    case QKey.Key_S:
-                        self.gui.groupboxes["speeds"].setFocused()
-                        self.focus_group = "speeds"
-                    case QKey.Key_F:
-                        self.gui.groupboxes["feedback"].setFocused()
-                        self.focus_group = "speeds"
-                    case QKey.Key_G:
-                        self.gui.groupboxes["frame_grid"].setFocused()
-                        self.focus_group = "frame_grid"
-                    case QKey.Key_H:
-                        self.gui.groupboxes["horizontal"].setFocused()
-                        self.focus_group = "tip"
-                    case QKey.Key_V:
-                        self.gui.groupboxes["vertical"].setFocused()
-                        self.focus_group = "vertical"
-                    case QKey.Key_P:
-                        self.gui.groupboxes["tip_prep"].setFocused()
-                        self.focus_group = "tip_prep"
-                    case QKey.Key_M:
-                        self.gui.groupboxes["modulators"].setFocused()
-                        self.focus_group = "modulators"
-                    case _:
-                        pass        
+                    case QKey.Key_T: target = "tip"
+                    case QKey.Key_C: target = "connections"
+                    case QKey.Key_E: target = "experiment"
+                    case QKey.Key_B: target = "bias"
+                    case QKey.Key_S: target = "speeds"
+                    case QKey.Key_F: target = "feedback"
+                    case QKey.Key_G: target = "frame_grid"
+                    case QKey.Key_H: target = "horizontal"
+                    case QKey.Key_V: target = "vertical"
+                    case QKey.Key_P: target = "tip_prep"
+                    case QKey.Key_M: target = "modulators"
+                    case _: target = ""
+                self.focus_on_groupbox(target)
+            
+            if event.modifiers() == QtCore.Qt.KeyboardModifier.ShiftModifier:
+                return
+            
             else:
-                match event.key():
-                    case QKey.Key_Plus | QKey.Key_Equal:
-                        self.gui.groupboxes[self.focus_group].maximize()
-                    case QKey.Key_Minus:
-                        self.gui.groupboxes[self.focus_group].minimize()
+                match (event.key(), self.focus_group):
+                    case (QKey.Key_Plus | QKey.Key_Equal, _): self.gui.groupboxes[self.focus_group].maximize()
+                    case (QKey.Key_Minus, _): self.gui.groupboxes[self.focus_group].minimize()
                     
-                    case QKey.Key_PageUp:
-                        if self.focus_group == "tip" and buttons["withdraw_2"].state_index == 1: buttons["withdraw_2"].click()
-                    case QKey.Key_PageDown:
-                        if self.focus_group == "tip" and buttons["withdraw_2"].state_index == 0: buttons["withdraw_2"].click()
-                    case QKey.Key_Space:
-                        if self.focus_group == "tip": buttons["tip"].click()
+                    case (QKey.Key_Escape, "connections"): self.exit()
+                    case (QKey.Key_PageUp, "tip"):
+                        if buttons["withdraw_2"].state_index == 0: buttons["withdraw_2"].click()
+                    case (QKey.Key_PageUp, "vertical"):
+                        if buttons["withdraw"].state_index == 0: buttons["withdraw"].click()
+                    case (QKey.Key_PageUp, "experiment"): buttons["scan_direction"].click()
+                    case (QKey.Key_PageDown, "tip"):
+                        if buttons["withdraw_2"].state_index == 1: buttons["withdraw_2"].click()
+                    case (QKey.Key_PageDown, "vertical"):
+                        if buttons["withdraw"].state_index == 1: buttons["withdraw"].click()
+                    case (QKey.Key_PageDown, "prep"): buttons["tip_shape"].click()
+                    case (QKey.Key_PageDown, "experiment"): buttons["scan_direction"].click()
+                    case (QKey.Key_Space, "tip"): buttons["tip"].click()
+                    case (QKey.Key_Space, "horizontal"): buttons["composite"].click()
+                    case (QKey.Key_Space, "experiment"): buttons["start_stop"].click()
                     
-                    case QKey.Key_D:
-                        match self.focus_group:
-                            case "tip": buttons["set_dz"].click()
-                            case "bias": line_edits["dV_nanonis"].focusAndSelect()                   
-                    case QKey.Key_N:
-                        if self.focus_group == "bias": line_edits["V_nanonis"].focusAndSelect()
-                    case QKey.Key_M:
-                        if self.focus_group == "bias": line_edits["V_mla_port1"].focusAndSelect()
-                    case QKey.Key_K:
-                        if self.focus_group == "bias": line_edits["V_keithley"].focusAndSelect()
-                    case QKey.Key_Z:
-                        if self.focus_group == "tip": line_edits["z_rel"].focusAndSelect()
+                    case (QKey.Key_Up, "horizontal"): buttons["n"].click()
+                    case (QKey.Key_Right, "horizontal"): buttons["e"].click()
+                    case (QKey.Key_Down, "horizontal"): buttons["s"].click()
+                    case (QKey.Key_Left, "horizontal"): buttons["w"].click()
+                    case (QKey.Key_Home | QKey.Key_7, "horizontal"): buttons["nw"].click()
+                    case (QKey.Key_9, "horizontal"): buttons["ne"].click()
+                    case (QKey.Key_3, "horizontal"): buttons["se"].click()
+                    case (QKey.Key_End | QKey.Key_1), "horizontal": buttons["sw"].click()
                     
-                    case _:
-                        self.logprint(f"Key {event.key()} was pressed")
-                        pass
+                    case (QKey.Key_A, "frame_grid"): line_edits["frame_angle"].focusAndSelect()
+                    case (QKey.Key_C, "connections"): buttons["camera"].click()
+                    case (QKey.Key_D, "tip"): buttons["set_dz"].click()
+                    case (QKey.Key_D, "bias"): line_edits["dV_nanonis"].focusAndSelect()
+                    case (QKey.Key_E, "experiment"): self.gui.comboboxes["experiment"].toggleIndex()
+                    case (QKey.Key_H, "frame_grid"): line_edits["frame_height"].focusAndSelect()
+                    case (QKey.Key_K, "bias"): line_edits["V_keithley"].focusAndSelect()
+                    case (QKey.Key_L, "frame_grid"): line_edits["grid_lines"].focusAndSelect()
+                    case (QKey.Key_M, "bias"): line_edits["V_mla_port1"].focusAndSelect()
+                    case (QKey.Key_M, "connections"): buttons["mla"].click()
+                    case (QKey.Key_N, "bias"): line_edits["V_nanonis"].focusAndSelect()
+                    case (QKey.Key_N, "connections"): buttons["nanonis"].click()
+                    case (QKey.Key_P, "prep"): buttons["bias_pulse"].click()
+                    case (QKey.Key_P, "frame_grid"): line_edits["grid_pixels"].focusAndSelect()
+                    case (QKey.Key_W, "frame_grid"): line_edits["frame_width"].focusAndSelect()
+                    case (QKey.Key_X, "frame_grid"): line_edits["frame_x"].focusAndSelect()
+                    case (QKey.Key_Y, "frame_grid"): line_edits["frame_y"].focusAndSelect()
+                    case (QKey.Key_Z, "tip"): line_edits["z_rel"].focusAndSelect()
+
+                    case (_, _): pass
         except Exception as e:
             self.logprint(f"{e}", message_type = "error")        
         return
@@ -692,9 +693,21 @@ class Scantelligent(QtCore.QObject):
             self.logprint(f"{e}", message_type = "error")        
         return
 
-    def camera_finished(self):
+    def camera_finished(self) -> None:
         try: self.camera_thread = None
         except: pass
+        return
+
+    def toggle_limits_view(self) -> None:
+        if self.gui.buttons["limits"].isChecked(): self.gui.limits_widget.show()
+        else: self.gui.limits_widget.hide()
+        return
+
+    def focus_on_groupbox(self, target: str = "") -> None:
+        if not target in self.gui.groupboxes.keys(): return
+        self.gui.groupboxes[target].setFocused()
+        self.gui.tool_scroller.ensureWidgetVisible(self.gui.groupboxes[target], 0, 20)
+        self.focus_group = target
         return
 
     def launch_scanalyzer(self) -> None:
@@ -1215,18 +1228,29 @@ class Scantelligent(QtCore.QObject):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
                 
                                 
-                # Set the file name of the experiment result. If the experiment is spectroscopy, then decorate the file name with the spectroscopic axes
-                if experiment_name == "spectroscopy":
-                    x_axis_name = self.spt.gui.buttons["sts_x_axis"].state_name
-                    y_axis_name = self.spt.gui.buttons["sts_y_axis"].state_name
+                # Decorate the file name
+                match experiment_name:
+                    case "spectroscopy":
+                        x_axis_name = self.spt.gui.buttons["sts_x_axis"].state_name
+                        y_axis_name = self.spt.gui.buttons["sts_y_axis"].state_name
+                        
+                        if x_axis_name in ["V", "z", "f", "amp"]:
+                            if y_axis_name in ["V", "z", "f", "amp"]: experiment_name = "_".join([x_axis_name, y_axis_name, "spectroscopy"]) # 2D spectroscopy
+                            else: experiment_name = "_".join([x_axis_name, "spectroscopy"]) # 1D spectroscopy
                     
-                    if x_axis_name in ["V", "z", "f", "amp"]:
-                        if y_axis_name in ["V", "z", "f", "amp"]: experiment_name = "_".join([x_axis_name, y_axis_name, "spectroscopy"]) # 2D spectroscopy
-                        else: experiment_name = "_".join([x_axis_name, "spectroscopy"]) # 1D spectroscopy
-                [previous_filename, next_filename] = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
+                    case "scan":
+                        active_controller = self.gui.comboboxes["controller"].currentText()
+                        match active_controller:
+                            case text if "current" in text.lower(): experiment_name = "I_fb_scan"
+                            case text if "didv" in text.lower(): experiment_name = "dIdV_fb_scan"
+                            case _: pass
+                    case _:
+                        pass
                 
+                [previous_filename, next_filename] = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
                 experiment_filename = next_filename
                 if self.gui.buttons["save"].state_name == "data_present": experiment_filename = previous_filename # Overwrite the previous file if it was not saved
+                
                 self.paths.update({"experiment_filename": experiment_filename})
                 experiment_filepath = os.path.join(self.paths["session_path"], experiment_filename)
                 self.paths.update({"experiment_filepath": experiment_filepath})

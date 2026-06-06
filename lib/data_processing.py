@@ -113,7 +113,6 @@ class DataProcessing:
         regex_pattern = r"[-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?"
         number_matches = re.findall(regex_pattern, text)
         numbers = [float(x) for x in number_matches]
-        
         return numbers
     
     def add_tags_to_file_name(self, bare_name: str = "") -> str:
@@ -168,6 +167,10 @@ class DataProcessing:
         dist_matrix = distance_matrix(coordinates, coordinates)
         (index_list, distance_list) = solve_tsp_simulated_annealing(dist_matrix)
         return coordinates[index_list]
+
+    def taylor_coefficients_from_harmonics(self, harmonics: np.ndarray) -> np.ndarray:
+        
+        return
 
 
 
