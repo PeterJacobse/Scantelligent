@@ -43,7 +43,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.widgets = self.make_custom_widgets()
         self.consoles = self.make_consoles()
         self.sliders = self.make_sliders()
-        self.shortcuts = self.make_shortcuts()
         self.dialogs = self.make_dialogs()
         (self.info_box, self.message_box) = self.make_boxes()
                 
@@ -729,44 +728,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         sliders = {"phase": PS(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
         return sliders
 
-    def make_shortcuts(self) -> dict:
-        QKey = QtCore.Qt.Key
-        QMod = QtCore.Qt.Modifier
-        QSeq = QtGui.QKeySequence
-        
-        shortcuts = {
-            "scanalyzer": QSeq(QKey.Key_S),
-            "nanonis": QSeq(QMod.CTRL | QKey.Key_C),
-            "oscillator": QSeq(QKey.Key_O),
-            "view": QSeq(QKey.Key_V),
-            "exit": QSeq(QKey.Key_Escape),
-            
-            "withdraw": QSeq(QMod.CTRL | QKey.Key_W),
-            "retract": QSeq(QMod.CTRL | QKey.Key_PageUp),
-            "advance": QSeq(QMod.CTRL | QKey.Key_PageDown),
-            "approach": QSeq(QMod.CTRL | QKey.Key_A),
-            
-            "tip": QSeq(QMod.CTRL | QKey.Key_Space),
-            "set": QSeq(QMod.CTRL | QKey.Key_P),
-            "get": QSeq(QKey.Key_P),
-            "scan_parameters_0": QSeq(QMod.CTRL | QKey.Key_0),
-            "scan_parameters_1": QSeq(QMod.CTRL | QKey.Key_1),
-            "scan_parameters_2": QSeq(QMod.CTRL | QKey.Key_2),
-            "scan_parameters_3": QSeq(QMod.CTRL | QKey.Key_3),            
-            
-            "direction": QSeq(QKey.Key_X),            
-            "full_data_range": QSeq(QMod.SHIFT | QKey.Key_U),
-            "percentiles": QSeq(QMod.SHIFT | QKey.Key_R),
-            "standard_deviation": QSeq(QMod.SHIFT | QKey.Key_D),
-            "absolute_values": QSeq(QMod.SHIFT | QKey.Key_A)
-        }
-        
-        # Add keys for moving in directions
-        direction_keys = {"n": QKey.Key_Up, "e": QKey.Key_Right, "s": QKey.Key_Down, "w": QKey.Key_Left}
-        [shortcuts.update({direction: QSeq(QMod.CTRL | keystroke)}) for direction, keystroke in direction_keys.items()]
-        
-        return shortcuts
-
     def make_dialogs(self) -> dict:
         dialogs = {
             "parameters": QtWidgets.QInputDialog(),
@@ -886,17 +847,16 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         # Bias
         [layouts["bias_getset"].addWidget(buttons[f"{key}_bias_parameters"]) for key in ["get", "set", "get_mla", "set_mla", "get_keithley", "set_keithley"]]
         b_layout = layouts["bias"]
-        b_layout.addWidget(labels["nanonis"])
-        [b_layout.addWidget(labels[name], 0, index + 2) for index, name in enumerate(["mla", "keithley"])]
-        b_layout.addWidget(make_line("h", 1), 1, 0, 1, 4)
+        [b_layout.addWidget(labels[name], 0, 2 * index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
+        [b_layout.addWidget(make_line("h", 1), 1, 2 * index) for index in range(3)]
         
-        
-        [b_layout.addWidget(widget, 2, index) for index, widget in enumerate([line_edits["V_nanonis"], buttons["voltage_lock"], line_edits["V_mla_port1"], line_edits["V_keithley"]])]
+        [b_layout.addWidget(widget, 2, index) for index, widget in enumerate([line_edits["V_nanonis"], buttons["voltage_lock"], line_edits["V_mla_port1"]])]
+        b_layout.addWidget(line_edits["V_keithley"], 2, 4)
         b_layout.addWidget(line_edits["V_mla_port2"], 3, 2)
-        [b_layout.addWidget(line_edits[name], 4 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
-        b_layout.addWidget(line_edits["dz_nanonis"], 5, 2)
-        [b_layout.addWidget(line_edits[name], 4 + index, 3) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
-        b_layout.addLayout(layouts["bias_getset"], 6, 0, 1, 4)
+        [b_layout.addWidget(line_edits[name], 3 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
+        b_layout.addWidget(line_edits["dz_nanonis"], 4, 2)
+        [b_layout.addWidget(line_edits[name], 3 + index, 4) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
+        b_layout.addLayout(layouts["bias_getset"], 5, 0, 1, 5)
         
         # Feedback
         [layouts["currents"].addWidget(line_edits[name]) for name in ["fb", "I_keithley_limit"]]
@@ -1001,15 +961,16 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "coarse_vertical": SGB(title = "vertical", tooltip = "vertical coarse motion", checkable = True),
             "coarse_horizontal": SGB(title = "horizontal", tooltip = "horizontal coarse motion", checkable = True),
             
-            "tip_prep": SGB(title = "tip prep", tooltip = "tip preparation tools", checkable = True),
+            "tip_prep": SGB(title = "prep", tooltip = "tip preparation tools", checkable = True),
             "modulators": SGB(title = "modulators", tooltip = "modulators", checkable = True),
 
-            "frame_grid": SGB(title = "frame / grid", tooltip = "frame and grid parameters", checkable = True),
+            "frame_grid": SGB(title = "grid / frame", tooltip = "frame and grid parameters", checkable = True),
             "bias": SGB(title = "bias", tooltip = "bias and ramp parameters", checkable = True),
             "feedback": SGB(title = "feedback", tooltip = "feedback and gains", checkable = True),
             "speeds": SGB(title = "speeds", tooltip = "speeds", checkable = True),
             "experiment": SGB(title = "experiments", tooltip = "Perform experiments", checkable = True)
         }
+        groupboxes["connections"].setFocused()
 
         # Set layouts for the groupboxes
         #groupbox_names = ["connections", "coarse_horizontal", "coarse_vertical", "bias", "feedback", "speeds", "frame_grid", "tip_prep", "spectroscopy", "modulators", "demodulators", "experiment", "limits"]
@@ -1051,15 +1012,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         widgets["toolbar"].adjustSize()
         toolbar_width = widgets["toolbar"].minimumSizeHint().width()
         
-        self.tool_scroller = QtWidgets.QScrollArea()
-        self.tool_scroller.setContentsMargins(0, 0, 0, 0)
-        self.tool_scroller.setWidgetResizable(True)
-        self.tool_scroller.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.tool_scroller.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.tool_scroller = SCTWidgets.ScrollWidget(horizontal = False, vertical = True)
         self.tool_scroller.setWidget(widgets["toolbar"])
-        scrollbar_width = self.tool_scroller.verticalScrollBar().sizeHint().width()
-        self.tool_scroller.setFixedWidth(toolbar_width + scrollbar_width)
-        #self.tool_scroller.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.tool_scroller.setFixedWidth(toolbar_width + self.tool_scroller.getScrollBarWidth())
         
         # Compose the image_view plus consoles layout
         self.splitters = {"image_graph": QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical), "camera_nanonis": QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)}

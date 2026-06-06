@@ -806,6 +806,15 @@ class SCTWidgets:
             if delta < 0 and new_number == 9: # Roll over to the next digit
                 return new_pos - 1
             return True
+        
+        def focusAndSelect(self) -> None:
+            self.setFocus()
+            self.selectAll()
+            return
+        
+        def keyPressEvent(self, event: QtGui.QKeyEvent) -> QtGui.QKeyEventne:
+            if event.key() in [QtCore.Qt.Key.Key_Enter, QtCore.Qt.Key.Key_Return]: self.clearFocus()
+            return super().keyPressEvent(event)
 
     class InputLineEdit(QtWidgets.QLineEdit):
         """
@@ -1473,6 +1482,14 @@ class SCTWidgets:
             else: color = self.background_color
             self.setStyleSheet("QGroupBox {background-color: " + color + "; }")
             return
+        
+        def maximize(self) -> None:
+            self.content_container.setVisible(True)
+            return
+        
+        def minimize(self) -> None:
+            self.content_container.setVisible(False)
+            return
 
     class Completer(QtWidgets.QCompleter):
         def __init__(self, *args, **kwargs):
@@ -1876,6 +1893,33 @@ class SCTWidgets:
                     if isinstance(x_data, np.ndarray): self.pdis[channel_index].setData(x_data, y_data)
                     else: self.pdis[channel_index].setData(y_data)
             return
+
+    class ScrollWidget(QtWidgets.QScrollArea):
+        def __init__(self, vertical: bool = True, horizontal: bool = False):
+            super().__init__()
+            
+            self.setContentsMargins(0, 0, 0, 0)
+            self.setWidgetResizable(True)
+            
+            if horizontal: self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            else: self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            if vertical: self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            else: self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        
+        
+        def getScrollBarWidth(self) -> int:
+            return self.verticalScrollBar().sizeHint().width()
+        
+        def getScrollBarHeight(self) -> int:
+            return self.horizontalScrollBar().sizeHint().height()
+        
+        def keyPressEvent(self, event: QtGui.QKeyEvent):
+            QKey = QtCore.Qt.Key
+            if event.key() in [QKey.Key_PageUp, QKey.Key_PageDown, QKey.Key_Space]:
+                event.ignore()
+                return
+            return super().keyPressEvent(event)
 
 
 

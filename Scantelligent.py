@@ -62,7 +62,6 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
-        self.gui.groupboxes["connections"].setFocused()
         self.focus_group = "connections"
                 
         # Dict to keep track of the hardware and experiment status
@@ -108,11 +107,7 @@ class Scantelligent(QtCore.QObject):
         
         [button_slots.update({direction: lambda checked, drxn = direction: self.coarse_move(drxn)}) for direction in ["n", "ne", "e", "se", "s", "sw", "w", "nw"]]
         
-        for button_name, connected_function in button_slots.items():
-            self.gui.buttons[button_name].clicked.connect(connected_function)
-            if button_name in self.gui.shortcuts.keys():
-                shortcut = QtGui.QShortcut(self.gui.shortcuts[button_name], self.gui)
-                shortcut.activated.connect(connected_function)
+        for button_name, connected_function in button_slots.items(): self.gui.buttons[button_name].clicked.connect(connected_function)
 
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
@@ -507,32 +502,85 @@ class Scantelligent(QtCore.QObject):
             self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
         return
 
-    @QtCore.pyqtSlot(int)
+    @QtCore.pyqtSlot(QtGui.QKeyEvent)
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        buttons = self.gui.buttons
+        line_edits = self.gui.line_edits
         QKey = QtCore.Qt.Key
-
-        if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
-            if event.key() in [QKey.Key_T, QKey.Key_C, QKey.Key_E, QKey.Key_B, QKey.Key_S, QKey.Key_F, QKey.Key_G, QKey.Key_H, QKey.Key_V, QKey.Key_P, QKey.Key_M]:
-                [groupbox.setFocused(False) for groupbox in self.gui.groupboxes.values()]
-            
-            match event.key():
-                case QKey.Key_T: self.gui.groupboxes["tip"].setFocused()
-                case QKey.Key_C: self.gui.groupboxes["connections"].setFocused()
-                case QKey.Key_E: self.gui.groupboxes["experiment"].setFocused()
-                case QKey.Key_B: self.gui.groupboxes["bias"].setFocused()
-                case QKey.Key_S: self.gui.groupboxes["speeds"].setFocused()
-                case QKey.Key_F: self.gui.groupboxes["feedback"].setFocused()
-                case QKey.Key_G: self.gui.groupboxes["frame_grid"].setFocused()
-                case QKey.Key_H: self.gui.groupboxes["horizontal"].setFocused()
-                case QKey.Key_V: self.gui.groupboxes["vertical"].setFocused()
-                case QKey.Key_P: self.gui.groupboxes["tip_prep"].setFocused()
-                case QKey.Key_M: self.gui.groupboxes["modulators"].setFocused()
-                
-                case _:
-                    print(f"Key {event.key()} pressed with modifier {event.modifiers()}")
         
-        else:
-            print(f"Key {event.key()} pressed with modifier {event.modifiers()}")
+        try:
+            if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
+                if event.key() in [QKey.Key_T, QKey.Key_C, QKey.Key_E, QKey.Key_B, QKey.Key_S, QKey.Key_F, QKey.Key_G, QKey.Key_H, QKey.Key_V, QKey.Key_P, QKey.Key_M]:
+                    [groupbox.setFocused(False) for groupbox in self.gui.groupboxes.values()]
+                
+                match event.key():
+                    case QKey.Key_T:
+                        self.gui.groupboxes["tip"].setFocused()
+                        self.focus_group = "tip"
+                    case QKey.Key_C:
+                        self.gui.groupboxes["connections"].setFocused()
+                        self.focus_group = "connections"
+                    case QKey.Key_E:
+                        self.gui.groupboxes["experiment"].setFocused()
+                        self.focus_group = "experiment"
+                    case QKey.Key_B:
+                        self.gui.groupboxes["bias"].setFocused()
+                        self.focus_group = "bias"
+                    case QKey.Key_S:
+                        self.gui.groupboxes["speeds"].setFocused()
+                        self.focus_group = "speeds"
+                    case QKey.Key_F:
+                        self.gui.groupboxes["feedback"].setFocused()
+                        self.focus_group = "speeds"
+                    case QKey.Key_G:
+                        self.gui.groupboxes["frame_grid"].setFocused()
+                        self.focus_group = "frame_grid"
+                    case QKey.Key_H:
+                        self.gui.groupboxes["horizontal"].setFocused()
+                        self.focus_group = "tip"
+                    case QKey.Key_V:
+                        self.gui.groupboxes["vertical"].setFocused()
+                        self.focus_group = "vertical"
+                    case QKey.Key_P:
+                        self.gui.groupboxes["tip_prep"].setFocused()
+                        self.focus_group = "tip_prep"
+                    case QKey.Key_M:
+                        self.gui.groupboxes["modulators"].setFocused()
+                        self.focus_group = "modulators"
+                    case _:
+                        pass        
+            else:
+                match event.key():
+                    case QKey.Key_Plus | QKey.Key_Equal:
+                        self.gui.groupboxes[self.focus_group].maximize()
+                    case QKey.Key_Minus:
+                        self.gui.groupboxes[self.focus_group].minimize()
+                    
+                    case QKey.Key_PageUp:
+                        if self.focus_group == "tip" and buttons["withdraw_2"].state_index == 1: buttons["withdraw_2"].click()
+                    case QKey.Key_PageDown:
+                        if self.focus_group == "tip" and buttons["withdraw_2"].state_index == 0: buttons["withdraw_2"].click()
+                    case QKey.Key_Space:
+                        if self.focus_group == "tip": buttons["tip"].click()
+                    
+                    case QKey.Key_D:
+                        match self.focus_group:
+                            case "tip": buttons["set_dz"].click()
+                            case "bias": line_edits["dV_nanonis"].focusAndSelect()                   
+                    case QKey.Key_N:
+                        if self.focus_group == "bias": line_edits["V_nanonis"].focusAndSelect()
+                    case QKey.Key_M:
+                        if self.focus_group == "bias": line_edits["V_mla_port1"].focusAndSelect()
+                    case QKey.Key_K:
+                        if self.focus_group == "bias": line_edits["V_keithley"].focusAndSelect()
+                    case QKey.Key_Z:
+                        if self.focus_group == "tip": line_edits["z_rel"].focusAndSelect()
+                    
+                    case _:
+                        self.logprint(f"Key {event.key()} was pressed")
+                        pass
+        except Exception as e:
+            self.logprint(f"{e}", message_type = "error")        
         return
 
 
