@@ -281,7 +281,7 @@ class BaseExperiment(QObject):
             (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)
             if not error:
                 [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
-                self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA], dtype = np.float16))
+                self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA], dtype = np.float32))
             
             channel_index = self.scan_processing_flags.get("channel_index")
             backward = self.scan_processing_flags.get("backward")

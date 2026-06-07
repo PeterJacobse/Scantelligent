@@ -168,9 +168,44 @@ class DataProcessing:
         (index_list, distance_list) = solve_tsp_simulated_annealing(dist_matrix)
         return coordinates[index_list]
 
-    def taylor_coefficients_from_harmonics(self, harmonics: np.ndarray) -> np.ndarray:
+    def taylor_coefficients_from_harmonics(self, harmonics_nS: np.ndarray, Vac_mV: float) -> dict:
+        max_n = 32
+        Vac_V = .001 * Vac_mV
         
-        return
+        # The raw, uncorrected Taylor coefficients
+        D_raw = {}
+        for n in range(1, max_n + 1):
+            if n in harmonics_nS:
+                prefactor = (2 ** (n - 1) * factorial(n, exact = True)) / (Vac_V ** (n - 1))
+                D_raw[n] = harmonics_nS[n] * prefactor
+            else:
+                # If a high harmonic is missing, pad with zeros
+                D_raw[n] = np.zeros_like(harmonics_nS[1])
+
+        # Coupling matrix describing the influence of higher harmonics on lower ones
+        A = np.zeros((max_n + 1, max_n + 1))
+        for n in range(1, max_n + 1):
+            for m in range(n, max_n + 1, 2):
+                k = (m - n) // 2
+                numerator = factorial(n, exact = True)
+                denominator = (4 ** k) * factorial(k, exact = True) * factorial(n + k, exact = True)
+                A[n, m] = numerator / denominator
+        
+        A_sub = A[1:, 1:]
+        B_sub = np.linalg.inv(A_sub)
+        B = np.zeros((max_n + 1, max_n + 1))
+        B[1:, 1:] = B_sub
+
+        num_points = len(harmonics_nS[1])
+        derivatives = {n: np.zeros(num_points) for n in range(1, max_n + 1)}
+        
+        for n in range(1, max_n + 1):
+            for m in range(n, max_n + 1, 2):
+                # Apply scaling factor based on the matrix coefficient and V_ac powers
+                weight = B[n, m] / (Vac_V ** (m - n))
+                derivatives[n] += weight * D_raw[m]
+
+        return derivatives
 
 
 
@@ -380,7 +415,9 @@ class DataProcessing:
     def operate_scan(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
         flags = self.scan_processing_flags.get_all()
-                
+        scan_range_nm = flags.get("scan_range (nm)")
+        gaussian_sigma = flags.get("gaussian_width (nm)")
+        
         # Background subtraction
         (image, error) = self.subtract_background(image)
         if error: return (image, error)
@@ -396,8 +433,6 @@ class DataProcessing:
         if error: return (image, error)
         
         if flags["gaussian"]:
-            gaussian_sigma = flags.get("gaussian_width (nm)")
-            scan_range_nm = flags.get("scan_range (nm)")
             if gaussian_sigma: (image, error) = self.apply_gaussian(image, gaussian_sigma, scan_range_nm)
             if error: return (image, error)
         
@@ -531,22 +566,22 @@ class DataProcessing:
 
         if not isinstance(image, np.ndarray):
             error = "Error. The provided image is not a numpy array."
-            return (image, error)
-                
-        sobel_x = .125 * np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype = float)
-        sobel_y = .125 * np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype = float)
+            raise Exception(error)
+        
         try:
+            sobel_x = .125 * np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype = np.float32)
+            sobel_y = .125 * np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype = np.float32)
             ddx = convolve2d(image, sobel_x, mode = "valid") # These are the gradients computed using normalized sobel kernels
             ddy = convolve2d(image, sobel_y, mode = "valid")
-        except:
-            error = "Error. Calculating gradient failed."
+        except Exception as e:
+            error = f"Calculating gradient failed. {e}"
             return (image, error)
 
         if isinstance(scan_range, np.ndarray) or isinstance(scan_range, list):
-            # If a scan range is provided, the gradients will be calculated as derivatives wrt to x and y rather than wrt pixel index
-            grid_size = np.shape(image)
-
             try:
+                # If a scan range is provided, the gradients will be calculated as derivatives wrt to x and y rather than wrt pixel index
+                grid_size = np.shape(image)
+                
                 x_range = scan_range[0]
                 y_range = scan_range[1]
 
@@ -558,11 +593,17 @@ class DataProcessing:
                 dy_per_px = y_range / grid_size[1]
                 ddx /= dx_per_px
                 ddy /= dy_per_px
-            except:
-                error = "Error. Calculating gradient failed."
+                gradient_image = ddx + 1j * ddy
+            except Exception as e:
+                gradient_image = image
+                error = f"Error. Calculating gradient failed. {e}"
+        else:
+            try:
+                gradient_image = ddx + 1j * ddy
+            except Exception as e:
+                gradient_image = image
+                error = f"Error. Calculating gradient failed. {e}"
         
-        gradient_image = ddx + 1j * ddy
-
         return (gradient_image, error)
 
     def compute_normal(self, image: np.ndarray, scan_range = None) -> tuple[np.ndarray, bool | str]:
@@ -698,7 +739,7 @@ class DataProcessing:
 
                 image_subtracted.append(line_subtracted)
 
-            image_subtracted = np.array(image_subtracted, dtype = float)
+            image_subtracted = np.array(image_subtracted, dtype = np.float32)
         
         except:
             error = "Error. Line subtraction algorithm failed."
@@ -736,51 +777,38 @@ class DataProcessing:
 
     def subtract_background(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
-        input_image = image
         mode = self.scan_processing_flags.get("background", "none")
 
         if not isinstance(image, np.ndarray):
             error = "Error. The provided image is not a numpy array."
             return (image, error)
-
+        
+        input_image = image.astype(np.complex64)
         try:
-            # Unfinished scans: remove NaN rows
-            num_rows = len(image)
-            nan_mask = np.isnan(image).any(axis = 1)            
-            non_nan_rows_count = np.sum(~np.isnan(image).any(axis = 0))
-            #image = image[~nan_mask]
-            #non_nan_rows = len(image)
-
-            #if non_nan_rows < 3: # Do not perform data processing if the scan is all NaNs
-            #    return (input_image, error)
-
-            try:
-                avg_image = np.nanmean(image.flatten()) # The average value of the image, or the offset
-                (gradient_image, error) = self.image_gradient(image) # The (complex) gradient of the image
-                if error: return (image, error)
-                avg_gradient = np.nanmean(gradient_image.flatten()) # The average value of the gradient
-                if not isinstance(avg_gradient, complex):
-                    error = "Error. Could not compute average gradient for background subtraction."
-                    return (input_image, error)
-            except:
-                error = "Error. Could not compute average gradient for background subtraction."
-                return (input_image, error)
-
-            pix_y, pix_x = np.shape(image)
-            x_values = np.arange(-(pix_x - 1) / 2, pix_x / 2, 1)
-            y_values = np.arange(-(pix_y - 1) / 2, pix_y / 2, 1)
-
-            plane = np.array([[-x * np.real(avg_gradient) - y * np.imag(avg_gradient) for x in x_values] for y in y_values])
-
+            avg_image = np.nanmean(input_image.flatten()) # The average value of the image, or the offset
+            
             match mode:
                 case "plane":
-                    processed_image = image - plane - avg_image
+                    (gradient_image, error) = self.image_gradient(input_image) # The (complex) gradient of the image
+                    if error: raise Exception(error)
+                    avg_gradient = np.nanmean(gradient_image.flatten(), dtype = np.complex64) # The average value of the gradient
+                    if not isinstance(avg_gradient, np.complex64):
+                        error = "Error. Could not compute average gradient for background subtraction."
+                        raise Exception(error)
+                    
+                    pix_y, pix_x = np.shape(image)
+                    x_values = np.arange(-(pix_x - 1) / 2, pix_x / 2, 1)
+                    y_values = np.arange(-(pix_y - 1) / 2, pix_y / 2, 1)
+                    plane = np.array([[-x * np.real(avg_gradient) - y * np.imag(avg_gradient) for x in x_values] for y in y_values], dtype = np.complex64)
+                    processed_image = input_image - plane - avg_image
                 case "linewise":
-                    (processed_image, error) = self.line_subtract(image, transpose = False)
+                    (processed_image, error) = self.line_subtract(input_image, transpose = False)
                 case "average":
-                    processed_image = image - avg_image
+                    processed_image = input_image - avg_image
+                case "inferred":
+                    processed_image = input_image
                 case _:
-                    processed_image = image
+                    processed_image = input_image
             
             # Pad the NaN rows back
             #if num_rows - non_nan_rows > 0: processed_image = np.pad(processed_image, ((0, num_rows - non_nan_rows), (0, 0)), mode = 'constant', constant_values = np.nan)

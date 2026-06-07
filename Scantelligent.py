@@ -120,6 +120,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
         self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda cbb = self.gui.comboboxes["graph_x_axis"].currentIndex(): self.gui.grapher.setXAxis(cbb - 1))
+        self.gui.comboboxes["projection"].currentIndexChanged.connect(self.update_processing_flags)
         
         # Checkboxes and button groups
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
@@ -474,13 +475,13 @@ class Scantelligent(QtCore.QObject):
                 channels = False
                 if "scan" in datasets.keys():
                     scan = datasets["scan"][:]
-                    if "channel axis" in datasets.keys(): channels = datasets["channel axis"].asstr()[:]
-                    if "direction axis" in datasets.keys(): direction = datasets["direction axis"].asstr()[:]
+                    if "channels" in datasets.keys(): channels = datasets["channels"].asstr()[:]
+                    if "directions" in datasets.keys(): direction = datasets["directions"].asstr()[:]
                 elif "scan_group" in groups.keys():
                     datasets = {key: value for key, value in groups["scan_group"].items() if isinstance(value, h5py.Dataset)}
                     if "scan" in datasets.keys(): scan = datasets["scan"][:]
-                    if "channel axis" in datasets.keys(): channels = datasets["channel axis"].asstr()[:]
-                    if "direction axis" in datasets.keys(): direction = datasets["direction axis"].asstr()[:]
+                    if "channels" in datasets.keys(): channels = datasets["channels"].asstr()[:]
+                    if "directions" in datasets.keys(): direction = datasets["directions"].asstr()[:]
                 if not isinstance(scan, np.ndarray): raise Exception("The provided HDF5 file does not have a valid \"scan\" dataset")
             
             scan_item = SCTWidgets.ScanItem()
@@ -494,6 +495,7 @@ class Scantelligent(QtCore.QObject):
             self.gui.scan_item = self.gui.image_view.getImageItem()
             self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
             self.nanonis.grid_update(grid) # This calls setGrid on the new scan_item
+            self.update_processing_flags()
             
             self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index"))
             self.logprint(f"Successfully loaded HDF5 scan file {file_path}", message_type = "success")
@@ -943,6 +945,8 @@ class Scantelligent(QtCore.QObject):
             self.spt.gui.move(screen_1_geom.topLeft())
         
         self.spt.gui.show()
+        self.spt.gui.raise_()
+        self.spt.gui.activateWindow()
         return
 
 
@@ -1227,6 +1231,7 @@ class Scantelligent(QtCore.QObject):
                 for i in range(9):
                     self.gui.line_edits[f"experiment_{i}"].setToolTip(f"Experiment parameter field {i}\ngui.line_edits[\"experiment_{i}\"]")
                 
+                
                                 
                 # Decorate the file name
                 match experiment_name:
@@ -1240,16 +1245,25 @@ class Scantelligent(QtCore.QObject):
                     
                     case "scan":
                         active_controller = self.gui.comboboxes["controller"].currentText()
-                        match active_controller:
-                            case text if "current" in text.lower(): experiment_name = "I_fb_scan"
-                            case text if "didv" in text.lower(): experiment_name = "dIdV_fb_scan"
-                            case _: pass
+                        feedback = bool(self.gui.buttons["tip"].state_index % 2)
+                        scan_range = [self.gui.line_edits["frame_width"].getValue(), self.gui.line_edits["frame_height"].getValue()]
+                        
+                        if not feedback: experiment = "constant_height_scan"
+                        elif scan_range[0] > 100 and scan_range[1] > 100: experiment = "overview_scan"
+                        else:
+                            match active_controller:
+                                case text if "current" in text.lower(): experiment_name = "I_fb_scan"
+                                case text if "didv" in text.lower(): experiment_name = "dIdV_fb_scan"
+                                case _: pass
+                    
                     case _:
                         pass
                 
                 [previous_filename, next_filename] = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
                 experiment_filename = next_filename
                 if self.gui.buttons["save"].state_name == "data_present": experiment_filename = previous_filename # Overwrite the previous file if it was not saved
+                
+                
                 
                 self.paths.update({"experiment_filename": experiment_filename})
                 experiment_filepath = os.path.join(self.paths["session_path"], experiment_filename)
@@ -1338,8 +1352,9 @@ class Scantelligent(QtCore.QObject):
         self.experiment_thread.deleteLater()
         self.gui.buttons["start_stop"].setState("load")
         self.spt.gui.buttons["start_spectroscopy"].setState(0)
-        self.gui.image_view.blockDrops = True
         [self.gui.buttons[name].setState(0) for name in ["start_scan", "approach", "approach_2"]]
+        
+        if not self.experiment.abort_requested: self.gui.buttons["save"].setState(2) # Save the experimental data by default if the experiment ended successfully.
         return
 
     def save_experiment(self) -> None:

@@ -1517,8 +1517,6 @@ class SCTWidgets:
             self.content_container.setVisible(False)
             return
 
-
-
     class Completer(QtWidgets.QCompleter):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -1890,13 +1888,15 @@ class SCTWidgets:
         
         def setChannelNames(self, channel_names: list | np.ndarray) -> None:
             self.channel_names = np.array(channel_names, dtype = str)
-            self.plotData()
+            self.setXAxis(self.x_channel)
             return
-        
+
         def setXAxis(self, channel_index: int = -1) -> None:
             if channel_index > -2 and channel_index < self.n_channels: self.x_channel = channel_index
-            try: self.setLabel("bottom", self.channel_names[self.x_channel])
-            except: self.setLabel("bottom", "index")
+            if self.x_channel < 0: self.setLabel("bottom", "index")
+            else:
+                try: self.setLabel("bottom", self.channel_names[self.x_channel])
+                except: self.setLabel("bottom", "index")
             self.plotData()
             return
 
@@ -2501,7 +2501,6 @@ class WaveFormWidget(QtWidgets.QWidget):
         self.wave_plot_vb = self.wave_plot.getViewBox()
         self.fourier_plot_vb = self.fourier_plot.getViewBox()
         self.wave_plot_vb.sigYRangeChanged.connect(self.wavePlotYRangeChanged)
-        self.fourier_plot_vb.sigYRangeChanged.connect(self.fourierPlotYRangeChanged)
         self.wave_plot_vb.sigXRangeChanged.connect(self.wavePlotTRangeChanged)
         self.fourier_plot_vb.sigXRangeChanged.connect(self.fourierPlotFRangeChanged)
         self.updating_range = False
@@ -2547,29 +2546,13 @@ class WaveFormWidget(QtWidgets.QWidget):
         return
 
     def wavePlotYRangeChanged(self, viewbox, y_range) -> None:
-        if self.updating_range: return
-        self.updating_range = True
+        wave_min = np.min(self.wave_plot.buffer[1:, :])
+        wave_max = np.max(self.wave_plot.buffer[1:, :])
+        wave_avg = .5 * wave_max + .5 * wave_min
 
         y_min, y_max = y_range
-        y_below_center = y_min - self.dc_center_mV
-        y_above_center = y_max - self.dc_center_mV
-        max_val_from_center = max(abs(y_above_center), abs(y_below_center))
-        self.wave_plot.setYRange(self.dc_center_mV - max_val_from_center, self.dc_center_mV + max_val_from_center, padding = 0)
-        self.fourier_plot.setYRange(0, max_val_from_center, padding = 0)
-
-        self.updating_range = False
-        return
-
-    def fourierPlotYRangeChanged(self, viewbox, y_range) -> None:
-        if self.updating_range: return
-        self.updating_range = True
-
-        y_min, y_max = y_range
-        max_val = max(0, y_max)
-        self.fourier_plot.setYRange(0, max_val, padding = 0)
-        self.wave_plot.setYRange(self.dc_center_mV - max_val, self.dc_center_mV + max_val, padding = 0)
-
-        self.updating_range = False
+        y_total = y_max - y_min
+        self.wave_plot.setYRange(wave_avg - .5 * y_total, wave_avg + .5 * y_total, padding = 0)
         return
 
     def setDCBiases(self, values: list | np.ndarray) -> None:
@@ -2624,12 +2607,15 @@ class WaveFormWidget(QtWidgets.QWidget):
                 if value == 1: self.f_amp_phase_buffer[1 + channel_index, mod_index + 1] += amplitude
         return
 
-    def setPhases(self, phases: np.ndarray) -> None:
+    def setPhases(self, phases: np.ndarray, unit: str = "deg") -> None:
+        if unit == "deg": phases_rad = np.deg2rad(phases)
+        else: phases_rad = phases
+        
         for row in range(1 + self.n_outputs + self.n_inputs, 1 + 2 * self.n_outputs + self.n_inputs): self.f_amp_phase_buffer[row] *= 0 # clear
         self.f_amp_phase_buffer[1, 0] = self.dc_biases_mV[0]
         self.f_amp_phase_buffer[2, 0] = self.dc_biases_mV[1]
         
-        for mod_index, phase in enumerate(phases):
+        for mod_index, phase in enumerate(phases_rad):
             if mod_index > self.n_modulators: break
             
             output_channels = self.output_masks[:, mod_index]
@@ -2637,6 +2623,15 @@ class WaveFormWidget(QtWidgets.QWidget):
             
             for channel_index, value in enumerate(output_channels):
                 if value == 1: self.f_amp_phase_buffer[1 + self.n_outputs + self.n_inputs + channel_index, mod_index + 1] += phase
+        return
+
+    def readPixel(self, pixel: np.ndarray) -> None:
+        amps_mV = np.real(pixel) * 2000
+        phases_rad = np.angle(pixel)
+        
+        self.setMeasuredPhases(phases_rad)
+        self.setMeasuredAmplitudes(amps_mV)
+        self.updatePlots()
         return
 
     def setMeasuredAmplitudes(self, amplitudes: np.ndarray) -> None:
@@ -2648,10 +2643,10 @@ class WaveFormWidget(QtWidgets.QWidget):
             self.f_amp_phase_buffer[self.n_outputs + input_channel, mod_index + 1] += amplitude
         return
 
-    def setMeasuredPhases(self, phases: np.ndarray) -> None:
+    def setMeasuredPhases(self, phases_rad: np.ndarray) -> None:
         for row in range(1 + 2 * self.n_outputs + self.n_inputs, 1 + 2 * self.n_outputs + 2 * self.n_inputs): self.f_amp_phase_buffer[row] *= 0
     
-        for mod_index, phase in enumerate(phases):
+        for mod_index, phase in enumerate(phases_rad):
             if mod_index > self.n_modulators: break
             input_channel = self.input_mask[mod_index]
             self.f_amp_phase_buffer[self.n_inputs + 2 * self.n_outputs + input_channel, mod_index + 1] += phase
@@ -2663,7 +2658,7 @@ class WaveFormWidget(QtWidgets.QWidget):
         return
 
     def updateFourierPlot(self) -> None:
-        self.fourier_plot.setData(self.f_amp_phase_buffer[: self.n_outputs + self.n_inputs + 1])
+        self.fourier_plot.setData(np.abs(self.f_amp_phase_buffer[: self.n_outputs + self.n_inputs + 1]))
         self.fourier_plot.plotData()
         return
 
@@ -2677,10 +2672,10 @@ class WaveFormWidget(QtWidgets.QWidget):
         for wave_index in range(self.n_outputs + self.n_inputs):
             wave = np.zeros_like(t, dtype = np.float32)
             
-            for freq_Hz, amp_mV, phase_deg in zip(self.f_amp_phase_buffer[0], self.f_amp_phase_buffer[wave_index + 1], self.f_amp_phase_buffer[wave_index + self.n_outputs + self.n_inputs + 1]):
+            for freq_Hz, amp_mV, phase_rad in zip(self.f_amp_phase_buffer[0], self.f_amp_phase_buffer[wave_index + 1], self.f_amp_phase_buffer[wave_index + self.n_outputs + self.n_inputs + 1]):
                 if np.abs(amp_mV) < .0001: continue
                 w = 2 * np.pi * freq_Hz / 1000
-                wave += amp_mV * np.cos(w * t + np.deg2rad(phase_deg))
+                wave += amp_mV * np.cos(w * t + phase_rad)
             wave_data[wave_index + 1] = wave
         self.wave_plot.setData(wave_data)
         self.wave_plot.plotData()

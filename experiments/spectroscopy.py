@@ -19,6 +19,7 @@ class Experiment(BaseExperiment):
         # Aliases
         nn = self.nanonis
         mla = self.mla
+        h5string = h5py.string_dtype(encoding = "utf-8")
         
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
@@ -27,16 +28,8 @@ class Experiment(BaseExperiment):
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
         [nanonis_or_mla, tia_correct] = [spec_button_states.get(key) for key in ["nanonis_mla", "tia_correct"]]
         [blank_modulators, intermediate_feedback, spectroscopy_feedback] = [spec_button_states.get(key) for key in ["blank_modulators", "intermediate_feedback", "spectroscopy_feedback"]]
-        
         [V_fb, p_gain_fb, I_fb, t_fb, t_const_fb, z_fb] = [spec_line_edits[f"{key}_feedback"] for key in ["V", "p", "I", "t", "t_const", "z"]]
-        """
-        connected_device = self.connection_test(frequency_Hz = 600, amplitude_mV = 200, verbose = False, autophase = True)
-        if not connected_device == nanonis_or_mla:
-            self.logprint(f"Warning. The STM seems to be connected to {connected_device}. However, an experiment using {nanonis_or_mla} was requested", message_type = "warning")
-        if not connected_device == "mla":
-            self.logprint(f"Warning. Only spectroscopy using the MLA is supported at this moment.", message_type = "warning")
-        """
-       
+        
         # Read parameters from Nanonis
         nanonis_parameters = self.start_parameters["nanonis"]
         nn_hardware_dict = nanonis_parameters.get("hardware", {})
@@ -58,6 +51,7 @@ class Experiment(BaseExperiment):
         
         # Set up spectroscopy x axis
         x_values = None
+        x_units = None
         x_axis_label = ""
         x_ds = None
         
@@ -71,6 +65,7 @@ class Experiment(BaseExperiment):
         match spec_button_states["x_axis"]:
             case "V":
                 x_axis_label = "voltage (V)"
+                x_units = "V"
                 if spec_button_states.get("V_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V start (V)": x_start, "V end (V)": x_end, "dV (V)": dx, "V steps": x_steps}
                 
@@ -80,12 +75,14 @@ class Experiment(BaseExperiment):
                     abort_callback = self.check_abort_request, data_callback = self.data_array.emit, channel_names_callback = channel_names_callback)
             case "z":
                 x_axis_label = "tip height (nm)"
+                x_units = "nm"
                 if spec_button_states.get("z_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"z start (nm)": x_start, "z end (nm)": x_end, "dz (nm)": dx, "z steps": x_steps}
                 
                 raise Exception("Experiment not yet implemented")
             case "f":
                 x_axis_label = "frequency (Hz)"
+                x_units = "Hz"
                 if spec_button_states.get("f_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"f start (Hz)": x_start, "f end (Hz)": x_end, "df (Hz)": dx, "f steps": x_steps}
                 
@@ -95,6 +92,7 @@ class Experiment(BaseExperiment):
                     abort_callback = self.check_abort_request, data_callback = self.data_array.emit, channel_names_callback = channel_names_callback)
             case "amp":
                 x_axis_label = "amplitude (mV)"
+                x_units = "mV"
                 if spec_button_states.get("amp_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"amp start (mV)": x_start, "amp end (mV)": x_end, "damp (mV)": dx, "amp steps": x_steps}
                 
@@ -104,37 +102,38 @@ class Experiment(BaseExperiment):
                     abort_callback = self.check_abort_request, data_callback = self.data_array.emit, channel_names_callback = channel_names_callback)
             case "V_keithley":
                 x_axis_label = "V_Keithley (V)"
+                x_units = "V"
                 if spec_button_states.get("V_keithley_retrace", False): x_values = np.concatenate((x_values, x_values[::-1]))
                 x_axis_info = {"V_Keithley start (V)": x_start, "V_Keithley end (V)": x_end, "dV_Keithley (mV)": dx, "V_Keithley steps": x_steps}
                 
                 raise Exception("Experiment not yet implemented")
-            
             case _: # No parameter to sweep on the x-axis. Resort to a single point measurement
-                raise Exception("0D spectroscopy not yet implemented")
+                raise Exception("0D spectroscopy not implemented")
 
         if not isinstance(x_values, np.ndarray): raise Exception("No parameter selected to sweep on the x axis. Aborting experiment")
         
 
                 
-        # Write metadata
-        self.output_file.attrs.update({"device": "MLA", "MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
-                                       "f / df": 1, "settling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int,
-                                       "intermediate_feedback": intermediate_feedback, "spectroscopy_feedback": spectroscopy_feedback})
-        self.output_file.attrs.update(x_axis_info)
-        mla_settings_ds = self.output_file.create_dataset("MLA settings", data = mla_setup_array)
-        mla_channels_ds = self.output_file.create_dataset("MLA setup parameters", data = mla_array_channels)
+        # Write MLA metadata and set up the sweep group and its x axis
+        self.output_file.attrs.update({"x axis": x_axis_label} | x_axis_info)
+        mla_group = self.output_file.create_group("MLA")
+        mla_group.attrs.update({"MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
+                                "f / df": 1, "settling time (1 / df)": 1, "pixels per datapoint (1 / df)": t_int, "intermediate_feedback": intermediate_feedback, "spectroscopy_feedback": spectroscopy_feedback})
+        mla_settings_ds = mla_group.create_dataset("MLA settings", data = mla_setup_array)
+        mla_channels_ds = mla_group.create_dataset("MLA setup parameters", data = mla_array_channels)
         mla_channels_ds.make_scale("MLA setup parameters")
         mla_settings_ds.dims[0].attach_scale(mla_channels_ds)
         
-        x_ds = self.output_file.create_dataset(x_axis_label, data = x_values)
+        sweep_group = self.output_file.create_group("sweep") # This is the main Nexus measurement group
+        sweep_group.attrs.update({"NX_class": "NXdata"})
+        x_ds = sweep_group.create_dataset(x_axis_label, data = x_values)
         x_ds.make_scale(x_axis_label)
-        self.output_file.attrs.update({"x axis": x_axis_label})
-        self.parameters.emit({"dict_name": "view_request", "view": "graph"})
         
         
         
         # y axis
         y_values = None
+        y_units = None
         y_axis_label = ""
         y_ds = None
         
@@ -142,7 +141,8 @@ class Experiment(BaseExperiment):
         if isinstance(y_start, int | float) and isinstance(y_end, int | float):
             y_values = np.linspace(y_start, y_end, y_steps)
             dy = (y_end - y_start) / (y_steps - 1)
-                
+        
+        self.parameters.emit({"dict_name": "view_request", "view": "graph"})        
         match spec_button_states["y_axis"]:
             case "V":
                 y_axis_label = "voltage (V)"
@@ -208,28 +208,35 @@ class Experiment(BaseExperiment):
                 mla.amplitudes_update({"amplitudes (mV)": {0: amp_mV}}, verbose = False)
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV), channel_names_callback = self.data_array.emit)
             
-            case _: # No parameter on the y axis. Perform a 1D sweep instead
+            case _: # No parameter on the y axis. Perform a 1D sweep instead. Then cast the data to a 2D sweep dataset
                 if intermediate_feedback: self.intermediate_feedback(V_fb, I_fb, p_gain_fb, t_const_fb, t_fb, z_fb) # The z step relative to the feedback setpoint will automatically switch the feedback off
                 if spectroscopy_feedback == "unchanged": nn.tip_update({"feedback": start_feedback}) # Feedback unchanged: switch it back on if it was on when the experiment was started
                 elif spectroscopy_feedback == "on": nn.tip_update({"feedback": True})
                 else: nn.tip_update({"feedback": False})
                 
                 (single_sweep_array, single_sweep_error_array, channel_names) = x_measurement(insert_parameter = None, channel_names_callback = self.data_array.emit)
-                
-                measurement_ds = self.output_file.create_dataset("sweep", data = single_sweep_array, dtype = float)
-                error_ds = self.output_file.create_dataset("errors (std. dev.)", data = single_sweep_error_array, dtype = float)
-                channels_ds = self.output_file.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-                channels_ds.make_scale("channels")
-                
-                [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([channels_ds, x_ds])]
-                [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([channels_ds, x_ds])]
-                
-                self.exp_progress.emit(100) # Experiment finished
+                                
+                # Experiment finished; clean up
+                self.exp_progress.emit(100)
                 mla.outputs_update({"output_masks": mla_output_masks}, verbose = False)
                 mla.start_lockin()
                 mla.get_pixels(3)
                 mla.stop_lockin()
                 nn.tip_update({"feedback": start_feedback}, verbose = False)
+                
+                # Save 1D sweep data
+                sweep_ds = sweep_group.create_dataset("sweep", data = single_sweep_array, dtype = np.float32)
+                error_ds = sweep_group.create_dataset("sweep_errors", data = single_sweep_error_array, dtype = np.float32)
+                channels_ds = sweep_group.create_dataset("channels", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5string)
+                channels_ds.make_scale("channels")
+                channel_indices_ds = sweep_group.create_dataset("channel indices", data = np.arange(len(channel_names), dtype = np.int32))
+                channel_indices_ds.make_scale("channel indices")
+                
+                [sweep_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([x_ds, channel_indices_ds])]
+                [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([x_ds, channel_indices_ds])]
+
+                sweep_group.attrs.update({"signal": "sweep"})
+                sweep_group.attrs.update({"axes": np.array([x_axis_label, "channel indices"], dtype = "S")})
                 return
         
         # Everything below is for 2D measurements only. 1D sweeps have already returned at this point
@@ -239,45 +246,28 @@ class Experiment(BaseExperiment):
 
 
 
-        # Create the measurement array and the hdf5 dataset
-        measurement_array = np.zeros((len(y_values), len(x_values), len(channel_names)))
-        measurement_array[0] = single_sweep_array
-        error_array = np.zeros_like(measurement_array)
-        
-        measurement_ds = self.output_file.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
-        error_ds = self.output_file.create_dataset("errors (std. dev.)", shape = (0,) + single_sweep_array.shape, maxshape = measurement_array.shape, dtype = float)
-        
-        [measurement_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
-        [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channels_ds])]
-        
-        sweep_group: h5py.Group = self.output_file.create_group("sweep_group")
-        sweep_group.attrs.update({"NX_class": "NXdata"})
-        channels_ds = sweep_group.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8")) # z axis (channels)
+        # Create the measurement array and the hdf5 dataset, using the data from the first sweep
+        dataset_shape = (len(channel_names),) + single_sweep_array.shape
+        sweep_ds = sweep_group.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = dataset_shape, dtype = np.float32)
+        error_ds = sweep_group.create_dataset("sweep_errors", shape = (0,) + single_sweep_array.shape, maxshape = dataset_shape, dtype = np.float32)
+        channels_ds = sweep_group.create_dataset("channels", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5string) # z axis (channels)
         channels_ds.make_scale("channels")
-        channel_indices_ds = sweep_group.create_dataset("channel index axis", data = np.arange(len(channel_names), dtype = np.int32))
+        channel_indices_ds = sweep_group.create_dataset("channel indices", data = np.arange(len(channel_names), dtype = np.int32))
         channel_indices_ds.make_scale("channel indices")
         
-        x_ds = scan_group.create_dataset("x axis", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
-        x_ds.make_scale("x values")
-        y_ds = scan_group.create_dataset("y axis", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
-        y_ds.make_scale("y values")
-        
-        sweep_ds = sweep_group.create_dataset("sweep", shape = ((2, len(channel_names), lines, pixels)), dtype = np.float32)
-        scan_ds.dims[0].attach_scale(dir_indices_ds)
-        scan_ds.dims[1].attach_scale(channel_indices_ds)
-        scan_ds.dims[2].attach_scale(y_ds)
-        scan_ds.dims[3].attach_scale(x_ds)
-        
+        [sweep_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channel_indices_ds])]
+        [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channel_indices_ds])]
+                
         sweep_group.attrs.update({"signal": "sweep"})
-        sweep_group.attrs.update({"axes": ["direction index axis", "channel index axis", "y axis", "x axis"]})
-        sweep_group.attrs.update({"units": ["", "nm", "nm"]})
+        sweep_group.attrs.update({"axes": np.array(["channel index axis", "y axis", "x axis"], dtype = "S")})
 
 
 
+        # Perform the 2D sweep
         n_total = len(y_values)
         match y_axis_label:
             case "voltage (V)": # Experiments that sweep along one parameter while slowly ramping the bias
-                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = voltage) # Save the first sweep
+                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, sweep_ds, error_ds, y_ds, 0, parameter = voltage) # Save the first sweep
                 
                 for index, voltage in enumerate(y_values):
                     self.exp_progress.emit(int(100 * index / n_total))
@@ -290,11 +280,10 @@ class Experiment(BaseExperiment):
                     if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
                     (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("voltage (V)", voltage), channel_names_callback = None)
-                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = voltage)
-                    measurement_array[index] = single_sweep_array
+                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, sweep_ds, error_ds, y_ds, index, parameter = voltage)
             
             case "amplitude (mV)":
-                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = amp_mV) # Save the first sweep
+                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, sweep_ds, error_ds, y_ds, 0, parameter = amp_mV) # Save the first sweep
                 
                 for index, amp_mV in enumerate(y_values):
                     self.exp_progress.emit(int(100 * index / n_total))
@@ -307,11 +296,10 @@ class Experiment(BaseExperiment):
                     if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
                     (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("amplitude (mV)", amp_mV), channel_names_callback = None)
-                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = amp_mV)
-                    measurement_array[index] = single_sweep_array
+                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, sweep_ds, error_ds, y_ds, index, parameter = amp_mV)
 
             case "frequency (Hz)":
-                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, 0, parameter = f_Hz) # Save the first sweep
+                self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, sweep_ds, error_ds, y_ds, 0, parameter = f_Hz) # Save the first sweep
                 
                 for index, f_Hz in enumerate(y_values):
                     self.exp_progress.emit(int(100 * index / n_total))
@@ -327,8 +315,7 @@ class Experiment(BaseExperiment):
                     if blank_modulators: mla.outputs_update({"output_masks": mla_output_masks})
                     
                     (single_sweep_array, single_sweep_error_array, sweep_channel_names) = x_measurement(insert_parameter = ("frequency (Hz)", f_Hz), channel_names_callback = None)
-                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, measurement_ds, error_ds, y_ds, index, parameter = f_Hz)
-                    measurement_array[index] = single_sweep_array
+                    self.add_data_to_datasets(single_sweep_array, single_sweep_error_array, sweep_ds, error_ds, y_ds, index, parameter = f_Hz)
             
             case _:
                 raise Exception("This experiment is not yet implemented")

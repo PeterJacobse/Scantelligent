@@ -273,8 +273,7 @@ class ParameterManager(QtCore.QObject):
                 arg_values = np.rad2deg(np.angle(pixel))                
                 sptgui.lockin_widget.setMeasuredAmplitudes(abs_values)
                 sptgui.lockin_widget.setMeasuredPhases(arg_values)
-                sptgui.waveform_widget.setMeasuredAmplitudes(abs_values)
-                sptgui.waveform_widget.setMeasuredPhases(arg_values)
+                sptgui.waveform_widget.readPixel(pixel)
                 sct.amplitudes.emit(100 * abs_values)
             case "frequencies":
                 freqs = parameters.get("frequencies (Hz)")
@@ -291,7 +290,7 @@ class ParameterManager(QtCore.QObject):
                 sptgui.waveform_widget.setAmplitudes(amplitudes)
             case "phases":
                 sptgui.lockin_widget.setPhases(parameters.get("phases (deg)"))
-                sptgui.waveform_widget.setPhases(parameters.get("phases (deg)"))
+                sptgui.waveform_widget.setPhases(parameters.get("phases (deg)"), unit = "deg")
             case "outputs":
                 output_masks = parameters.get("output_masks")
                 sptgui.lockin_widget.setOutputs(output_masks)
@@ -388,7 +387,10 @@ class ParameterManager(QtCore.QObject):
                 sct.user.frames[0].update(parameters)
             
                 [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = parameters.get("scan_range (nm)", [100, 100])
+                scan_range = parameters.get("scan_range (nm)", [100, 100])
+                sct.data.scan_processing_flags.update({"scan_range (nm)": scan_range})
+                [w_nm, h_nm] = scan_range
+                
                 angle_deg = parameters.get("angle (deg)", 0)
                 aspect_ratio = h_nm / w_nm
                 
@@ -443,7 +445,10 @@ class ParameterManager(QtCore.QObject):
                 
                 # Frame is embedded in grid. Update the frame parameters as well
                 [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = parameters.get("scan_range (nm)", [100, 100])
+                scan_range = parameters.get("scan_range (nm)", [100, 100])
+                sct.data.scan_processing_flags.update({"scan_range (nm)": scan_range})
+                [w_nm, h_nm] = scan_range
+                
                 angle_deg = parameters.get("angle (deg)", 0)
                 aspect_ratio = h_nm / w_nm
 

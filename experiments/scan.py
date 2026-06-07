@@ -57,16 +57,16 @@ class Experiment(BaseExperiment):
             scan_group: h5py.Group = self.output_file.create_group("scan_group")
             scan_group.attrs.update({"NX_class": "NXdata"})
             
-            dir_ds = scan_group.create_dataset("direction axis", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
-            dir_indices_ds = scan_group.create_dataset("direction index axis", data = np.array([0, 1], dtype = np.int32))
+            dir_ds = scan_group.create_dataset("directions", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
+            dir_indices_ds = scan_group.create_dataset("direction indices", data = np.array([0, 1], dtype = np.int32))
             dir_indices_ds.make_scale("direction indices")
-            channels_ds = scan_group.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in recorded_channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-            channel_indices_ds = scan_group.create_dataset("channel index axis", data = np.arange(len(recorded_channel_indices), dtype = np.int32))
+            channels_ds = scan_group.create_dataset("channels", data = np.array([item.encode("utf-8") for item in recorded_channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+            channel_indices_ds = scan_group.create_dataset("channel indices", data = np.arange(len(recorded_channel_indices), dtype = np.int32))
             channel_indices_ds.make_scale("channel indices")
-            x_ds = scan_group.create_dataset("x axis", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
-            x_ds.make_scale("x values")
-            y_ds = scan_group.create_dataset("y axis", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
-            y_ds.make_scale("y values")
+            x_ds = scan_group.create_dataset("x (nm)", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
+            x_ds.make_scale("x (nm)")
+            y_ds = scan_group.create_dataset("y (nm)", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
+            y_ds.make_scale("y (nm)")
             
             scan_ds = scan_group.create_dataset("scan", shape = ((2, len(recorded_channel_indices), lines, pixels)), dtype = np.float32)
             scan_ds.dims[0].attach_scale(dir_indices_ds)
@@ -75,8 +75,7 @@ class Experiment(BaseExperiment):
             scan_ds.dims[3].attach_scale(x_ds)
             
             scan_group.attrs.update({"signal": "scan"})
-            scan_group.attrs.update({"axes": ["direction index axis", "channel index axis", "y axis", "x axis"]})
-            scan_group.attrs.update({"units": ["", "nm", "nm"]})
+            scan_group.attrs.update({"axes": np.array(["direction indices", "channel indices", "y (nm)", "x (nm)"], dtype = "S")})
             
             # Start the scan. Passing the dataset will allow it to be updated during scanning
             scan_data = self.nanonis_scan(direction = direction, dataset = scan_ds, iterations = 20) # Save the entire dataset every 20 iterations

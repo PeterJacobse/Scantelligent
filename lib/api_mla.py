@@ -636,7 +636,6 @@ class MLAAPI(QtCore.QObject):
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
         if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
-        if not channel_names_callback: channel_names_callback = None # lambda channels: self.logprint(f"{channels = }", message_type = "result")
 
         (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
         measurement_output_masks = np.copy(start_outputs.get("output_masks"))
@@ -655,9 +654,9 @@ class MLAAPI(QtCore.QObject):
         if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
-        channel_names_callback(np.array(channel_names))
-        measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = float)
-        error_array = np.empty_like(measurement_array, dtype = float)
+        if channel_names_callback: channel_names_callback(np.array(channel_names))
+        measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = np.float32)
+        error_array = np.empty_like(measurement_array, dtype = np.float32)
         
         
         
@@ -674,7 +673,7 @@ class MLAAPI(QtCore.QObject):
             
             self.get_pixels(settle_pixels) # Wait settle_pixels number of pixels
             (pix_V, pix_V_var) = measurement()
-            pix_V_std_dev = np.sqrt(pix_V_var, dtype = float)
+            pix_V_std_dev = np.sqrt(pix_V_var)
             
             if isinstance(tia_corrections, list | np.ndarray): # Apply correction
                 for tone in range(len(pix_V)):
@@ -718,11 +717,11 @@ class MLAAPI(QtCore.QObject):
                     a1_std_dev_fF = 0
                     a2_std_dev_fF = 0
                 
-                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = float)
-                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, a1_std_dev_pA, a1_std_dev_fF, 0, a2_std_dev_mV, a2_std_dev_pA, a2_std_dev_fF, 0], dtype = float)
+                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = np.float32)
+                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, a1_std_dev_pA, a1_std_dev_fF, 0, a2_std_dev_mV, a2_std_dev_pA, a2_std_dev_fF, 0], dtype = np.float32)
             else:
-                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1arg, a2abs_mV, a2arg], dtype = float)
-                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, 0, a2_std_dev_mV, 0], dtype = float)
+                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1arg, a2abs_mV, a2arg], dtype = np.float32)
+                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, 0, a2_std_dev_mV, 0], dtype = np.float32)
             
             if isinstance(insert_value, float | int):
                 data_chunk = np.insert(data_chunk, 0, insert_value)
@@ -744,7 +743,6 @@ class MLAAPI(QtCore.QObject):
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
         if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
-        if not channel_names_callback: channel_names_callback = None # lambda channels: self.logprint(f"{channels = }", message_type = "result")
         
         (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
         measurement_output_masks = np.copy(start_outputs.get("output_masks"))
@@ -763,9 +761,9 @@ class MLAAPI(QtCore.QObject):
         if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
-        channel_names_callback(np.array(channel_names)) # Signal the gui to start tracking/plotting these data
-        measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = float)
-        error_array = np.empty_like(measurement_array, dtype = float)
+        if channel_names_callback: channel_names_callback(np.array(channel_names)) # Signal the gui to start tracking/plotting these data
+        measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = np.float32)
+        error_array = np.empty_like(measurement_array, dtype = np.float32)
 
 
 
@@ -779,7 +777,7 @@ class MLAAPI(QtCore.QObject):
             
             self.get_pixels(settle_pixels)
             (pix_V, pix_V_var) = measurement()
-            pix_V_std_dev = np.sqrt(pix_V_var, dtype = float)
+            pix_V_std_dev = np.sqrt(pix_V_var)
             
             if isinstance(tia_corrections, list | np.ndarray): # Apply correction
                 for tone in range(len(pix_V)):
@@ -789,8 +787,8 @@ class MLAAPI(QtCore.QObject):
                         pix_V[tone] *= tone_correction
                         pix_V_std_dev *= np.abs(tone_correction)
             
-            if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = float)
-            else: data_chunk = np.zeros((len(channel_names)), dtype = float)
+            if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = np.float32)
+            else: data_chunk = np.zeros((len(channel_names)), dtype = np.float32)
             error_chunk = np.zeros_like(data_chunk)
             data_chunk[0] = amp_mV
             data_chunk[1] = 2000 * np.abs(pix_V[0]) # Factor 2 to account for discrepancy between amplitude and lockin measured amplitude
@@ -830,7 +828,6 @@ class MLAAPI(QtCore.QObject):
         if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
         measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
         if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
-        if not channel_names_callback: channel_names_callback = None # lambda channels: self.logprint(f"{channels = }", message_type = "result")
         
         (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
         measurement_output_masks = np.copy(start_outputs.get("output_masks"))
@@ -855,9 +852,9 @@ class MLAAPI(QtCore.QObject):
         if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
             channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
             insert_value = insert_parameter[1]
-        channel_names_callback(np.array(channel_names))
-        measurement_array = np.empty((len(voltages), len(channel_names)), dtype = float)
-        error_array = np.empty_like(measurement_array, dtype = float)
+        if channel_names_callback: channel_names_callback(np.array(channel_names))
+        measurement_array = np.empty((len(voltages), len(channel_names)), dtype = np.float32)
+        error_array = np.empty_like(measurement_array, dtype = np.float32)
 
 
 
@@ -871,7 +868,7 @@ class MLAAPI(QtCore.QObject):
             
             self.get_pixels(settle_pixels)
             (pix_V, pix_V_var) = measurement()
-            pix_V_std_dev = np.sqrt(pix_V_var, dtype = float)
+            pix_V_std_dev = np.sqrt(pix_V_var)
             
             if isinstance(tia_corrections, list | np.ndarray): # Apply correction for tia response if desired
                 for tone in range(len(pix_V)):
@@ -881,8 +878,8 @@ class MLAAPI(QtCore.QObject):
                         pix_V[tone] *= tone_correction
                         pix_V_std_dev *= np.abs(tone_correction)
                         
-            if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = float)
-            else: data_chunk = np.zeros((len(channel_names)), dtype = float)
+            if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = np.float32)
+            else: data_chunk = np.zeros((len(channel_names)), dtype = np.float32)
             error_chunk = np.zeros_like(data_chunk)
             data_chunk[0] = voltage
             data_chunk[1] = 2000 * np.abs(pix_V[0]) # Reference signal in mA
