@@ -848,7 +848,6 @@ class Scantelligent(QtCore.QObject):
         elif old_view in ["nanonis", "graph"]: self.refresh_image(save = True)
 
         # Reset ImageView. Remove old items. Prepare the QSplitters for resizing
-        [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:] if not item == self.gui.scan_item]
         [min_view_height, min_graph_height, min_console_height] = [self.gui.splitters["image_graph"].widget(index).minimumSizeHint().height() for index in range(3)]
         total_splitter_height = self.gui.splitters["image_graph"].height()
 
@@ -858,20 +857,8 @@ class Scantelligent(QtCore.QObject):
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
                 [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:]]
-                self.gui.image_view.addItem(self.gui.camera_item)
-                self.gui.image_view.imageItem = self.gui.camera_item
-                self.gui.camera_item = self.gui.image_view.getImageItem()
-                self.gui.image_view.getHistogramWidget().setImageItem(self.gui.camera_item)
-                
+                self.gui.image_view.setItem(self.gui.camera_item)
                 camera_frame = self.camera.grab_frame()
-                (pixels, lines) = camera_frame.shape
-                self.nanonis.grid_update({"offset (nm)": [0, 0], "scan_range": [200, 100], "angle": 0, "pixels": pixels, "lines": lines}) # This calls setGrid on the new scan_item
-                
-                # Grab a single frame and use it to reset the ImageView
-                #self.gui.scan_item.setImage(camera_frame)
-                #self.gui.scan_item.resetTransform()
-                #self.gui.scan_item.setRotation(0)
-                #self.gui.scan_item.setPos(0, 0)
                 self.gui.view.autoRange()
                 
                 # Set up the camera thread
@@ -911,13 +898,13 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["view"].setState("none")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
-                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:]]
-                self.gui.view.addItem(self.gui.camera_item)
-                self.gui.camera_item.setImage(self.splash_screen)
-                self.gui.camera_item.resetTransform()
-                self.gui.camera_item.setRotation(0)
-                self.gui.camera_item.setPos(0, 0)
-                self.gui.view.autoRange()
+                #[self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:]]
+                #self.gui.view.addItem(self.gui.camera_item)
+                #self.gui.camera_item.setImage(self.splash_screen)
+                #self.gui.camera_item.resetTransform()
+                #self.gui.camera_item.setRotation(0)
+                #self.gui.camera_item.setPos(0, 0)
+                #self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
         return

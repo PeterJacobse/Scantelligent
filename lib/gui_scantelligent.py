@@ -3,6 +3,7 @@ from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 from .sct_widgets import SCTWidgets, CurrentHeightIndicatorWidget, MinMaxMethods, rotate_icon, make_layout, make_line
 import numpy as np
+from PIL import Image
 
 
 
@@ -37,7 +38,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.line_edits = self.make_line_edits()
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
-        (self.image_view, self.camera_view) = self.make_views()
+        self.image_view = self.make_views()
         (self.piezo_roi, self.frame_roi, self.new_frame_roi, self.tip_target, self.target0, self.path_pdi) = self.make_image_view_widgets()
         self.grapher = self.make_plot_widget()
         self.widgets = self.make_custom_widgets()
@@ -621,11 +622,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         }
         return layouts
 
-    def make_views(self) -> tuple[SCTWidgets.ImageView, pg.RawImageWidget]:
+    def make_views(self) -> SCTWidgets.ImageView:
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
-        camera_item = SCTWidgets.ScanItem(name = "camera")
-        camera_item.setImage(np.empty((2, 2), dtype = np.float16))
+        ss_path = self.paths["splash_screen"]
+        splash_screen_array = self.splash_screen = np.flipud(np.array(Image.open(ss_path)))
+        camera_item = SCTWidgets.ArrayItem(name = "camera", array = splash_screen_array, color = True)
+        
         plot_item = pg.PlotItem()
         plot_item.addItem(camera_item)
         
@@ -640,10 +643,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.camera_item = image_view.imageItem
         self.hist_item = hist_widget.item
         
-        camera_view = pg.RawImageWidget()
-        
         self.saved_items = []
-        return (image_view, camera_view)
+        return image_view
 
     def make_image_view_widgets(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
         # ROIs (frames)
@@ -660,6 +661,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         # Path
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
+        
+        # Active scan
+        self.active_scan = SCTWidgets.ArrayItem(name = "active_scan", color = False)
         
         return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0, path_pdi)
 
