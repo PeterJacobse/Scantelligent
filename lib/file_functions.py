@@ -3,12 +3,14 @@ import importlib.util
 import numpy as np
 import nanonispy2 as nap
 from datetime import datetime
+from .data_processing import DataProcessing
 
 
 
 class FileFunctions():
     def __init__(self):
         self.ureg = pint.UnitRegistry()
+        self.data = DataProcessing()
 
 
 
@@ -416,7 +418,6 @@ class FileFunctions():
         pattern = r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
         matches = re.findall(pattern, text)
         numbers = [float(x) for x in matches]
-
         return numbers
 
     def get_next_indexed_filename(self, folder_path, base_name, extension) -> str:

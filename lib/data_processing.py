@@ -2,8 +2,8 @@ import pint, re
 import numpy as np
 from matplotlib import colors
 from PyQt6.QtCore import QMutex, QMutexLocker
-from scipy.signal import convolve2d
-from scipy.ndimage import gaussian_filter
+from scipy.signal import convolve2d, fftconvolve
+from scipy.ndimage import gaussian_filter, binary_erosion
 from scipy.fft import fft2, fftshift
 from scipy.linalg import lstsq
 from scipy.spatial import distance_matrix
@@ -107,6 +107,123 @@ class DataProcessing:
 
 
     # Misc
+    def split_physical_quantity(self, text: str) -> tuple:
+        error = False
+        quantity = None
+        unit = None
+        backward = False
+        first_bracket_index = None
+        
+        try:
+            split_text = text.split()
+            for index, text_item in enumerate(split_text):
+                if text_item.startswith("(") | text_item.startswith("["):
+                    if not first_bracket_index: first_bracket_index = index
+                    if text_item[1:-1] in {"bwd", "backward"}: backward = True
+                    if text_item[1:-1] not in {"fwd", "forward", "bwd", "backward"}: unit = text_item[1:-1]
+            quantity = " ".join(split_text[:first_bracket_index])
+
+            return (quantity, unit, backward, error)
+        except:
+            error = True
+        
+        return (quantity, unit, backward, error)
+
+    def convert_data_to_unit(self, data: np.ndarray, quantity: str, target_unit: str) -> tuple[np.ndarray, str]:
+        output_data = data
+        output_quantity = quantity
+        input_multiplier = 1
+        target_multiplier = 1
+        
+        try:
+            (input_quantity, input_unit, backward, error) = self.split_physical_quantity(quantity)
+            
+            if len(input_unit) > 1 and input_unit[0] in {"f", "p", "n", "u", "m", "k", "M", "G"}:
+                input_prefix = input_unit[0]
+                match input_prefix:
+                    case "f": input_multiplier = 1E-15
+                    case "p": input_multiplier = 1E-12
+                    case "n": input_multiplier = 1E-9
+                    case "u": input_multiplier = 1E-6
+                    case "m": input_multiplier = 1E-3
+                    case "k": input_multiplier = 1E3
+                    case "M": input_multiplier = 1E6
+                    case "G": input_multiplier = 1E9
+                    case _: pass
+            
+            if len(target_unit) > 1 and target_unit[0] in {"f", "p", "n", "u", "m", "k", "M", "G"}:
+                target_prefix = target_unit[0]
+                match target_prefix:
+                    case "f": target_multiplier = 1E15
+                    case "p": target_multiplier = 1E12
+                    case "n": target_multiplier = 1E9
+                    case "u": target_multiplier = 1E6
+                    case "m": target_multiplier = 1E3
+                    case "k": target_multiplier = 1E-3
+                    case "M": target_multiplier = 1E-6
+                    case "G": target_multiplier = 1E-9
+                    case _: pass
+            
+            output_data = data * input_multiplier * target_multiplier
+            output_quantity = " ".join((input_quantity, f"({target_unit})"))
+        except Exception as e:
+            print(f"Error encountered while trying to convert data ({quantity}) to unit {target_unit}: {e}")
+        return (output_data, output_quantity)
+
+    def convert_to_sct_grid(self, grid: dict) -> dict:
+        w_nm = None
+        h_nm = None
+        x_nm = None
+        y_nm = None
+
+        output_dict = {}
+        for key, value in grid.items():
+            (quantity, unit, backward, error) = self.split_physical_quantity(key)
+            if not quantity or not unit: continue
+
+            match quantity.lower():
+                case "translation" | "center" | "offset":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    output_dict.update({"offset (nm)": array})        
+                case "size" | "area" | "range" | "scan_range" | "scan range":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    output_dict.update({"scan_range (nm)": array})
+                
+                case "w" | "width" | "range_x" | "x_range" | "x range":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    w_nm = array
+                case "h" | "height" | "range_y" | "y_range" | "y range":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    h_nm = array
+
+                case "x":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    x_nm = array
+                case "y":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    y_nm = array
+                    
+                case "angle":
+                    if unit == "rad": output_value = np.rad2deg(value)
+                    else: output_value = value
+                    output_dict.update({"angle (deg)": output_value})
+                case _:
+                    pass
+
+            if not "offset (nm)" in output_dict.keys() and x_nm and y_nm: output_dict.update({"offset (nm)": np.array([x_nm, y_nm], dtype = np.float32)})
+            if not "scan_range (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"scan_range (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
+            
+            if not "angle (deg)" in output_dict.keys(): output_dict.update({"angle (deg)": 0.})
+            if "pixels" in grid.keys(): output_dict.update({"pixels": grid["pixels"]})
+            if "lines" in grid.keys(): output_dict.update({"lines": grid["lines"]})
+        return output_dict
+
+    def get_scientific_numbers(self, text: str) -> list:
+        pattern = r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
+        matches = re.findall(pattern, text)
+        numbers = [float(x) for x in matches]
+        return numbers
+
     def extract_numbers_from_str(self, text: str) -> list[float] | None:
         # Extract the numeric part
         if text.startswith("."): text = "0" + text
@@ -394,7 +511,7 @@ class DataProcessing:
         limits = [0, 1]
 
         try:
-            # Apply matrix operations
+            # Apply matrix operations            
             (processed_scan, error) = self.operate_scan(image)
             if error: raise Exception(error)
 
@@ -419,6 +536,9 @@ class DataProcessing:
         gaussian_sigma = flags.get("gaussian_width (nm)")
         
         # Background subtraction
+        #(x_tilt, y_tilt) = self.compute_tilt(image, scan_range_nm)
+        #print(f"Tilt before background subtraction: {x_tilt = }, {y_tilt = }")
+        
         (image, error) = self.subtract_background(image)
         if error: return (image, error)
         
@@ -818,6 +938,58 @@ class DataProcessing:
         except Exception as e:
             error = f"Error. Failed to perform the background subtraction: {e}"
             return (input_image, error)
+
+    def compute_tilt(self, image: np.ndarray, scan_range = None) -> tuple[float, float]:
+        if not isinstance(image, np.ndarray): return image
+        
+        n_tot = image.size
+        (smooth_image, error) = self.apply_gaussian(image, 1, scan_range = scan_range)
+        (gradient_image, error) = self.image_gradient(smooth_image, scan_range = scan_range)
+
+        below_10pct_tilt = np.abs(gradient_image) < .1
+        fraction_below_10pct = np.sum(below_10pct_tilt) / n_tot
+
+        below_5pct_tilt = np.abs(gradient_image) < .05
+        fraction_below_5pct = np.sum(below_5pct_tilt) / n_tot
+
+        below_2pct_tilt = np.abs(gradient_image) < .02
+        fraction_below_2pct = np.sum(below_2pct_tilt) / n_tot
+        
+        use_image = below_5pct_tilt
+        mask = binary_erosion(use_image, structure = np.ones((5, 5)))
+
+        masked_gradient_image = gradient_image[mask]
+        avg_gradient = np.mean(masked_gradient_image)
+        x_gradient = avg_gradient.real
+        y_gradient = avg_gradient.imag
+        return (x_gradient, y_gradient)
+
+    def compute_xy_drift(self, images: list[np.ndarray], times: list | np.ndarray, scan_range = None) -> tuple[list, list]:
+        try:
+            [w_nm, h_nm] = scan_range
+            [pix, lines] = images[0].shape
+            width_per_pix_nm = w_nm / pix
+            height_per_line_nm = h_nm / lines
+            imgs_norm = [images[index] - np.mean(images[index]) for index in range(len(images))]
+
+
+            
+            x_shifts_nm = []
+            y_shifts_nm = []
+            for index in range(len(images) - 1):
+                img_correlation = fftconvolve(imgs_norm[index], imgs_norm[index + 1][::-1, ::-1], mode = "same")
+                y_peak, x_peak = np.unravel_index(np.argmax(img_correlation), img_correlation.shape)
+
+                y_center, x_center = img_correlation.shape[0] // 2, img_correlation.shape[1] // 2
+                y_shift_nm = (y_peak - y_center) * height_per_line_nm
+                x_shift_nm = (x_peak - x_center) * width_per_pix_nm
+                
+                x_shifts_nm.append(x_shift_nm)
+                y_shifts_nm.append(y_shift_nm)
+            
+        except Exception as e:
+            return False
+        return (x_shifts_nm, y_shifts_nm)
 
 
 
