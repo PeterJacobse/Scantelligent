@@ -909,7 +909,8 @@ class NanonisHardware:
         h = h_to_f(response[12 : 16]) * 1E9
         angle = h_to_f(response[16 : 20])
         
-        frame = {"x (nm)": x, "y (nm)": y, "center (nm)": [x, y], "offset (nm)": [x, y], "width (nm)": w, "height (nm)": h, "scan_range (nm)": [w, h], "angle (deg)": angle, "aspect_ratio": h / w}
+        frame = {"x (nm)": x, "y (nm)": y, "center (nm)": np.array([x, y], dtype = np.float32), "offset (nm)": np.array([x, y], dtype = np.float32), "width (nm)": w, "height (nm)": h,
+                 "scan_range (nm)": np.array([w, h], dtype = np.float32), "angle (deg)": angle, "aspect_ratio": h / w}
         
         return frame
 

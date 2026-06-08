@@ -458,38 +458,36 @@ class Scantelligent(QtCore.QObject):
                 return
         
         self.toggle_view("nanonis")
+        scan = None
+        channels = None
+        grid = None
+        match os.path.splitext(file_path)[1]:
+            case ".hdf5" | ".h5":
+                try:
+                    file_data = self.file_functions.read_hdf5(file_path)
+                    [scan, channels, grid] = [file_data.get(key, None) for key in ["data", "channels", "grid"]]
+                except Exception as e:
+                    self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
+            case ".sxm":
+                try:
+                    file_data = self.file_functions.read_sxm(file_path)
+                    [scan, channels, grid] = [file_data.get(key, None) for key in ["data", "channels", "grid"]]
+                except Exception as e:
+                    self.logprint(f"Could not open this SXM file: {e}", message_type = "error")
+        
+        if not isinstance(scan, np.ndarray) or not isinstance(channels, np.ndarray | list) or not isinstance(grid, dict):
+            self.logprint(f"Could not retrieve data from this file", message_type = "error")
+            return
+        
         try:
-            with h5py.File(file_path, "r") as f:
-                datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)}
-                groups = {key: value for key, value in f.items() if isinstance(value, h5py.Group)}
-                
-                grid = False
-                if "grid" in groups.keys():
-                    grid_view = f["grid"].attrs
-                    grid = {key: value for key, value in grid_view.items()}
-                if not isinstance(grid, dict): raise Exception("This HDF5 file does not have a valid \"grid\" group")
-                for key in ["offset (nm)", "scan_range (nm)", "angle (deg)"]:
-                    if not key in grid: raise Exception(f"This HDF5 file has a \"grid\" group, but it is missing the following parameter: {key}")
-                
-                scan = False
-                channels = False
-                if "scan" in datasets.keys():
-                    scan = datasets["scan"][:]
-                    if "channels" in datasets.keys(): channels = datasets["channels"].asstr()[:]
-                    if "directions" in datasets.keys(): direction = datasets["directions"].asstr()[:]
-                elif "scan_group" in groups.keys():
-                    datasets = {key: value for key, value in groups["scan_group"].items() if isinstance(value, h5py.Dataset)}
-                    if "scan" in datasets.keys(): scan = datasets["scan"][:]
-                    if "channels" in datasets.keys(): channels = datasets["channels"].asstr()[:]
-                    if "directions" in datasets.keys(): direction = datasets["directions"].asstr()[:]
-                if not isinstance(scan, np.ndarray): raise Exception("The provided HDF5 file does not have a valid \"scan\" dataset")
-            
             scan_item = SCTWidgets.ScanItem()
             scan_item.setScan(scan)
             if isinstance(channels, np.ndarray):
                 channel_dict = {channels[i]: i for i in range(len(channels))}
                 self.parameters.receive({"dict_name": "scan_metadata", "channel_dict": channel_dict})
+                print("Setting channels")
                 scan_item.setChannels(channels)
+            
             self.gui.image_view.addItem(scan_item)
             self.gui.image_view.imageItem = scan_item
             self.gui.scan_item = self.gui.image_view.getImageItem()
@@ -497,10 +495,10 @@ class Scantelligent(QtCore.QObject):
             self.nanonis.grid_update(grid) # This calls setGrid on the new scan_item
             self.update_processing_flags()
             
-            self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index"))
-            self.logprint(f"Successfully loaded HDF5 scan file {file_path}", message_type = "success")
+            self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index", 0))
+            self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
         except Exception as e:
-            self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
+            self.logprint(f"Error trying to open this file: {e}", message_type = "error")
         return
 
     @QtCore.pyqtSlot(QtGui.QKeyEvent)

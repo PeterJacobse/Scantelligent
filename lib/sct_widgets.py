@@ -1219,7 +1219,7 @@ class SCTWidgets:
             try:
                 urls: list[QtCore.QUrl] = event.mimeData().urls()
                 file_path = urls[0].toLocalFile()
-                if os.path.splitext(file_path)[1] in [".hdf5"]:
+                if os.path.splitext(file_path)[1] in [".hdf5", ".h5", ".sxm"]:
                     self.getViewBox().setBackgroundColor("#202020")
             except:
                 pass
@@ -1238,7 +1238,7 @@ class SCTWidgets:
             try:
                 urls: list[QtCore.QUrl] = event.mimeData().urls()
                 file_path = urls[0].toLocalFile()
-                if os.path.splitext(file_path)[1] == ".hdf5": self.scan_file_signal.emit(file_path)
+                if os.path.splitext(file_path)[1] in [".hdf5", ".h5", ".sxm"]: self.scan_file_signal.emit(file_path)
             except:
                 pass
             return

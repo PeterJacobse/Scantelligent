@@ -1,4 +1,4 @@
-import re, os, sys, yaml, pint
+import re, os, sys, yaml, pint, h5py
 import importlib.util
 import numpy as np
 import nanonispy2 as nap
@@ -13,6 +13,187 @@ class FileFunctions():
 
 
     # IO
+    def read_hdf5(self, file_path: str) -> dict:
+        if not os.path.isfile(file_path):
+            print("Invalid file path provided to read_hdf5")
+            return {}
+        
+        output_dict = {"file_path": file_path}
+        grid = None
+        data = None
+        main_group = None
+        channels = None
+
+        try:
+            with h5py.File(file_path, "r") as f:
+                # Write root-level attributes to output file
+                root_attrs = {key: value for key, value in f.attrs.items()}
+                output_dict.update(root_attrs)
+                
+                # Open groups at the root level
+                root_items = {key: value for key, value in f.items()}
+                
+                # Trying to find the grid or frame at the root level
+                if "grid" in root_items.keys():
+                    input_grid = {key: value for key, value in root_items["grid"].attrs.items()}
+                    grid = self.convert_to_sct_grid(input_grid)
+                    if not "offset (nm)" in grid.keys() or not "scan_range (nm)" in grid.keys(): grid = None
+                if not grid and "frame" in root_items.keys():
+                    input_grid = {key: value for key, value in root_items["frame"].attrs.items()}
+                    grid = self.convert_to_sct_grid(input_grid)
+                    if not "offset (nm)" in grid.keys() or not "scan_range (nm)" in grid.keys(): grid = None
+                
+                # Trying to find the measurement channels at the root level
+                for tag in ["channels", "channel_names"]:
+                    if tag in root_items.keys(): channels = main_group[tag].asstr()[:]
+                
+                # Updating attributes found at the root level
+                output_dict.update({"data": data, "grid": grid, "channels": channels})
+
+                # Read the attributes from all group. At the same time, try to find the main (Nexus) measurement group while reading the different groups.
+                for group_name, group in root_items.items():                
+                    if "NX_class" in group.attrs.keys():
+                        main_group = root_items[group_name]
+                        continue
+                    
+                    group_dict = {key: value for key, value in group.attrs.items()}
+                    output_dict.update({group_name: group_dict})
+                
+                # Fall back to recognizing group tags. If nothing works: break
+                if not main_group:
+                    recognized_tags = ["main", "main_group", "sweep", "sweep_group", "scan", "scan_group", "measurement", "measurement_group", "spectrum", "spectrum_group", "spectroscopy", "spectroscopy_group", "data", "data_group"]
+                    for group_tag in recognized_tags:
+                        if group_tag in root_items.keys():
+                            main_group = root_items[group_tag]
+                            break
+                if not main_group: return(output_dict)
+                
+                
+                
+                # If the grid was not yet found at the root level, try to find it at the main group level
+                if not grid and main_group and "grid" in main_group.keys():
+                    input_grid = {key: value for key, value in main_group["grid"].attrs.items()}
+                    grid = self.convert_to_sct_grid(input_grid)
+                    if not "scan_range (nm)" in grid.keys(): grid = None
+                if not grid and main_group and "frame" in main_group.keys():
+                    grid = {key: value for key, value in main_group["frame"].attrs.items()}
+                    if not "offset (nm)" in grid.keys() or not "scan_range (nm)" in grid.keys() or not "angle (deg)" in grid.keys(): grid = None
+
+                # If the channels weren't yet found, try to find them at the group level
+                if not channels:
+                    for tag in ["channels", "channel_names"]:
+                        if tag in main_group.keys(): channels = main_group[tag].asstr()[:]
+                output_dict.update({"channels": channels, "grid": grid})
+                
+                # Extracting the scan or spectroscopy data
+                recognized_tags = ["main", "sweep", "scan", "measurement", "spectrum", "spectroscopy", "data"]
+                for tag in recognized_tags:
+                    if tag in main_group.keys():
+                        data = main_group[tag][:]
+                        output_dict.update({"data": data})
+                        break
+                
+                shape = data.shape
+                rank = len(shape)
+                
+                match rank:
+                    case 2: # The data represents a flat image or 1D input-output sweep
+                        pass
+                    case 3: # The data represents a multi-channel dataset or 2D spectroscopy experiment
+                        for channel_index, channel_name in enumerate(channels):
+                            (channel_quantity, channel_unit, backward, error) = self.split_physical_quantity(channel_name)
+                            target_unit = "nm"
+                            match channel_unit[-1]:
+                                case "m": target_unit = "nm"
+                                case "A": target_unit = "pA"                                
+                                case "S": target_unit = "nS"
+                                case "F": target_unit = "fF"
+                                case _: target_unit = channel_unit
+                            (converted_slice, new_quantity) = self.convert_data_to_unit(data[direction_index, channel_index], channel_name, target_unit)
+                            data[direction_index, channel_index, :, :] = converted_slice
+                            channels[channel_index] = new_quantity
+                    case 4: # The data represents multiple 3D datasets, possibly one for each scan direction or spin direction
+                        for direction_index, data_slice_3D in enumerate(data):
+                            for channel_index, channel_name in enumerate(channels):
+                                (channel_quantity, channel_unit, backward, error) = self.split_physical_quantity(channel_name)
+                                target_unit = "nm"
+                                match channel_unit[-1]:
+                                    case "m": target_unit = "nm"
+                                    case "A": target_unit = "pA"                                
+                                    case "S": target_unit = "nS"
+                                    case "F": target_unit = "fF"
+                                    case _: target_unit = channel_unit
+                                (converted_slice, new_quantity) = self.convert_data_to_unit(data[direction_index, channel_index], channel_name, target_unit)
+                                data[direction_index, channel_index, :, :] = converted_slice
+                                channels[channel_index] = new_quantity
+                    case _: # I am not sure how to interpret these data
+                        pass
+                    
+                output_dict.update({"channels": channels, "data": data})
+        except Exception as e: print(f"Problem encountered while reading HDF5 file: {e}")
+        finally:
+            pass
+        return output_dict
+
+    def read_sxm(self, file_path: str) -> dict:
+        (metadata, end_pos) = self.get_sxm_header(file_path)
+
+        [pixels, lines, channels] = [metadata.get(key) for key in ["pixels", "lines", "channels"]]
+        n_channels = len(channels)
+        n_directions = 2
+
+        output_array = np.empty((n_directions, n_channels, pixels, lines), dtype = np.float32)
+        with open(file_path, "rb") as f:
+            f.seek(end_pos + 5)
+            
+            for channel_index in range(n_channels):
+                for direction in range(2):
+                    float_array = np.fromfile(f, dtype = ">f4", count = int(pixels * lines))
+                    output_array[direction, channel_index] = float_array.reshape(pixels, lines)
+        
+        output_dict = metadata | {"data": output_array}
+        return output_dict
+
+    def get_sxm_header(self, file_path: str) -> dict:
+        try:
+            (header, end_pos) = self.get_raw_sxm_header_new(file_path)
+            header_array = np.array(header.split())
+
+            nanonis_tags = [b":SCAN_RANGE:", b":SCAN_ANGLE:", b":SCAN_OFFSET:", b":REC_TIME:", b":REC_DATE:", b":SCAN_PIXELS:", b":SCAN_DIR:", b":BIAS:"]
+            sct_tags = ["scan_range (m)", "angle (deg)", "offset (m)", "start_time", "scan_date", "grid_size", "up_or_down", "V_nanonis (V)"]
+            value_lengths = [2, 1, 2, 1, 1, 2, 1, 1]
+
+            sct_dict = {}
+            for nanonis_tag, sct_tag, value_length in zip(nanonis_tags, sct_tags, value_lengths):
+                try:
+                    index = np.where(header_array == nanonis_tag)[0][0]
+                    values_b = header_array[index + 1 : index + 1 + value_length]
+                    values_num = [self.get_scientific_numbers(value.decode("utf-8"))[0] for value in values_b]
+                    if len(values_num) < 2: values_num = values_num[0]
+                    sct_dict.update({sct_tag: values_num})
+                except:
+                    pass
+
+            [pixels, lines] = [int(sct_dict.get("grid_size", [1, 1])[i]) for i in range(2)]
+            sct_dict.update({"pixels": pixels, "lines": lines})
+            grid = self.convert_to_sct_grid(sct_dict)
+            sct_dict.update({"grid": grid})
+            
+            # Channels
+            channel_data_index = np.where(header_array == b":DATA_INFO:")[0][0]
+            n_channel_attributes = 6
+            channel_data = header_array[channel_data_index + 1 + n_channel_attributes: -1]
+            n_channels = int(len(channel_data) / n_channel_attributes)
+            channel_names = []
+            for channel_index in range(n_channels):
+                quantity = channel_data[channel_index * n_channel_attributes + 1].decode("utf-8")
+                unit = f"({channel_data[channel_index * n_channel_attributes + 2].decode("utf-8")})"
+                channel_names.append(" ".join((quantity, unit)))
+            sct_dict.update({"channels": channel_names})
+        except Exception as e:
+            print(f"Error getting the SXM file header: {e}")
+        return (sct_dict, end_pos)
+
     def save_yaml(self, data, path: str) -> bool | str:
         error = False
 
@@ -122,27 +303,114 @@ class FileFunctions():
     # Misc
     def split_physical_quantity(self, text: str) -> tuple:
         error = False
-        quantity = False
-        unit = False
+        quantity = None
+        unit = None
         backward = False
-
-        pattern = r"(.+?) \((.*?)\)" # Like 'X (m)' or 'current (pA)' ...
+        first_bracket_index = None
         
         try:
-            matches = re.findall(pattern, text)
+            split_text = text.split()
+            for index, text_item in enumerate(split_text):
+                if text_item.startswith("(") | text_item.startswith("["):
+                    if not first_bracket_index: first_bracket_index = index
+                    if text_item[1:-1] in {"bwd", "backward"}: backward = True
+                    if text_item[1:-1] not in {"fwd", "forward", "bwd", "backward"}: unit = text_item[1:-1]
+            quantity = " ".join(split_text[:first_bracket_index])
 
-            if matches:
-                quantity = matches[0][0]
-                unit = matches[0][1]
-                
-                if quantity.endswith(" [bwd]"):
-                    quantity = quantity[: -6]
-                    backward = True
-                
+            return (quantity, unit, backward, error)
         except:
             error = True
         
         return (quantity, unit, backward, error)
+
+    def convert_data_to_unit(self, data: np.ndarray, quantity: str, target_unit: str) -> tuple[np.ndarray, str]:
+        output_data = data
+        output_quantity = quantity
+        input_multiplier = 1
+        target_multiplier = 1
+        
+        try:
+            (input_quantity, input_unit, backward, error) = self.split_physical_quantity(quantity)
+            
+            if len(input_unit) > 1 and input_unit[0] in {"f", "p", "n", "u", "m", "k", "M", "G"}:
+                input_prefix = input_unit[0]
+                match input_prefix:
+                    case "f": input_multiplier = 1E-15
+                    case "p": input_multiplier = 1E-12
+                    case "n": input_multiplier = 1E-9
+                    case "u": input_multiplier = 1E-6
+                    case "m": input_multiplier = 1E-3
+                    case "k": input_multiplier = 1E3
+                    case "M": input_multiplier = 1E6
+                    case "G": input_multiplier = 1E9
+                    case _: pass
+            
+            if len(target_unit) > 1 and target_unit[0] in {"f", "p", "n", "u", "m", "k", "M", "G"}:
+                target_prefix = target_unit[0]
+                match target_prefix:
+                    case "f": target_multiplier = 1E15
+                    case "p": target_multiplier = 1E12
+                    case "n": target_multiplier = 1E9
+                    case "u": target_multiplier = 1E6
+                    case "m": target_multiplier = 1E3
+                    case "k": target_multiplier = 1E-3
+                    case "M": target_multiplier = 1E-6
+                    case "G": target_multiplier = 1E-9
+                    case _: pass
+            
+            output_data = data * input_multiplier * target_multiplier
+            output_quantity = " ".join((input_quantity, f"({target_unit})"))
+        except Exception as e:
+            print(f"Error encountered while trying to convert data ({quantity}) to unit {target_unit}: {e}")
+        return (output_data, output_quantity)
+
+    def convert_to_sct_grid(self, grid: dict) -> dict:
+        w_nm = None
+        h_nm = None
+        x_nm = None
+        y_nm = None
+
+        output_dict = {}
+        for key, value in grid.items():
+            (quantity, unit, backward, error) = self.split_physical_quantity(key)
+            if not quantity or not unit: continue
+
+            match quantity.lower():
+                case "translation" | "center" | "offset":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    output_dict.update({"offset (nm)": array})        
+                case "size" | "area" | "range" | "scan_range" | "scan range":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    output_dict.update({"scan_range (nm)": array})
+                
+                case "w" | "width" | "range_x" | "x_range" | "x range":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    w_nm = array
+                case "h" | "height" | "range_y" | "y_range" | "y range":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    h_nm = array
+
+                case "x":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    x_nm = array
+                case "y":
+                    (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
+                    y_nm = array
+                    
+                case "angle":
+                    if unit == "rad": output_value = np.rad2deg(value)
+                    else: output_value = value
+                    output_dict.update({"angle (deg)": output_value})
+                case _:
+                    pass
+
+            if not "offset (nm)" in output_dict.keys() and x_nm and y_nm: output_dict.update({"offset (nm)": np.array([x_nm, y_nm], dtype = np.float32)})
+            if not "scan_range (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"scan_range (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
+            
+            if not "angle (deg)" in output_dict.keys(): output_dict.update({"angle (deg)": 0.})
+            if "pixels" in grid.keys(): output_dict.update({"pixels": grid["pixels"]})
+            if "lines" in grid.keys(): output_dict.update({"lines": grid["lines"]})
+        return output_dict
 
     def get_scientific_numbers(self, text: str) -> list:
         pattern = r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
@@ -322,7 +590,28 @@ class FileFunctions():
 
 
 
-    # Files dict (metadata) logic
+    # Raw file functions
+    def get_raw_sxm_header_new(self, file_path: str) -> tuple[bytes, int]:
+        if not os.path.isfile(file_path):
+            print("Invalid file path provided to get_raw_sxm_header")
+            return []
+        
+        chunk_size = 256
+        buffer = b""
+        tag = b":SCANIT_END:"
+
+        with open(file_path, "rb") as f:
+            while chunk := f.read(chunk_size):
+                buffer += chunk
+                tag_index = buffer.find(tag)
+                
+                if tag_index != -1:
+                    end_pos = tag_index + len(tag)
+                    f.seek(end_pos - len(buffer), 1)
+                    header = buffer[:end_pos]
+                    break
+        return (header, end_pos)
+
     def create_empty_files_dict(self, directory_name: str) -> tuple[dict, bool | str]:
         error = False
         files_dict = {"dict_name": "files_dict"} # Self reference to facilitate the app recognizing what kind of dictionary this is
