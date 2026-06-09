@@ -214,7 +214,6 @@ class SCTWidgets:
             self.mapAxes(x_axis = x_axis, y_axis = y_axis)
             #self.setFrame(frame)
             self.showImage(color = self.color)
-            #self.applyFrame()
 
 
 
@@ -239,7 +238,6 @@ class SCTWidgets:
             
             match self.rank:
                 case 2: # Flat image / sweep
-                    self.setAxisData("")
                     self.pixels = shape[0]
                     self.lines = shape[1]
                 case 3: # x, y and channel axes or 2D spectroscopy
@@ -306,52 +304,6 @@ class SCTWidgets:
             self.slice_indices[axis] = index
             return
 
-        def setDirections(self, directions: list | np.ndarray) -> None:
-            if not isinstance(directions, list | np.ndarray): self.directions = np.array(["forward"])
-            else: self.directions = np.array(directions)
-            self.setDirection(0)            
-            return
-
-        def setDirection(self, direction: str | int) -> None:
-            if isinstance(direction, str):
-                try:
-                    direction_index = np.where(self.directions == direction)[0][0]
-                    self.direction_index = direction_index
-                except:
-                    return
-            elif isinstance(direction, int): self.direction_index = direction % len(self.directions)
-            self.direction = self.directions[self.direction_index]
-            return
-
-        def setChannels(self, channels: list | np.ndarray) -> None:
-            if not isinstance(channels, list | np.ndarray): self.channel_names = ["channel 0"]
-            else: self.channel_names = channels
-            self.setChannel(0)
-            return
-
-        def setChannel(self, channel: str | int) -> None:
-            if isinstance(channel, str):
-                try:
-                    channel_index = np.where(self.channels == channel)[0][0]
-                    self.channel_index = channel_index
-                except:
-                    return
-            elif isinstance(channel, int): self.channel_index = channel % len(self.channel_names)
-            self.channel_name = self.channel_names[self.channel_index]
-            return
-
-        def setXIndex(self, index: int) -> None:
-            self.x_index = 0 # Work in progress
-            return
-
-        def setYIndex(self, index: int) -> None:
-            self.y_index = 0 # Work in progress
-            return
-
-        def setAxis(self, axis: int) -> None:
-            if isinstance(axis, int) and -1 < axis < self.rank - 1: self.axis = axis
-            return
-
         def showColorImage(self) -> None:
             n_color_channels = min(self.n_channels, 4)
             try:
@@ -367,13 +319,14 @@ class SCTWidgets:
                 print(f"Problem encountered while calling ArrayItem.showColorImage: {e}")
             return
 
-        def showImage(self, color: bool = False) -> None:
+        def getSlice(self, color: bool = False) -> None:
             try:
                 match self.rank:
                     case 2:
                         image_slice = self.array
                         if [self.x_axis, self.y_axis] == [1, 0]: image_slice = image_slice.transpose()
                     case 3:
+                        image_slice = self.array[0]
                         slice_axis = int(list({0, 1, 2} - {self.x_axis, self.y_axis})[0]) # Slice axis is the complement of all axes and the x and y axis
                         slice_list = [slice(None)] * self.array.ndim
                         slice_list[slice_axis] = self.slice_indices[slice_axis]
@@ -390,23 +343,34 @@ class SCTWidgets:
                             
                             if {self.x_axis, self.y_axis} == {1, 2}:
                                 image_slice = self.array[:n_color_channels, :, :]
-                                if [self.x_axis, self.y_axis] == [2, 1]: image_slice = image_slice.transpose()                        
-                        
+                                if [self.x_axis, self.y_axis] == [2, 1]: image_slice = image_slice.transpose()
                         else:
                             image_slice = self.array[tuple(slice_list)]
-                            if [self.x_axis, self.y_axis] == [1, 0]: image_slice = image_slice.transpose()
-                            if [self.x_axis, self.y_axis] == [2, 0]: image_slice = image_slice.transpose()
-                            if [self.x_axis, self.y_axis] == [2, 1]: image_slice = image_slice.transpose()
-                        
-                        if not isinstance(image_slice, np.ndarray): image_slice = self.array[0]
+                            if [self.x_axis, self.y_axis] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
+                            #if [self.x_axis, self.y_axis] == [1, 0]: image_slice = image_slice.transpose()
+                            #if [self.x_axis, self.y_axis] == [2, 0]: image_slice = image_slice.transpose()
+                            #if [self.x_axis, self.y_axis] == [2, 1]: image_slice = image_slice.transpose()
                     case 4:
                         image_slice = self.array[0, 0]
+                        slice_axes = list({0, 1, 2, 3} - {self.x_axis, self.y_axis}) # Slice axis is the complement of all axes and the x and y axis
+                        slice_list = [slice(None)] * self.array.ndim
+                        for slice_axis in slice_axes: slice_list[slice_axis] = self.slice_indices[slice_axis]
+                        
+                        image_slice = self.array[tuple(slice_list)]
+                        if [self.x_axis, self.y_axis] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
                 
-                [self.pixels, self.lines] = image_slice.shape
-                self.setImage(image_slice)
-                #self.applyFrame()
             except Exception as e:
                 print(f"Problem encountered while calling ArrayItem.showImage: {e}")
+            try:
+                if color: (self.pixels, self.lines, _) = image_slice.shape
+                else: (self.pixels, self.lines) = image_slice.shape
+            except Exception as e:
+                print(f"Problem encountered setting the image: {e}")
+            return image_slice
+
+        def showImage(self, color: bool = False) -> None:
+            image_slice = self.getSlice(color = color)
+            self.setImage(image_slice)
             return
 
         def setRange(self, width: float = 1, height: float = 1) -> None:

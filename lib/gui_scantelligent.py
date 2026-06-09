@@ -371,6 +371,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "experiment": CB(tooltip = "Select an experiment"),
             "direction": CB(tooltip = "Select a scan direction / pattern"),
             "axis": CB(tooltip = "Select the view axis", items = ["(x, y)", "(x, channel)", "(channel, y)"]),
+            "x_axis": CB(tooltip = "Select which data axis to map to the image x axis"),
+            "y_axis": CB(tooltip = "Select which data axis to map to the image y axis"),
             "slice": CB(tooltip = "Select the slice"),
             
             "controller": CB(tooltip = "Name of the active z controller"),
@@ -663,7 +665,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
         
         # Active scan
-        self.active_scan = SCTWidgets.ArrayItem(name = "active_scan", color = False)
+        self.active_item = SCTWidgets.ArrayItem(name = "active_scan", color = False)
         
         return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0, path_pdi)
 
@@ -927,11 +929,11 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["limits"].addWidget(self.limits_widget)
         self.limits_widget.hide()
         
+        
+        
         # Image_view
         layouts["image_view_controls"].addWidget(buttons["auto_paste"])
-                
-        #[layouts["navigation"].addWidget(comboboxes[name], 2 + 2 * index) for index, name in enumerate(["axis", "slice"])]
-        layouts["navigation"].addWidget(self.comboboxes["scan_items"])
+        [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["scan_items", "x_axis", "y_axis"]]
         layouts["navigation"].addWidget(self.buttons["slice"])
         layouts["navigation"].addWidget(self.comboboxes["slice"])
         [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["direction", "fit_to_frame", "fit_to_range", "frame", "path"]]        

@@ -22,12 +22,17 @@ class FileFunctions():
         
         output_dict = {"file_path": file_path}
         grid = None
-        data = None
+        array = None
         main_group = None
         channels = None
+        axes_names = []
+        axis_data = {}
 
         try:
             with h5py.File(file_path, "r") as f:
+                """
+                Parsing the root
+                """
                 # Write root-level attributes to output file
                 root_attrs = {key: value for key, value in f.attrs.items()}
                 output_dict.update(root_attrs)
@@ -48,9 +53,6 @@ class FileFunctions():
                 # Trying to find the measurement channels at the root level
                 for tag in ["channels", "channel_names"]:
                     if tag in root_items.keys(): channels = main_group[tag].asstr()[:]
-                
-                # Updating attributes found at the root level
-                output_dict.update({"data": data, "grid": grid, "channels": channels})
 
                 # Read the attributes from all group. At the same time, try to find the main (Nexus) measurement group while reading the different groups.
                 for group_name, group in root_items.items():                
@@ -72,6 +74,9 @@ class FileFunctions():
                 
                 
                 
+                """
+                Parsing the main group
+                """
                 # If the grid was not yet found at the root level, try to find it at the main group level
                 if not grid and main_group and "grid" in main_group.keys():
                     input_grid = {key: value for key, value in main_group["grid"].attrs.items()}
@@ -80,30 +85,59 @@ class FileFunctions():
                 if not grid and main_group and "frame" in main_group.keys():
                     grid = {key: value for key, value in main_group["frame"].attrs.items()}
                     if not "offset (nm)" in grid.keys() or not "scan_range (nm)" in grid.keys() or not "angle (deg)" in grid.keys(): grid = None
+                if isinstance(grid, dict): output_dict.update({"grid": grid})
 
-                # If the channels weren't yet found, try to find them at the group level
-                if not channels:
-                    for tag in ["channels", "channel_names"]:
-                        if tag in main_group.keys(): channels = main_group[tag].asstr()[:]
-                output_dict.update({"channels": channels, "grid": grid})
+                # Retrieve the signal and axes
+                if "signal" in main_group.attrs.keys():
+                    signal_name = main_group.attrs.get("signal", "")
+                    if isinstance(signal_name, bytes): signal_name = signal_name.decode("utf-8")
+                                    
+                    array = main_group[signal_name][:]
+                    output_dict.update({"signal": signal_name, "array": array})
+
+                if "axes" in main_group.attrs.keys():
+                    axes_attr = main_group.attrs.get("axes")
+                    if isinstance(axes_attr, bytes): axes_names.append(axes_attr.decode("utf-8"))
+                    elif isinstance(axes_attr, (list, tuple)): axes_names = [ax.decode("utf-8") if isinstance(ax, bytes) else ax for ax in axes_attr]
+                    elif hasattr(axes_attr, "tolist"): axes_names = [ax.decode("utf-8") if isinstance(ax, bytes) else ax for ax in axes_attr.tolist()]
+
+                    # Try to swap out indices of axes for names wherever possible
+                    for axis_index, axis_name in enumerate(axes_names): # Loop over axis names
+                        split_name = axis_name.split()
+                        if not "indices" in split_name[-1]:
+                            axis_data.update({axis_name: main_group[axis_name][:]})
+                            continue
+                        
+                        quantity = " ".join(split_name[:-1]) # Discard 'indices' from the name
+                        for new_name in main_group.keys(): # Loop over main group items and find data whose name matches the quantity without 'indices'
+                            if new_name == axis_name or not quantity in new_name: continue
+                            
+                            new_axis_data = main_group[new_name].asstr()[:]
+                            axis_data.update({new_name: new_axis_data})
+                            axes_names[axis_index] = new_name
                 
-                # Extracting the scan or spectroscopy data
-                recognized_tags = ["main", "sweep", "scan", "measurement", "spectrum", "spectroscopy", "data"]
-                for tag in recognized_tags:
-                    if tag in main_group.keys():
-                        data = main_group[tag][:]
-                        output_dict.update({"data": data})
-                        break
+                    output_dict.update({"axes": axes_names, "axes_data": axis_data})
+
+
+
+                # If Nexus parsing failed: extract the scan or spectroscopy data
+                if not isinstance(array, np.ndarray):
+                    recognized_tags = ["main", "sweep", "scan", "measurement", "spectrum", "spectroscopy", "data", "array"]
+                    for tag in recognized_tags:
+                        if tag in main_group.keys():
+                            array = main_group[tag][:]
+                            output_dict.update({"array": array})
+                            break
                 
-                shape = data.shape
+                shape = array.shape
                 rank = len(shape)
-                
+                """
                 match rank:
                     case 2: # The data represents a flat image or 1D input-output sweep
                         pass
                     case 3: # The data represents a multi-channel dataset or 2D spectroscopy experiment
                         for channel_index, channel_name in enumerate(channels):
-                            (channel_quantity, channel_unit, backward, error) = self.split_physical_quantity(channel_name)
+                            (channel_quantity, channel_unit, backward, error) = file_functions.split_physical_quantity(channel_name)
                             target_unit = "nm"
                             match channel_unit[-1]:
                                 case "m": target_unit = "nm"
@@ -111,13 +145,13 @@ class FileFunctions():
                                 case "S": target_unit = "nS"
                                 case "F": target_unit = "fF"
                                 case _: target_unit = channel_unit
-                            (converted_slice, new_quantity) = self.convert_data_to_unit(data[direction_index, channel_index], channel_name, target_unit)
+                            (converted_slice, new_quantity) = file_functions.convert_data_to_unit(data[direction_index, channel_index], channel_name, target_unit)
                             data[direction_index, channel_index, :, :] = converted_slice
                             channels[channel_index] = new_quantity
                     case 4: # The data represents multiple 3D datasets, possibly one for each scan direction or spin direction
                         for direction_index, data_slice_3D in enumerate(data):
                             for channel_index, channel_name in enumerate(channels):
-                                (channel_quantity, channel_unit, backward, error) = self.split_physical_quantity(channel_name)
+                                (channel_quantity, channel_unit, backward, error) = file_functions.split_physical_quantity(channel_name)
                                 target_unit = "nm"
                                 match channel_unit[-1]:
                                     case "m": target_unit = "nm"
@@ -125,13 +159,12 @@ class FileFunctions():
                                     case "S": target_unit = "nS"
                                     case "F": target_unit = "fF"
                                     case _: target_unit = channel_unit
-                                (converted_slice, new_quantity) = self.convert_data_to_unit(data[direction_index, channel_index], channel_name, target_unit)
+                                (converted_slice, new_quantity) = file_functions.convert_data_to_unit(data[direction_index, channel_index], channel_name, target_unit)
                                 data[direction_index, channel_index, :, :] = converted_slice
                                 channels[channel_index] = new_quantity
                     case _: # I am not sure how to interpret these data
                         pass
-                    
-                output_dict.update({"channels": channels, "data": data})
+                """
         except Exception as e: print(f"Problem encountered while reading HDF5 file: {e}")
         finally:
             pass

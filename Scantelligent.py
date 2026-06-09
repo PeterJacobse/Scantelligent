@@ -121,6 +121,8 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
         self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda cbb = self.gui.comboboxes["graph_x_axis"].currentIndex(): self.gui.grapher.setXAxis(cbb - 1))
         self.gui.comboboxes["projection"].currentIndexChanged.connect(self.update_processing_flags)
+        self.gui.comboboxes["x_axis"].currentIndexChanged.connect(self.slice_axes_changed)
+        self.gui.comboboxes["y_axis"].currentIndexChanged.connect(self.slice_axes_changed)
         
         # Checkboxes and button groups
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
@@ -128,7 +130,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.button_groups["channels"].clicked.connect(self.update_pdi_visibility)
         
         # ImageView
-        self.gui.image_view.scan_file_signal.connect(self.open_scan_file)
+        self.gui.image_view.scan_file_signal.connect(self.open_file)
         [self.gui.groupboxes[name].clicked.connect(lambda name0 = name: self.focus_on_groupbox(name0)) for name in self.gui.groupboxes.keys()]
         
         
@@ -451,37 +453,39 @@ class Scantelligent(QtCore.QObject):
         return
 
     @QtCore.pyqtSlot(str)
-    def open_scan_file(self, file_path: str) -> None:
+    def open_file(self, file_path: str) -> None:
         if hasattr(self, "experiment_thread") and self.experiment_thread is not None:
             if not sip.isdeleted(self.experiment_thread):
                 self.logprint(f"Cannot load files while an experiment is active", message_type = "error")
                 return
         
         self.toggle_view("nanonis")
-        scan = None
+        array = None
         channels = None
         grid = None
+        
         match os.path.splitext(file_path)[1]:
             case ".hdf5" | ".h5":
                 try:
                     file_data = self.file_functions.read_hdf5(file_path)
-                    [scan, channels, grid] = [file_data.get(key, None) for key in ["data", "channels", "grid"]]
+                    [array, grid, axes] = [file_data.get(key, None) for key in ["array", "grid", "axes"]]
                 except Exception as e:
                     self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
             case ".sxm":
                 try:
                     file_data = self.file_functions.read_sxm(file_path)
-                    [scan, channels, grid] = [file_data.get(key, None) for key in ["data", "channels", "grid"]]
+                    [array, channels, grid] = [file_data.get(key, None) for key in ["array", "channels", "grid"]]
                 except Exception as e:
                     self.logprint(f"Could not open this SXM file: {e}", message_type = "error")
         
-        if not isinstance(scan, np.ndarray) or not isinstance(channels, np.ndarray | list) or not isinstance(grid, dict):
+        if not isinstance(array, np.ndarray):
             self.logprint(f"Could not retrieve data from this file", message_type = "error")
             return
         
         try:
+            """
             scan_item = SCTWidgets.ScanItem()
-            scan_item.setScan(scan)
+            scan_item.setScan(array)
             if isinstance(channels, np.ndarray):
                 channel_dict = {channels[i]: i for i in range(len(channels))}
                 self.parameters.receive({"dict_name": "scan_metadata", "channel_dict": channel_dict})
@@ -496,6 +500,19 @@ class Scantelligent(QtCore.QObject):
             self.update_processing_flags()
             
             self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index", 0))
+            """
+            
+            if isinstance(axes, list | np.ndarray):
+                self.gui.comboboxes["x_axis"].renewItems(axes)
+                #[self.gui.comboboxes("x_axis").selectItem(tag) for tag in ["x", "x (nm)", "x_axis", "x_axis (nm)", "x-axis", "x-axis (nm)", "x axis", "x axis (nm)"] if tag in axes]
+                self.gui.comboboxes["y_axis"].renewItems(axes)
+                if self.gui.comboboxes["y_axis"].currentIndex() == self.gui.comboboxes["x_axis"].currentIndex():
+                    self.gui.comboboxes["y_axis"].toggleIndex()
+
+            array_item = SCTWidgets.ArrayItem(name = "loaded_item", array = array)
+            self.gui.active_item = array_item
+            self.gui.image_view.setItem(self.gui.active_item)
+            self.logprint(f"I found the following axes: {axes}")
             self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
         except Exception as e:
             self.logprint(f"Error trying to open this file: {e}", message_type = "error")
@@ -947,10 +964,26 @@ class Scantelligent(QtCore.QObject):
 
 
     # Read the GUI to set processing flags for image/spectrum processing
+    def slice_axes_changed(self) -> None:
+        x_axis = self.gui.comboboxes["x_axis"].currentIndex()
+        if self.gui.comboboxes["y_axis"].currentIndex() == self.gui.comboboxes["x_axis"].currentIndex(): self.gui.comboboxes["y_axis"].toggleIndex()
+        y_axis = self.gui.comboboxes["y_axis"].currentIndex()
+        
+        print(f"{self.gui.active_item.rank}")
+        
+        print(f"While the x axis is set to {x_axis} and the y_axis is set to {y_axis}, the following axes are free to slice over")
+        self.update_processing_flags()
+        return
+    
     def update_processing_flags(self) -> None:
         flags = {}
 
         try:
+            # Dataset axes and slicing
+            x_axis = self.gui.comboboxes["x_axis"].currentIndex()
+            y_axis = self.gui.comboboxes["y_axis"].currentIndex()
+            flags.update({"x_axis": x_axis, "y_axis": y_axis})
+            
             # Background
             bg_method = self.gui.button_groups["background"].getSelectedWidget()
             flags.update({"background": f"{bg_method[3:]}", "rotation": True, "offset": True})        
@@ -991,11 +1024,12 @@ class Scantelligent(QtCore.QObject):
         
         if self.gui.buttons["view"].state_name == "nanonis":
             try:
-                self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index"))
-                self.gui.scan_item.setDirection(self.data.scan_processing_flags.get("backward"))
-                image = self.gui.scan_item.getImage()
+                [x_axis, y_axis] = [self.data.scan_processing_flags.get(key) for key in ["x_axis", "y_axis"]]
+                print(f"Setting the x axis to {x_axis} and y axis to {y_axis}")
+                self.gui.active_item.mapAxes(x_axis = x_axis, y_axis = y_axis)
+                image = self.gui.active_item.getSlice()
                 (image, statistics, limits, error) = self.data.process_scan(image)
-                self.gui.scan_item.setImage(image)
+                self.gui.active_item.setImage(image)
                 
             except Exception as e:
                 self.logprint(f"{e}")
