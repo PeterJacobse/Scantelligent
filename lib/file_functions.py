@@ -21,10 +21,9 @@ class FileFunctions():
             return {}
         
         output_dict = {"file_path": file_path}
-        grid = None
+        frame = None
         array = None
         main_group = None
-        channels = None
         axes_names = []
         axis_data = {}
 
@@ -40,21 +39,19 @@ class FileFunctions():
                 # Open groups at the root level
                 root_items = {key: value for key, value in f.items()}
                 
-                # Trying to find the grid or frame at the root level
-                if "grid" in root_items.keys():
-                    input_grid = {key: value for key, value in root_items["grid"].attrs.items()}
-                    grid = self.convert_to_sct_grid(input_grid)
-                    if not "offset (nm)" in grid.keys() or not "scan_range (nm)" in grid.keys(): grid = None
-                if not grid and "frame" in root_items.keys():
-                    input_grid = {key: value for key, value in root_items["frame"].attrs.items()}
-                    grid = self.convert_to_sct_grid(input_grid)
-                    if not "offset (nm)" in grid.keys() or not "scan_range (nm)" in grid.keys(): grid = None
+                # Trying to find the frame (or grid) at the root level
+                for obj in ["frame", "grid"]:
+                    if not obj in root_items.keys(): continue
+                    
+                    input_frame = {key: value for key, value in root_items[obj].attrs.items()}
+                    frame = self.convert_to_sct_frame(input_frame)
+                    if not "scan_range (nm)" in frame.keys(): frame = None
                 
                 # Trying to find the measurement channels at the root level
                 for tag in ["channels", "channel_names"]:
                     if tag in root_items.keys(): channels = main_group[tag].asstr()[:]
 
-                # Read the attributes from all group. At the same time, try to find the main (Nexus) measurement group while reading the different groups.
+                # Read the attributes from all groups. At the same time, try to find the main (Nexus) measurement group while reading the different groups.
                 for group_name, group in root_items.items():                
                     if "NX_class" in group.attrs.keys():
                         main_group = root_items[group_name]
@@ -77,15 +74,15 @@ class FileFunctions():
                 """
                 Parsing the main group
                 """
-                # If the grid was not yet found at the root level, try to find it at the main group level
-                if not grid and main_group and "grid" in main_group.keys():
-                    input_grid = {key: value for key, value in main_group["grid"].attrs.items()}
-                    grid = self.convert_to_sct_grid(input_grid)
-                    if not "scan_range (nm)" in grid.keys(): grid = None
-                if not grid and main_group and "frame" in main_group.keys():
-                    grid = {key: value for key, value in main_group["frame"].attrs.items()}
-                    if not "offset (nm)" in grid.keys() or not "scan_range (nm)" in grid.keys() or not "angle (deg)" in grid.keys(): grid = None
-                if isinstance(grid, dict): output_dict.update({"grid": grid})
+                # If the frame was not yet found at the root level, try to find it at the main group level
+                if not frame and main_group:
+                    for obj in ["frame", "grid"]:
+                        if not obj in main_group.keys(): continue
+                        
+                        input_frame = {key: value for key, value in main_group[obj].attrs.items()}
+                        frame = self.convert_to_sct_frame(input_frame)
+                        if not "scan_range (nm)" in frame.keys(): frame = None
+                if isinstance(frame, dict): output_dict.update({"frame": frame})
 
                 # Retrieve the signal and axes
                 if "signal" in main_group.attrs.keys():
@@ -399,14 +396,14 @@ class FileFunctions():
             print(f"Error encountered while trying to convert data ({quantity}) to unit {target_unit}: {e}")
         return (output_data, output_quantity)
 
-    def convert_to_sct_grid(self, grid: dict) -> dict:
+    def convert_to_sct_frame(self, frame: dict) -> dict:
         w_nm = None
         h_nm = None
         x_nm = None
         y_nm = None
 
         output_dict = {}
-        for key, value in grid.items():
+        for key, value in frame.items():
             (quantity, unit, backward, error) = self.split_physical_quantity(key)
             if not quantity or not unit: continue
 
@@ -443,8 +440,8 @@ class FileFunctions():
             if not "scan_range (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"scan_range (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
             
             if not "angle (deg)" in output_dict.keys(): output_dict.update({"angle (deg)": 0.})
-            if "pixels" in grid.keys(): output_dict.update({"pixels": grid["pixels"]})
-            if "lines" in grid.keys(): output_dict.update({"lines": grid["lines"]})
+            if "pixels" in frame.keys(): output_dict.update({"pixels": frame["pixels"]})
+            if "lines" in frame.keys(): output_dict.update({"lines": frame["lines"]})
         return output_dict
 
     def get_scientific_numbers(self, text: str) -> list:

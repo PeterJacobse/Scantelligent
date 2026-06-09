@@ -92,7 +92,7 @@ class Scantelligent(QtCore.QObject):
                         "approach": self.start_auto_approach, "approach_2": self.start_auto_approach, "withdraw": self.toggle_withdraw, "withdraw_2": self.toggle_withdraw,
                         
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
-                        "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
+                        "rot_trans": self.rot_trans_changed, "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         "frame": self.toggle_items, "path": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
                         
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
@@ -113,16 +113,14 @@ class Scantelligent(QtCore.QObject):
         self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.gui.grapher.setBufferSize(buf_size))
         
         # Comboboxes
-        self.gui.comboboxes["slice"].currentIndexChanged.connect(self.update_processing_flags)
         experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
         self.experiments = [experiment for experiment in experiments if not experiment in ["spectroscopy", "auto_approach"]]
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))
         self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda cbb = self.gui.comboboxes["graph_x_axis"].currentIndex(): self.gui.grapher.setXAxis(cbb - 1))
+        [self.gui.comboboxes[name].currentIndexChanged.connect(self.slice_axes_changed) for name in ["x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
         self.gui.comboboxes["projection"].currentIndexChanged.connect(self.update_processing_flags)
-        self.gui.comboboxes["x_axis"].currentIndexChanged.connect(self.slice_axes_changed)
-        self.gui.comboboxes["y_axis"].currentIndexChanged.connect(self.slice_axes_changed)
         
         # Checkboxes and button groups
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
@@ -453,70 +451,12 @@ class Scantelligent(QtCore.QObject):
         return
 
     @QtCore.pyqtSlot(str)
-    def open_file(self, file_path: str) -> None:
+    def receive_fileopen_request(self, file_path: str) -> None:
         if hasattr(self, "experiment_thread") and self.experiment_thread is not None:
             if not sip.isdeleted(self.experiment_thread):
                 self.logprint(f"Cannot load files while an experiment is active", message_type = "error")
                 return
-        
-        self.toggle_view("nanonis")
-        array = None
-        channels = None
-        grid = None
-        
-        match os.path.splitext(file_path)[1]:
-            case ".hdf5" | ".h5":
-                try:
-                    file_data = self.file_functions.read_hdf5(file_path)
-                    [array, grid, axes] = [file_data.get(key, None) for key in ["array", "grid", "axes"]]
-                except Exception as e:
-                    self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
-            case ".sxm":
-                try:
-                    file_data = self.file_functions.read_sxm(file_path)
-                    [array, channels, grid] = [file_data.get(key, None) for key in ["array", "channels", "grid"]]
-                except Exception as e:
-                    self.logprint(f"Could not open this SXM file: {e}", message_type = "error")
-        
-        if not isinstance(array, np.ndarray):
-            self.logprint(f"Could not retrieve data from this file", message_type = "error")
-            return
-        
-        try:
-            """
-            scan_item = SCTWidgets.ScanItem()
-            scan_item.setScan(array)
-            if isinstance(channels, np.ndarray):
-                channel_dict = {channels[i]: i for i in range(len(channels))}
-                self.parameters.receive({"dict_name": "scan_metadata", "channel_dict": channel_dict})
-                print("Setting channels")
-                scan_item.setChannels(channels)
-            
-            self.gui.image_view.addItem(scan_item)
-            self.gui.image_view.imageItem = scan_item
-            self.gui.scan_item = self.gui.image_view.getImageItem()
-            self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
-            self.nanonis.grid_update(grid) # This calls setGrid on the new scan_item
-            self.update_processing_flags()
-            
-            self.gui.scan_item.setChannel(self.data.scan_processing_flags.get("channel_index", 0))
-            """
-            
-            if isinstance(axes, list | np.ndarray):
-                self.gui.comboboxes["x_axis"].renewItems(axes)
-                #[self.gui.comboboxes("x_axis").selectItem(tag) for tag in ["x", "x (nm)", "x_axis", "x_axis (nm)", "x-axis", "x-axis (nm)", "x axis", "x axis (nm)"] if tag in axes]
-                self.gui.comboboxes["y_axis"].renewItems(axes)
-                if self.gui.comboboxes["y_axis"].currentIndex() == self.gui.comboboxes["x_axis"].currentIndex():
-                    self.gui.comboboxes["y_axis"].toggleIndex()
-
-            array_item = SCTWidgets.ArrayItem(name = "loaded_item", array = array)
-            self.gui.active_item = array_item
-            self.gui.image_view.setItem(self.gui.active_item)
-            self.logprint(f"I found the following axes: {axes}")
-            self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
-        except Exception as e:
-            self.logprint(f"Error trying to open this file: {e}", message_type = "error")
-        return
+        self.open_file(file_path)
 
     @QtCore.pyqtSlot(QtGui.QKeyEvent)
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
@@ -739,6 +679,70 @@ class Scantelligent(QtCore.QObject):
         else:
             self.logprint("Error. Scanalyzer path unknown.", message_type = "error")
         return
+    
+    def open_file(self, file_path: str = ""):
+        if not os.path.isfile(file_path):
+            self.logprint(f"Cannot open non-existing file {file_path}", message_type = "error")
+            return
+        
+        self.toggle_view("nanonis")
+        array = None
+        grid = None
+        
+        match os.path.splitext(file_path)[1]:
+            case ".hdf5" | ".h5":
+                try:
+                    file_data = self.file_functions.read_hdf5(file_path)
+                    [array, frame, axes, axes_data] = [file_data.get(key, None) for key in ["array", "frame", "axes", "axes_data"]]
+                except Exception as e:
+                    self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
+            case ".sxm":
+                try:
+                    file_data = self.file_functions.read_sxm(file_path)
+                    [array, frame, channels] = [file_data.get(key, None) for key in ["array", "frame", "channels"]]
+                except Exception as e:
+                    self.logprint(f"Could not open this SXM file: {e}", message_type = "error")
+        
+        if not isinstance(array, np.ndarray):
+            self.logprint(f"Could not retrieve data from this file", message_type = "error")
+            return
+        
+        try:
+            print(f"{frame = }")
+            array_item = SCTWidgets.ArrayItem(name = "loaded_item", array = array, frame = frame) # Create the ArrayItem object
+            
+            x_axis = None
+            y_axis = None
+            previous_rank = self.gui.comboboxes["x_axis"].count() # Record the initial state of the comboboxes. The previous rank is equal to the number of axis labels currently present in the combobox
+            previous_x_index = self.gui.comboboxes["x_axis"].currentIndex()
+            previous_y_index = self.gui.comboboxes["y_axis"].currentIndex()
+            
+            if isinstance(axes, list | np.ndarray):
+                self.gui.comboboxes["x_axis"].renewItems(axes) # Add the names of the various array axes to the x and y axes comboboxes
+                self.gui.comboboxes["y_axis"].renewItems(axes)
+                
+                for axis_index, axis_name in enumerate(axes): # Attach the axis data (x values, channel names, etc.) to the various axes of the ArrayItem
+                    if axis_name in axes_data: array_item.setAxisData(axis_index, axis_name, labels = axes_data[axis_name])
+                    else: array_item.setAxisData(axis_index, axis_name)
+                
+                if previous_rank < 2: # If the combobox previously held no items, attempt to default to mapping the image x axis to the array x axis
+                    [self.gui.comboboxes["x_axis"].selectItem(tag) for tag in axes if tag.lower() in ["x", "x (nm)", "x_axis", "x_axis (nm)", "x-axis", "x-axis (nm)", "x axis", "x axis (nm)", "x_values", "x_values (nm)"]]
+                    [self.gui.comboboxes["y_axis"].selectItem(tag) for tag in axes if tag.lower() in ["y", "y (nm)", "y_axis", "y_axis (nm)", "y-axis", "y-axis (nm)", "y axis", "y axis (nm)", "y_values", "y_values (nm)"]]
+                # Toggle the y axis to the next index if it is the same as the x axis
+                if self.gui.comboboxes["y_axis"].currentIndex() == self.gui.comboboxes["x_axis"].currentIndex(): self.gui.comboboxes["y_axis"].toggleIndex()
+                if not previous_rank < 1: # Attempt to reset the comboboxes to the same items if there was a previous data array
+                    self.gui.comboboxes["x_axis"].selectItem(previous_x_index)
+                    self.gui.comboboxes["y_axis"].selectItem(previous_y_index)
+            
+            # Activating the ArrayItem and passing it to ImageView
+            self.gui.active_item = array_item
+            self.gui.image_view.setItem(self.gui.active_item)
+            self.slice_axes_changed()
+            
+            self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
+        except Exception as e:
+            self.logprint(f"Error trying to open this file: {e}", message_type = "error")
+        return
 
     def open_session_folder(self) -> None:
         if "session_path" in list(self.paths.keys()):
@@ -851,7 +855,6 @@ class Scantelligent(QtCore.QObject):
 
         # Skip through view modes if hardware components are missing
         if new_view == "camera" and not hasattr(self, "camera"): new_view = "nanonis"
-        if new_view == "nanonis" and not hasattr(self, "nanonis"): new_view = "graph"
         
         # Clean up old attributes and processes
         if hasattr(self, "camera_thread"):
@@ -903,7 +906,8 @@ class Scantelligent(QtCore.QObject):
                 self.draw_old_items()
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target, self.gui.path_pdi]]
                 self.gui.path_pdi.setZValue(10)
-                self.nanonis.hardware_update()
+                try: self.nanonis.hardware_update()
+                except: pass
                 self.set_view_range("full")
             
             case "graph":
@@ -963,18 +967,61 @@ class Scantelligent(QtCore.QObject):
 
 
 
-    # Read the GUI to set processing flags for image/spectrum processing
+    # Array slicing and image processing operations
     def slice_axes_changed(self) -> None:
-        x_axis = self.gui.comboboxes["x_axis"].currentIndex()
-        if self.gui.comboboxes["y_axis"].currentIndex() == self.gui.comboboxes["x_axis"].currentIndex(): self.gui.comboboxes["y_axis"].toggleIndex()
-        y_axis = self.gui.comboboxes["y_axis"].currentIndex()
+        if not hasattr(self.gui, "active_item"): return
+        try:
+            # Retrieve the array x and y axes from the comboboxes. If they describe the same axis, toggle the y combobox
+            x_axis = self.gui.comboboxes["x_axis"].currentText()
+            if self.gui.comboboxes["y_axis"].currentText() == x_axis: self.gui.comboboxes["y_axis"].toggleIndex()
+            y_axis = self.gui.comboboxes["y_axis"].currentText()
+            
+            # 1. Mapping the axes
+            self.gui.active_item.mapAxes(x_axis = x_axis, y_axis = y_axis)
+            
+            # Retrieve the remaining axes and populate the slice comboboxes with the corresponding axis data
+            axes = self.gui.active_item.getAxes()
+
+            remaining_axes = sorted(set(axes) - {x_axis, y_axis})
+            for axis_index, axis_name in enumerate(remaining_axes):
+                try:
+                    cbb = self.gui.comboboxes[f"slice_{axis_index}"]
+                    cbb_previous_name = cbb.name
+                    
+                    # Only update the combobox name and items if the axes have changed
+                    if not axis_name == cbb_previous_name:
+                        cbb.setName(axis_name)
+                        cbb.changeToolTip(axis_name)
+                        (_, axis_data) = self.gui.active_item.getAxisData(axis_name)
+                        axis_data = [str(axis_datum) for axis_datum in axis_data]
+                        cbb.renewItems(list(axis_data))
+                    
+                    slice_index = cbb.currentIndex()
+                    self.gui.active_item.setSlice(axis = axis_name, slice = slice_index)
+                except:
+                    pass
         
-        print(f"{self.gui.active_item.rank}")
+        except Exception as e:
+            self.logprint(f"{e}", message_type = "error")
         
-        print(f"While the x axis is set to {x_axis} and the y_axis is set to {y_axis}, the following axes are free to slice over")
-        self.update_processing_flags()
+        self.gui.active_item.showImage()
+        self.gui.active_item.setFrame()
         return
-    
+
+    def rot_trans_changed(self) -> None:
+        if not hasattr(self.gui, "active_item"): return
+        try:
+            rot_trans = bool(self.gui.buttons["rot_trans"].state_index)
+            if rot_trans:
+                self.gui.active_item.resetFrame()
+            else:
+                self.gui.active_item.setOffset(0, 0)
+                self.gui.active_item.setAngle(0)
+                self.gui.active_item.setFrame()
+        except:
+            self.logprint(f"Unable to apply rotation and translation", message_type = "error")
+        return
+
     def update_processing_flags(self) -> None:
         flags = {}
 
@@ -986,7 +1033,8 @@ class Scantelligent(QtCore.QObject):
             
             # Background
             bg_method = self.gui.button_groups["background"].getSelectedWidget()
-            flags.update({"background": f"{bg_method[3:]}", "rotation": True, "offset": True})        
+            rot_trans = self.gui.buttons["rot_trans"].isChecked()
+            flags.update({"background": f"{bg_method[3:]}", "rotation": rot_trans, "offset": rot_trans})
             
             # Limits
             [min_method, min_value] = self.gui.limits_widget.getMin()
@@ -994,7 +1042,7 @@ class Scantelligent(QtCore.QObject):
             flags.update({"min_method": f"{min_method}", "min_method_value": f"{min_value}", "max_method": f"{max_method}", "max_method_value": f"{max_value}"})
 
             # Channel, direction, projection
-            selected_channel = self.gui.comboboxes["slice"].currentText()
+            selected_channel = self.gui.comboboxes["slice_0"].name
             (quantity, unit, backward, error) = self.file_functions.split_physical_quantity(selected_channel)
             if isinstance(unit, str):
                 self.gui.limits_widget.setUnit("full", unit)
@@ -1024,9 +1072,6 @@ class Scantelligent(QtCore.QObject):
         
         if self.gui.buttons["view"].state_name == "nanonis":
             try:
-                [x_axis, y_axis] = [self.data.scan_processing_flags.get(key) for key in ["x_axis", "y_axis"]]
-                print(f"Setting the x axis to {x_axis} and y axis to {y_axis}")
-                self.gui.active_item.mapAxes(x_axis = x_axis, y_axis = y_axis)
                 image = self.gui.active_item.getSlice()
                 (image, statistics, limits, error) = self.data.process_scan(image)
                 self.gui.active_item.setImage(image)

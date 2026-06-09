@@ -279,7 +279,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "fft": MSB(tooltip = "Compute the 2D Fourier transform\n(Shift + F)", icon = self.icons.get("fourier"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "normal": MSB(tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "gaussian": MSB(tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "rot_trans": MSB(tooltip = "Show the scan in the scan window coordinates\nwith rotation and translation\n(R)", icon = self.icons.get("rot_trans"), states = [{"color": sct_black}, {"color": sct_blue}]),
+            "rot_trans": MSB(icon = self.icons.get("rot_trans"), states = [{"name": "local", "color": sct_black, "tooltip": "Scan is displayed in its local coordinates"},
+                                                                           {"name": "global", "color": sct_blue, "tooltip": "Scan is displayed in the global coordinates"}]),
             
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
@@ -300,7 +301,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
 
         # Initialize
-        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view", "voltage_lock", "speed_lock", "frame", "path"]]
+        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view", "voltage_lock", "speed_lock", "frame", "path", "rot_trans"]]
         buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
         buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
 
@@ -373,7 +374,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "axis": CB(tooltip = "Select the view axis", items = ["(x, y)", "(x, channel)", "(channel, y)"]),
             "x_axis": CB(tooltip = "Select which data axis to map to the image x axis"),
             "y_axis": CB(tooltip = "Select which data axis to map to the image y axis"),
-            "slice": CB(tooltip = "Select the slice"),
+            "slice_0": CB(tooltip = "Select slice 0"),
+            "slice_1": CB(tooltip = "Select slice 1"),
+            "slice_2": CB(tooltip = "Select slice 2"),
             
             "controller": CB(tooltip = "Name of the active z controller"),
             "tia_gain": CB(tooltip = "Transimpedance amplifier gain setting"),
@@ -650,7 +653,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
     def make_image_view_widgets(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
         # ROIs (frames)
-        piezo_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
+        piezo_roi = pg.ROI([-250, -250], [500, 500], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
         frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
         new_frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["light_blue"], width = 2), movable = True, resizable = True, rotatable = True)
         new_frame_roi.addScaleHandle([1, 0], [0, 1])
@@ -665,7 +668,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
         
         # Active scan
-        self.active_item = SCTWidgets.ArrayItem(name = "active_scan", color = False)
+        #self.active_item = SCTWidgets.ArrayItem(name = "active_scan", color = False)
         
         return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0, path_pdi)
 
@@ -933,10 +936,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         # Image_view
         layouts["image_view_controls"].addWidget(buttons["auto_paste"])
-        [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["scan_items", "x_axis", "y_axis"]]
-        layouts["navigation"].addWidget(self.buttons["slice"])
-        layouts["navigation"].addWidget(self.comboboxes["slice"])
-        [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["direction", "fit_to_frame", "fit_to_range", "frame", "path"]]        
+        [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["scan_items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
+        [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "frame", "path"]]
         layouts["image_view_controls"].addLayout(layouts["navigation"])
         
         [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
@@ -944,7 +945,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         self.image_view.addWidget(self.limits_widget, 0, 3)
         
-        #layouts["background_buttons"].addWidget(buttons["rot_trans"])
+        
         o_layout = layouts["operations"]
         [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
         o_layout.addWidget(line_edits["gaussian_width"], 0, 5)

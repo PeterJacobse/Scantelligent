@@ -195,7 +195,7 @@ class SCTWidgets:
 
     class ArrayItem(pg.ImageItem):
         def __init__(self, name: str = "", array: np.ndarray = None, frame: dict = {}, x_axis: int = 0, y_axis: int = 1, color: bool = False,
-                     axis_labels: list | np.ndarray = None, axis_0_labels: list | np.ndarray = None, axis_1_labels: list | np.ndarray = None, axis_2_labels: list | np.ndarray = None, axis_3_labels: list | np.ndarray = None):
+                     axes: list | np.ndarray = None, axis_0_labels: list | np.ndarray = None, axis_1_labels: list | np.ndarray = None, axis_2_labels: list | np.ndarray = None, axis_3_labels: list | np.ndarray = None):
             super().__init__()
             self.setOpts(axisOrder = "row-major")
             
@@ -205,21 +205,47 @@ class SCTWidgets:
             self.setArray(array)
 
             # Set labels to the axes if present. axis_n_labels denotes labels corresponding to individual data values. axis_labels denotes labels/captions attached to the axes themselves, such as 'direction', 'channels', 'x axis', 'y axis', ...
-            for axis, labels in enumerate([axis_0_labels, axis_1_labels, axis_2_labels, axis_3_labels]):
-                if isinstance(labels, list | np.ndarray): self.setAxisData(axis = 0, labels = labels)
-            if isinstance(axis_labels, list | np.ndarray):
-                for label in axis_labels:
-                    if isinstance(label, str): self.setAxisData(axis = 0, label = label)
+            for axis_index, labels in enumerate([axis_0_labels, axis_1_labels, axis_2_labels, axis_3_labels]):
+                if isinstance(labels, list | np.ndarray): self.setAxisData(axis_index = axis_index, labels = labels)
+            if isinstance(axes, list | np.ndarray):
+                for axis_index, axis_name in enumerate(axes):
+                    if isinstance(axis_name, str): self.setAxisData(axis_index = axis_index, axis_name = axis_name)
             
+            self.setProjection("real")
             self.mapAxes(x_axis = x_axis, y_axis = y_axis)
-            #self.setFrame(frame)
+            self.updateFrame(frame)
             self.showImage(color = self.color)
 
 
 
+        def setImage(self, image: np.ndarray = None, autoLevels = None, levelSamples = 65536, **kwargs):
+            if not isinstance(image, np.ndarray): return
+            if image.dtype.kind == "f":
+                real_image = image
+            elif image.dtype.kind == "c":
+                match self.projection:
+                    case "real":
+                        real_image = np.real(image)
+                    case "imag":
+                        real_image = np.imag(image)
+                    case _:
+                        real_image = np.real(image)
+                        print(f"Uknown projection type {self.projection} for complex-valued image")
+            else:
+                print(f"Uknown image data type: {image.dtype.kind = }")
+            return super().setImage(image, autoLevels, levelSamples, **kwargs)
+
+        def setProjection(self, projection: str = "real") -> None:
+            if projection in ["real", "imag", "abs", "arg"]:
+                self.projection = projection
+            return
+
         def setName(self, name: str = "") -> None:
             self.name = name
             return
+        
+        def getName(self) -> str:
+            return self.name
         
         def setArray(self, array: np.ndarray) -> None: # Sets the scan object
             if not isinstance(array, np.ndarray): array = np.zeros((2, 2)) # Instantiate with dummy data if no valid np array is provided
@@ -229,7 +255,7 @@ class SCTWidgets:
             if self.rank < 2 or self.rank > 4: return # Only 2D, 3D and 4D arrays supported at this time
             
             self.array = array
-            self.labels = np.full((self.rank), "") # The labels that will denote the names of the axes themselves
+            self.axes = np.full((self.rank), "", dtype = np.dtypes.StringDType()) # The labels that will denote the names of the axes themselves
             self.axis_labels = []
             for axis_index in range(self.rank): self.axis_labels.append(np.arange(self.array.shape[axis_index])) # The labels that point to individual data values/rows/columns
             self.slice_indices = np.zeros((self.rank), dtype = int) # Whenever the image axes are set to be perpendicular to a certain axis, display the image at the slice value along that axis
@@ -251,39 +277,74 @@ class SCTWidgets:
                     self.lines = shape[3]
             return
 
-        def setAxisData(self, axis: int, label: str = "", labels: list | np.ndarray = []) -> None:
-            if axis < 0 or axis > self.rank - 1:
-                print(f"Warning: cannot set axis data to axis {axis} of rank {self.rank} data array")
+        def setAxisData(self, axis_index: int, axis_name: str = "", labels: list | np.ndarray = []) -> None:
+            if axis_index < 0 or axis_index > self.rank - 1:
+                print(f"Warning: cannot set axis data to axis {axis_index} of rank {self.rank} data array")
                 return
             
-            if isinstance(label, str): self.labels[axis] = label
+            if isinstance(axis_name, str):
+                self.axes[axis_index] = axis_name
             if isinstance(labels, list | np.ndarray):
-                axis_length = self.array.shape[axis]
+                axis_length = self.array.shape[axis_index]
                 if not len(labels) == axis_length:
-                    print(f"Warning: cannot set {len(labels)} labels to axis {axis} with length {axis_length}")
-                self.axis_labels[axis] = labels
+                    print(f"Warning: cannot set {len(labels)} labels to axis {axis_index} ({self.axes[axis_index]}) with length {axis_length}")
+                self.axis_labels[axis_index] = labels
             return
         
-        def mapAxes(self, x_axis: int = 0, y_axis: int = 1, color_axis: int = -1) -> None:
-            if x_axis < 0 or x_axis > self.rank - 1:
-                print(f"Warning: cannot map axis number {x_axis} of a rank {self.rank} data array to the x axis. Defaulting to x_axis = 0")
-                x_axis = 0
-                        
-            if y_axis < 0 or y_axis > self.rank - 1:
-                print(f"Warning: cannot map axis number {y_axis} of a rank {self.rank} data array to the y axis. Defaulting to y_axis = 0")
-                y_axis = 1
+        def getAxes(self) -> list:
+            return list(self.axes)
+        
+        def getAxisData(self, axis: str | int) -> tuple[str, list]:
+            if isinstance(axis, str):
+                if not axis in self.axes:
+                    print(f"Could not find axis {axis} among axes {self.axes}")
+                    return ("", [])
+                axis_index = int(np.where(self.axes == axis)[0][0])
+            if isinstance(axis, int): axis_index = axis
+            if axis_index < 0 or axis_index > self.rank - 1:
+                print(f"Warning: cannot find axis number {axis_index} within a rank {self.rank} data array")
+                return ("", [])
+            axis_name = self.axes[axis_index]
+            axis_labels = self.axis_labels[axis_index]
+            return (axis_name, axis_labels)
+        
+        def mapAxes(self, x_axis: int | str = 0, y_axis: int | str = 1) -> None:
+            if isinstance(x_axis, str):
+                if not x_axis in self.axes:
+                    print(f"Could not find axis {x_axis} among axes {self.axes}")
+                    return
+                x_axis_index = int(np.where(self.axes == x_axis)[0][0])
+            if isinstance(x_axis, int): x_axis_index = x_axis
             
-            self.x_axis = x_axis
-            self.y_axis = y_axis
+            if isinstance(y_axis, str):
+                if not y_axis in self.axes:
+                    print(f"Could not find axis {y_axis} among axes {self.axes}")
+                    return
+                y_axis_index = int(np.where(self.axes == y_axis)[0][0])
+            if isinstance(y_axis, int): y_axis_index = y_axis
+            
+            if x_axis_index < 0 or x_axis_index > self.rank - 1:
+                print(f"Warning: cannot map axis number {x_axis_index} of a rank {self.rank} data array to the x axis. Defaulting to x_axis = 0")
+                x_axis_index = 0
+
+            if y_axis_index < 0 or y_axis_index > self.rank - 1:
+                print(f"Warning: cannot map axis number {y_axis_index} of a rank {self.rank} data array to the y axis. Defaulting to y_axis = 0")
+                y_axis_index = 1
+            
+            self.x_axis_index = x_axis_index
+            self.y_axis_index = y_axis_index
+            
+            self.x_axis = self.axes[x_axis_index]
+            self.y_axis = self.axes[y_axis_index]
             return
 
         def setSlice(self, axis: str | int = 0, slice: int | str = 0):
             if isinstance(axis, str):
-                if not axis in self.labels:
-                    print(f"Could not find an axis named {axis} among the following axes: {self.labels}")
+                if not axis in self.axes:
+                    print(f"Could not find an axis named {axis} among the following axes: {self.axes}")
                     return
-                self.axis_index = np.where(self.labels == axis)[0][0]
-            if isinstance(axis, int): axis_index = axis
+                axis_index = int(np.where(self.axes == axis)[0][0])
+            if isinstance(axis, int): axis_index = axis            
             if not isinstance(axis_index, int): return
             
             if axis_index < 0 or axis_index > self.rank - 1:
@@ -292,31 +353,17 @@ class SCTWidgets:
             
             if isinstance(slice, str):
                 if not slice in self.axis_labels[axis_index]:
-                    print(f"Could not locate a slice named {slice} in the axis {self.labels[axis_index]}")
-                self.slice_index = slice
+                    print(f"Could not locate a slice named {slice} in the axis {self.axes[axis_index]}")
+                    return
+                slice_index = int(np.where(self.axis_labels[axis_index] == slice)[0][0])
             if isinstance(slice, int): slice_index = slice
             if not isinstance(slice_index, int): return
 
-            if index < 0 or index > self.array.shape[axis]:
-                print(f"Warning: cannot extract slice number {index} from axis {axis} of a data array of shape {self.array.shape}. Defaulting to slice number 0")
-                index = 0
+            if slice_index < 0 or slice_index > self.array.shape[axis_index]:
+                print(f"Warning: cannot extract slice number {slice_index} from axis {axis_index} of a data array of shape {self.array.shape}. Defaulting to slice number 0")
+                slice_index = 0
             
-            self.slice_indices[axis] = index
-            return
-
-        def showColorImage(self) -> None:
-            n_color_channels = min(self.n_channels, 4)
-            try:
-                match self.rank:
-                    case 2:
-                        self.setImage(self.array)
-                    case 3: # Interpret the first channels as color channels
-                        self.setImage(self.array[:n_color_channels])
-                    case 4: # Interpret the first channel as the direction channel and the second one as the color channels
-                        self.setImage(self.array[self.direction_index, :n_color_channels])
-                self.applyFrame()
-            except Exception as e:
-                print(f"Problem encountered while calling ArrayItem.showColorImage: {e}")
+            self.slice_indices[axis_index] = slice_index
             return
 
         def getSlice(self, color: bool = False) -> None:
@@ -324,7 +371,7 @@ class SCTWidgets:
                 match self.rank:
                     case 2:
                         image_slice = self.array
-                        if [self.x_axis, self.y_axis] == [1, 0]: image_slice = image_slice.transpose()
+                        if [self.x_axis_index, self.y_axis_index] == [1, 0]: image_slice = image_slice.transpose()
                     case 3:
                         image_slice = self.array[0]
                         slice_axis = int(list({0, 1, 2} - {self.x_axis, self.y_axis})[0]) # Slice axis is the complement of all axes and the x and y axis
@@ -333,31 +380,22 @@ class SCTWidgets:
                         
                         if color:
                             n_color_channels = min(self.array.shape[slice_axis], 4)
-                            if {self.x_axis, self.y_axis} == {0, 1}:                                
-                                image_slice = self.array[:, :, :n_color_channels]
-                                if [self.x_axis, self.y_axis] == [1, 0]: image_slice = image_slice.transpose()
+                            if {self.x_axis_index, self.y_axis_index} == {0, 1}: image_slice = self.array[:, :, :n_color_channels]
+                            if {self.x_axis_index, self.y_axis_index} == {0, 2}: image_slice = self.array[:, :n_color_channels, :]
+                            if {self.x_axis_index, self.y_axis_index} == {1, 2}: image_slice = self.array[:n_color_channels, :, :]
                             
-                            if {self.x_axis, self.y_axis} == {0, 2}:
-                                image_slice = self.array[:, :n_color_channels, :]
-                                if [self.x_axis, self.y_axis] == [2, 0]: image_slice = image_slice.transpose()
-                            
-                            if {self.x_axis, self.y_axis} == {1, 2}:
-                                image_slice = self.array[:n_color_channels, :, :]
-                                if [self.x_axis, self.y_axis] == [2, 1]: image_slice = image_slice.transpose()
+                            if [self.x_axis_index, self.y_axis_index] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
                         else:
                             image_slice = self.array[tuple(slice_list)]
-                            if [self.x_axis, self.y_axis] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
-                            #if [self.x_axis, self.y_axis] == [1, 0]: image_slice = image_slice.transpose()
-                            #if [self.x_axis, self.y_axis] == [2, 0]: image_slice = image_slice.transpose()
-                            #if [self.x_axis, self.y_axis] == [2, 1]: image_slice = image_slice.transpose()
+                            if not [self.x_axis_index, self.y_axis_index] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
                     case 4:
                         image_slice = self.array[0, 0]
-                        slice_axes = list({0, 1, 2, 3} - {self.x_axis, self.y_axis}) # Slice axis is the complement of all axes and the x and y axis
+                        slice_axes = list({0, 1, 2, 3} - {self.x_axis_index, self.y_axis_index}) # Slice axis is the complement of all axes and the x and y axis
                         slice_list = [slice(None)] * self.array.ndim
                         for slice_axis in slice_axes: slice_list[slice_axis] = self.slice_indices[slice_axis]
                         
                         image_slice = self.array[tuple(slice_list)]
-                        if [self.x_axis, self.y_axis] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
+                        if not [self.x_axis_index, self.y_axis_index] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
                 
             except Exception as e:
                 print(f"Problem encountered while calling ArrayItem.showImage: {e}")
@@ -374,28 +412,30 @@ class SCTWidgets:
             return
 
         def setRange(self, width: float = 1, height: float = 1) -> None:
-            if isinstance(width, float | int): self.w = width
-            if isinstance(height, float | int): self.h = height
+            self.w = width
+            self.h = height
             return
 
         def setOffset(self, x: float = 1, y: float = 1) -> None:
-            if isinstance(x, float | int): self.x_val = x
-            if isinstance(y, float | int): self.y_val = y
+            self.x_val = x
+            self.y_val = y
             return
         
         def setAngle(self, angle_deg: float = 0) -> None:
-            if isinstance(angle_deg, float | int): self.angle = angle_deg
+            self.angle = angle_deg
             return
 
-        def setFrame(self, frame: dict = {}) -> None:
+        def updateFrame(self, frame: dict = None) -> None:
+            if not isinstance(frame, dict): return
+            print(f"{frame = }")
             [scan_range, offset, angle] = [frame.get(key, None) for key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]]
             self.frame = {}
             if isinstance(scan_range, list | np.ndarray):
-                [width, height] = [scan_range[index] for index in range(2)]
+                [w, h] = [float(scan_range[index]) for index in range(2)]
                 self.frame.update({"scan_range (nm)": scan_range})
-                self.setRange(width, height)
+                self.setRange(w, h)
             if isinstance(offset, list | np.ndarray):
-                [x, y] = [offset[index] for index in range(2)]
+                [x, y] = [float(offset[index]) for index in range(2)]
                 self.frame.update({"offset (nm)": offset})
                 self.setOffset(x, y)
             if isinstance(angle, int | float):
@@ -403,22 +443,28 @@ class SCTWidgets:
                 self.setAngle(angle)
             return
         
-        def setTransformations(self, origin: str = "center") -> None:
-            if hasattr(self, "w") and isinstance(self.w, float | int) and hasattr(self, "h") and isinstance(self.h, float | int):
-                pixel_width = self.w / self.pixels
-                pixel_height = self.h / self.lines
+        def setFrame(self, origin: str = "center") -> None:
+            if hasattr(self, "w") and hasattr(self, "h"):
+                pixel_width = float(self.w / self.pixels)
+                pixel_height = float(self.h / self.lines)
             else:
                 pixel_width = 1 / self.pixels
                 pixel_height = 1 / self.lines
             
             transform = QtGui.QTransform()
-            if hasattr(self, "angle") and isinstance(self.angle, float | int): transform.rotate(-self.angle)
+            if hasattr(self, "angle"): transform.rotate(-self.angle)
             transform.scale(pixel_width, pixel_height)
             if origin == "center": transform.translate(-.5 * self.pixels, -.5 * self.lines)
             
             self.resetTransform()
             self.setTransform(transform)
-            if hasattr(self, "x_val") and isinstance(self.x_val, float | int) and hasattr(self, "y_val") and isinstance(self.y_val, float | int): self.setPos(self.x_val, self.y_val)
+            if hasattr(self, "x_val") and hasattr(self, "y_val"): self.setPos(self.x_val, self.y_val)
+            return
+        
+        def resetFrame(self, origin: str = "center") -> None:
+            if not hasattr(self, "frame"): return
+            self.updateFrame(self.frame)
+            self.setFrame(origin = origin)
             return
 
     class MultiStateButton(QtWidgets.QToolButton):
@@ -546,9 +592,14 @@ class SCTWidgets:
             
             self.setDefaults()
             if isinstance(items, list): self.addItems(items)
+            if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
 
 
         
+        def setName(self, name: str = "") -> None:
+            self.name = name
+            return
+            
         def setDefaults(self) -> None:
             if isinstance(self.name, str): self.setObjectName(self.name)
             #if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
