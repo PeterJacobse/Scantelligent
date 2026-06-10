@@ -39,7 +39,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.progress_bars = self.make_progress_bars()
         self.layouts = self.make_layouts()
         self.image_view = self.make_views()
-        (self.piezo_roi, self.frame_roi, self.new_frame_roi, self.tip_target, self.target0, self.path_pdi) = self.make_image_view_widgets()
+        (self.piezo_frame, self.frame, self.new_frame, self.tip_target, self.target0, self.path_pdi) = self.make_image_view_widgets()
         self.grapher = self.make_plot_widget()
         self.widgets = self.make_custom_widgets()
         self.consoles = self.make_consoles()
@@ -202,6 +202,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                        states = [{"name": "unknown", "tooltip": "Tip status\nUnknown / withdrawn", "icon": icons.get("tip_unknown"), "color": sct_black},
                                  {"name": "feedback", "tooltip": "Tip status\nIn feedback", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]},
                                  {"name": "constant_height", "tooltip": "Tip status\nConstant height", "icon": icons.get("constant_height"), "color": self.colors["orange"]}]),
+            "set_dz": MSB(icon = icons.get("set_dz"), tooltip = "Push to set delta_z\nSee value below"),
             "intermediate_feedback": MSB(click_to_toggle = False, size = 28,
                                          states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
                                                    {"name": "on", "tooltip": "Return to intermediate feedback\nafter every sweep in x", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]}]),
@@ -250,6 +251,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "start_scan": MSB(size = 28, states = [{"name": "idle", "tooltip": "Start scan", "icon": icons.get("start_scan"), "color": sct_black},
                                                    {"name": "running", "tooltip": "Stop scan", "icon": icons.get("stop_scan"), "color": sct_blue}]),
             "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
+            "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
+                                                              {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
             
             # Speeds
             "v_fwd": MSB(icon = icons.get("v_forward")),
@@ -282,16 +285,31 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "rot_trans": MSB(icon = self.icons.get("rot_trans"), states = [{"name": "local", "color": sct_black, "tooltip": "Scan is displayed in its local coordinates"},
                                                                            {"name": "global", "color": sct_blue, "tooltip": "Scan is displayed in the global coordinates"}]),
             
-            "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
-                                                              {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
-            
-            "frame": MSB(icon = icons.get("guide_frame"), states = [{"name": "off", "tooltip": "Click to show the guide frame\nMouse wheel click confirms the frame", "color": sct_black},
+            "image_projection": MSB(tooltip = "How to project complex-valued data", states = [{"name": "complex", "color": sct_black, "icon": icons.get("complex")},
+                                                                                              {"name": "re", "color": sct_black, "icon": icons.get("re")},
+                                                                                              {"name": "im", "color": sct_black, "icon": icons.get("im")},
+                                                                                              {"name": "abs", "color": sct_black, "icon": icons.get("abs")},
+                                                                                              {"name": "abs^2", "color": sct_black, "icon": icons.get("abs_2")},
+                                                                                              {"name": "log(abs)", "color": sct_black, "icon": icons.get("log_abs")},
+                                                                                              {"name": "arg (b/w)", "color": sct_black, "icon": icons.get("arg")},
+                                                                                              {"name": "arg (hue)", "color": sct_black, "icon": icons.get("arg_hue")}]),
+            "graph_projection": MSB(tooltip = "How to project complex-valued data", states = [{"name": "re", "icon": icons.get("re")},
+                                                                                              {"name": "im", "icon": icons.get("im")},
+                                                                                              {"name": "abs", "icon": icons.get("abs")},
+                                                                                              {"name": "abs^2", "icon": icons.get("abs_2")},
+                                                                                              {"name": "log(abs)", "icon": icons.get("log_abs")},
+                                                                                              {"name": "arg", "icon": icons.get("arg")}], click_to_toggle = False),
+    
+            # ImageView items and attributes            
+            "frame": MSB(icon = icons.get("guide_frame"), states = [{"name": "off", "tooltip": "Click to show the guide frame", "color": sct_black},
                                                                     {"name": "on", "tooltip": "Click to hide the guide frame\nMouse wheel click confirms the frame", "color": sct_blue}]),
             "path": MSB(icon = icons.get("path"), states = [{"name": "off", "tooltip": "Click to show the tip path", "color": sct_black},
-                                                                    {"name": "on", "tooltip": "Click to hide the tip path", "color": sct_blue}]),
-            
-            "slice": MSB(icon = icons.get("slice_xy"), tooltip = "Select which plane to slice the scan over"),
-            "set_dz": MSB(icon = icons.get("set_dz"), tooltip = "Push to set delta_z\nSee value below"),
+                                                            {"name": "on", "tooltip": "Click to hide the tip path", "color": sct_blue}]),
+            "target": MSB(icon = icons.get("target"), states = [{"name": "off", "tooltip": "Not showing the target\nDouble click will move the tip", "color": sct_black},
+                                                                {"name": "on", "tooltip": "Showing the target\nDouble click will set the target", "color": sct_blue}]),
+            "grid": MSB(states = [{"name": "off", "tooltip": "Grid lines not shown", "icon": icons.get("no_grid"), "color": sct_black},
+                                  {"name": "below", "tooltip": "Showing grid lines below images", "icon": icons.get("grid_below"), "color": sct_blue},
+                                  {"name": "above", "tooltip": "Showing grid lines above images", "icon": icons.get("grid_above"), "color": sct_blue}]),
             "trash": MSB(icon = icons.get("trash"), tooltip = "Discard the currently selected scan_item")
         }
         
@@ -553,14 +571,19 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "left_side": make_layout("v"),
             "toolbar": make_layout("g"),
             "empty": make_layout("v"),            
-            "input": make_layout("h"),            
-            "graph": make_layout("h"),
-            "channels": make_layout("g"),
+            "input": make_layout("h"),
             "connections": make_layout("g"),
             "image_view_controls": make_layout("h"),
             
+            # Tip
             "tip": make_layout("v"),
             "tip_deltaz": make_layout("h"),
+            
+            # Grapher
+            "graph": make_layout("h"),
+            "graph_options": make_layout("g"),
+            "chann_options": make_layout("v"),
+            "channels": make_layout("g"),
             
             # Experiment
             "experiment": make_layout("v"),
@@ -653,12 +676,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
     def make_image_view_widgets(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
         # ROIs (frames)
-        piezo_roi = pg.ROI([-250, -250], [500, 500], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
-        frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
-        new_frame_roi = pg.ROI([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["light_blue"], width = 2), movable = True, resizable = True, rotatable = True)
-        new_frame_roi.addScaleHandle([1, 0], [0, 1])
-        new_frame_roi.addRotateHandle([0.5, 0], [0.5, 0.5])
-        new_frame_roi.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
+        piezo_frame = SCTWidgets.FrameWidget([-250, -250], [500, 500], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
+        frame = SCTWidgets.FrameWidget([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
+        new_frame = SCTWidgets.FrameWidget([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["light_blue"], width = 2), movable = True, resizable = True, rotatable = True)
+        new_frame.addScaleHandle([1, 0], [0, 1])
+        new_frame.addRotateHandle([0.5, 0], [0.5, 0.5])
+        new_frame.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
         
         # Target items
         tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
@@ -666,11 +689,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         # Path
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
-        
-        # Active scan
-        #self.active_item = SCTWidgets.ArrayItem(name = "active_scan", color = False)
-        
-        return (piezo_roi, frame_roi, new_frame_roi, tip_target, target0, path_pdi)
+        return (piezo_frame, frame, new_frame, tip_target, target0, path_pdi)
 
     def make_plot_widget(self) -> SCTWidgets.PlotWidget:
         grapher = SCTWidgets.PlotWidget(colors = self.color_list)
@@ -775,13 +794,18 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        layouts["channels"].addWidget(line_edits["graph_buffer_size"], 1, 0, 1, 5)
-        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], 2 + i % 7, int(i / 7)) for i in range(35)]
-        layouts["channels"].addWidget(comboboxes["graph_x_axis"], 9, 0, 1, 5)
-        layouts["channels"].setRowStretch(0, 1)
+        layouts["chann_options"].addStretch(1)
+        
+        layouts["graph_options"].addWidget(buttons["graph_projection"], 0, 0, 2, 1)
+        layouts["graph_options"].addWidget(comboboxes["graph_x_axis"], 0, 1)
+        layouts["graph_options"].addWidget(line_edits["graph_buffer_size"], 1, 1)
+        layouts["chann_options"].addLayout(layouts["graph_options"])
+        
+        [layouts["channels"].addWidget(self.checkboxes[f"channel_{i}"], 3 + i % 5, int(i / 5)) for i in range(35)]
+        layouts["chann_options"].addLayout(layouts["channels"])
         
         layouts["graph"].addWidget(self.grapher, 5)
-        layouts["graph"].addLayout(layouts["channels"], 1)
+        layouts["graph"].addLayout(layouts["chann_options"], 1)
         self.widgets["graph"].setLayout(layouts["graph"])
         
         # Toolbar
@@ -937,7 +961,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         # Image_view
         layouts["image_view_controls"].addWidget(buttons["auto_paste"])
         [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["scan_items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
-        [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "frame", "path"]]
+        [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "grid", "frame", "path", "target"]]
         layouts["image_view_controls"].addLayout(layouts["navigation"])
         
         [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
@@ -949,7 +973,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         o_layout = layouts["operations"]
         [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
         o_layout.addWidget(line_edits["gaussian_width"], 0, 5)
-        o_layout.addWidget(comboboxes["projection"], 0, 6)
+        o_layout.addWidget(buttons["image_projection"], 0, 6)
         o_layout.addWidget(self.sliders["phase"], 0, 7)
         layouts["image_view_controls"].addLayout(o_layout)
         
@@ -1067,12 +1091,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         return
 
     def limit_roi_angle(self) -> None:
-        angle = self.new_frame_roi.angle()
+        angle = self.new_frame.angle()
         new_angle = (angle + 180) % 360 - 180
 
-        self.new_frame_roi.blockSignals(True)
-        self.new_frame_roi.setAngle(new_angle)
-        self.new_frame_roi.blockSignals(False)
+        self.new_frame.blockSignals(True)
+        self.new_frame.setAngle(new_angle)
+        self.new_frame.blockSignals(False)
         return
 
     def update_fields_from_frame_change(self) -> None:
@@ -1080,48 +1104,48 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         self.limit_roi_angle()
         
-        new_width = self.new_frame_roi.size().x()
+        new_width = self.new_frame.size().x()
         self.line_edits["frame_width"].setValue(new_width, edited_color = False)
         
         if bool(self.buttons["frame_aspect"].state_index):
             new_height = new_width * self.line_edits["frame_aspect"].getValue()
             
-            self.new_frame_roi.blockSignals(True)
-            self.new_frame_roi.setSize([new_width, new_height])
-            self.new_frame_roi.blockSignals(False)
+            self.new_frame.blockSignals(True)
+            self.new_frame.setSize([new_width, new_height])
+            self.new_frame.blockSignals(False)
         else:
-            new_height = self.new_frame_roi.size().y()
+            new_height = self.new_frame.size().y()
             self.line_edits["frame_aspect"].setValue(new_height / new_width, edited_color = False)
         
         self.line_edits["frame_height"].setValue(new_height, edited_color = False)
                 
-        bounding_rect = self.new_frame_roi.boundingRect()
+        bounding_rect = self.new_frame.boundingRect()
         local_center = bounding_rect.center()
-        abs_center = self.new_frame_roi.mapToParent(local_center)
+        abs_center = self.new_frame.mapToParent(local_center)
         
         self.line_edits["frame_x"].setValue(abs_center.x(), edited_color = False)
         self.line_edits["frame_y"].setValue(abs_center.y(), edited_color = False)
         
-        self.line_edits["frame_angle"].setValue(-self.new_frame_roi.angle(), edited_color = False)
+        self.line_edits["frame_angle"].setValue(-self.new_frame.angle(), edited_color = False)
         
         [self.line_edits[name].blockSignals(False) for name in ["frame_x", "frame_y", "frame_width", "frame_height", "frame_angle"]]
         return
 
     def update_frame_from_fields(self) -> None:
-        self.new_frame_roi.blockSignals(True)
+        self.new_frame.blockSignals(True)
         
         [new_width, new_height, new_angle, new_x, new_y] = [self.line_edits[f"frame_{key}"].getValue() for key in ["width", "height", "angle", "x", "y"]]
 
-        self.new_frame_roi.setPos([0, 0])
-        self.new_frame_roi.setSize([new_width, new_height])
-        self.new_frame_roi.setAngle(-new_angle)
+        self.new_frame.setPos([0, 0])
+        self.new_frame.setSize([new_width, new_height])
+        self.new_frame.setAngle(-new_angle)
         
-        bounding_rect = self.new_frame_roi.boundingRect()
+        bounding_rect = self.new_frame.boundingRect()
         local_center = bounding_rect.center()
-        abs_center = self.new_frame_roi.mapToParent(local_center)
+        abs_center = self.new_frame.mapToParent(local_center)
 
-        self.new_frame_roi.setPos(new_x - abs_center.x(), new_y - abs_center.y())
-        self.new_frame_roi.blockSignals(False)
+        self.new_frame.setPos(new_x - abs_center.x(), new_y - abs_center.y())
+        self.new_frame.blockSignals(False)
         return
 
 

@@ -220,23 +220,35 @@ class SCTWidgets:
 
         def setImage(self, image: np.ndarray = None, autoLevels = None, levelSamples = 65536, **kwargs):
             if not isinstance(image, np.ndarray): return
-            if image.dtype.kind == "f":
+            if image.dtype.kind in ["f", "u"]:
                 real_image = image
             elif image.dtype.kind == "c":
+                abs_image = np.abs(image, dtype = np.float32)
+                max_val = np.nanmax(abs_image)
+                min_val = np.nanmin(abs_image)
+                norm_img = np.astype(256 * (image - min_val) / (max_val - min_val), np.uint8)
+                
                 match self.projection:
+                    case "complex":
+                        real_image = np.angle(image, dtype = np.float32)
                     case "real":
-                        real_image = np.real(image)
-                    case "imag":
-                        real_image = np.imag(image)
+                        real_image = np.real(norm_img, dtype = np.uint8)
+                    case "imaginary":
+                        real_image = np.imag(image, dtype = np.float32)
+                    case "abs":
+                        real_image = np.abs(image, dtype = np.float32)
+                    case "abs_2":
+                        real_image = np.abs(image, dtype = np.float32)
                     case _:
                         real_image = np.real(image)
                         print(f"Uknown projection type {self.projection} for complex-valued image")
             else:
                 print(f"Uknown image data type: {image.dtype.kind = }")
-            return super().setImage(image, autoLevels, levelSamples, **kwargs)
+            
+            return super().setImage(real_image, autoLevels, levelSamples, **kwargs)
 
         def setProjection(self, projection: str = "real") -> None:
-            if projection in ["real", "imag", "abs", "arg"]:
+            if projection in ["real", "imaginary", "abs", "arg"]:
                 self.projection = projection
             return
 
@@ -259,8 +271,6 @@ class SCTWidgets:
             self.axis_labels = []
             for axis_index in range(self.rank): self.axis_labels.append(np.arange(self.array.shape[axis_index])) # The labels that point to individual data values/rows/columns
             self.slice_indices = np.zeros((self.rank), dtype = int) # Whenever the image axes are set to be perpendicular to a certain axis, display the image at the slice value along that axis
-            self.directions = 1
-            self.n_channels = 1
             
             match self.rank:
                 case 2: # Flat image / sweep
@@ -427,7 +437,6 @@ class SCTWidgets:
 
         def updateFrame(self, frame: dict = None) -> None:
             if not isinstance(frame, dict): return
-            print(f"{frame = }")
             [scan_range, offset, angle] = [frame.get(key, None) for key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]]
             self.frame = {}
             if isinstance(scan_range, list | np.ndarray):
@@ -444,6 +453,8 @@ class SCTWidgets:
             return
         
         def setFrame(self, origin: str = "center") -> None:
+            (self.lines, self.pixels) = self.image.shape
+            
             if hasattr(self, "w") and hasattr(self, "h"):
                 pixel_width = float(self.w / self.pixels)
                 pixel_height = float(self.h / self.lines)
@@ -2211,6 +2222,24 @@ class SCTWidgets:
                     
                     if isinstance(x_data, np.ndarray): self.pdis[channel_index].setData(x_data, y_data)
                     else: self.pdis[channel_index].setData(y_data)
+            return
+
+    class FrameWidget(pg.ROI):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+        
+        def setFrame(self, frame: dict) -> None:
+            if not "scan_range (nm)" in frame.keys() or not "offset (nm)" in frame.keys(): return
+            [w_nm, h_nm] = frame["scan_range (nm)"]
+            [x_nm, y_nm] = frame["offset (nm)"]
+            self.setSize([w_nm, h_nm])
+            self.setPos([0, 0])
+            self.setAngle(angle = -frame.get("angle (deg)", 0))
+
+            bounding_rect = self.boundingRect()
+            local_center = bounding_rect.center()
+            abs_center = self.mapToParent(local_center)
+            self.setPos(x_nm - abs_center.x(), y_nm - abs_center.y())
             return
 
     class ScrollWidget(QtWidgets.QScrollArea):

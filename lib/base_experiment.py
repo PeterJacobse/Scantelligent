@@ -276,6 +276,7 @@ class BaseExperiment(QObject):
         # Loop to check scan progress
         t_start = time.time()
         t_elapsed = 0
+        scan_finished = False
         for iteration in range(1000000):
             # Monitor and emit data while scanning
             (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)

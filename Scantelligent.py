@@ -59,7 +59,6 @@ class Scantelligent(QtCore.QObject):
         self.file_functions = FileFunctions()
         self.data = DataProcessing() # Class for data processing and analysis
         self.lines = [] # Lines for plotting in the graph
-        self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
         self.focus_group = "connections"
                 
@@ -93,12 +92,12 @@ class Scantelligent(QtCore.QObject):
                         
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
                         "rot_trans": self.rot_trans_changed, "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
-                        "frame": self.toggle_items, "path": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
+                        "frame": self.toggle_items, "path": self.toggle_items, "grid": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
                         
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
-        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction"]]
+        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction", "image_projection"]]
         
         for parameter_type in ["bias", "mla_bias", "keithley_bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
             button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
@@ -111,6 +110,9 @@ class Scantelligent(QtCore.QObject):
         # Line edits
         self.gui.line_edits["input"].editingFinished.connect(self.execute_command)
         self.gui.line_edits["graph_buffer_size"].editingFinished.connect(lambda buf_size = self.gui.line_edits["graph_buffer_size"].getValue(): self.gui.grapher.setBufferSize(buf_size))
+        
+        # Sliders
+        self.gui.sliders["phase"].valueChanged.connect(self.update_processing_flags)
         
         # Comboboxes
         experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
@@ -708,7 +710,6 @@ class Scantelligent(QtCore.QObject):
             return
         
         try:
-            print(f"{frame = }")
             array_item = SCTWidgets.ArrayItem(name = "loaded_item", array = array, frame = frame) # Create the ArrayItem object
             
             x_axis = None
@@ -731,11 +732,13 @@ class Scantelligent(QtCore.QObject):
                 # Toggle the y axis to the next index if it is the same as the x axis
                 if self.gui.comboboxes["y_axis"].currentIndex() == self.gui.comboboxes["x_axis"].currentIndex(): self.gui.comboboxes["y_axis"].toggleIndex()
                 if not previous_rank < 1: # Attempt to reset the comboboxes to the same items if there was a previous data array
-                    self.gui.comboboxes["x_axis"].selectItem(previous_x_index)
-                    self.gui.comboboxes["y_axis"].selectItem(previous_y_index)
+                    self.gui.comboboxes["x_axis"].selectIndex(previous_x_index)
+                    self.gui.comboboxes["y_axis"].selectIndex(previous_y_index)
             
             # Activating the ArrayItem and passing it to ImageView
             self.gui.active_item = array_item
+            self.gui.active_item.setZValue(64)
+            self.gui.comboboxes["scan_items"].renewItems(os.path.basename(file_path))
             self.gui.image_view.setItem(self.gui.active_item)
             self.slice_axes_changed()
             
@@ -800,20 +803,18 @@ class Scantelligent(QtCore.QObject):
     def set_view_range(self, obj: str = "full") -> None:
         match obj:            
             case "frame":
-                roi_rect = self.gui.frame_roi.boundingRect()
-                mapped_rect = self.gui.frame_roi.mapRectToParent(roi_rect)
+                roi_rect = self.gui.frame.boundingRect()
+                mapped_rect = self.gui.frame.mapRectToParent(roi_rect)
                 self.gui.image_view.view.setRange(mapped_rect)
             case _:
-                self.gui.image_view.view.autoRange(item = self.gui.piezo_roi)
+                self.gui.image_view.view.autoRange(item = self.gui.piezo_frame)
         return
 
     def refresh_image(self, save: bool = True) -> None:
         # Replace the old item with a new item and relink the new item
         old_item = self.gui.image_view.getImageItem()
         old_transform = old_item.transform()
-                
-        # Instantiate a new ScanItem using the old image data
-        new_item = SCTWidgets.ScanItem()
+        """
         try:
             (grid, error) = self.nanonis.grid_update(verbose = False)
             new_item.setGrid(grid)
@@ -824,6 +825,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.scan_item = self.gui.image_view.getImageItem()
         self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
         self.gui.view = self.gui.image_view.getView().getViewBox()
+        """
 
         # Save the old item if desired
         if save:
@@ -904,7 +906,7 @@ class Scantelligent(QtCore.QObject):
                 except: pass
                 
                 self.draw_old_items()
-                [self.gui.view.addItem(item) for item in [self.gui.new_frame_roi, self.gui.frame_roi, self.gui.piezo_roi, self.gui.tip_target, self.gui.path_pdi]]
+                [self.gui.view.addItem(item) for item in [self.gui.new_frame, self.gui.frame, self.gui.piezo_frame, self.gui.tip_target, self.gui.path_pdi]]
                 self.gui.path_pdi.setZValue(10)
                 try: self.nanonis.hardware_update()
                 except: pass
@@ -918,21 +920,30 @@ class Scantelligent(QtCore.QObject):
             case _:
                 self.gui.buttons["view"].setState("none")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
-                
-                #[self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:]]
-                #self.gui.view.addItem(self.gui.camera_item)
-                #self.gui.camera_item.setImage(self.splash_screen)
-                #self.gui.camera_item.resetTransform()
-                #self.gui.camera_item.setRotation(0)
-                #self.gui.camera_item.setPos(0, 0)
-                #self.gui.view.autoRange()
 
         if verbose: self.logprint(f"View set to {self.gui.buttons["view"].state_name}", message_type = "message")
         return
 
     def toggle_items(self) -> None:
         self.gui.path_pdi.setVisible(self.gui.buttons["path"].isChecked())
-        self.gui.new_frame_roi.setVisible(self.gui.buttons["frame"].isChecked())
+        self.gui.new_frame.setVisible(self.gui.buttons["frame"].isChecked())
+        
+        grid_state = self.gui.buttons["grid"].state_name
+        match grid_state:
+            case "above":
+                for side in ["left", "bottom"]:
+                    axis = self.gui.image_view.view.getAxis(side)
+                    axis.setGrid(100)
+                    axis.setZValue(128)
+            case "below":
+                for side in ["left", "bottom"]:
+                    axis = self.gui.image_view.view.getAxis(side)
+                    axis.setGrid(100)
+                    axis.setZValue(0)
+            case _:
+                for side in ["left", "bottom"]:
+                    axis = self.gui.image_view.view.getAxis(side)
+                    axis.setGrid(False)
         return
 
     def update_pdi_visibility(self) -> None:
@@ -1000,12 +1011,12 @@ class Scantelligent(QtCore.QObject):
                     self.gui.active_item.setSlice(axis = axis_name, slice = slice_index)
                 except:
                     pass
-        
+            
+            self.gui.active_item.showImage()
+            self.gui.active_item.setFrame()
+            self.gui.frame.setFrame(self.gui.active_item.frame)
         except Exception as e:
             self.logprint(f"{e}", message_type = "error")
-        
-        self.gui.active_item.showImage()
-        self.gui.active_item.setFrame()
         return
 
     def rot_trans_changed(self) -> None:
@@ -1014,10 +1025,13 @@ class Scantelligent(QtCore.QObject):
             rot_trans = bool(self.gui.buttons["rot_trans"].state_index)
             if rot_trans:
                 self.gui.active_item.resetFrame()
+                self.gui.frame.setFrame(self.gui.active_item.frame)
             else:
                 self.gui.active_item.setOffset(0, 0)
                 self.gui.active_item.setAngle(0)
                 self.gui.active_item.setFrame()
+                item_range = self.gui.active_item.frame.get("scan_range (nm)")
+                self.gui.frame.setFrame({"scan_range (nm)": item_range, "offset (nm)": [0, 0], "angle (deg)": 0})
         except:
             self.logprint(f"Unable to apply rotation and translation", message_type = "error")
         return
@@ -1049,7 +1063,7 @@ class Scantelligent(QtCore.QObject):
                 self.gui.limits_widget.setUnit("absolute", unit)
             
             backward = bool(self.gui.buttons["direction"].state_index)
-            projection = self.gui.comboboxes["projection"].currentText()
+            projection = self.gui.buttons["image_projection"].state_name
             flags.update({"backward": backward, "projection": projection})
             
             # Operations

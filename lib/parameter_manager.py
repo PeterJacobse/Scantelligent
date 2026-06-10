@@ -397,15 +397,18 @@ class ParameterManager(QtCore.QObject):
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
 
-                # Update the frame 'roi' in the ImageView                
-                sct.gui.frame_roi.setSize([w_nm, h_nm])
-                sct.gui.frame_roi.setPos([0, 0])
-                sct.gui.frame_roi.setAngle(angle = -angle_deg)
+                # Update the frame in the ImageView                
+                """
+                sct.gui.frame.setSize([w_nm, h_nm])
+                sct.gui.frame.setPos([0, 0])
+                sct.gui.frame.setAngle(angle = -angle_deg)
 
-                bounding_rect = sct.gui.frame_roi.boundingRect()
+                bounding_rect = sct.gui.frame.boundingRect()
                 local_center = bounding_rect.center()
-                abs_center = sct.gui.frame_roi.mapToParent(local_center)                
-                sct.gui.frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                abs_center = sct.gui.frame.mapToParent(local_center)                
+                sct.gui.frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                """
+                sct.gui.frame.setFrame(parameters)
 
             case "new_frame":
                 [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
@@ -416,23 +419,23 @@ class ParameterManager(QtCore.QObject):
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
                 
-                # Update the frame 'roi' in the ImageView
-                new_frame_roi = sct.gui.new_frame_roi
-                
+                # Update the frame in the ImageView
                 if sct.gui.buttons["view"].state_name == "nanonis":
-                    new_frame_roi.blockSignals(True)
+                    sct.gui.new_frame.blockSignals(True)
                     
-                    new_frame_roi.setSize([w_nm, h_nm])
-                    new_frame_roi.setPos([0, 0])
-                    new_frame_roi.setAngle(angle = -angle_deg)
+                    sct.gui.new_frame.setFrame(parameters)
+                    """
+                    new_frame.setSize([w_nm, h_nm])
+                    new_frame.setPos([0, 0])
+                    new_frame.setAngle(angle = -angle_deg)
                     
-                    bounding_rect = new_frame_roi.boundingRect()
+                    bounding_rect = new_frame.boundingRect()
                     local_center = bounding_rect.center()
-                    abs_center = new_frame_roi.mapToParent(local_center)
+                    abs_center = new_frame.mapToParent(local_center)
                     
-                    new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-                    
-                    new_frame_roi.blockSignals(False)
+                    new_frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                    """
+                    sct.gui.new_frame.blockSignals(False)
 
             case "grid":
                 sct.user.frames[0].update(parameters)
@@ -455,28 +458,37 @@ class ParameterManager(QtCore.QObject):
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
                 
-                # Update the frame 'roi' in the ImageView
-                sct.gui.frame_roi.setSize([w_nm, h_nm])
-                sct.gui.frame_roi.setPos([0, 0])
-                sct.gui.frame_roi.setAngle(angle = -angle_deg)
+                # Update the frame in the ImageView
+                sct.gui.frame.setFrame(parameters)
+                sct.gui.new_frame.setFrame(parameters)
+                
+                if not hasattr(sct.gui, "active_item"): return
+                try: sct.gui.activeItem.setFrame(parameters)
+                except: pass
+                
+                """
+                sct.gui.frame.setSize([w_nm, h_nm])
+                sct.gui.frame.setPos([0, 0])
+                sct.gui.frame.setAngle(angle = -angle_deg)
 
-                bounding_rect = sct.gui.frame_roi.boundingRect()
+                bounding_rect = sct.gui.frame.boundingRect()
                 local_center = bounding_rect.center()
-                abs_center = sct.gui.frame_roi.mapToParent(local_center)
-                sct.gui.frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                abs_center = sct.gui.frame.mapToParent(local_center)
+                sct.gui.frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
                 
                 # Update the new frame 'roi' in the ImageView
-                sct.gui.new_frame_roi.setSize([w_nm, h_nm])
-                sct.gui.new_frame_roi.setPos([0, 0])
-                sct.gui.new_frame_roi.setAngle(angle = -angle_deg)
+                sct.gui.new_frame.setSize([w_nm, h_nm])
+                sct.gui.new_frame.setPos([0, 0])
+                sct.gui.new_frame.setAngle(angle = -angle_deg)
 
-                bounding_rect = sct.gui.new_frame_roi.boundingRect()
+                bounding_rect = sct.gui.new_frame.boundingRect()
                 local_center = bounding_rect.center()
-                abs_center = sct.gui.new_frame_roi.mapToParent(local_center)
-                sct.gui.new_frame_roi.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
+                abs_center = sct.gui.new_frame.mapToParent(local_center)
+                sct.gui.new_frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
 
                 # Refresh the transformations on the scan_item
                 if sct.gui.buttons["view"].state_name == "nanonis": sct.gui.scan_item.setGrid(parameters)
+                """
             
             case "path":
                 [coords, visible] = [parameters.get(key, None) for key in ["coordinates (nm)", "hidden"]]
@@ -494,15 +506,10 @@ class ParameterManager(QtCore.QObject):
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["p_gain", "t_const", "i_gain"], [p_gain_ms, t_const_us, i_gain_nm_per_s])]
 
             case "hardware":
-                piezo_roi = sct.gui.piezo_roi
-
                 piezo_range_nm = [parameters.get(dim) for dim in ["x_range (nm)", "y_range (nm)"]]
                 piezo_lower_left_nm = [parameters.get(dim) for dim in ["x_min (nm)", "y_min (nm)"]]
-                piezo_roi.setSize(piezo_range_nm, [0, 0], [0, 0])
-                piezo_roi.setPos(piezo_lower_left_nm)
-
-                # Add the frame to the ImageView
-                if sct.status["view"] == "nanonis": sct.gui.image_view.addItem(piezo_roi)
+                sct.gui.piezo_frame.setSize(piezo_range_nm, [0, 0], [0, 0])
+                sct.gui.piezo_frame.setPos(piezo_lower_left_nm)
                 
                 gains = parameters.get("gains", None)
                 if gains: sct.gui.comboboxes["tia_gain"].renewItems(gains)
@@ -520,8 +527,8 @@ class ParameterManager(QtCore.QObject):
                 # Update the channels combobox with the channels that are being recorded if there is a change
                 if not old_channels == new_channels:
                     sct.data.scan_processing_flags.update({"channels": new_channels})
-                    sct.gui.comboboxes["slice"].renewItems(list(new_channels.keys()))
-                    [sct.gui.comboboxes["slice"].selectItem(preferred_channel) for preferred_channel in ["Current (A)", "LI Demod 1 X (A)", "Z (m)"]]
+                    #sct.gui.comboboxes["slice"].renewItems(list(new_channels.keys()))
+                    #[sct.gui.comboboxes["slice"].selectItem(preferred_channel) for preferred_channel in ["Current (A)", "LI Demod 1 X (A)", "Z (m)"]]
                     sct.update_processing_flags()
 
             case "lockin":
