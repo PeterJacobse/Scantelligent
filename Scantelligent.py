@@ -131,6 +131,7 @@ class Scantelligent(QtCore.QObject):
         
         # ImageView
         self.gui.image_view.scan_file_signal.connect(self.open_file)
+        self.gui.image_view.getHistogramWidget().item.sigLevelChangeFinished.connect(self.histogram_levels_changed)
         [self.gui.groupboxes[name].clicked.connect(lambda name0 = name: self.focus_on_groupbox(name0)) for name in self.gui.groupboxes.keys()]
         
         
@@ -396,7 +397,7 @@ class Scantelligent(QtCore.QObject):
                     (processed_scan, statistics, limits, error) = self.data.process_scan(image)
                     [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
                     
-                    self.gui.scan_item.setImage(processed_scan)
+                    self.gui.scan_item.setImage(np.flipud(processed_scan))
                     self.gui.hist_item.setLevels(limits[0], limits[1])
                 
                 case "camera":
@@ -682,7 +683,7 @@ class Scantelligent(QtCore.QObject):
             self.logprint("Error. Scanalyzer path unknown.", message_type = "error")
         return
     
-    def open_file(self, file_path: str = ""):
+    def open_file(self, file_path: str = "") -> None:
         if not os.path.isfile(file_path):
             self.logprint(f"Cannot open non-existing file {file_path}", message_type = "error")
             return
@@ -690,21 +691,13 @@ class Scantelligent(QtCore.QObject):
         self.toggle_view("nanonis")
         array = None
         grid = None
-        
-        match os.path.splitext(file_path)[1]:
-            case ".hdf5" | ".h5":
-                try:
-                    file_data = self.file_functions.read_hdf5(file_path)
-                    [array, frame, axes, axes_data] = [file_data.get(key, None) for key in ["array", "frame", "axes", "axes_data"]]
-                except Exception as e:
-                    self.logprint(f"Could not open this HDF5 file: {e}", message_type = "error")
-            case ".sxm":
-                try:
-                    file_data = self.file_functions.read_sxm(file_path)
-                    [array, frame, channels] = [file_data.get(key, None) for key in ["array", "frame", "channels"]]
-                except Exception as e:
-                    self.logprint(f"Could not open this SXM file: {e}", message_type = "error")
-        
+
+        try:
+            file_data = self.file_functions.read_file(file_path)
+            [array, frame, axes, axes_data] = [file_data.get(key, None) for key in ["array", "frame", "axes", "axes_data"]]
+        except Exception as e:
+            self.logprint(f"Could not open this file: {e}", message_type = "error")
+
         if not isinstance(array, np.ndarray):
             self.logprint(f"Could not retrieve data from this file", message_type = "error")
             return
@@ -722,7 +715,7 @@ class Scantelligent(QtCore.QObject):
                 self.gui.comboboxes["x_axis"].renewItems(axes) # Add the names of the various array axes to the x and y axes comboboxes
                 self.gui.comboboxes["y_axis"].renewItems(axes)
                 
-                for axis_index, axis_name in enumerate(axes): # Attach the axis data (x values, channel names, etc.) to the various axes of the ArrayItem
+                for axis_index, axis_name in enumerate(axes): # Attach the axis data (x values, channel names, etc.) to the various axes of the ArrayItem                    
                     if axis_name in axes_data: array_item.setAxisData(axis_index, axis_name, labels = axes_data[axis_name])
                     else: array_item.setAxisData(axis_index, axis_name)
                 
@@ -741,6 +734,10 @@ class Scantelligent(QtCore.QObject):
             self.gui.comboboxes["scan_items"].renewItems(os.path.basename(file_path))
             self.gui.image_view.setItem(self.gui.active_item)
             self.slice_axes_changed()
+            self.update_processing_flags()
+            self.gui.active_item.showImage(autoLevels = True)
+            self.gui.image_view.getHistogramWidget().item.autoHistogramRange()
+            self.set_view_range("frame")
             
             self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
         except Exception as e:
@@ -794,7 +791,8 @@ class Scantelligent(QtCore.QObject):
         self.logprint("Thank you for using Scantelligent!", message_type = "success")
         SCTWidgets.Application.instance().quit()
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event: QtCore.QEvent) -> None:
+        event.ignore()
         self.exit()
 
 
@@ -952,6 +950,13 @@ class Scantelligent(QtCore.QObject):
             self.gui.grapher.pdis[index].setVisible(checked)
         return
 
+    def histogram_levels_changed(self) -> None:
+        hist_levels = self.gui.image_view.getHistogramWidget().item.getLevels()
+        self.gui.limits_widget.setValue("absolute", "min", hist_levels[0])
+        self.gui.limits_widget.setValue("absolute", "max", hist_levels[1])
+        self.redraw_item()
+        return
+
 
 
     # Spectelligent
@@ -987,30 +992,46 @@ class Scantelligent(QtCore.QObject):
             if self.gui.comboboxes["y_axis"].currentText() == x_axis: self.gui.comboboxes["y_axis"].toggleIndex()
             y_axis = self.gui.comboboxes["y_axis"].currentText()
             
-            # 1. Mapping the axes
+            # Mapping the axes
             self.gui.active_item.mapAxes(x_axis = x_axis, y_axis = y_axis)
             
             # Retrieve the remaining axes and populate the slice comboboxes with the corresponding axis data
             axes = self.gui.active_item.getAxes()
 
             remaining_axes = sorted(set(axes) - {x_axis, y_axis})
-            for axis_index, axis_name in enumerate(remaining_axes):
+            
+            n_slice_comboboxes = 3
+            for axis_index in range(n_slice_comboboxes):
+                axis_name = None
+                if axis_index < len(remaining_axes): axis_name = remaining_axes[axis_index]
+                
                 try:
                     cbb = self.gui.comboboxes[f"slice_{axis_index}"]
-                    cbb_previous_name = cbb.name
+                    if not isinstance(axis_name, str):
+                        cbb.setName(f"slice_{axis_index}")
+                        cbb.changeToolTip(f"slice_{axis_index}")
+                        cbb.clear()
+                        continue
                     
-                    # Only update the combobox name and items if the axes have changed
-                    if not axis_name == cbb_previous_name:
-                        cbb.setName(axis_name)
-                        cbb.changeToolTip(axis_name)
-                        (_, axis_data) = self.gui.active_item.getAxisData(axis_name)
-                        axis_data = [str(axis_datum) for axis_datum in axis_data]
-                        cbb.renewItems(list(axis_data))
+                    cbb_previous_index = cbb.currentIndex()
+                    (_, axis_data) = self.gui.active_item.getAxisData(axis_name)
+                    cbb.setName(axis_name)
+                    cbb.changeToolTip(axis_name)
+                    axis_data = [str(axis_datum) for axis_datum in axis_data]
+                    cbb.renewItems(list(axis_data))
+                    cbb.selectIndex(cbb_previous_index % cbb.count())
                     
                     slice_index = cbb.currentIndex()
                     self.gui.active_item.setSlice(axis = axis_name, slice = slice_index)
-                except:
-                    pass
+                    
+                    slice_label = cbb.currentText()
+                    (quantity, unit, _, _) = self.file_functions.split_physical_quantity(slice_label)
+                    if isinstance(unit, str):
+                        self.gui.image_view.setHistogramUnit(unit)
+                        self.gui.limits_widget.setUnit("absolute", unit)
+                        self.gui.limits_widget.setUnit("full", unit)
+                except Exception as e:
+                    self.logprint(f"{e}")
             
             self.gui.active_item.showImage()
             self.gui.active_item.setFrame()
@@ -1081,15 +1102,20 @@ class Scantelligent(QtCore.QObject):
             if isinstance(channel_index, int): flags.update({"channel_name": selected_channel, "channel_index": channel_index})
 
         self.data.scan_processing_flags.update(flags)
-        
-        
-        
+        self.redraw_item()
+        return
+
+    def redraw_item(self) -> None:
         if self.gui.buttons["view"].state_name == "nanonis":
             try:
                 image = self.gui.active_item.getSlice()
                 (image, statistics, limits, error) = self.data.process_scan(image)
                 self.gui.active_item.setImage(image)
-                
+                img_min = statistics.get("min")
+                img_max = statistics.get("min")
+                self.gui.limits_widget.setValue("full", "min", img_min)
+                self.gui.limits_widget.setValue("full", "max", img_max)
+
             except Exception as e:
                 self.logprint(f"{e}")
         return
@@ -1097,7 +1123,7 @@ class Scantelligent(QtCore.QObject):
 
 
     # Simple Nanonis functions; typically return either True if successful or an old parameter value when it is changed
-    def tip_prep(self, action: str):
+    def tip_prep(self, action: str) -> None:
         if not hasattr(self, "nanonis"): return
         
         try:

@@ -641,9 +641,9 @@ class DataProcessing:
             return (image, error)
 
         try:
-            phase = self.scan_processing_flags.get("phase", 0)
+            phase = self.scan_processing_flags.get("phase (deg)", 0)
             if phase == 0: return(image, error)
-            phase_factor = np.exp(1j * phase * np.pi / 180)
+            phase_factor = np.exp(1j * np.deg2rad(phase))
             phase_shifted_image = phase_factor * image
             
             return(phase_shifted_image, error)
@@ -691,8 +691,8 @@ class DataProcessing:
         try:
             sobel_x = .125 * np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype = np.float32)
             sobel_y = .125 * np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype = np.float32)
-            ddx = convolve2d(image, sobel_x, mode = "valid") # These are the gradients computed using normalized sobel kernels
-            ddy = convolve2d(image, sobel_y, mode = "valid")
+            ddx = convolve2d(image, sobel_x, mode = "same") # These are the gradients computed using normalized sobel kernels
+            ddy = convolve2d(image, sobel_y, mode = "same")
         except Exception as e:
             error = f"Calculating gradient failed. {e}"
             return (image, error)

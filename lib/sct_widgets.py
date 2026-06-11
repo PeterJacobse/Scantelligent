@@ -198,7 +198,15 @@ class SCTWidgets:
                      axes: list | np.ndarray = None, axis_0_labels: list | np.ndarray = None, axis_1_labels: list | np.ndarray = None, axis_2_labels: list | np.ndarray = None, axis_3_labels: list | np.ndarray = None):
             super().__init__()
             self.setOpts(axisOrder = "row-major")
-            
+
+            # Instantiate text labels
+            self.x_label = pg.TextItem(text = "local x axis", color = "#2090ff", anchor = (0.5, -.5), rotateAxis = (1, 0))
+            self.y_label = pg.TextItem(text = "local y axis", color = "#2090ff", anchor = (0.5, 1.5), rotateAxis = (0, 1))
+            self.slice_label = pg.TextItem(text = "local slice label", color = "#2090ff", anchor = (0.5, 1.5), rotateAxis = (1, 0))
+            self.x_label.setParentItem(self)
+            self.y_label.setParentItem(self)
+            self.slice_label.setParentItem(self)
+
             # Set the data array
             self.name = name
             self.color = color
@@ -218,7 +226,35 @@ class SCTWidgets:
 
 
 
-        def setImage(self, image: np.ndarray = None, autoLevels = None, levelSamples = 65536, **kwargs):
+        def showLabels(self, value: bool = True) -> None:
+            for label in [self.x_label, self.y_label, self.slice_label]:
+                if value: label.show()
+                else: label.hide()
+            return
+
+        def updateLabelPositions(self) -> None:
+            if self.image is None: return
+            
+            match self.image.ndim:
+                case 2: (height, width) = self.image.shape
+                case 3: (height, width, _) = self.image.shape
+                case _: return
+            
+            self.x_label.setPos(width / 2, 0)
+            self.y_label.setPos(0, height / 2)
+            self.slice_label.setPos(width /2, height)
+            return
+
+        def setAxisText(self, x_axis: str = None, y_axis: str = None) -> None:
+            if isinstance(x_axis, str): self.x_label.setText(x_axis)
+            if isinstance(y_axis, str): self.y_label.setText(y_axis)
+            return
+        
+        def setSliceText(self, slice_text: str = None) -> None:
+            if isinstance(slice_text, str): self.slice_label.setText(slice_text)
+            return
+
+        def setImage(self, image: np.ndarray = None, autoLevels = False, levelSamples = 65536, **kwargs) -> None:
             if not isinstance(image, np.ndarray): return
             if image.dtype.kind in ["f", "u"]:
                 real_image = image
@@ -245,7 +281,9 @@ class SCTWidgets:
             else:
                 print(f"Uknown image data type: {image.dtype.kind = }")
             
-            return super().setImage(real_image, autoLevels, levelSamples, **kwargs)
+            super().setImage(real_image, autoLevels, levelSamples, **kwargs)
+            self.updateLabelPositions()
+            return
 
         def setProjection(self, projection: str = "real") -> None:
             if projection in ["real", "imaginary", "abs", "arg"]:
@@ -271,20 +309,6 @@ class SCTWidgets:
             self.axis_labels = []
             for axis_index in range(self.rank): self.axis_labels.append(np.arange(self.array.shape[axis_index])) # The labels that point to individual data values/rows/columns
             self.slice_indices = np.zeros((self.rank), dtype = int) # Whenever the image axes are set to be perpendicular to a certain axis, display the image at the slice value along that axis
-            
-            match self.rank:
-                case 2: # Flat image / sweep
-                    self.pixels = shape[0]
-                    self.lines = shape[1]
-                case 3: # x, y and channel axes or 2D spectroscopy
-                    self.n_channels = shape[0]
-                    self.pixels = shape[1]
-                    self.lines = shape[2]
-                case 4: # x, y and channel axes and forward/backward
-                    self.directions = shape[0]
-                    self.n_channels = shape[1]
-                    self.pixels = shape[2]
-                    self.lines = shape[3]
             return
 
         def setAxisData(self, axis_index: int, axis_name: str = "", labels: list | np.ndarray = []) -> None:
@@ -294,7 +318,7 @@ class SCTWidgets:
             
             if isinstance(axis_name, str):
                 self.axes[axis_index] = axis_name
-            if isinstance(labels, list | np.ndarray):
+            if isinstance(labels, list | np.ndarray) and len(labels) > 0:
                 axis_length = self.array.shape[axis_index]
                 if not len(labels) == axis_length:
                     print(f"Warning: cannot set {len(labels)} labels to axis {axis_index} ({self.axes[axis_index]}) with length {axis_length}")
@@ -346,6 +370,11 @@ class SCTWidgets:
             
             self.x_axis = self.axes[x_axis_index]
             self.y_axis = self.axes[y_axis_index]
+            
+            self.setAxisText(x_axis = self.x_axis, y_axis = self.y_axis)
+            
+            self.remaining_axes_indices = sorted(set(range(self.rank)) - {self.x_axis_index, self.y_axis_index})
+            self.remaining_axes = [self.axes[axis_index] for axis_index in self.remaining_axes_indices]
             return
 
         def setSlice(self, axis: str | int = 0, slice: int | str = 0):
@@ -356,7 +385,7 @@ class SCTWidgets:
                 axis_index = int(np.where(self.axes == axis)[0][0])
             if isinstance(axis, int): axis_index = axis            
             if not isinstance(axis_index, int): return
-            
+
             if axis_index < 0 or axis_index > self.rank - 1:
                 print(f"Warning: cannot extract slice number {axis_index} from axis {axis} of a data array of shape {self.array.shape}. Defaulting to axis 0")
                 axis = 0
@@ -374,6 +403,12 @@ class SCTWidgets:
                 slice_index = 0
             
             self.slice_indices[axis_index] = slice_index
+            slice_text = "slice: ("
+            for axis_index in self.remaining_axes_indices:
+                slice_text += f"{self.axes[axis_index]}: "
+                slice_text += f"{self.axis_labels[axis_index][self.slice_indices[axis_index]]}; "
+            slice_text += ")"
+            self.setSliceText(slice_text = slice_text)
             return
 
         def getSlice(self, color: bool = False) -> None:
@@ -406,7 +441,6 @@ class SCTWidgets:
                         
                         image_slice = self.array[tuple(slice_list)]
                         if not [self.x_axis_index, self.y_axis_index] in [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [3, 2]]: image_slice = image_slice.transpose()
-                
             except Exception as e:
                 print(f"Problem encountered while calling ArrayItem.showImage: {e}")
             try:
@@ -416,9 +450,9 @@ class SCTWidgets:
                 print(f"Problem encountered setting the image: {e}")
             return image_slice
 
-        def showImage(self, color: bool = False) -> None:
+        def showImage(self, color: bool = False, autoLevels: bool = False) -> None:
             image_slice = self.getSlice(color = color)
-            self.setImage(image_slice)
+            self.setImage(image_slice, autoLevels = autoLevels)
             return
 
         def setRange(self, width: float = 1, height: float = 1) -> None:
@@ -453,7 +487,8 @@ class SCTWidgets:
             return
         
         def setFrame(self, origin: str = "center") -> None:
-            (self.lines, self.pixels) = self.image.shape
+            if self.image.ndim == 2: (self.lines, self.pixels) = self.image.shape
+            elif self.image.ndim == 3: (self.lines, self.pixels, _) = self.image.shape
             
             if hasattr(self, "w") and hasattr(self, "h"):
                 pixel_width = float(self.w / self.pixels)
@@ -1446,6 +1481,8 @@ class SCTWidgets:
             super().__init__(*args, **kwargs)
             self.setDefaults()
         
+        
+        
         def setDefaults(self, invertY: bool = False) -> None:
             if isinstance(self.view, pg.PlotItem): self.view.invertY(invertY)
             self.getViewBox().setBackgroundColor("#000000")
@@ -1459,17 +1496,26 @@ class SCTWidgets:
             layout.setColumnStretch(2, 0)
             return
         
+        def setHistogramUnit(self, unit: str = "") -> None:
+            self.ui.histogram.item.axis.setLabel(text = unit)
+            return
+        
         def setItem(self, item: pg.ImageItem) -> None:
             plot_item = self.getView()
             if hasattr(self, 'imageItem') and self.imageItem in plot_item.items: # Remove the old ImageItem from the ViewBox if one exists
                 plot_item.removeItem(self.imageItem)
         
-            plot_item.addItem(item)
             self.imageItem = item
-            self.getHistogramWidget().setImageItem(item)
+            plot_item.addItem(item)
+            self.imageItem.blockSignals(False)
+            
+            hist_item = self.getHistogramWidget().item
+            hist_item.setImageItem(item)
+            #hist_item.sigLevelChangeFinished.connect(lambda: self.imageItem.setLevels(hist_item.getLevels()))
+            
+            self.imageItem.sigImageChanged.emit()
             
             self.image = item.image
-            #self.ui.roiPlot.setImageItem(item)
             return
 
         def getViewBox(self) -> pg.ViewBox:
@@ -2320,7 +2366,9 @@ class MinMaxMethods(QtWidgets.QWidget):
         return
     
     def setUnit(self, method_name: str = "", unit: str = "") -> None:
-        try: self.min_line_edits[f"{method_name}"].setUnit(unit)
+        try:
+            self.min_line_edits[f"{method_name}"].setUnit(unit)
+            self.max_line_edits[f"{method_name}"].setUnit(unit)
         except: pass
         return
 

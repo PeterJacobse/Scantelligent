@@ -273,7 +273,7 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             
             scan_data = nhw.get_scan_data(channel_index, not backward)
-            scan_image = np.flipud(scan_data.get("scan_data"))
+            scan_image = scan_data.get("scan_data")
 
             n_scan_image = np.size(scan_image)
             n_nans = np.count_nonzero(np.isnan(scan_image))

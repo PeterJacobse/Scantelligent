@@ -285,8 +285,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "rot_trans": MSB(icon = self.icons.get("rot_trans"), states = [{"name": "local", "color": sct_black, "tooltip": "Scan is displayed in its local coordinates"},
                                                                            {"name": "global", "color": sct_blue, "tooltip": "Scan is displayed in the global coordinates"}]),
             
-            "image_projection": MSB(tooltip = "How to project complex-valued data", states = [{"name": "complex", "color": sct_black, "icon": icons.get("complex")},
-                                                                                              {"name": "re", "color": sct_black, "icon": icons.get("re")},
+            "image_projection": MSB(tooltip = "How to project complex-valued data", states = [{"name": "re", "color": sct_black, "icon": icons.get("re")},
+                                                                                              {"name": "complex", "color": sct_black, "icon": icons.get("complex")},
                                                                                               {"name": "im", "color": sct_black, "icon": icons.get("im")},
                                                                                               {"name": "abs", "color": sct_black, "icon": icons.get("abs")},
                                                                                               {"name": "abs^2", "color": sct_black, "icon": icons.get("abs_2")},
@@ -299,7 +299,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                                                                               {"name": "abs^2", "icon": icons.get("abs_2")},
                                                                                               {"name": "log(abs)", "icon": icons.get("log_abs")},
                                                                                               {"name": "arg", "icon": icons.get("arg")}], click_to_toggle = False),
-    
+            "save_image": MSB(tooltip = "Save image", icon = icons.get("floppy")),
+
             # ImageView items and attributes            
             "frame": MSB(icon = icons.get("guide_frame"), states = [{"name": "off", "tooltip": "Click to show the guide frame", "color": sct_black},
                                                                     {"name": "on", "tooltip": "Click to hide the guide frame\nMouse wheel click confirms the frame", "color": sct_blue}]),
@@ -959,23 +960,22 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         
         # Image_view
-        layouts["image_view_controls"].addWidget(buttons["auto_paste"])
-        [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["scan_items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
-        [layouts["navigation"].addWidget(self.buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "grid", "frame", "path", "target"]]
-        layouts["image_view_controls"].addLayout(layouts["navigation"])
-        
-        [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
-        layouts["image_view_controls"].addLayout(layouts["background_buttons"])
-        
         self.image_view.addWidget(self.limits_widget, 0, 3)
         
-        
+        layouts["image_view_controls"].addWidget(buttons["auto_paste"])
+        [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["scan_items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
+        [layouts["navigation"].addWidget(buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "grid", "frame", "path", "target"]]
+        layouts["image_view_controls"].addLayout(layouts["navigation"])
+        [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
+        layouts["image_view_controls"].addLayout(layouts["background_buttons"])
+                
         o_layout = layouts["operations"]
         [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
         o_layout.addWidget(line_edits["gaussian_width"], 0, 5)
         o_layout.addWidget(buttons["image_projection"], 0, 6)
         o_layout.addWidget(self.sliders["phase"], 0, 7)
         layouts["image_view_controls"].addLayout(o_layout)
+        layouts["image_view_controls"].addWidget(buttons["save_image"])
         
         # Input console
         layouts["input"].addWidget(self.consoles["input"])
