@@ -90,7 +90,7 @@ class Scantelligent(QtCore.QObject):
                         "tip": self.change_tip_status, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"),
                         "approach": self.start_auto_approach, "approach_2": self.start_auto_approach, "withdraw": self.toggle_withdraw, "withdraw_2": self.toggle_withdraw,
                         
-                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"),                        
+                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"), "save_item": self.save_active_item,
                         "rot_trans": self.rot_trans_changed, "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         "frame": self.toggle_items, "path": self.toggle_items, "grid": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
                         
@@ -123,6 +123,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.comboboxes["graph_x_axis"].currentIndexChanged.connect(lambda cbb = self.gui.comboboxes["graph_x_axis"].currentIndex(): self.gui.grapher.setXAxis(cbb - 1))
         [self.gui.comboboxes[name].currentIndexChanged.connect(self.slice_axes_changed) for name in ["x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
         self.gui.comboboxes["projection"].currentIndexChanged.connect(self.update_processing_flags)
+        self.gui.comboboxes["items"].currentIndexChanged.connect(self.set_active_item)
         
         # Checkboxes and button groups
         self.gui.button_groups["background"].clicked.connect(self.update_processing_flags)
@@ -703,7 +704,7 @@ class Scantelligent(QtCore.QObject):
             return
         
         try:
-            array_item = SCTWidgets.ArrayItem(name = "loaded_item", array = array, frame = frame) # Create the ArrayItem object
+            array_item = SCTWidgets.ArrayItem(name = os.path.basename(file_path), array = array, frame = frame) # Create the ArrayItem object
             
             x_axis = None
             y_axis = None
@@ -731,12 +732,10 @@ class Scantelligent(QtCore.QObject):
             # Activating the ArrayItem and passing it to ImageView
             self.gui.active_item = array_item
             self.gui.active_item.setZValue(64)
-            self.gui.comboboxes["scan_items"].renewItems(os.path.basename(file_path))
             self.gui.image_view.setItem(self.gui.active_item)
             self.slice_axes_changed()
             self.update_processing_flags()
             self.gui.active_item.showImage(autoLevels = True)
-            self.gui.image_view.getHistogramWidget().item.autoHistogramRange()
             self.set_view_range("frame")
             
             self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
@@ -808,33 +807,25 @@ class Scantelligent(QtCore.QObject):
                 self.gui.image_view.view.autoRange(item = self.gui.piezo_frame)
         return
 
-    def refresh_image(self, save: bool = True) -> None:
-        # Replace the old item with a new item and relink the new item
-        old_item = self.gui.image_view.getImageItem()
-        old_transform = old_item.transform()
-        """
-        try:
-            (grid, error) = self.nanonis.grid_update(verbose = False)
-            new_item.setGrid(grid)
-        except:
-            pass
-        self.gui.image_view.addItem(new_item)
-        self.gui.image_view.imageItem = new_item # Update the main ScanItem of the ImageView
-        self.gui.scan_item = self.gui.image_view.getImageItem()
-        self.gui.image_view.getHistogramWidget().setImageItem(self.gui.scan_item)
-        self.gui.view = self.gui.image_view.getView().getViewBox()
-        """
-
-        # Save the old item if desired
-        if save:
-            old_item.setTransform(old_transform)
-            self.gui.saved_items.insert(0, old_item)
-            if len(self.gui.saved_items) > 6: self.gui.saved_items = self.gui.saved_items[:5]
-            for index, item in enumerate(self.gui.saved_items): item.setZValue(-1 - index)
+    def save_active_item(self) -> None:
+        if hasattr(self.gui, "active_item"):
+            self.gui.active_item.showLabels(False)
+            self.gui.saved_items.insert(0, self.gui.active_item) # Save the active item to the saved_items
+        if len(self.gui.saved_items) > 18: self.gui.saved_items = self.gui.saved_items[:18] # Clip the length of saved_items to a maximum number of 18
+        
+        saved_item_names = []
+        for index, item in enumerate(self.gui.saved_items):
+            item.setZValue(20 - index) # Reset the ZValues of the items
+            saved_item_names.append(item.name)
+        self.gui.comboboxes["items"].renewItems(saved_item_names)
+        
+        view = self.gui.image_view.view
+        [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem)]
+        [view.addItem(item) for item in self.gui.saved_items]
         return
-
-    def draw_old_items(self) -> None:
-        for item in self.gui.saved_items: self.gui.view.addItem(item)
+    
+    def create_array_item(self, shape: list | tuple = (), axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
+        #self.gui.active_item = SCTWidgets.ArrayItem(np.empty(shape = shape), axes = axes, frame = frame)
         return
 
     def toggle_view(self, view: str = None, verbose: bool = True) -> None:
@@ -863,9 +854,6 @@ class Scantelligent(QtCore.QObject):
                 time.sleep(.5)
             except:
                 pass
-
-        if old_view in ["none", "camera"]: self.refresh_image(save = False)
-        elif old_view in ["nanonis", "graph"]: self.refresh_image(save = True)
 
         # Reset ImageView. Remove old items. Prepare the QSplitters for resizing
         [min_view_height, min_graph_height, min_console_height] = [self.gui.splitters["image_graph"].widget(index).minimumSizeHint().height() for index in range(3)]
@@ -902,10 +890,9 @@ class Scantelligent(QtCore.QObject):
                 
                 try: self.gui.view.removeItem(self.gui.camera_item)
                 except: pass
-                
-                self.draw_old_items()
+
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame, self.gui.frame, self.gui.piezo_frame, self.gui.tip_target, self.gui.path_pdi]]
-                self.gui.path_pdi.setZValue(10)
+                for item in self.gui.saved_items: self.gui.view.addItem(item)
                 try: self.nanonis.hardware_update()
                 except: pass
                 self.set_view_range("full")
@@ -942,6 +929,23 @@ class Scantelligent(QtCore.QObject):
                 for side in ["left", "bottom"]:
                     axis = self.gui.image_view.view.getAxis(side)
                     axis.setGrid(False)
+        return
+
+    def set_active_item(self) -> None:
+        if hasattr(self.gui, "active_item"): self.gui.active_item.showLabels(False)
+        try:
+            index = self.gui.comboboxes["items"].currentIndex()
+            selected_item = self.gui.saved_items[index]
+            self.gui.image_view.setItem(selected_item)
+            self.gui.active_item = selected_item
+            self.gui.active_item.showLabels(True)
+            self.gui.frame.setFrame(self.gui.active_item.frame)
+            
+            view = self.gui.image_view.view
+            [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem) and not item == selected_item]
+            [view.addItem(item) for item in self.gui.saved_items]
+        except Exception as e:
+            self.logprint(f"{e}", message_type = "error")
         return
 
     def update_pdi_visibility(self) -> None:
@@ -1112,10 +1116,13 @@ class Scantelligent(QtCore.QObject):
                 (image, statistics, limits, error) = self.data.process_scan(image)
                 self.gui.active_item.setImage(image)
                 img_min = statistics.get("min")
-                img_max = statistics.get("min")
+                img_max = statistics.get("max")
                 self.gui.limits_widget.setValue("full", "min", img_min)
                 self.gui.limits_widget.setValue("full", "max", img_max)
-
+                
+                hist_item = self.gui.image_view.getHistogramWidget().item
+                hist_item.setLevels(limits[0], limits[1])
+                hist_item.autoHistogramRange()
             except Exception as e:
                 self.logprint(f"{e}")
         return

@@ -428,30 +428,36 @@ class FileFunctions():
 
             match quantity.lower():
                 case "translation" | "center" | "offset":
-                    quantity = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    output_dict.update({"offset (nm)": value, "center (nm)": value})
+                    array = np.array(value, dtype = np.float32)
+                    quantity = self.convert_data_to_unit(array, key, "nm")
+                    output_dict.update({"offset (nm)": array, "center (nm)": array})
                 case "size" | "scan_size" | "area" | "scan_area" | "range" | "scan_range" | "scan range" | "domain" | "scan_domain":
-                    quantity = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    output_dict.update({"scan_range (nm)": value, "domain (nm)": value})
+                    array = np.array(value, dtype = np.float32)
+                    quantity = self.convert_data_to_unit(array, key, "nm")
+                    output_dict.update({"scan_range (nm)": array, "domain (nm)": array})
                 
                 case "w" | "width" | "range_x" | "x_range" | "x range" | "size_x" | "x_size":
-                    quantity = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    w_nm = value
+                    array = np.array(value, dtype = np.float32)
+                    quantity = self.convert_data_to_unit(array, key, "nm")
+                    w_nm = float(array)
                 case "h" | "height" | "range_y" | "y_range" | "y range" | "size_y" | "y_size":
-                    quantity = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    h_nm = value
+                    array = np.array(value, dtype = np.float32)
+                    quantity = self.convert_data_to_unit(array, key, "nm")
+                    h_nm = float(array)
 
                 case "x" | "x_value" | "x_val" | "x_offset" | "offset_x" | "x_center" | "center_x":
-                    quantity = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    x_nm = value
+                    array = np.array(value, dtype = np.float32)
+                    quantity = self.convert_data_to_unit(array, key, "nm")
+                    x_nm = float(array)
                 case "y" | "y_value" | "y_val" | "y_offset" | "offset_y" | "y_center" | "center_y":
-                    quantity = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    y_nm = value
+                    array = np.array(value, dtype = np.float32)
+                    quantity = self.convert_data_to_unit(array, key, "nm")
+                    y_nm = float(array)
 
                 case "angle":
                     if unit == "rad": output_value = np.rad2deg(value)
                     else: output_value = value
-                    output_dict.update({"angle (deg)": output_value})
+                    output_dict.update({"angle (deg)": ((output_value + 180) % 360 - 180)})
                 case _:
                     pass
 
@@ -459,8 +465,8 @@ class FileFunctions():
             if not "scan_range (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"scan_range (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
             
             if not "angle (deg)" in output_dict.keys(): output_dict.update({"angle (deg)": 0.})
-            if "pixels" in frame.keys(): output_dict.update({"pixels": frame["pixels"]})
-            if "lines" in frame.keys(): output_dict.update({"lines": frame["lines"]})
+            if "pixels" in frame.keys(): output_dict.update({"pixels": int(frame["pixels"])})
+            if "lines" in frame.keys(): output_dict.update({"lines": int(frame["lines"])})
         return output_dict
 
     def get_scientific_numbers(self, text: str) -> list:
@@ -671,7 +677,9 @@ class FileFunctions():
         (header_array, sct_dict) = self.minimal_sxm_header_read(file_path)
         [pixels, lines] = [int(sct_dict.get("grid_size", [1, 1])[i]) for i in range(2)]
         sct_dict.update({"pixels": pixels, "lines": lines})
+        
         frame = self.convert_to_sct_frame(sct_dict)
+        print(f"{sct_dict = }, {frame = }")
         sct_dict.update({"frame": frame})
 
         # Z_controller

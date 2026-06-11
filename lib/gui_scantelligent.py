@@ -250,7 +250,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
             "start_scan": MSB(size = 28, states = [{"name": "idle", "tooltip": "Start scan", "icon": icons.get("start_scan"), "color": sct_black},
                                                    {"name": "running", "tooltip": "Stop scan", "icon": icons.get("stop_scan"), "color": sct_blue}]),
-            "auto_paste": MSB(tooltip = "Auto paste scans when finished", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
+            "auto_paste": MSB(tooltip = "Paste item", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
             
@@ -299,7 +299,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                                                                               {"name": "abs^2", "icon": icons.get("abs_2")},
                                                                                               {"name": "log(abs)", "icon": icons.get("log_abs")},
                                                                                               {"name": "arg", "icon": icons.get("arg")}], click_to_toggle = False),
-            "save_image": MSB(tooltip = "Save image", icon = icons.get("floppy")),
+            "save_item": MSB(tooltip = "Save array item", icon = icons.get("floppy")),
 
             # ImageView items and attributes            
             "frame": MSB(icon = icons.get("guide_frame"), states = [{"name": "off", "tooltip": "Click to show the guide frame", "color": sct_black},
@@ -311,7 +311,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "grid": MSB(states = [{"name": "off", "tooltip": "Grid lines not shown", "icon": icons.get("no_grid"), "color": sct_black},
                                   {"name": "below", "tooltip": "Showing grid lines below images", "icon": icons.get("grid_below"), "color": sct_blue},
                                   {"name": "above", "tooltip": "Showing grid lines above images", "icon": icons.get("grid_above"), "color": sct_blue}]),
-            "trash": MSB(icon = icons.get("trash"), tooltip = "Discard the currently selected scan_item")
+            "trash": MSB(icon = icons.get("trash"), tooltip = "Discard the currently selected array item")
         }
         
         for parameter_type in ["bias", "mla_bias", "keithley_bias", "coarse", "gain", "speed", "frame", "grid", "feedback", "lockin", "tip_shaper", "spectroscopy"]:
@@ -416,7 +416,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "mla_mod2": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             "mla_mod3": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             
-            "scan_items": CB(tooltip = "Scan items"),
+            "items": CB(tooltip = "Array items"),
             "graph_x_axis": CB(tooltip = "Channel to use for the x axis")
         }
         
@@ -683,13 +683,18 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         new_frame.addScaleHandle([1, 0], [0, 1])
         new_frame.addRotateHandle([0.5, 0], [0.5, 0.5])
         new_frame.sigRegionChangeFinished.connect(self.update_fields_from_frame_change)
+        frame.setZValue(78)
+        new_frame.setZValue(79)
         
         # Target items
         tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
         target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
+        tip_target.setZValue(80)
+        target0.setZValue(81)
         
         # Path
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
+        path_pdi.setZValue(82)
         return (piezo_frame, frame, new_frame, tip_target, target0, path_pdi)
 
     def make_plot_widget(self) -> SCTWidgets.PlotWidget:
@@ -963,7 +968,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.image_view.addWidget(self.limits_widget, 0, 3)
         
         layouts["image_view_controls"].addWidget(buttons["auto_paste"])
-        [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["scan_items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
+        [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
         [layouts["navigation"].addWidget(buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "grid", "frame", "path", "target"]]
         layouts["image_view_controls"].addLayout(layouts["navigation"])
         [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
@@ -975,7 +980,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         o_layout.addWidget(buttons["image_projection"], 0, 6)
         o_layout.addWidget(self.sliders["phase"], 0, 7)
         layouts["image_view_controls"].addLayout(o_layout)
-        layouts["image_view_controls"].addWidget(buttons["save_image"])
+        layouts["image_view_controls"].addWidget(buttons["save_item"])
         
         # Input console
         layouts["input"].addWidget(self.consoles["input"])
