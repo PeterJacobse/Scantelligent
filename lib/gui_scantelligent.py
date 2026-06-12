@@ -656,7 +656,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         ss_path = self.paths["splash_screen"]
         splash_screen_array = self.splash_screen = np.flipud(np.array(Image.open(ss_path)))
-        camera_item = SCTWidgets.ArrayItem(name = "camera", array = splash_screen_array, color = True)
+        camera_item = SCTWidgets.ArrayItem(name = "camera", array = splash_screen_array, color_image = True)
         
         plot_item = pg.PlotItem()
         plot_item.addItem(camera_item)

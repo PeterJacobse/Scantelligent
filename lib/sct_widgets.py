@@ -1,4 +1,4 @@
-import re, types, os, h5py
+import re, types, os, cv2
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 import numpy as np
@@ -16,7 +16,7 @@ class SCTWidgets:
             self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             if isinstance(text, str): self.setText(text)
             if isinstance(tooltip, str): self.setToolTip(tooltip)
-        
+
     class TargetItem(pg.TargetItem):
         clicked = QtCore.pyqtSignal(str)
         position_signal = QtCore.pyqtSignal(float, float)
@@ -73,7 +73,7 @@ class SCTWidgets:
                 super().mouseClickEvent(event)
 
     class ArrayItem(pg.ImageItem):
-        def __init__(self, name: str = "", array: np.ndarray = None, frame: dict = {}, x_axis: int = 0, y_axis: int = 1, color: bool = False,
+        def __init__(self, name: str = "", array: np.ndarray = None, frame: dict = {}, x_axis: int = 0, y_axis: int = 1, color_image: bool = False,
                      axes: list | np.ndarray = None, axis_0_labels: list | np.ndarray = None, axis_1_labels: list | np.ndarray = None, axis_2_labels: list | np.ndarray = None, axis_3_labels: list | np.ndarray = None):
             super().__init__()
             self.setOpts(axisOrder = "row-major")
@@ -87,8 +87,8 @@ class SCTWidgets:
             self.slice_label.setParentItem(self)
 
             # Set the data array
-            self.name = name
-            self.color = color
+            self.setName(name)
+            self.color_image = color_image
             self.setArray(array)
 
             # Set labels to the axes if present. axis_n_labels denotes labels corresponding to individual data values. axis_labels denotes labels/captions attached to the axes themselves, such as 'direction', 'channels', 'x axis', 'y axis', ...
@@ -101,7 +101,7 @@ class SCTWidgets:
             self.setProjection("real")
             self.mapAxes(x_axis = x_axis, y_axis = y_axis)
             self.updateFrame(frame)
-            self.showImage(color = self.color)
+            self.showImage(color_image = self.color_image)
 
 
 
@@ -134,25 +134,28 @@ class SCTWidgets:
             return
 
         def setImage(self, image: np.ndarray = None, autoLevels = False, levelSamples = 65536, **kwargs) -> None:
-            if not isinstance(image, np.ndarray): return
+            if not isinstance(image, np.ndarray): return            
             if image.dtype.kind in ["f", "u"]:
                 real_image = image
             elif image.dtype.kind == "c":
                 abs_image = np.abs(image, dtype = np.float32)
                 max_val = np.nanmax(abs_image)
                 min_val = np.nanmin(abs_image)
-                norm_img = np.astype(256 * (image - min_val) / (max_val - min_val), np.uint8)
                 
                 match self.projection:
                     case "complex":
-                        real_image = np.angle(image, dtype = np.float32)
+                        arg_image = np.angle(image, dtype = np.float32)
+                        phase_image = np.angle(image)
+                        phase_image_norm = (phase_image + np.pi) / (2 * np.pi)
+                        hsv_array = np.dstack((phase_image_norm, np.ones_like(phase_image_norm), abs_image))
+                        
                     case "real":
-                        real_image = np.real(norm_img, dtype = np.uint8)
+                        real_image = np.real(image, dtype = np.float32)
                     case "imaginary":
                         real_image = np.imag(image, dtype = np.float32)
                     case "abs":
                         real_image = np.abs(image, dtype = np.float32)
-                    case "abs_2":
+                    case "abs^2":
                         real_image = np.abs(image, dtype = np.float32)
                     case _:
                         real_image = np.real(image)
@@ -163,9 +166,17 @@ class SCTWidgets:
             super().setImage(real_image, autoLevels, levelSamples, **kwargs)
             self.updateLabelPositions()
             return
+        
+        def setImageLevels(self, levels: tuple | list | np.ndarray) -> None:
+            self.min = levels[0]
+            self.max = levels[1]
+            return
+        
+        def getImageLevels(self) -> tuple:
+            return (self.min, self.max)
 
         def setProjection(self, projection: str = "real") -> None:
-            if projection in ["real", "imaginary", "abs", "arg"]:
+            if projection in ["real", "imaginary", "abs", "arg", "complex"]:
                 self.projection = projection
             return
 
@@ -282,7 +293,7 @@ class SCTWidgets:
                 slice_index = 0
             
             self.slice_indices[axis_index] = slice_index
-            slice_text = "slice: ("
+            slice_text = self.name + "\nslice: ("
             for axis_index in self.remaining_axes_indices:
                 slice_text += f"{self.axes[axis_index]}: "
                 slice_text += f"{self.axis_labels[axis_index][self.slice_indices[axis_index]]}; "
@@ -290,7 +301,7 @@ class SCTWidgets:
             self.setSliceText(slice_text = slice_text)
             return
 
-        def getSlice(self, color: bool = False) -> None:
+        def getSlice(self, color_image: bool = False) -> None:
             try:
                 match self.rank:
                     case 2:
@@ -302,7 +313,7 @@ class SCTWidgets:
                         slice_list = [slice(None)] * self.array.ndim
                         slice_list[slice_axis] = self.slice_indices[slice_axis]
                         
-                        if color:
+                        if color_image:
                             n_color_channels = min(self.array.shape[slice_axis], 4)
                             if {self.x_axis_index, self.y_axis_index} == {0, 1}: image_slice = self.array[:, :, :n_color_channels]
                             if {self.x_axis_index, self.y_axis_index} == {0, 2}: image_slice = self.array[:, :n_color_channels, :]
@@ -323,14 +334,14 @@ class SCTWidgets:
             except Exception as e:
                 print(f"Problem encountered while calling ArrayItem.showImage: {e}")
             try:
-                if color: (self.pixels, self.lines, _) = image_slice.shape
+                if color_image: (self.pixels, self.lines, _) = image_slice.shape
                 else: (self.pixels, self.lines) = image_slice.shape
             except Exception as e:
                 print(f"Problem encountered setting the image: {e}")
             return image_slice
 
-        def showImage(self, color: bool = False, autoLevels: bool = False) -> None:
-            image_slice = self.getSlice(color = color)
+        def showImage(self, color_image: bool = False, autoLevels: bool = False) -> None:
+            image_slice = self.getSlice(color_image = color_image)
             self.setImage(image_slice, autoLevels = autoLevels)
             return
 

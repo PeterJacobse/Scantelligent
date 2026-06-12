@@ -679,7 +679,6 @@ class FileFunctions():
         sct_dict.update({"pixels": pixels, "lines": lines})
         
         frame = self.convert_to_sct_frame(sct_dict)
-        print(f"{sct_dict = }, {frame = }")
         sct_dict.update({"frame": frame})
 
         # Z_controller
