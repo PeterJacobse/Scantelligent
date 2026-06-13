@@ -73,8 +73,8 @@ class DataProcessing:
             "file_name": "",
             "frame": { # A frame dict is embedded in processing flags so that the location, rotation and scan range parameters can be accessed immediately
                 "dict_name": "frame",
-                "offset (nm)": [0, 0],
-                "scan_range (nm)": [0, 0],
+                "center (nm)": [0, 0],
+                "domain (nm)": [0, 0],
                 "angle (deg)" : 0
             }
         }
@@ -184,10 +184,10 @@ class DataProcessing:
             match quantity.lower():
                 case "translation" | "center" | "offset":
                     (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    output_dict.update({"offset (nm)": array})        
+                    output_dict.update({"center (nm)": array})        
                 case "size" | "area" | "range" | "scan_range" | "scan range":
                     (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
-                    output_dict.update({"scan_range (nm)": array})
+                    output_dict.update({"domain (nm)": array})
                 
                 case "w" | "width" | "range_x" | "x_range" | "x range":
                     (array, quantity) = self.convert_data_to_unit(np.array(value, dtype = np.float32), key, "nm")
@@ -210,8 +210,8 @@ class DataProcessing:
                 case _:
                     pass
 
-            if not "offset (nm)" in output_dict.keys() and x_nm and y_nm: output_dict.update({"offset (nm)": np.array([x_nm, y_nm], dtype = np.float32)})
-            if not "scan_range (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"scan_range (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
+            if not "center (nm)" in output_dict.keys() and x_nm and y_nm: output_dict.update({"center (nm)": np.array([x_nm, y_nm], dtype = np.float32)})
+            if not "domain (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"domain (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
             
             if not "angle (deg)" in output_dict.keys(): output_dict.update({"angle (deg)": 0.})
             if "pixels" in grid.keys(): output_dict.update({"pixels": grid["pixels"]})
@@ -532,7 +532,7 @@ class DataProcessing:
     def operate_scan(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
         flags = self.scan_processing_flags.get_all()
-        scan_range_nm = flags.get("scan_range (nm)")
+        scan_range_nm = flags.get("domain (nm)")
         gaussian_sigma = flags.get("gaussian_width (nm)")
         
         # Background subtraction

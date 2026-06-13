@@ -190,7 +190,15 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                                                                {"name": "up", "color": sct_black, "tooltip": "Grid scan up", "icon": icons.get("grid_up")},
                                                                                {"name": "down", "color": sct_black, "tooltip": "Grid scan down", "icon": icons.get("grid_down")},
                                                                                {"name": "gaussian_process", "color": sct_black, "tooltip": "Gaussian Process Regression scan", "icon": icons.get("gaussian_process")}]),
-            
+            "drift": MSB(size = 28, states = [{"name": "off", "icon": icons.get("drift"), "tooltip": "Not applying drift correction", "color": sct_black},
+                                              {"name": "on", "icon": icons.get("drift"), "tooltip": "Determine the sample drift\nafter each recalibration period and compensate", "color": sct_blue}]),
+            "intermediate_feedback": MSB(click_to_toggle = True, size = 28,
+                                         states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
+                                                   {"name": "on", "tooltip": "Return to intermediate feedback\nafter each recalibration period", "icon": icons.get("constant_current"), "color": sct_blue}]),
+            "reference_position": MSB(click_to_toggle = True, size = 28,
+                                      states = [{"name": "off", "tooltip": "Do not return to reference position\nafter each recalibration period", "icon": icons.get("return_to_target"), "color": sct_black},
+                                                   {"name": "on", "tooltip": "Return to reference position\nafter each recalibration period", "icon": icons.get("return_to_target"), "color": sct_blue}]),
+
             # Locks
             "frame_aspect": MSB(tooltip = "Lock the frame aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
             "grid_aspect": MSB(tooltip = "Lock the grid aspect ratio", states = [{"name": "unlocked", "color": sct_black, "icon": icons.get("unlock_aspect")}, {"name": "locked", "color": sct_blue, "icon": icons.get("lock_aspect")}]),
@@ -203,20 +211,17 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                  {"name": "feedback", "tooltip": "Tip status\nIn feedback", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]},
                                  {"name": "constant_height", "tooltip": "Tip status\nConstant height", "icon": icons.get("constant_height"), "color": self.colors["orange"]}]),
             "set_dz": MSB(icon = icons.get("set_dz"), tooltip = "Push to set delta_z\nSee value below"),
-            "intermediate_feedback": MSB(click_to_toggle = False, size = 28,
-                                         states = [{"name": "off", "tooltip": "Do not go into intermediate feedback", "icon": icons.get("constant_height"), "color": sct_black},
-                                                   {"name": "on", "tooltip": "Return to intermediate feedback\nafter every sweep in x", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]}]),
             "reference_height": MSB(click_to_toggle = False, size = 28,
                                     states = [{"name": "off", "tooltip": "Do not use a different height\nrelative to the feedback setpoint", "icon": icons.get("constant_height"), "color": sct_black},
                                               {"name": "on", "tooltip": "After intermediate feedback,\nadjust the tip height", "icon": icons.get("constant_current"), "color": self.colors["dark_green"]}]),
             
             # Coarse vertical
-            "withdraw": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": sct_blue},
-                                                               {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": sct_black}]),
-            "withdraw_2": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip\n(Ctrl + W)", "icon": icons.get("withdraw"), "color": sct_blue},
-                                                                 {"name": "withdrawn", "tooltip": "Land the tip\n(Ctrl + W)", "icon": self.icons.get("approach"), "color": sct_black}]),
-            "retract": MSB(tooltip = "Retract the tip from the surface\n(Ctrl + PgUp)", icon = icons.get("retract")),
-            "advance": MSB(tooltip = "Advance the tip towards the surface\n(Ctrl + PgDown)", icon = icons.get("advance")),
+            "withdraw": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip", "icon": icons.get("withdraw"), "color": sct_blue},
+                                                               {"name": "withdrawn", "tooltip": "Land the tip", "icon": self.icons.get("approach"), "color": sct_black}]),
+            "withdraw_2": MSB(click_to_toggle = False, states = [{"name": "landed", "tooltip": "Withdraw the tip", "icon": icons.get("withdraw"), "color": sct_blue},
+                                                                 {"name": "withdrawn", "tooltip": "Land the tip", "icon": self.icons.get("approach"), "color": sct_black}]),
+            "retract": MSB(tooltip = "Retract the tip from the surface", icon = icons.get("retract")),
+            "advance": MSB(tooltip = "Advance the tip towards the surface", icon = icons.get("advance")),
             "approach": MSB(size = 28, states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": sct_black},
                                                  {"name": "running", "tooltip": "Stop auto approach", "icon": icons.get("stop_approach"), "color": sct_blue}]),
             "approach_2": MSB(size = 28, states = [{"name": "idle", "tooltip": "Initiate auto approach", "icon": icons.get("start_approach"), "color": sct_black},
@@ -279,7 +284,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             
             "sobel": MSB(tooltip = "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", icon = self.icons.get("sobel"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "laplace": MSB(tooltip = "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + L)", icon = self.icons.get("laplacian"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "fft": MSB(tooltip = "Compute the 2D Fourier transform\n(Shift + F)", icon = self.icons.get("fourier"), states = [{"color": sct_black}, {"color": sct_blue}]),
+            "real_reciprocal": MSB(states = [{"name": "real", "tooltip": "Real space representation (unit: nm)", "icon": icons.get("real_space"), "color": sct_black},
+                                             {"name": "real", "tooltip": "Reciprocal space representation (unit: nm-1)", "icon": icons.get("reciprocal_space"), "color": sct_black}]),
             "normal": MSB(tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "gaussian": MSB(tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "rot_trans": MSB(icon = self.icons.get("rot_trans"), states = [{"name": "local", "color": sct_black, "tooltip": "Scan is displayed in its local coordinates"},
@@ -435,6 +441,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         line_edits = {
             # Experiment
             "experiment_filename": LE(tooltip = "base name of the file when saved to png or hdf5"),
+            "recalibration_period": LE(tooltip = "recalibration period", unit = "min", value = 20, limits = [0, 100000], digits = 0),
 
             # Coarse
             "z_steps": LE(value = 20, tooltip = "steps in the +z (retract) direction", unit = "↑", limits = [0, 100000], digits = 0, max_width = 100),
@@ -482,8 +489,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             # Frame
             "frame_height": LE(tooltip = "frame height", unit = "nm", limits = [0, 1000], digits = 1, edited_color = scanalyzer_blue),
             "frame_width": LE(tooltip = "frame width", unit = "nm", limits = [0, 1000], digits = 1, edited_color = scanalyzer_blue),
-            "frame_x": LE(tooltip = "frame offset (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
-            "frame_y": LE(tooltip = "frame offset (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
+            "frame_x": LE(tooltip = "frame center (x)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
+            "frame_y": LE(tooltip = "frame center (y)", unit = "nm", limits = [-2000, 2000], digits = 1, edited_color = scanalyzer_blue),
             "frame_angle": LE(tooltip = "frame angle", unit = "deg", limits = [-180, 360], digits = 1, edited_color = scanalyzer_blue),
             "frame_aspect": LE(tooltip = "frame aspect ratio\n(height / width)", digits = 4, edited_color = scanalyzer_blue),
 
@@ -592,6 +599,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "experiment_progress": make_layout("h"),
             "experiment_control": make_layout("h"),
             "experiment_direction": make_layout("h"),
+            "experiment_intermediate": make_layout("h"),
             "experiment_io": make_layout("h"),
             "experiment_fields": make_layout("g"),
             "experiment_buttons": make_layout("h"),
@@ -800,8 +808,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         comboboxes = self.comboboxes
         
         # Graphing
-        layouts["chann_options"].addStretch(1)
-        
+        layouts["chann_options"].addStretch(1)        
         layouts["graph_options"].addWidget(buttons["graph_projection"], 0, 0, 2, 1)
         layouts["graph_options"].addWidget(comboboxes["graph_x_axis"], 0, 1)
         layouts["graph_options"].addWidget(line_edits["graph_buffer_size"], 1, 1)
@@ -847,9 +854,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         e_layout.addLayout(layouts["experiment_control"])
         
         e_layout.addWidget(labels["experiment_settings"])
-        e_layout.addWidget(make_line("h", 1))        
+        e_layout.addWidget(make_line("h", 1))
         [layouts["experiment_direction"].addWidget(widget) for widget in [buttons["scan_direction"], comboboxes["direction"]]]
         e_layout.addLayout(layouts["experiment_direction"])
+        layouts["experiment_intermediate"].addWidget(line_edits["recalibration_period"])
+        [layouts["experiment_intermediate"].addWidget(buttons[name]) for name in ["intermediate_feedback", "reference_position", "drift"]]
+        e_layout.addLayout(layouts["experiment_intermediate"])
         
         [layouts["experiment_fields"].addWidget(widget, int(index / 3), index % 3) for index, widget in enumerate([line_edits[f"experiment_{i}"] for i in range(3)])] # Grid of experiment fields
         [layouts["experiment_buttons"].addWidget(buttons[f"experiment_{i}"]) for i in range(6)] # Grid of experiment buttons
@@ -975,7 +985,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["image_view_controls"].addLayout(layouts["background_buttons"])
                 
         o_layout = layouts["operations"]
-        [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["sobel", "normal", "laplace", "fft", "gaussian"])]
+        [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["real_reciprocal", "sobel", "normal", "laplace", "gaussian"])]
         o_layout.addWidget(line_edits["gaussian_width"], 0, 5)
         o_layout.addWidget(buttons["image_projection"], 0, 6)
         o_layout.addWidget(self.sliders["phase"], 0, 7)

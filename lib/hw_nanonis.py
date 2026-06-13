@@ -190,6 +190,8 @@ class NanonisHardware:
             
             # Piezo
             "get_range": make_header('Piezo.RangeGet', body_size = 0),
+            "get_tilt": make_header('Piezo.TiltGet', body_size = 0),
+            "set_tilt": make_header('Piezo.TiltSet', body_size = 8),
 
             # Tipshaper
             "shape_tip": make_header('TipShaper.Start', body_size = 8),
@@ -616,6 +618,8 @@ class NanonisHardware:
         
         return 
 
+
+
     # Current
     def get_I(self) -> str:
         command = self.headers["get_I"]
@@ -909,9 +913,7 @@ class NanonisHardware:
         h = h_to_f(response[12 : 16]) * 1E9
         angle = h_to_f(response[16 : 20])
         
-        frame = {"x (nm)": x, "y (nm)": y, "center (nm)": np.array([x, y], dtype = np.float32), "offset (nm)": np.array([x, y], dtype = np.float32), "width (nm)": w, "height (nm)": h,
-                 "scan_range (nm)": np.array([w, h], dtype = np.float32), "angle (deg)": angle, "aspect_ratio": h / w}
-        
+        frame = {"x (nm)": x, "y (nm)": y, "center (nm)": np.array([x, y], dtype = np.float32), "width (nm)": w, "height (nm)": h, "domain (nm)": np.array([w, h], dtype = np.float32), "angle (deg)": angle, "aspect_ratio": h / w}
         return frame
 
     def set_scan_frame(self, frame_hex: str) -> None:
@@ -1282,6 +1284,26 @@ class NanonisHardware:
         xyz_nm = [self.conv.hex_to_float32(range_str[i : i + 4]) * 1E9 for i in range(0, 12, 4)]
 
         return xyz_nm
+
+    def get_tilt(self) -> list:
+        command = self.headers["get_tilt"]
+        self.send_command(command)
+        
+        response = self.receive_response(8)        
+        x_tilt = self.conv.hex_to_float32(response[0 : 4])
+        y_tilt = self.conv.hex_to_float32(response[4 : 8])
+        
+        return [x_tilt, y_tilt]
+    
+    def set_tilt(self, x_tilt: float = None, y_tilt: float = None) -> None:
+        current_tilt = self.get_tilt()
+        if not x_tilt: x_tilt = current_tilt[0]
+        if not y_tilt: y_tilt = current_tilt[1]
+        
+        command = self.headers["set_tilt"] + self.conv.float32_to_hex(x_tilt) + self.conv.float32_to_hex(y_tilt)
+        self.send_command(command)
+        self.receive_response(0)
+        return
 
 
 

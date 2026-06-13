@@ -40,7 +40,7 @@ class Experiment(BaseExperiment):
         nn.scan_metadata_update({"channel_indices": feedback_channel_indices}) # Make sure the correct channel is being recorded
 
         # Setting the scan frame in the top right corner
-        nn.frame_update({"offset (nm)": [500, 500], "scan_range (nm)": [100, 100], "angle (deg)": 0})
+        nn.frame_update({"offset (nm)": [500, 500], "domain (nm)": [100, 100], "angle (deg)": 0})
         nn.scan_action({"action": "start", "direction": "down"})
         self.sct.set_view_range("frame")
         self.monitor_scan(channel = feedback_channel_indices[0])
@@ -53,7 +53,7 @@ class Experiment(BaseExperiment):
             nn.frame_update({"offset (nm)": [500, position]}, verbose = False)
             time.sleep(.05)
         for iteration, angle in enumerate(np.linspace(0, 3 * np.pi, 80)):
-            nn.frame_update({"angle (deg)": 2 * np.rad2deg(angle), "offset (nm)": [500 * np.cos(angle), 500 * np.sin(angle)], "scan_range (nm)": [100 + 80 * np.sin(angle), 100 - 80 * np.sin(angle)]}, verbose = False)
+            nn.frame_update({"angle (deg)": 2 * np.rad2deg(angle), "offset (nm)": [500 * np.cos(angle), 500 * np.sin(angle)], "domain (nm)": [100 + 80 * np.sin(angle), 100 - 80 * np.sin(angle)]}, verbose = False)
             time.sleep(.05)
         for iteration, position in enumerate(np.linspace(0, -500, 12)):
             nn.frame_update({"angle (deg)": 0, "offset (nm)": [-500, position]}, verbose = False)
@@ -67,7 +67,7 @@ class Experiment(BaseExperiment):
         self.monitor_scan(channel = feedback_channel_indices[0])
         
         self.logprint("This looks like a great area to condition the tip!", message_type = "message")
-        [width_nm, height_nm] = poke_area.get("scan_range (nm)")
+        [width_nm, height_nm] = poke_area.get("domain (nm)")
         [x_nm, y_nm] = poke_area.get("offset (nm)")
 
 
@@ -90,7 +90,7 @@ class Experiment(BaseExperiment):
             nn.frame_update({"offset (nm)": [-500, position]}, verbose = False)
             time.sleep(.05)            
         for iteration, angle in enumerate(np.linspace(np.pi, 4 * np.pi, 80)):
-            nn.frame_update({"angle (deg)": - np.rad2deg(angle), "offset (nm)": [500 * np.cos(angle), 500 * np.sin(angle)], "scan_range (nm)": [100 + 80 * np.sin(angle), 100 + 80 * np.sin(angle)]}, verbose = False)
+            nn.frame_update({"angle (deg)": - np.rad2deg(angle), "offset (nm)": [500 * np.cos(angle), 500 * np.sin(angle)], "domain (nm)": [100 + 80 * np.sin(angle), 100 + 80 * np.sin(angle)]}, verbose = False)
             time.sleep(.05)
         for iteration, position in enumerate(np.linspace(0, 500, 12)):
             nn.frame_update({"angle (deg)": 0, "offset (nm)": [500, position]}, verbose = False)

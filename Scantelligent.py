@@ -1,4 +1,4 @@
-import os, sys, html, atexit, re, copy, time, h5py
+import os, sys, html, atexit, re, copy, time
 from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
@@ -97,7 +97,7 @@ class Scantelligent(QtCore.QObject):
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
-        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["sobel", "laplace", "fft", "normal", "gaussian", "direction", "image_projection"]]
+        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["real_reciprocal", "sobel", "laplace", "normal", "gaussian", "direction", "image_projection"]]
         
         for parameter_type in ["bias", "mla_bias", "keithley_bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
             button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
@@ -412,10 +412,33 @@ class Scantelligent(QtCore.QObject):
             
         return
 
+    @QtCore.pyqtSlot(np.ndarray, list, list)
+    def receive_array_slice(self, data_slice: np.ndarray, target_indices: list, axes: list) -> None:
+        if not hasattr(self, "active_item") or self.gui.buttons["view"].state_name in ["none", "camera"]: return
+        
+        try:
+            indexer = [slice(None)] * self.active_item.rank
+            
+            # Inject the insertion indices into the targeted axes
+            for axis, idx in zip(axes, target_indices):
+                indexer[axis] = idx
+            print(f"{tuple(indexer) = }")
+            self.active_item.array[tuple(indexer)] = data_slice
+            
+            image = self.active_item.getSlice()
+            (processed_scan, statistics, limits, error) = self.data.process_scan(image)
+            [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
+            
+            self.active_item.setImage(np.flipud(processed_scan))
+            self.gui.hist_item.setLevels(limits[0], limits[1])
+        except Exception as e:
+            print(f"{e}")
+        return
+
     @QtCore.pyqtSlot(np.ndarray)
     def receive_data(self, data: np.ndarray) -> None:
         data_array = np.atleast_2d(data).transpose()[:self.gui.grapher.n_channels] # Cast the data into a 2D np.ndarray, if it isn't in that form yet
-        
+
         # Single elements can be used to signal the grapher
         if data_array.shape == (1, 1):
             if isinstance(data_array[0, 0], int) and data_array[0, 0] < self.gui.grapher.n_channels and data_array[0, 0] > -2:
@@ -690,24 +713,22 @@ class Scantelligent(QtCore.QObject):
             return
         
         self.toggle_view("nanonis")
-        array = None
-        grid = None
+        dataset = None
+        frame = None
 
         try:
             file_data = self.file_functions.read_file(file_path)
-            [array, frame, axes, axes_data] = [file_data.get(key, None) for key in ["array", "frame", "axes", "axes_data"]]
+            [dataset, frame, axes, axes_data] = [file_data.get(key, None) for key in ["dataset", "frame", "axes", "axes_data"]]
         except Exception as e:
             self.logprint(f"Could not open this file: {e}", message_type = "error")
 
-        if not isinstance(array, np.ndarray):
+        if not isinstance(dataset, np.ndarray):
             self.logprint(f"Could not retrieve data from this file", message_type = "error")
             return
         
         try:
-            array_item = SCTWidgets.ArrayItem(name = os.path.basename(file_path), array = array, frame = frame) # Create the ArrayItem object
+            array_item = SCTWidgets.ArrayItem(name = os.path.basename(file_path), array = dataset, frame = frame) # Create the ArrayItem object
             
-            x_axis = None
-            y_axis = None
             previous_rank = self.gui.comboboxes["x_axis"].count() # Record the initial state of the comboboxes. The previous rank is equal to the number of axis labels currently present in the combobox
             previous_x_index = self.gui.comboboxes["x_axis"].currentIndex()
             previous_y_index = self.gui.comboboxes["y_axis"].currentIndex()
@@ -730,12 +751,12 @@ class Scantelligent(QtCore.QObject):
                     self.gui.comboboxes["y_axis"].selectIndex(previous_y_index)
             
             # Activating the ArrayItem and passing it to ImageView
-            self.gui.active_item = array_item
-            self.gui.active_item.setZValue(64)
-            self.gui.image_view.setItem(self.gui.active_item)
+            self.active_item = array_item
+            self.active_item.setZValue(64)
+            self.gui.image_view.setItem(self.active_item)
             self.slice_axes_changed()
             self.update_processing_flags()
-            self.gui.active_item.showImage(autoLevels = True)
+            self.active_item.showImage(autoLevels = True)
             self.set_view_range("frame")
             
             self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
@@ -808,24 +829,65 @@ class Scantelligent(QtCore.QObject):
         return
 
     def save_active_item(self) -> None:
-        if hasattr(self.gui, "active_item"):
-            self.gui.active_item.showLabels(False)
-            self.gui.saved_items.insert(0, self.gui.active_item) # Save the active item to the saved_items
-        if len(self.gui.saved_items) > 18: self.gui.saved_items = self.gui.saved_items[:18] # Clip the length of saved_items to a maximum number of 18
+        if hasattr(self, "active_item"):
+            self.active_item.showLabels(False)
+            self.saved_items.insert(0, self.active_item) # Save the active item to the saved_items
+        if len(self.saved_items) > 18: self.saved_items = self.saved_items[:18] # Clip the length of saved_items to a maximum number of 18
         
         saved_item_names = []
-        for index, item in enumerate(self.gui.saved_items):
+        for index, item in enumerate(self.saved_items):
             item.setZValue(20 - index) # Reset the ZValues of the items
             saved_item_names.append(item.name)
         self.gui.comboboxes["items"].renewItems(saved_item_names)
         
         view = self.gui.image_view.view
         [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem)]
-        [view.addItem(item) for item in self.gui.saved_items]
+        [view.addItem(item) for item in self.saved_items]
         return
     
-    def create_array_item(self, shape: list | tuple = (), axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
-        #self.gui.active_item = SCTWidgets.ArrayItem(np.empty(shape = shape), axes = axes, frame = frame)
+    def create_array_item(self, name: str = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
+        if not dtype: dtype = np.float32
+        if not name: name = "active_item"
+        
+        if dtype in [np.complex64, np.complex128]: array = np.full(shape, np.nan + 1j * np.nan, dtype = dtype)
+        else: array = np.full(shape, np.nan, dtype = dtype)
+        
+        try:
+            array_item = SCTWidgets.ArrayItem(name = name, array = array, frame = frame) # Create the ArrayItem object
+            
+            previous_rank = self.gui.comboboxes["x_axis"].count() # Record the initial state of the comboboxes. The previous rank is equal to the number of axis labels currently present in the combobox
+            previous_x_index = self.gui.comboboxes["x_axis"].currentIndex()
+            previous_y_index = self.gui.comboboxes["y_axis"].currentIndex()
+            axes_data = axis_values
+            
+            if isinstance(axes, list | np.ndarray):
+                self.gui.comboboxes["x_axis"].renewItems(axes) # Add the names of the various array axes to the x and y axes comboboxes
+                self.gui.comboboxes["y_axis"].renewItems(axes)
+
+                for axis_index, axis_name in enumerate(axes): # Attach the axis data (x values, channel names, etc.) to the various axes of the ArrayItem                    
+                    if isinstance(axes_data, dict) and axis_name in axes_data: array_item.setAxisData(axis_index, axis_name, labels = axes_data[axis_name])
+                    elif isinstance(axes_data, list) and len(axes_data) > axis_index: array_item.setAxisData(axis_index, axis_name, labels = axes_data[axis_index])
+                    else: array_item.setAxisData(axis_index, axis_name)
+
+                if previous_rank < 2: # If the combobox previously held no items, attempt to default to mapping the image x axis to the array x axis
+                    [self.gui.comboboxes["x_axis"].selectItem(tag) for tag in axes if tag.lower() in ["x", "x (nm)", "x_axis", "x_axis (nm)", "x-axis", "x-axis (nm)", "x axis", "x axis (nm)", "x_values", "x_values (nm)"]]
+                    [self.gui.comboboxes["y_axis"].selectItem(tag) for tag in axes if tag.lower() in ["y", "y (nm)", "y_axis", "y_axis (nm)", "y-axis", "y-axis (nm)", "y axis", "y axis (nm)", "y_values", "y_values (nm)"]]
+                # Toggle the y axis to the next index if it is the same as the x axis
+
+                if self.gui.comboboxes["y_axis"].currentIndex() == self.gui.comboboxes["x_axis"].currentIndex(): self.gui.comboboxes["y_axis"].toggleIndex()
+                if not previous_rank < 1: # Attempt to reset the comboboxes to the same items if there was a previous data array
+                    self.gui.comboboxes["x_axis"].selectIndex(previous_x_index)
+                    self.gui.comboboxes["y_axis"].selectIndex(previous_y_index)
+
+            # Activating the ArrayItem and passing it to ImageView
+            self.active_item = array_item
+            self.active_item.setZValue(64)
+            self.gui.image_view.setItem(self.active_item)
+        
+        except Exception as e:
+            self.logprint(f"Error encountered while creating an ArrayItem object: {e}", message_type = "error")
+        
+        self.slice_axes_changed()
         return
 
     def toggle_view(self, view: str = None, verbose: bool = True) -> None:
@@ -932,14 +994,14 @@ class Scantelligent(QtCore.QObject):
         return
 
     def set_active_item(self) -> None:
-        if hasattr(self.gui, "active_item"): self.gui.active_item.showLabels(False)
+        if hasattr(self, "active_item"): self.active_item.showLabels(False)
         try:
             index = self.gui.comboboxes["items"].currentIndex()
-            selected_item = self.gui.saved_items[index]
+            selected_item = self.saved_items[index]
             self.gui.image_view.setItem(selected_item)
-            self.gui.active_item = selected_item
-            self.gui.active_item.showLabels(True)
-            self.gui.frame.setFrame(self.gui.active_item.frame)
+            self.active_item = selected_item
+            self.active_item.showLabels(True)
+            self.gui.frame.setFrame(self.active_item.frame)
             
             view = self.gui.image_view.view
             [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem) and not item == selected_item]
@@ -989,7 +1051,7 @@ class Scantelligent(QtCore.QObject):
 
     # Array slicing and image processing operations
     def slice_axes_changed(self) -> None:
-        if not hasattr(self.gui, "active_item"): return
+        if not hasattr(self, "active_item"): return
         try:
             # Retrieve the array x and y axes from the comboboxes. If they describe the same axis, toggle the y combobox
             x_axis = self.gui.comboboxes["x_axis"].currentText()
@@ -997,11 +1059,10 @@ class Scantelligent(QtCore.QObject):
             y_axis = self.gui.comboboxes["y_axis"].currentText()
             
             # Mapping the axes
-            self.gui.active_item.mapAxes(x_axis = x_axis, y_axis = y_axis)
+            self.active_item.mapAxes(x_axis = x_axis, y_axis = y_axis)
             
             # Retrieve the remaining axes and populate the slice comboboxes with the corresponding axis data
-            axes = self.gui.active_item.getAxes()
-
+            axes = self.active_item.getAxes()
             remaining_axes = sorted(set(axes) - {x_axis, y_axis})
             
             n_slice_comboboxes = 3
@@ -1018,7 +1079,7 @@ class Scantelligent(QtCore.QObject):
                         continue
                     
                     cbb_previous_index = cbb.currentIndex()
-                    (_, axis_data) = self.gui.active_item.getAxisData(axis_name)
+                    (_, axis_data) = self.active_item.getAxisData(axis_name)
                     cbb.setName(axis_name)
                     cbb.changeToolTip(axis_name)
                     axis_data = [str(axis_datum) for axis_datum in axis_data]
@@ -1026,7 +1087,7 @@ class Scantelligent(QtCore.QObject):
                     cbb.selectIndex(cbb_previous_index % cbb.count())
                     
                     slice_index = cbb.currentIndex()
-                    self.gui.active_item.setSlice(axis = axis_name, slice = slice_index)
+                    self.active_item.setSlice(axis = axis_name, slice = slice_index)
                     
                     slice_label = cbb.currentText()
                     (quantity, unit, _, _) = self.file_functions.split_physical_quantity(slice_label)
@@ -1037,9 +1098,9 @@ class Scantelligent(QtCore.QObject):
                 except Exception as e:
                     self.logprint(f"{e}")
             
-            self.gui.active_item.showImage()
-            self.gui.active_item.setFrame()
-            self.gui.frame.setFrame(self.gui.active_item.frame)
+            self.active_item.showImage()
+            self.active_item.setFrame()
+            self.gui.frame.setFrame(self.active_item.frame)
         except Exception as e:
             self.logprint(f"{e}", message_type = "error")
         return
@@ -1049,14 +1110,14 @@ class Scantelligent(QtCore.QObject):
         try:
             rot_trans = bool(self.gui.buttons["rot_trans"].state_index)
             if rot_trans:
-                self.gui.active_item.resetFrame()
-                self.gui.frame.setFrame(self.gui.active_item.frame)
+                self.active_item.resetFrame()
+                self.gui.frame.setFrame(self.active_item.frame)
             else:
-                self.gui.active_item.setOffset(0, 0)
-                self.gui.active_item.setAngle(0)
-                self.gui.active_item.setFrame()
-                item_range = self.gui.active_item.frame.get("scan_range (nm)")
-                self.gui.frame.setFrame({"scan_range (nm)": item_range, "offset (nm)": [0, 0], "angle (deg)": 0})
+                self.active_item.setOffset(0, 0)
+                self.active_item.setAngle(0)
+                self.active_item.setFrame()
+                item_range = self.active_item.frame.get("domain (nm)")
+                self.gui.frame.setFrame({"domain (nm)": item_range, "center (nm)": [0, 0], "angle (deg)": 0})
         except:
             self.logprint(f"Unable to apply rotation and translation", message_type = "error")
         return
@@ -1092,7 +1153,7 @@ class Scantelligent(QtCore.QObject):
             flags.update({"backward": backward, "projection": projection})
             
             # Operations
-            [flags.update({operation: self.gui.buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "fft"]]
+            [flags.update({operation: self.gui.buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "real_reciprocal"]]
             
             phase = self.gui.sliders["phase"].getValue()
             flags.update({"phase (deg)": phase})        
@@ -1112,9 +1173,9 @@ class Scantelligent(QtCore.QObject):
     def redraw_item(self) -> None:
         if self.gui.buttons["view"].state_name == "nanonis":
             try:
-                image = self.gui.active_item.getSlice()
+                image = self.active_item.getSlice()
                 (image, statistics, limits, error) = self.data.process_scan(image)
-                self.gui.active_item.setImage(image)
+                self.active_item.setImage(image)
                 img_min = statistics.get("min")
                 img_max = statistics.get("max")
                 self.gui.limits_widget.setValue("full", "min", img_min)
@@ -1392,7 +1453,6 @@ class Scantelligent(QtCore.QObject):
                     # Worker-thread connections
                     self.experiment_thread.started.connect(self.experiment.run)
                     self.experiment.finished.connect(self.experiment_thread.quit)
-                    self.experiment.finished.connect(self.refresh_image)
                     self.experiment_thread.finished.connect(self.experiment_cleanup)
                     
                     # Progress
@@ -1404,6 +1464,7 @@ class Scantelligent(QtCore.QObject):
                     self.experiment.parameters.connect(self.parameters.receive)
                     self.experiment.image.connect(self.receive_image)
                     self.experiment.data_array.connect(self.receive_data)
+                    self.experiment.array_slice.connect(self.receive_array_slice)
                     
                     # Set up the GUI. This direct call triggers the self.gui_setup to be emitted and handled by the Scantelligent ParameterManager
                     self.experiment.prepare_gui()

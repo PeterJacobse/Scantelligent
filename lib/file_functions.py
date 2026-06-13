@@ -30,7 +30,7 @@ class FileFunctions():
         
         output_dict = {"file_path": file_path}
         frame = None
-        array = None
+        dataset = None
         main_group = None
         axes_names = []
         axis_data = {}
@@ -47,25 +47,21 @@ class FileFunctions():
                 # Open groups at the root level
                 root_items = {key: value for key, value in f.items()}
                 
-                # Trying to find the frame (or grid) at the root level
+                # Try to find the frame (or grid) at the root level
                 for obj in ["frame", "grid"]:
                     if not obj in root_items.keys(): continue
                     
                     input_frame = {key: value for key, value in root_items[obj].attrs.items()}
                     frame = self.convert_to_sct_frame(input_frame)
-                    if not "scan_range (nm)" in frame.keys(): frame = None
-                
-                # Trying to find the measurement channels at the root level
-                for tag in ["channels", "channel_names"]:
-                    if tag in root_items.keys(): channels = main_group[tag].asstr()[:]
+                    if not "domain (nm)" in frame.keys(): frame = None
 
                 # Read the attributes from all groups. At the same time, try to find the main (Nexus) measurement group while reading the different groups.
                 for group_name, group in root_items.items():                
-                    if "NX_class" in group.attrs.keys():
+                    if "NX_class" in group.attrs:
                         main_group = root_items[group_name]
                         continue
                     
-                    group_dict = {key: value for key, value in group.attrs.items()}
+                    group_dict = {key: value for key, value in group.attrs.items() if not key in ["frame", "grid"]}
                     output_dict.update({group_name: group_dict})
                 
                 # Fall back to recognizing group tags. If nothing works: break
@@ -76,7 +72,10 @@ class FileFunctions():
                         if group_tag in root_items.keys():
                             main_group = root_items[group_tag]
                             break
-                if not main_group: return(output_dict)
+                
+                if not main_group:
+                    print("Could not determine the main group in HDF5 file")
+                    return(output_dict)
                 
                 
                 
@@ -90,18 +89,18 @@ class FileFunctions():
                         
                         input_frame = {key: value for key, value in main_group[obj].attrs.items()}
                         frame = self.convert_to_sct_frame(input_frame)
-                        if not "scan_range (nm)" in frame.keys(): frame = None
+                        if not "domain (nm)" in frame.keys(): frame = None
                 if isinstance(frame, dict): output_dict.update({"frame": frame})
 
                 # Retrieve the signal and axes
-                if "signal" in main_group.attrs.keys():
+                if "signal" in main_group.attrs:
                     signal_name = main_group.attrs.get("signal", "")
                     if isinstance(signal_name, bytes): signal_name = signal_name.decode("utf-8")
-                                    
-                    array = main_group[signal_name][:]
-                    output_dict.update({"signal": signal_name, "array": array})
 
-                if "axes" in main_group.attrs.keys():
+                    dataset = main_group[signal_name][:]
+                    output_dict.update({"signal": signal_name, "dataset": dataset})
+
+                if "axes" in main_group.attrs:
                     axes_attr = main_group.attrs.get("axes")
                     if isinstance(axes_attr, bytes): axes_names.append(axes_attr.decode("utf-8"))
                     elif isinstance(axes_attr, (list, tuple)): axes_names = [ax.decode("utf-8") if isinstance(ax, bytes) else ax for ax in axes_attr]
@@ -127,15 +126,15 @@ class FileFunctions():
 
 
                 # If Nexus parsing failed: extract the scan or spectroscopy data
-                if not isinstance(array, np.ndarray):
+                if not isinstance(dataset, np.ndarray):
                     recognized_tags = ["main", "sweep", "scan", "measurement", "spectrum", "spectroscopy", "data", "array"]
                     for tag in recognized_tags:
                         if tag in main_group.keys():
-                            array = main_group[tag][:]
-                            output_dict.update({"array": array})
+                            dataset = main_group[tag][:]
+                            output_dict.update({"dataset": dataset})
                             break
                 
-                shape = array.shape
+                shape = dataset.shape
                 rank = len(shape)
                 """
                 match rank:
@@ -232,7 +231,7 @@ class FileFunctions():
             if convert_to_sct_units:
                 axes_data.update({"channels": new_channels})
                 file_data.update({"axes_data": axes_data})
-            file_data.update({"array": output_array})
+            file_data.update({"dataset": output_array})
         except Exception as e:
             print(f"Problem reading .sxm file: {e}")
         return file_data
@@ -367,7 +366,10 @@ class FileFunctions():
         return (quantity, unit, backward, error)
 
     def convert_data_to_unit(self, data: np.ndarray, quantity: str, target_unit: str = None) -> str:
-        output_data = data
+        """
+        This function converts data (in np.ndarray form) from a certain physical quantity to a different quantity.
+        The np.ndarray is changes in place, while the funciton exports the new quantity with the new unit attached to it.
+        """
         output_quantity = quantity
         input_multiplier = 1
         target_multiplier = 1
@@ -383,31 +385,67 @@ class FileFunctions():
                     case "V": target_unit = "V"
                     case _: target_unit = input_unit
             
-            if len(input_unit) > 1 and input_unit[0] in {"f", "p", "n", "u", "m", "k", "M", "G"}:
-                input_prefix = input_unit[0]
-                match input_prefix:
-                    case "f": input_multiplier = 1E-15
-                    case "p": input_multiplier = 1E-12
-                    case "n": input_multiplier = 1E-9
-                    case "u": input_multiplier = 1E-6
-                    case "m": input_multiplier = 1E-3
-                    case "k": input_multiplier = 1E3
-                    case "M": input_multiplier = 1E6
-                    case "G": input_multiplier = 1E9
-                    case _: pass
+            input_prefix = input_unit[0] # Try to get the prefix
+            if input_prefix == "/": # Convert reciprocal notation, e.g. /nm to nm-1
+                input_unit = input_unit[1:] + "-1"
+                input_prefix = input_unit[0] # Reset the input prefix now that the division sign is removed
             
-            if len(target_unit) > 1 and target_unit[0] in {"f", "p", "n", "u", "m", "k", "M", "G"}:
-                target_prefix = target_unit[0]
-                match target_prefix:
-                    case "f": target_multiplier = 1E15
-                    case "p": target_multiplier = 1E12
-                    case "n": target_multiplier = 1E9
-                    case "u": target_multiplier = 1E6
-                    case "m": target_multiplier = 1E3
-                    case "k": target_multiplier = 1E-3
-                    case "M": target_multiplier = 1E-6
-                    case "G": target_multiplier = 1E-9
-                    case _: pass
+            if input_prefix in {"f", "p", "n", "u", "m", "c", "k", "M", "G"} and not input_unit in {"m", "m-1"}:
+                if input_unit[-1] == "1": # Unit is of reciprocal type, like nm-1 or pA-1
+                    match input_prefix:
+                        case "f": input_multiplier = 1E15
+                        case "p": input_multiplier = 1E12
+                        case "n": input_multiplier = 1E9
+                        case "u": input_multiplier = 1E6
+                        case "m": input_multiplier = 1E3
+                        case "c": input_multiplier = 1E2
+                        case "k": input_multiplier = 1E-3
+                        case "M": input_multiplier = 1E-6
+                        case "G": input_multiplier = 1E-9
+                        case _: pass
+                else: # Unit is of real type, like s or mV
+                    match input_prefix:
+                        case "f": input_multiplier = 1E-15
+                        case "p": input_multiplier = 1E-12
+                        case "n": input_multiplier = 1E-9
+                        case "u": input_multiplier = 1E-6
+                        case "m": input_multiplier = 1E-3
+                        case "c": input_multiplier = 1E-2
+                        case "k": input_multiplier = 1E3
+                        case "M": input_multiplier = 1E6
+                        case "G": input_multiplier = 1E9
+                        case _: pass
+            
+            target_prefix = target_unit[0] # Try to get the prefix
+            if target_prefix == "/": # Convert reciprocal notation, e.g. /nm to nm-1
+                target_unit = target_unit[1:] + "-1"
+                target_prefix = target_unit[0] # Reset the input prefix now that the division sign is removed
+            
+            if target_prefix in {"f", "p", "n", "u", "m", "c", "k", "M", "G"} and not target_unit in {"m", "m-1"}:
+                if target_unit[-1] == "1": # Unit is of reciprocal type, like nm-1 or pA-1
+                    match target_prefix:
+                        case "f": target_multiplier = 1E-15
+                        case "p": target_multiplier = 1E-12
+                        case "n": target_multiplier = 1E-9
+                        case "u": target_multiplier = 1E-6
+                        case "m": target_multiplier = 1E-3
+                        case "c": target_multiplier = 1E-2
+                        case "k": target_multiplier = 1E3
+                        case "M": target_multiplier = 1E6
+                        case "G": target_multiplier = 1E9
+                        case _: pass
+                else:
+                    match target_prefix:
+                        case "f": target_multiplier = 1E15
+                        case "p": target_multiplier = 1E12
+                        case "n": target_multiplier = 1E9
+                        case "u": target_multiplier = 1E6
+                        case "m": target_multiplier = 1E3
+                        case "c": target_multiplier = 1E2
+                        case "k": target_multiplier = 1E-3
+                        case "M": target_multiplier = 1E-6
+                        case "G": target_multiplier = 1E-9
+                        case _: pass
             
             data *= (input_multiplier * target_multiplier)
             output_quantity = " ".join((input_quantity, f"({target_unit})"))
@@ -430,11 +468,15 @@ class FileFunctions():
                 case "translation" | "center" | "offset":
                     array = np.array(value, dtype = np.float32)
                     quantity = self.convert_data_to_unit(array, key, "nm")
-                    output_dict.update({"offset (nm)": array, "center (nm)": array})
-                case "size" | "scan_size" | "area" | "scan_area" | "range" | "scan_range" | "scan range" | "domain" | "scan_domain":
+                    output_dict.update({"center (nm)": array})
+                case "size" | "scan_size" | "area" | "scan_area" | "range" | "scan_range" | "scan range" | "domain" | "scan_domain" | "reciprocal_range" | "reciprocal_size" | "reciprocal range" | "reciprocal size" | "reciprocal domain" | "reciprocal_domain" | "k_range" | "k range" | "k-size":
                     array = np.array(value, dtype = np.float32)
-                    quantity = self.convert_data_to_unit(array, key, "nm")
-                    output_dict.update({"scan_range (nm)": array, "domain (nm)": array})
+                    if unit[-1] == "1" or unit [0] == "/": # Data is reciprocal
+                        quantity = self.convert_data_to_unit(array, key, "nm-1")
+                        output_dict.update({"reciprocal_domain (nm-1)": array})
+                    else:
+                        quantity = self.convert_data_to_unit(array, key, "nm")
+                        output_dict.update({"domain (nm)": array})
                 
                 case "w" | "width" | "range_x" | "x_range" | "x range" | "size_x" | "x_size":
                     array = np.array(value, dtype = np.float32)
@@ -461,8 +503,8 @@ class FileFunctions():
                 case _:
                     pass
 
-            if not "offset (nm)" in output_dict.keys() and x_nm and y_nm: output_dict.update({"offset (nm)": np.array([x_nm, y_nm], dtype = np.float32)})
-            if not "scan_range (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"scan_range (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
+            if not "center (nm)" in output_dict.keys() and x_nm and y_nm: output_dict.update({"center (nm)": np.array([x_nm, y_nm], dtype = np.float32)})
+            if not "domain (nm)" in output_dict.keys() and w_nm and h_nm: output_dict.update({"domain (nm)": np.array([w_nm, h_nm], dtype = np.float32)})
             
             if not "angle (deg)" in output_dict.keys(): output_dict.update({"angle (deg)": 0.})
             if "pixels" in frame.keys(): output_dict.update({"pixels": int(frame["pixels"])})
@@ -948,8 +990,8 @@ class FileFunctions():
 
                 "frame": {
                     "dict_name": "frame_dict",
-                    "offset (nm)": offset_nm,
-                    "scan_range (nm)": scan_range_nm,
+                    "center (nm)": offset_nm,
+                    "domain (nm)": scan_range_nm,
                     "angle_deg": angle_deg                    
                 }
             }
@@ -1193,8 +1235,8 @@ class FileFunctions():
                     "path": sxm_file[1],
                     "date_time": sxm_file[2].strftime("%Y-%m-%d %H:%M:%S"),
                     "frame": {
-                        "scan_range (nm)": f"({scan_range_nm[0]:.3f}, {scan_range_nm[1]:.3f})",
-                        "offset (nm)": f"({offset_nm[0]:.3f}, {offset_nm[1]:.3f})",
+                        "domain (nm)": f"({scan_range_nm[0]:.3f}, {scan_range_nm[1]:.3f})",
+                        "center (nm)": f"({offset_nm[0]:.3f}, {offset_nm[1]:.3f})",
                         "angle (deg)": f"{angle:.3f}"
                         }
                 }
@@ -1370,8 +1412,7 @@ class FileFunctions():
                 "x (nm)": x_nm,
                 "y (nm)": y_nm,
                 "center (nm)": center_nm,
-                "offset (nm)": center_nm,                
-                "scan_range (nm)": scan_range_nm,
+                "domain (nm)": scan_range_nm,
                 "angle (deg)": angle_deg
             }
 

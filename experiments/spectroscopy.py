@@ -125,7 +125,8 @@ class Experiment(BaseExperiment):
         mla_settings_ds.dims[0].attach_scale(mla_channels_ds)
         
         sweep_group = self.output_file.create_group("sweep") # This is the main Nexus measurement group
-        sweep_group.attrs.update({"NX_class": "NXdata"})
+        sweep_group.attrs.update({"NX_class": "NXdata", "signal": "sweep"})
+        
         x_ds = sweep_group.create_dataset(x_axis_label, data = x_values)
         x_ds.make_scale(x_axis_label)
         
@@ -227,16 +228,15 @@ class Experiment(BaseExperiment):
                 # Save 1D sweep data
                 sweep_ds = sweep_group.create_dataset("sweep", data = single_sweep_array, dtype = np.float32)
                 error_ds = sweep_group.create_dataset("sweep_errors", data = single_sweep_error_array, dtype = np.float32)
-                channels_ds = sweep_group.create_dataset("channels", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5string)
-                channels_ds.make_scale("channels")
+                channels_ds = sweep_group.create_dataset("channel", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5string)
+                channels_ds.make_scale("channel") # When loaded into Scantelligent, the channel indices dataset attached to the main dataset axis will be exchanged for the channel dataset
                 channel_indices_ds = sweep_group.create_dataset("channel indices", data = np.arange(len(channel_names), dtype = np.int32))
                 channel_indices_ds.make_scale("channel indices")
                 
                 [sweep_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([x_ds, channel_indices_ds])]
                 [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate ([x_ds, channel_indices_ds])]
 
-                sweep_group.attrs.update({"signal": "sweep"})
-                sweep_group.attrs.update({"axes": np.array([x_axis_label, "channel indices"], dtype = "S")})
+                sweep_group.attrs.update({"axes": [x_axis_label, "channel indices"]})
                 return
         
         # Everything below is for 2D measurements only. 1D sweeps have already returned at this point
@@ -250,16 +250,15 @@ class Experiment(BaseExperiment):
         dataset_shape = (len(channel_names),) + single_sweep_array.shape
         sweep_ds = sweep_group.create_dataset("sweep", shape = (0,) + single_sweep_array.shape, maxshape = dataset_shape, dtype = np.float32)
         error_ds = sweep_group.create_dataset("sweep_errors", shape = (0,) + single_sweep_array.shape, maxshape = dataset_shape, dtype = np.float32)
-        channels_ds = sweep_group.create_dataset("channels", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5string) # z axis (channels)
-        channels_ds.make_scale("channels")
+        channels_ds = sweep_group.create_dataset("channel", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5string) # z axis (channels)
+        channels_ds.make_scale("channel")
         channel_indices_ds = sweep_group.create_dataset("channel indices", data = np.arange(len(channel_names), dtype = np.int32))
         channel_indices_ds.make_scale("channel indices")
         
         [sweep_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channel_indices_ds])]
         [error_ds.dims[dim].attach_scale(dataset) for dim, dataset in enumerate([y_ds, x_ds, channel_indices_ds])]
-                
-        sweep_group.attrs.update({"signal": "sweep"})
-        sweep_group.attrs.update({"axes": np.array(["channel index axis", "y axis", "x axis"], dtype = "S")})
+
+        sweep_group.attrs.update({"axes": ["channel indices", y_axis_label, x_axis_label]})
 
 
 

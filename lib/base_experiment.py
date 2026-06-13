@@ -23,6 +23,7 @@ class BaseExperiment(QObject):
     image = pyqtSignal(np.ndarray) # A two-dimensional np.ndarray that is plotted in the gui when sent
     finished = pyqtSignal() # Signal to indicate an experiment is finished. Emission of this signal is connected to cleanup
     data_array = pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
+    array_slice = pyqtSignal(np.ndarray, list, list)
 
     def __init__(self, *args, **kwargs):
         self.hw_config = kwargs.pop("hw_config", None) # Will become redundant again
@@ -85,6 +86,11 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
         return
 
+    def create_array_item(self, name: str = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
+        array_dict = {"dict_name": "array_item", "name": name, "shape": shape, "dtype": dtype, "axes": axes, "axis_values": axis_values, "frame": frame}
+        self.parameters.emit(array_dict)
+        return
+
     def prepare_hdf5(self) -> None:
         self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
         date_time_group = self.output_file.create_group("date_time")
@@ -115,7 +121,7 @@ class BaseExperiment(QObject):
         # Add the bias, grid and tip data
         [bias, feedback, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "grid", "tip_status", "hardware"]]
         grid_group = self.output_file.create_group("grid")
-        grid_group.attrs.update({key: grid.get(key) for key in ["offset (nm)", "scan_range (nm)", "angle (deg)", "pixels", "lines"]})
+        grid_group.attrs.update({key: grid.get(key) for key in ["center (nm)", "domain (nm)", "angle (deg)", "pixels", "lines"]})
         tip_group = self.output_file.create_group("tip_status")
         tip_group.attrs.update({"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
 

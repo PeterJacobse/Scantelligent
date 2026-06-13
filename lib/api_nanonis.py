@@ -694,11 +694,11 @@ class NanonisAPI(QtCore.QObject):
             if "width (nm)" in parameters.keys():
                 w_nm = parameters.get("width (nm)")
                 h_nm = parameters.get("height (nm)", w_nm)
-            elif "scan_range (nm)" in parameters.keys():
-                [w_nm, h_nm] = parameters.get("scan_range (nm)")
+            elif "domain (nm)" in parameters.keys():
+                [w_nm, h_nm] = parameters.get("domain (nm)")
             elif "size (nm)" in parameters.keys():
                 [w_nm, h_nm] = parameters.get("size (nm)")
-            if w_nm and h_nm: new_parameters.update({"width (nm)": w_nm, "height (nm)": h_nm, "size (nm)": [w_nm, h_nm], "scan_range (nm)": [w_nm, h_nm]})
+            if w_nm and h_nm: new_parameters.update({"width (nm)": w_nm, "height (nm)": h_nm, "size (nm)": [w_nm, h_nm], "domain (nm)": [w_nm, h_nm]})
             
             x_nm = None
             y_nm = None
@@ -709,7 +709,7 @@ class NanonisAPI(QtCore.QObject):
                 [x_nm, y_nm] = parameters.get("offset (nm)")
             elif "center (nm)" in parameters.keys():
                 [x_nm, y_nm] = parameters.get("center (nm)")
-            if isinstance(x_nm, int | float) and isinstance(y_nm, int | float): new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "offset (nm)": [x_nm, y_nm], "center (nm)": [x_nm, y_nm]})
+            if isinstance(x_nm, int | float) and isinstance(y_nm, int | float): new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "center (nm)": [x_nm, y_nm]})
 
             angle_deg = parameters.get("angle (deg)", None)
             if isinstance(angle_deg, float) or isinstance(angle_deg, int): new_parameters.update({"angle (deg)": angle_deg})
@@ -759,7 +759,7 @@ class NanonisAPI(QtCore.QObject):
             
             # Set the frame if requested
             for key, value in parameters.items():
-                if key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]:
+                if key in ["domain (nm)", "center (nm)", "angle (deg)"]:
                     (frame, error) = self.frame_update(parameters, verbose = False)
                     break
 

@@ -33,7 +33,7 @@ class Experiment(BaseExperiment):
         recorded_channel_names = [inverted_signal_dict.get(index) for index in recorded_channel_indices]
         
         [pixels, lines] = [grid.get(key) for key in ["pixels", "lines"]]
-        [width_nm, height_nm] = grid.get("scan_range (nm)")
+        [width_nm, height_nm] = grid.get("domain (nm)")
         nn.scan_metadata_update({"channel_indices": recorded_channel_indices}, verbose = False) # Make sure the correct channel is being recorded
         
         graph_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]

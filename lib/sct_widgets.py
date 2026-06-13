@@ -134,7 +134,8 @@ class SCTWidgets:
             return
 
         def setImage(self, image: np.ndarray = None, autoLevels = False, levelSamples = 65536, **kwargs) -> None:
-            if not isinstance(image, np.ndarray): return            
+            if not isinstance(image, np.ndarray): return
+            
             if image.dtype.kind in ["f", "u"]:
                 real_image = image
             elif image.dtype.kind == "c":
@@ -145,18 +146,17 @@ class SCTWidgets:
                 match self.projection:
                     case "complex":
                         arg_image = np.angle(image, dtype = np.float32)
-                        phase_image = np.angle(image)
+                        phase_image = np.angle(image).astype(np.float32)
                         phase_image_norm = (phase_image + np.pi) / (2 * np.pi)
                         hsv_array = np.dstack((phase_image_norm, np.ones_like(phase_image_norm), abs_image))
-                        
                     case "real":
-                        real_image = np.real(image, dtype = np.float32)
+                        real_image = np.real(image)
                     case "imaginary":
-                        real_image = np.imag(image, dtype = np.float32)
+                        real_image = np.imag(image)
                     case "abs":
-                        real_image = np.abs(image, dtype = np.float32)
+                        real_image = np.abs(image)
                     case "abs^2":
-                        real_image = np.abs(image, dtype = np.float32)
+                        real_image = np.abs(image)
                     case _:
                         real_image = np.real(image)
                         print(f"Uknown projection type {self.projection} for complex-valued image")
@@ -361,15 +361,15 @@ class SCTWidgets:
 
         def updateFrame(self, frame: dict = None) -> None:
             if not isinstance(frame, dict): return
-            [scan_range, offset, angle] = [frame.get(key, None) for key in ["scan_range (nm)", "offset (nm)", "angle (deg)"]]
+            [scan_range, offset, angle] = [frame.get(key, None) for key in ["domain (nm)", "center (nm)", "angle (deg)"]]
             self.frame = {}
             if isinstance(scan_range, list | np.ndarray):
                 [w, h] = [float(scan_range[index]) for index in range(2)]
-                self.frame.update({"scan_range (nm)": scan_range})
+                self.frame.update({"domain (nm)": scan_range})
                 self.setRange(w, h)
             if isinstance(offset, list | np.ndarray):
                 [x, y] = [float(offset[index]) for index in range(2)]
-                self.frame.update({"offset (nm)": offset})
+                self.frame.update({"center (nm)": offset})
                 self.setOffset(x, y)
             if isinstance(angle, int | float):
                 self.frame.update({"angle (deg)": angle})
@@ -2165,9 +2165,9 @@ class SCTWidgets:
             super().__init__(*args, **kwargs)
         
         def setFrame(self, frame: dict) -> None:
-            if not "scan_range (nm)" in frame.keys() or not "offset (nm)" in frame.keys(): return
-            [w_nm, h_nm] = frame["scan_range (nm)"]
-            [x_nm, y_nm] = frame["offset (nm)"]
+            if not "domain (nm)" in frame.keys() or not "center (nm)" in frame.keys(): return
+            [w_nm, h_nm] = frame["domain (nm)"]
+            [x_nm, y_nm] = frame["center (nm)"]
             self.setSize([w_nm, h_nm])
             self.setPos([0, 0])
             self.setAngle(angle = -frame.get("angle (deg)", 0))

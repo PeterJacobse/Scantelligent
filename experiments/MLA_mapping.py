@@ -35,7 +35,7 @@ class Experiment(BaseExperiment):
         
         # Read from Nanonis
         [scan_metadata, grid, tip_status, nn_bias, nn_hardware] = [self.start_parameters["nanonis"].get(parameter) for parameter in ["scan_metadata", "grid", "tip_status", "bias", "hardware"]]
-        [pixels, lines, x_grid, y_grid, scan_range_nm] = [grid.get(key) for key in ["pixels", "lines", "x_grid (nm)", "y_grid (nm)", "scan_range (nm)"]]
+        [pixels, lines, x_grid, y_grid, scan_range_nm] = [grid.get(key) for key in ["pixels", "lines", "x_grid (nm)", "y_grid (nm)", "domain (nm)"]]
         [tia_gain, tia_gain_V_per_pA] = [nn_hardware.get(key) for key in ["current_gain", "gain (V/pA)"]]
         (list_data, error) = nn.grids_to_lists(grid, direction = direction)
         [x_list_nm, y_list_nm] = [list_data[f"{dim}_list (nm)"] for dim in ["x", "y"]]

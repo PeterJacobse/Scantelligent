@@ -88,7 +88,7 @@ class ParameterManager(QtCore.QObject):
                 scan_range = [line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
                 angle = line_edits["frame_angle"].getValue()
                 
-                parameters = {"dict_name": "frame", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle}
+                parameters = {"dict_name": "frame", "center (nm)": offset, "domain (nm)": scan_range, "angle (deg)": angle}
                 sct.nanonis.frame_update(parameters, unlink = True)
 
             case "grid":
@@ -98,7 +98,7 @@ class ParameterManager(QtCore.QObject):
                 scan_range = [line_edits[tag].getValue() for tag in ["frame_width", "frame_height"]]
                 angle = line_edits["frame_angle"].getValue()
                                 
-                parameters = {"dict_name": "grid", "offset (nm)": offset, "scan_range (nm)": scan_range, "angle (deg)": angle, "pixels": pixels, "lines": lines}
+                parameters = {"dict_name": "grid", "center (nm)": offset, "domain (nm)": scan_range, "angle (deg)": angle, "pixels": pixels, "lines": lines}
                 sct.nanonis.grid_update(parameters, unlink = True)
 
             case "speed" | "speeds":
@@ -259,6 +259,10 @@ class ParameterManager(QtCore.QObject):
             case "view_request":
                 new_view = parameters.get("view")
                 if new_view in ["none", "camera", "nanonis"]: sct.toggle_view(new_view)
+            
+            case "array_item":
+                [name, shape, dtype, axes, axis_values, frame] = [parameters.get(key, None) for key in ["name", "shape", "dtype", "axes", "axis_values", "frame"]]
+                sct.create_array_item(name = name, shape = shape, dtype = dtype, axes = axes, axis_values = axis_values, frame = frame)
 
 
 
@@ -386,9 +390,9 @@ class ParameterManager(QtCore.QObject):
             case "frame":
                 sct.user.frames[0].update(parameters)
             
-                [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
-                scan_range = parameters.get("scan_range (nm)", [100, 100])
-                sct.data.scan_processing_flags.update({"scan_range (nm)": scan_range})
+                [x_0_nm, y_0_nm] = parameters.get("center (nm)", [0, 0])
+                scan_range = parameters.get("domain (nm)", [100, 100])
+                sct.data.scan_processing_flags.update({"domain (nm)": scan_range})
                 [w_nm, h_nm] = scan_range
                 
                 angle_deg = parameters.get("angle (deg)", 0)
@@ -411,8 +415,8 @@ class ParameterManager(QtCore.QObject):
                 sct.gui.frame.setFrame(parameters)
 
             case "new_frame":
-                [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
-                [w_nm, h_nm] = parameters.get("scan_range (nm)", [100, 100])
+                [x_0_nm, y_0_nm] = parameters.get("center (nm)", [0, 0])
+                [w_nm, h_nm] = parameters.get("domain (nm)", [100, 100])
                 angle_deg = parameters.get("angle (deg)", 0)
                 aspect_ratio = h_nm / w_nm
 
@@ -447,9 +451,9 @@ class ParameterManager(QtCore.QObject):
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
                 
                 # Frame is embedded in grid. Update the frame parameters as well
-                [x_0_nm, y_0_nm] = parameters.get("offset (nm)", [0, 0])
-                scan_range = parameters.get("scan_range (nm)", [100, 100])
-                sct.data.scan_processing_flags.update({"scan_range (nm)": scan_range})
+                [x_0_nm, y_0_nm] = parameters.get("center (nm)", [0, 0])
+                scan_range = parameters.get("domain (nm)", [100, 100])
+                sct.data.scan_processing_flags.update({"domain (nm)": scan_range})
                 [w_nm, h_nm] = scan_range
                 
                 angle_deg = parameters.get("angle (deg)", 0)
