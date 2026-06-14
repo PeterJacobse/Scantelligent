@@ -17,27 +17,19 @@ class Experiment(BaseExperiment):
     @BaseExperiment.experiment_handler
     def run(self):        
         nn = self.nanonis # Using nn as an alias for self.nanonis
-
-        # Calculate information
-        [scan_metadata, grid, tip_status] = [self.start_parameters["nanonis"].get(parameter) for parameter in ["scan_metadata", "grid", "tip_status"]]
+        
+        # Get the start parameters
         gui_parameters = self.start_parameters["gui"]
         spec_buttons = gui_parameters.get("spectroscopy_buttons")
         direction = spec_buttons.get("scan_direction")
-        
-        signal_dict = scan_metadata.get("signal_dict") # All signals
-        inverted_signal_dict = {value: key for key, value in signal_dict.items()}
-        recorded_channel_indices = list(scan_metadata.get("channel_dict").values()) # Signals currently checked to be recorded
-        feedback_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]] # Retrieve the channel indices from the signal_dict
-        feedback_channel_indices = [index for index in feedback_channel_indices if index is not None]
-        [recorded_channel_indices.append(channel_index) for channel_index in feedback_channel_indices if channel_index not in recorded_channel_indices] # Add the z channel to the list of recorded channels
-        recorded_channel_names = [inverted_signal_dict.get(index) for index in recorded_channel_indices]
-        
-        [pixels, lines] = [grid.get(key) for key in ["pixels", "lines"]]
-        [width_nm, height_nm] = grid.get("domain (nm)")
-        nn.scan_metadata_update({"channel_indices": recorded_channel_indices}, verbose = False) # Make sure the correct channel is being recorded
-        
-        graph_channels = ["t (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
-        self.data_array.emit(np.array(graph_channels)) # This triggers the GUI to start graphing data
+        if direction == "gaussian_process":
+            raise Exception("Gaussian Process not valid for measure_drift. Select a different scan direction.")
+                
+        [scan_metadata, grid, tip_status] = [self.start_parameters["nanonis"].get(key) for key in ["scan_metadata", "grid", "tip_status"]]
+        [pixels, lines, domain] = [grid.get(key) for key in ["pixels", "lines", "domain (nm)"]]
+        [x_range, y_range] = domain
+        x_values = np.linspace(-.5 * x_range, .5 * x_range, pixels)
+        y_values = np.linspace(-.5 * y_range, .5 * y_range, lines)
 
         # Determine the scan direction if 'nearest tip' is selected
         if direction == "nearest_tip":            
@@ -49,36 +41,51 @@ class Experiment(BaseExperiment):
             
             if dist_to_tlc < dist_to_blc: direction = "down"
             else: direction = "up"
-        if direction not in ["up", "down", "gaussian_process"]: raise Exception("Unkown scan direction")
-        self.set_view("nanonis")
+        if direction not in ["up", "down"]: raise Exception("Unkown scan direction")
+
+        # Find the channels to scan over
+        signal_dict = scan_metadata.get("signal_dict") # All signals
+        inverted_signal_dict = {value: key for key, value in signal_dict.items()}
+        nanonis_channel_indices = list(scan_metadata.get("channel_dict").values()) # Signals currently checked to be recorded
+        fb_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]] # Retrieve the channel indices from the signal_dict
+        [nanonis_channel_indices.append(channel_index) for channel_index in fb_channel_indices if channel_index is not None and channel_index not in nanonis_channel_indices] # Add the z channel to the list of recorded channels
+        nn.scan_metadata_update({"channel_indices": nanonis_channel_indices}, verbose = False) # Bounce the channel indices back to Nanonis with the z channel included, so it will be recorded
         
+        # Retrieve the names of the recorded channels and define the two scan directions. Use preferred units of pA and nm
+        nanonis_channel_names = [inverted_signal_dict.get(index) for index in nanonis_channel_indices]        
+        sct_names = []
+        for nanonis_name in nanonis_channel_names:
+            (quantity, unit, backward, error) = self.data.split_physical_quantity(nanonis_name)
+            if unit == "A": unit = "pA"
+            if unit == "m": unit = "nm"
+            sct_names.append(" ".join((quantity.lower(), f"({unit})")))
+        directions = ["forward", "backward"]
+
+        # Create the ArrayItem (for the GUI) and the hdf5 datasets to store the measurement data        
+        self.create_array_item(name = f"{os.path.basename(self.experiment_file)}", axes = ["direction", "channel", "x (nm)", "y (nm)"],
+                               shape = (len(directions), len(sct_names), pixels, lines), frame = grid, dtype = np.float32, axis_values = [directions, sct_names, x_values, y_values])
+
         # Start writing initial data to file and then start the experiment
         if direction in ["up", "down"]:
-            scan_group: h5py.Group = self.output_file.create_group("scan_group")
-            scan_group.attrs.update({"NX_class": "NXdata"})
+            scan_group: h5py.Group = self.output_file.create_group("scan")
+
+            scan_group.create_dataset("direction", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
+            scan_group.create_dataset("direction indices", data = np.array([0, 1], dtype = np.int32))
             
-            dir_ds = scan_group.create_dataset("directions", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
-            dir_indices_ds = scan_group.create_dataset("direction indices", data = np.array([0, 1], dtype = np.int32))
-            dir_indices_ds.make_scale("direction indices")
-            channels_ds = scan_group.create_dataset("channels", data = np.array([item.encode("utf-8") for item in recorded_channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-            channel_indices_ds = scan_group.create_dataset("channel indices", data = np.arange(len(recorded_channel_indices), dtype = np.int32))
-            channel_indices_ds.make_scale("channel indices")
-            x_ds = scan_group.create_dataset("x (nm)", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
-            x_ds.make_scale("x (nm)")
-            y_ds = scan_group.create_dataset("y (nm)", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
-            y_ds.make_scale("y (nm)")
+            scan_group.create_dataset("channel", data = np.array([item.encode("utf-8") for item in sct_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+            scan_group.create_dataset("channel indices", data = np.arange(len(sct_names), dtype = np.int32))
             
-            scan_ds = scan_group.create_dataset("scan", shape = ((2, len(recorded_channel_indices), lines, pixels)), dtype = np.float32)
-            scan_ds.dims[0].attach_scale(dir_indices_ds)
-            scan_ds.dims[1].attach_scale(channel_indices_ds)
-            scan_ds.dims[2].attach_scale(y_ds)
-            scan_ds.dims[3].attach_scale(x_ds)
+            scan_group.create_dataset("x (nm)", data = x_values, dtype = np.float32)
+            scan_group.create_dataset("y (nm)", data = y_values, dtype = np.float32)
             
-            scan_group.attrs.update({"signal": "scan"})
-            scan_group.attrs.update({"axes": np.array(["direction indices", "channel indices", "y (nm)", "x (nm)"], dtype = "S")})
+            scan_ds = scan_group.create_dataset("scan", shape = (len(directions), len(sct_names), pixels, lines), dtype = np.float32)
+            scan_group.attrs.update({"NX_class": "NXdata",
+                                     "signal": "scan",
+                                     "axes": ["direction indices", "channel indices", "x (nm)", "y (nm)"]})
             
             # Start the scan. Passing the dataset will allow it to be updated during scanning
-            scan_data = self.nanonis_scan(direction = direction, dataset = scan_ds, iterations = 20) # Save the entire dataset every 20 iterations
+            self.set_view("nanonis")
+            self.nanonis_scan(direction = direction, dataset = scan_ds, verbose = False)
 
 
 

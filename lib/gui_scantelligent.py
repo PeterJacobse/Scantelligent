@@ -255,6 +255,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
             "start_scan": MSB(size = 28, states = [{"name": "idle", "tooltip": "Start scan", "icon": icons.get("start_scan"), "color": sct_black},
                                                    {"name": "running", "tooltip": "Stop scan", "icon": icons.get("stop_scan"), "color": sct_blue}]),
+            "paste": MSB(tooltip = "Paste active item", icon = icons.get("paste")),
             "auto_paste": MSB(tooltip = "Paste item", icon = icons.get("paste"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "audio": MSB(icon = icons.get("audio"), states = [{"name": "off", "tooltip": "Auditory feedback of current signal\nOFF", "color": self.colors["dark_red"]},
                                                               {"name": "on", "tooltip": "Auditory feedback of current signal\nOFF", "color": sct_blue}]),
@@ -284,7 +285,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             
             "sobel": MSB(tooltip = "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", icon = self.icons.get("sobel"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "laplace": MSB(tooltip = "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + L)", icon = self.icons.get("laplacian"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "real_reciprocal": MSB(states = [{"name": "real", "tooltip": "Real space representation (unit: nm)", "icon": icons.get("real_space"), "color": sct_black},
+            "reciprocal": MSB(states = [{"name": "real", "tooltip": "Real space representation (unit: nm)", "icon": icons.get("real_space"), "color": sct_black},
                                              {"name": "real", "tooltip": "Reciprocal space representation (unit: nm-1)", "icon": icons.get("reciprocal_space"), "color": sct_black}]),
             "normal": MSB(tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "gaussian": MSB(tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": sct_black}, {"color": sct_blue}]),
@@ -679,8 +680,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.view = view.getViewBox() # Since view = pg.PlotItem instead of ViewBox, the ViewBox is actually accessed by view.getViewBox()
         self.camera_item = image_view.imageItem
         self.hist_item = hist_widget.item
-        
-        self.saved_items = []
         return image_view
 
     def make_image_view_widgets(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
@@ -977,7 +976,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         # Image_view
         self.image_view.addWidget(self.limits_widget, 0, 3)
         
-        layouts["image_view_controls"].addWidget(buttons["auto_paste"])
+        layouts["image_view_controls"].addWidget(buttons["paste"])
         [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
         [layouts["navigation"].addWidget(buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "grid", "frame", "path", "target"]]
         layouts["image_view_controls"].addLayout(layouts["navigation"])
@@ -985,7 +984,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         layouts["image_view_controls"].addLayout(layouts["background_buttons"])
                 
         o_layout = layouts["operations"]
-        [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["real_reciprocal", "sobel", "normal", "laplace", "gaussian"])]
+        [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["reciprocal", "sobel", "normal", "laplace", "gaussian"])]
         o_layout.addWidget(line_edits["gaussian_width"], 0, 5)
         o_layout.addWidget(buttons["image_projection"], 0, 6)
         o_layout.addWidget(self.sliders["phase"], 0, 7)

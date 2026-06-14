@@ -61,6 +61,7 @@ class Scantelligent(QtCore.QObject):
         self.lines = [] # Lines for plotting in the graph
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
         self.focus_group = "connections"
+        self.saved_items = []
                 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -90,14 +91,14 @@ class Scantelligent(QtCore.QObject):
                         "tip": self.change_tip_status, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"),
                         "approach": self.start_auto_approach, "approach_2": self.start_auto_approach, "withdraw": self.toggle_withdraw, "withdraw_2": self.toggle_withdraw,
                         
-                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"), "save_item": self.save_active_item,
+                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"), "paste": self.save_active_item,
                         "rot_trans": self.rot_trans_changed, "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         "frame": self.toggle_items, "path": self.toggle_items, "grid": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
                         
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
         
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
-        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["real_reciprocal", "sobel", "laplace", "normal", "gaussian", "direction", "image_projection"]]
+        [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["reciprocal", "sobel", "laplace", "normal", "gaussian", "direction", "image_projection"]]
         
         for parameter_type in ["bias", "mla_bias", "keithley_bias", "feedback", "frame", "grid", "gain", "lockin", "speed", "tip_shaper", "spectroscopy"]:
             button_slots.update({f"get_{parameter_type}_parameters": lambda checked, param_type = parameter_type: self.parameters.get(f"{param_type}")})
@@ -389,27 +390,8 @@ class Scantelligent(QtCore.QObject):
 
     @QtCore.pyqtSlot(np.ndarray)
     def receive_image(self, image: np.ndarray) -> None:
-        try:
-            if self.gui.buttons["view"].state_name == "none": return
-            if np.count_nonzero(~np.isnan(image)) < 10: return
-            
-            match self.gui.buttons["view"].state_name:
-                case "nanonis":
-                    (processed_scan, statistics, limits, error) = self.data.process_scan(image)
-                    [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
-                    
-                    self.gui.scan_item.setImage(np.flipud(processed_scan))
-                    self.gui.hist_item.setLevels(limits[0], limits[1])
-                
-                case "camera":
-                    self.gui.camera_item.setImage(np.flipud(image), autoRange = False)
-                                    
-                case _:
-                    pass
-
-        except Exception as e:
-            pass
-            
+        try: self.gui.camera_item.setImage(np.flipud(image), autoRange = False)
+        except: pass
         return
 
     @QtCore.pyqtSlot(np.ndarray, list, list)
@@ -422,14 +404,13 @@ class Scantelligent(QtCore.QObject):
             # Inject the insertion indices into the targeted axes
             for axis, idx in zip(axes, target_indices):
                 indexer[axis] = idx
-            print(f"{tuple(indexer) = }")
             self.active_item.array[tuple(indexer)] = data_slice
             
             image = self.active_item.getSlice()
             (processed_scan, statistics, limits, error) = self.data.process_scan(image)
             [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
             
-            self.active_item.setImage(np.flipud(processed_scan))
+            self.active_item.setImage(processed_scan)
             self.gui.hist_item.setLevels(limits[0], limits[1])
         except Exception as e:
             print(f"{e}")
@@ -751,6 +732,9 @@ class Scantelligent(QtCore.QObject):
                     self.gui.comboboxes["y_axis"].selectIndex(previous_y_index)
             
             # Activating the ArrayItem and passing it to ImageView
+            for item in self.saved_items: item.showLabels(False)
+            if hasattr(self, "active_item"): self.active_item.showLabels(False)
+        
             self.active_item = array_item
             self.active_item.setZValue(64)
             self.gui.image_view.setItem(self.active_item)
@@ -830,7 +814,6 @@ class Scantelligent(QtCore.QObject):
 
     def save_active_item(self) -> None:
         if hasattr(self, "active_item"):
-            self.active_item.showLabels(False)
             self.saved_items.insert(0, self.active_item) # Save the active item to the saved_items
         if len(self.saved_items) > 18: self.saved_items = self.saved_items[:18] # Clip the length of saved_items to a maximum number of 18
         
@@ -843,6 +826,8 @@ class Scantelligent(QtCore.QObject):
         view = self.gui.image_view.view
         [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem)]
         [view.addItem(item) for item in self.saved_items]
+        [item.showLabels(False) for item in self.saved_items[1:]]
+        self.saved_items[0].showLabels(True)
         return
     
     def create_array_item(self, name: str = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
@@ -883,6 +868,10 @@ class Scantelligent(QtCore.QObject):
             self.active_item = array_item
             self.active_item.setZValue(64)
             self.gui.image_view.setItem(self.active_item)
+        
+            view = self.gui.image_view.view
+            [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem) and not item == self.active_item]
+            [view.addItem(item) for item in self.saved_items]
         
         except Exception as e:
             self.logprint(f"Error encountered while creating an ArrayItem object: {e}", message_type = "error")
@@ -954,7 +943,7 @@ class Scantelligent(QtCore.QObject):
                 except: pass
 
                 [self.gui.view.addItem(item) for item in [self.gui.new_frame, self.gui.frame, self.gui.piezo_frame, self.gui.tip_target, self.gui.path_pdi]]
-                for item in self.gui.saved_items: self.gui.view.addItem(item)
+                for item in self.saved_items: self.gui.view.addItem(item)
                 try: self.nanonis.hardware_update()
                 except: pass
                 self.set_view_range("full")
@@ -994,6 +983,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     def set_active_item(self) -> None:
+        for item in self.saved_items: item.showLabels(False)
         if hasattr(self, "active_item"): self.active_item.showLabels(False)
         try:
             index = self.gui.comboboxes["items"].currentIndex()
@@ -1005,7 +995,7 @@ class Scantelligent(QtCore.QObject):
             
             view = self.gui.image_view.view
             [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem) and not item == selected_item]
-            [view.addItem(item) for item in self.gui.saved_items]
+            [view.addItem(item) for item in self.saved_items]
         except Exception as e:
             self.logprint(f"{e}", message_type = "error")
         return
@@ -1018,6 +1008,7 @@ class Scantelligent(QtCore.QObject):
 
     def histogram_levels_changed(self) -> None:
         hist_levels = self.gui.image_view.getHistogramWidget().item.getLevels()
+
         self.gui.limits_widget.setValue("absolute", "min", hist_levels[0])
         self.gui.limits_widget.setValue("absolute", "max", hist_levels[1])
         self.redraw_item()
@@ -1153,10 +1144,10 @@ class Scantelligent(QtCore.QObject):
             flags.update({"backward": backward, "projection": projection})
             
             # Operations
-            [flags.update({operation: self.gui.buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "real_reciprocal"]]
+            [flags.update({operation: self.gui.buttons[operation].isChecked()}) for operation in ["sobel", "normal", "laplace", "gaussian", "reciprocal"]]
             
             phase = self.gui.sliders["phase"].getValue()
-            flags.update({"phase (deg)": phase})        
+            flags.update({"phase (deg)": phase})
         except Exception as e:
             self.logprint(f"Error updating the image processing flags: {e}", message_type = "error")
 
@@ -1173,6 +1164,8 @@ class Scantelligent(QtCore.QObject):
     def redraw_item(self) -> None:
         if self.gui.buttons["view"].state_name == "nanonis":
             try:
+                if self.data.scan_processing_flags.get("reciprocal"): self.active_item.setReciprocalFrame()
+                else: self.active_item.setFrame()
                 image = self.active_item.getSlice()
                 (image, statistics, limits, error) = self.data.process_scan(image)
                 self.active_item.setImage(image)
@@ -1452,6 +1445,7 @@ class Scantelligent(QtCore.QObject):
                     
                     # Worker-thread connections
                     self.experiment_thread.started.connect(self.experiment.run)
+                    self.experiment.finished.connect(self.save_active_item)
                     self.experiment.finished.connect(self.experiment_thread.quit)
                     self.experiment_thread.finished.connect(self.experiment_cleanup)
                     

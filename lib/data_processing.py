@@ -59,7 +59,7 @@ class DataProcessing:
             "gaussian": False,
             "gaussian_width (nm)": 0,
             "laplace": False,
-            "fft": False,
+            "reciprocal": False,
             "normal": False,
             "projection": "re",
             "phase (deg)": 0,
@@ -526,6 +526,7 @@ class DataProcessing:
         
         except Exception as e:
             error = e
+            print(f"Error encountered while processing the scan: {error}")
         
         return (processed_scan, statistics, limits, error)
 
@@ -556,7 +557,7 @@ class DataProcessing:
             if gaussian_sigma: (image, error) = self.apply_gaussian(image, gaussian_sigma, scan_range_nm)
             if error: return (image, error)
         
-        if flags["fft"]: (image, error) = self.apply_fft(image, scan_range_nm)
+        if flags["reciprocal"]: (image, error) = self.apply_fft(image, scan_range_nm)
         if error: return (image, error)
         
         # Set phase
@@ -1029,9 +1030,9 @@ class DataProcessing:
                 "standard_deviation": standard_deviation
             }
         except Exception as e:
-            error = f"Error. Image statistics could not be calculated. {e}"
+            error = f"Image statistics could not be calculated. {e}"
             return ({}, error)
-        
+        """
         try:
             n_bins = int(np.floor(n_pixels / pixels_per_bin))
             counts, bounds = np.histogram(data_sorted, bins = n_bins)
@@ -1044,5 +1045,6 @@ class DataProcessing:
         except:
             error = "Error. Histogram could not be calculated."
             return (image_statistics, error)
+        """
 
         return (image_statistics, error)

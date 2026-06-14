@@ -362,7 +362,7 @@ class SCTWidgets:
         def updateFrame(self, frame: dict = None) -> None:
             if not isinstance(frame, dict): return
             [scan_range, offset, angle] = [frame.get(key, None) for key in ["domain (nm)", "center (nm)", "angle (deg)"]]
-            self.frame = {}
+            self.frame = {}            
             if isinstance(scan_range, list | np.ndarray):
                 [w, h] = [float(scan_range[index]) for index in range(2)]
                 self.frame.update({"domain (nm)": scan_range})
@@ -396,6 +396,29 @@ class SCTWidgets:
             self.setTransform(transform)
             if hasattr(self, "x_val") and hasattr(self, "y_val"): self.setPos(self.x_val, self.y_val)
             return
+        
+        def setReciprocalFrame(self, origin: str = "center") -> None:
+            if self.image.ndim == 2: (self.lines, self.pixels) = self.image.shape
+            elif self.image.ndim == 3: (self.lines, self.pixels, _) = self.image.shape
+            
+            if not hasattr(self, "w") and hasattr(self, "h"):
+                pixels_per_nm = float(self.pixels / self.w)
+                lines_per_nm = float(self.lines / self.h)
+            else:
+                pixels_per_nm = self.pixels
+                lines_per_nm = self.lines
+            
+            kx_tot = np.pi * pixels_per_nm
+            ky_tot = np.pi * lines_per_nm
+            
+            transform = QtGui.QTransform()
+            if hasattr(self, "angle"): transform.rotate(-self.angle)
+            transform.scale(np.pi / self.w, np.pi / self.h)
+            if origin == "center": transform.translate(-.5 * self.pixels, -.5 * self.lines)
+            
+            self.resetTransform()
+            self.setTransform(transform)
+            return            
         
         def resetFrame(self, origin: str = "center") -> None:
             if not hasattr(self, "frame"): return

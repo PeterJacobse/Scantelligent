@@ -925,34 +925,35 @@ class NanonisHardware:
         return
     
     def set_scan_frame_nm(self, frame: dict) -> None:
-        if "width (nm)" in frame.keys():
-            w_nm = frame.get("width (nm)")
-            h_nm = frame.get("height (nm)", w_nm)
+        if "domain (nm)" in frame.keys():
+            [w_nm, h_nm] = frame.get("domain (nm)")
         elif "scan_range (nm)" in frame.keys():
             [w_nm, h_nm] = frame.get("scan_range (nm)")
         elif "size (nm)" in frame.keys():
             [w_nm, h_nm] = frame.get("size (nm)")
+        elif "width (nm)" in frame.keys():
+            w_nm = frame.get("width (nm)")
+            h_nm = frame.get("height (nm)", w_nm)
         
-        if "x (nm)" in frame.keys():
-            x_nm = frame.get("x (nm)", 0)
-            y_nm = frame.get("y (nm)", 0)
+        if "center (nm)" in frame.keys():
+            [x_nm, y_nm] = frame.get("center (nm)")
         elif "offset (nm)" in frame.keys():
             [x_nm, y_nm] = frame.get("offset (nm)")
-        elif "center (nm)" in frame.keys():
-            [x_nm, y_nm] = frame.get("center (nm)")
+        elif "x (nm)" in frame.keys():
+            x_nm = frame.get("x (nm)", 0)
+            y_nm = frame.get("y (nm)", x_nm)
         
         angle = frame.get("angle (deg)", 0)
 
-        x_hex = self.conv.float32_to_hex(x_nm * 1E-9)
-        y_hex = self.conv.float32_to_hex(y_nm * 1E-9)
-        w_hex = self.conv.float32_to_hex(w_nm * 1E-9)
-        h_hex = self.conv.float32_to_hex(h_nm * 1E-9)
-        angle_hex = self.conv.float32_to_hex(angle)
+        x_hex = self.conv.float32_to_hex(float(x_nm * 1E-9))
+        y_hex = self.conv.float32_to_hex(float(y_nm * 1E-9))
+        w_hex = self.conv.float32_to_hex(float(w_nm * 1E-9))
+        h_hex = self.conv.float32_to_hex(float(h_nm * 1E-9))
+        angle_hex = self.conv.float32_to_hex(float(angle))
         
         frame_hex = x_hex + y_hex + w_hex + h_hex + angle_hex
         
-        self.set_scan_frame(frame_hex)
-        
+        self.set_scan_frame(frame_hex)        
         return
 
     def get_scan_buffer(self) -> dict:

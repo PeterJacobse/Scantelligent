@@ -273,7 +273,7 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             
             scan_data = nhw.get_scan_data(channel_index, not backward)
-            scan_image = scan_data.get("scan_data")
+            scan_image = np.flipud(scan_data.get("scan_data"))
 
             n_scan_image = np.size(scan_image)
             n_nans = np.count_nonzero(np.isnan(scan_image))
@@ -691,28 +691,28 @@ class NanonisAPI(QtCore.QObject):
 
             w_nm = None
             h_nm = None
-            if "width (nm)" in parameters.keys():
+            if "domain (nm)" in parameters.keys():
+                [w_nm, h_nm] = list(parameters.get("domain (nm)"))
+            elif "size (nm)" in parameters.keys():
+                [w_nm, h_nm] = list(parameters.get("size (nm)"))
+            elif "width (nm)" in parameters.keys():
                 w_nm = parameters.get("width (nm)")
                 h_nm = parameters.get("height (nm)", w_nm)
-            elif "domain (nm)" in parameters.keys():
-                [w_nm, h_nm] = parameters.get("domain (nm)")
-            elif "size (nm)" in parameters.keys():
-                [w_nm, h_nm] = parameters.get("size (nm)")
-            if w_nm and h_nm: new_parameters.update({"width (nm)": w_nm, "height (nm)": h_nm, "size (nm)": [w_nm, h_nm], "domain (nm)": [w_nm, h_nm]})
+            if w_nm: new_parameters.update({"width (nm)": w_nm, "height (nm)": h_nm, "domain (nm)": [w_nm, h_nm]})
             
             x_nm = None
             y_nm = None
-            if "x (nm)" in parameters.keys():
+            if "center (nm)" in parameters.keys():
+                [x_nm, y_nm] = list(parameters.get("center (nm)"))
+            elif "offset (nm)" in parameters.keys():
+                [x_nm, y_nm] = list(parameters.get("offset (nm)"))
+            elif "x (nm)" in parameters.keys():
                 x_nm = parameters.get("x (nm)")
                 y_nm = parameters.get("y (nm)", x_nm)
-            elif "offset (nm)" in parameters.keys():
-                [x_nm, y_nm] = parameters.get("offset (nm)")
-            elif "center (nm)" in parameters.keys():
-                [x_nm, y_nm] = parameters.get("center (nm)")
-            if isinstance(x_nm, int | float) and isinstance(y_nm, int | float): new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "center (nm)": [x_nm, y_nm]})
+            if x_nm: new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "center (nm)": [x_nm, y_nm]})
 
             angle_deg = parameters.get("angle (deg)", None)
-            if isinstance(angle_deg, float) or isinstance(angle_deg, int): new_parameters.update({"angle (deg)": angle_deg})
+            if angle_deg: new_parameters.update({"angle (deg)": angle_deg})
 
             frame = nhw.get_scan_frame_nm()
             if len(new_parameters) > 0:
