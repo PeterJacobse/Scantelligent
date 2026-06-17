@@ -79,9 +79,9 @@ class SCTWidgets:
             self.setOpts(axisOrder = "row-major")
 
             # Instantiate text labels
-            self.x_label = pg.TextItem(text = "local x axis", color = "#2090ff", anchor = (0.5, -.5), rotateAxis = (1, 0))
-            self.y_label = pg.TextItem(text = "local y axis", color = "#2090ff", anchor = (0.5, 1.5), rotateAxis = (0, 1))
-            self.slice_label = pg.TextItem(text = "local slice label", color = "#2090ff", anchor = (0.5, 1.5), rotateAxis = (1, 0))
+            self.x_label = pg.TextItem(text = "local x axis", color = "#2090ff", anchor = (0.5, -.3), rotateAxis = (1, 0))
+            self.y_label = pg.TextItem(text = "local y axis", color = "#2090ff", anchor = (0.5, 1.3), rotateAxis = (0, 1))
+            self.slice_label = pg.TextItem(text = "local slice label", color = "#2090ff", anchor = (0.5, 1.3), rotateAxis = (1, 0))
             self.x_label.setParentItem(self)
             self.y_label.setParentItem(self)
             self.slice_label.setParentItem(self)

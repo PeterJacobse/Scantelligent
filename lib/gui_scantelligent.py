@@ -40,10 +40,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.layouts = self.make_layouts()
         self.image_view = self.make_views()
         (self.piezo_frame, self.frame, self.new_frame, self.tip_target, self.target0, self.path_pdi) = self.make_image_view_widgets()
-        self.grapher = self.make_plot_widget()
-        self.widgets = self.make_custom_widgets()
+        (self.widgets, self.current_height_widget, self.limits_widget, self.grapher, self.sliders) = self.make_custom_widgets()
         self.consoles = self.make_consoles()
-        self.sliders = self.make_sliders()
         self.dialogs = self.make_dialogs()
         (self.info_box, self.message_box) = self.make_boxes()
                 
@@ -306,7 +304,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                                                                               {"name": "abs^2", "icon": icons.get("abs_2")},
                                                                                               {"name": "log(abs)", "icon": icons.get("log_abs")},
                                                                                               {"name": "arg", "icon": icons.get("arg")}], click_to_toggle = False),
-            "save_item": MSB(tooltip = "Save array item", icon = icons.get("floppy")),
+            "save_image": MSB(tooltip = "Save array item", icon = icons.get("save_png")),
 
             # ImageView items and attributes            
             "frame": MSB(icon = icons.get("guide_frame"), states = [{"name": "off", "tooltip": "Click to show the guide frame", "color": sct_black},
@@ -337,7 +335,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
-
         return buttons
 
     def make_checkboxes(self) -> tuple[dict, dict]:
@@ -704,12 +701,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         path_pdi.setZValue(82)
         return (piezo_frame, frame, new_frame, tip_target, target0, path_pdi)
 
-    def make_plot_widget(self) -> SCTWidgets.PlotWidget:
-        grapher = SCTWidgets.PlotWidget(colors = self.color_list)
-        grapher.setVLines(0) # Create axes through the origin
-        grapher.setHLines(0)        
-        return grapher
-
     def make_custom_widgets(self) -> dict:
         QWgt = QtWidgets.QWidget
         
@@ -736,17 +727,23 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         }
         widgets["toolbar"].setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Preferred)
                
-        self.current_height_widget = CurrentHeightIndicatorWidget(feedback_button = self.buttons["tip"], current_le = self.line_edits["I"], height_le = self.line_edits["z"],
+        current_height_widget = CurrentHeightIndicatorWidget(feedback_button = self.buttons["tip"], current_le = self.line_edits["I"], height_le = self.line_edits["z"],
                                                                   fill_color = self.colors["blue"], background_color = self.colors["dark_gray"], warning_color = self.colors["orange"])
         
         sivr = "Set the image value range "
-        self.limits_widget = MinMaxMethods()
+        limits_widget = MinMaxMethods()
 
-        self.limits_widget.addMethod("full", 0, 1, digits = 4, unit = "nm", icon = self.icons.get("100"), tooltip = sivr + "to the full data range")
-        self.limits_widget.addMethod("percentiles", 1, 99, digits = 1, limits = [0, 100], unit = "%", icon = self.icons.get("percentiles"), tooltip = sivr + "by percentiles")
-        self.limits_widget.addMethod("deviations", 2, 2, digits = 1, limits = [0, 100], unit = "\u03C3", icon = self.icons.get("deviation"), tooltip = sivr + "by standard deviations")
-        self.limits_widget.addMethod("absolute", 0, 1, digits = 4, limits = [-10000, 10000], unit = "nm", icon = self.icons.get("numbers"), tooltip = sivr + "by absolute values")
-        return widgets
+        limits_widget.addMethod("full", 0, 1, digits = 4, unit = "nm", icon = self.icons.get("100"), tooltip = sivr + "to the full data range")
+        limits_widget.addMethod("percentiles", 1, 99, digits = 1, limits = [0, 100], unit = "%", icon = self.icons.get("percentiles"), tooltip = sivr + "by percentiles")
+        limits_widget.addMethod("deviations", 2, 2, digits = 1, limits = [0, 100], unit = "\u03C3", icon = self.icons.get("deviation"), tooltip = sivr + "by standard deviations")
+        limits_widget.addMethod("absolute", 0, 1, digits = 4, limits = [-10000, 10000], unit = "nm", icon = self.icons.get("numbers"), tooltip = sivr + "by absolute values")
+        
+        grapher = SCTWidgets.PlotWidget(colors = self.color_list)
+        grapher.setVLines(0) # Create axes through the origin
+        grapher.setHLines(0)
+        
+        sliders = {"phase": SCTWidgets.PhaseSlider(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
+        return (widgets, current_height_widget, limits_widget, grapher, sliders)
 
     def make_consoles(self) -> dict:
         consoles = {
@@ -765,17 +762,13 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return consoles
 
-    def make_sliders(self) -> dict:
-        PS = SCTWidgets.PhaseSlider
-        sliders = {"phase": PS(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
-        return sliders
-
     def make_dialogs(self) -> dict:
         dialogs = {
             "parameters": QtWidgets.QInputDialog(),
             "info": QtWidgets.QInputDialog(),
             "open_file": QtWidgets.QFileDialog(),
-            "limits": QtWidgets.QDialog()
+            "limits": QtWidgets.QDialog(),
+            "save_file": QtWidgets.QFileDialog()
                    }
         
         #dialogs["limits"].setLayout(self.layouts["limits"])
@@ -989,7 +982,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         o_layout.addWidget(buttons["image_projection"], 0, 6)
         o_layout.addWidget(self.sliders["phase"], 0, 7)
         layouts["image_view_controls"].addLayout(o_layout)
-        layouts["image_view_controls"].addWidget(buttons["save_item"])
+        layouts["image_view_controls"].addWidget(buttons["save_image"])
         
         # Input console
         layouts["input"].addWidget(self.consoles["input"])

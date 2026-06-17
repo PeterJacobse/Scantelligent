@@ -1,5 +1,4 @@
 import os, sys, html, atexit, re, copy, time
-from PIL import Image
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
 from lib import Spectelligent, SCTWidgets, ScantelligentGUI
@@ -81,7 +80,7 @@ class Scantelligent(QtCore.QObject):
         self.stdout_redirector = SCTWidgets.StreamRedirector()
         self.stdout_redirector.output_written.connect(lambda text: self.gui.consoles["output"].append(text))
         sys.stdout = self.stdout_redirector
-        #sys.stderr = self.stdout_redirector
+        sys.stderr = self.stdout_redirector
         now = datetime.now()
         self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
         return
@@ -91,7 +90,7 @@ class Scantelligent(QtCore.QObject):
                         "tip": self.change_tip_status, "retract": lambda: self.coarse_move("up"), "advance": lambda: self.coarse_move("down"),
                         "approach": self.start_auto_approach, "approach_2": self.start_auto_approach, "withdraw": self.toggle_withdraw, "withdraw_2": self.toggle_withdraw,
                         
-                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"), "paste": self.save_active_item,
+                        "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"), "paste": self.save_active_item, "save_image": self.save_image,
                         "rot_trans": self.rot_trans_changed, "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
                         "frame": self.toggle_items, "path": self.toggle_items, "grid": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
                         
@@ -482,6 +481,7 @@ class Scantelligent(QtCore.QObject):
                     case QKey.Key_C: target = "connections"
                     case QKey.Key_E: target = "experiment"
                     case QKey.Key_B: target = "bias"
+                    case QKey.Key_L: target = "limits"
                     case QKey.Key_S: target = "speeds"
                     case QKey.Key_F: target = "feedback"
                     case QKey.Key_G: target = "frame_grid"
@@ -1014,6 +1014,11 @@ class Scantelligent(QtCore.QObject):
         self.redraw_item()
         return
 
+    def save_image(self) -> None:
+        self.gui.dialogs["save_file"].getSaveFileName()
+        
+        return
+
 
 
     # Spectelligent
@@ -1412,7 +1417,7 @@ class Scantelligent(QtCore.QObject):
                         active_controller = self.gui.comboboxes["controller"].currentText()
                         feedback = bool(self.gui.buttons["tip"].state_index % 2)
                         scan_range = [self.gui.line_edits["frame_width"].getValue(), self.gui.line_edits["frame_height"].getValue()]
-                        
+                        print(f"{scan_range = }")
                         if not feedback: experiment = "constant_height_scan"
                         elif scan_range[0] > 100 and scan_range[1] > 100: experiment = "overview_scan"
                         else:
