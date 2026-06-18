@@ -1,4 +1,4 @@
-import re, types, os, cv2
+import re, types, os
 from PyQt6 import QtGui, QtWidgets, QtCore
 import pyqtgraph as pg
 import numpy as np
@@ -79,9 +79,9 @@ class SCTWidgets:
             self.setOpts(axisOrder = "row-major")
 
             # Instantiate text labels
-            self.x_label = pg.TextItem(text = "local x axis", color = "#2090ff", anchor = (0.5, -.3), rotateAxis = (1, 0))
-            self.y_label = pg.TextItem(text = "local y axis", color = "#2090ff", anchor = (0.5, 1.3), rotateAxis = (0, 1))
-            self.slice_label = pg.TextItem(text = "local slice label", color = "#2090ff", anchor = (0.5, 1.3), rotateAxis = (1, 0))
+            self.x_label = pg.TextItem(text = "local x axis", color = "#2090ff", anchor = (0.5, .1), rotateAxis = (1, 0))
+            self.y_label = pg.TextItem(text = "local y axis", color = "#2090ff", anchor = (0.5, 1.2), rotateAxis = (0, 1))
+            self.slice_label = pg.TextItem(text = "local slice label", color = "#2090ff", anchor = (0.5, 1), rotateAxis = (1, 0))
             self.x_label.setParentItem(self)
             self.y_label.setParentItem(self)
             self.slice_label.setParentItem(self)
@@ -448,9 +448,11 @@ class SCTWidgets:
                 # Default for when no different states are provided
                 self.states = [{"name": "unchecked", "color": "#101010"}]
             
-            self.button_size = 22
-            if isinstance(size, int): self.button_size = size
-            self.setFixedSize(self.button_size + 8, self.button_size + 8)
+            self.button_size = [24, 24]
+            if isinstance(size, int): self.button_size = [size, size]
+            if isinstance(size, list): self.button_size = [size[0], size[1]]
+            self.setIconSize(QtCore.QSize(self.button_size[0], self.button_size[1]))
+            self.setFixedSize(self.button_size[0] + 6, self.button_size[1] + 6)
             if isinstance(tooltip, str): self.states[0].update({"tooltip": tooltip}) # If a global tooltip is provided, it is assigned to be the tooltip of state 0
             if isinstance(icon, QtGui.QIcon): self.states[0].update({"icon": icon}) # If a global icon is provided, it is assigned to be the icon of state 0
             if not isinstance(click_to_toggle, bool): click_to_toggle = True # click_to_toggle = True means that clicking the button automatically toggles its state
@@ -494,9 +496,11 @@ class SCTWidgets:
                 except: pass
             return
 
-        def setSize(self, value: int = 0) -> None:
-            self.button_size = value
-            self.setFixedSize(self.button_size + 8, self.button_size + 8)
+        def setSize(self, value: int | list) -> None:
+            if isinstance(value, int): self.button_size = [value, value]
+            if isinstance(value, list): self.button_size = [value[0], value[1]]
+            
+            self.setFixedSize(self.button_size[0] + 6, self.button_size[1] + 6)
             return
 
         def setState(self, value = 0) -> None:
@@ -541,11 +545,12 @@ class SCTWidgets:
         A QComboBox with extra method changeToolTip
         """
         def __init__(self, *args, **kwargs):
-            self.name = kwargs.pop("name") if "name" in kwargs.keys() else None
-            self.tooltip = kwargs.pop("tooltip") if "tooltip" in kwargs.keys() else None
-            self.max_width = kwargs.pop("max_width") if "max_width" in kwargs.keys() else None
-            self.style_sheet = kwargs.pop("style_sheet") if "style_sheet" in kwargs.keys() else None
-            items = kwargs.pop("items") if "items" in kwargs.keys() else None
+            self.name = kwargs.pop("name", None)
+            self.tooltip = kwargs.pop("tooltip", None)
+            self.max_width = kwargs.pop("max_width", None)
+            self.min_width = kwargs.pop("min_width", None)
+            self.style_sheet = kwargs.pop("style_sheet", None)
+            items = kwargs.pop("items", None)
             
             super().__init__(*args, **kwargs)
             
@@ -558,14 +563,13 @@ class SCTWidgets:
         def setName(self, name: str = "") -> None:
             self.name = name
             return
-            
+
         def setDefaults(self) -> None:
             if isinstance(self.name, str): self.setObjectName(self.name)
-            #if isinstance(self.tooltip, str): self.setToolTip(self.tooltip)
-            if isinstance(self.max_width, int):
-                self.setMaximumWidth(self.max_width)
-            else:
-                self.setMaximumWidth(150)
+            if isinstance(self.max_width, int): self.setMaximumWidth(self.max_width)
+            else: self.setMaximumWidth(150)
+            if isinstance(self.min_width, int): self.setMinimumWidth(self.min_width)
+            else: self.setMinimumWidth(70)
             if isinstance(self.style_sheet, str):
                 self.setStyleSheet(self.style_sheet)
             else:
@@ -2311,19 +2315,19 @@ class MinMaxMethods(QtWidgets.QWidget):
         try:
             max_method  = self.max_button_group.getSelectedWidget()
             max_value = self.max_line_edits[f"{max_method}"].getValue()
-            return [f"{max_method}", f"{max_value}"]
+            return (f"{max_method}", max_value)
         except:
             print(f"Error retrieving the maximum value")
-            return False
-    
+            return ("", 0)
+
     def getMin(self):
         try:
             min_method  = self.min_button_group.getSelectedWidget()
             min_value = self.min_line_edits[f"{min_method}"].getValue()
-            return [f"{min_method}", f"{min_value}"]
+            return (f"{min_method}", min_value)
         except:
             print(f"Error retrieving the minimum value")
-            return False
+            return ("", 0)
 
 
 

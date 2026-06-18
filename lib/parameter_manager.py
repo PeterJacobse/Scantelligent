@@ -17,12 +17,14 @@ class ParameterManager(QtCore.QObject):
     def get(self, parameter_type: str = "frame") -> None:
         sct = self.scantelligent
         
-        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain", "tip_shaper", "bias"] and not hasattr(sct, "nanonis"):
+        if parameter_type in ["feedback", "frame", "grid", "speeds", "gain", "tip_shaper"] and not hasattr(sct, "nanonis"):
             sct.logprint("Cannot get parameters without a Nanonis connection", message_type = "error")
             return
 
         match parameter_type:
-            case "bias": sct.nanonis.bias_update(unlink = True)
+            case "bias":
+                if hasattr(sct, "nanonis"): sct.nanonis.bias_update(unlink = True)
+                if hasattr(sct, "mla") and sct.mla.status == "running": sct.mla.bias_update(unlink = False)
             case "feedback":
                 sct.nanonis.feedback_update(unlink = False)
                 sct.nanonis.hardware_update(unlink = False)
@@ -39,9 +41,8 @@ class ParameterManager(QtCore.QObject):
                     sct.mla.get_pixels(1)
                     sct.mla.stop_lockin()
             case "mla_bias":
-                if hasattr(sct, "mla"): sct.mla.bias_update(unlink = False)
-            case "tip_shaper": sct.nanonis.tip_shaper_update(unlink = True)
-            case "spectroscopy": sct.nanonis.sts_update(unlink = True)
+                if hasattr(sct, "nanonis"): sct.nanonis.bias_update(unlink = True)
+                if hasattr(sct, "mla") and sct.mla.status == "running": sct.mla.bias_update(unlink = False)
             case _: pass
         return
 
@@ -390,28 +391,19 @@ class ParameterManager(QtCore.QObject):
             case "frame":
                 sct.user.frames[0].update(parameters)
             
-                [x_0_nm, y_0_nm] = parameters.get("center (nm)", [0, 0])
-                scan_range = parameters.get("domain (nm)", [100, 100])
-                sct.data.scan_processing_flags.update({"domain (nm)": scan_range})
-                [w_nm, h_nm] = scan_range
-                
-                angle_deg = parameters.get("angle (deg)", 0)
+                center = parameters.get("center (nm)", [0, 0])
+                [x_0_nm, y_0_nm] = center
+                domain = parameters.get("domain (nm)", [100, 100])
+                [w_nm, h_nm] = domain
                 aspect_ratio = h_nm / w_nm
+                angle_deg = parameters.get("angle (deg)", 0)                
+                
+                sct.data.scan_processing_flags.update({"frame": {"domain (nm)": domain, "center (nm)": center, "angle (deg)": angle_deg}})                
                 
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
 
-                # Update the frame in the ImageView                
-                """
-                sct.gui.frame.setSize([w_nm, h_nm])
-                sct.gui.frame.setPos([0, 0])
-                sct.gui.frame.setAngle(angle = -angle_deg)
-
-                bounding_rect = sct.gui.frame.boundingRect()
-                local_center = bounding_rect.center()
-                abs_center = sct.gui.frame.mapToParent(local_center)                
-                sct.gui.frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-                """
+                # Update the frame in the ImageView
                 sct.gui.frame.setFrame(parameters)
 
             case "new_frame":
@@ -424,22 +416,7 @@ class ParameterManager(QtCore.QObject):
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
                 
                 # Update the frame in the ImageView
-                if sct.gui.buttons["view"].state_name == "nanonis":
-                    sct.gui.new_frame.blockSignals(True)
-                    
-                    sct.gui.new_frame.setFrame(parameters)
-                    """
-                    new_frame.setSize([w_nm, h_nm])
-                    new_frame.setPos([0, 0])
-                    new_frame.setAngle(angle = -angle_deg)
-                    
-                    bounding_rect = new_frame.boundingRect()
-                    local_center = bounding_rect.center()
-                    abs_center = new_frame.mapToParent(local_center)
-                    
-                    new_frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-                    """
-                    sct.gui.new_frame.blockSignals(False)
+                sct.gui.new_frame.setFrame(parameters)
 
             case "grid":
                 sct.user.frames[0].update(parameters)
@@ -451,13 +428,14 @@ class ParameterManager(QtCore.QObject):
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["grid_pixels", "grid_lines", "grid_aspect", "pixel_width", "pixel_height"], [pixels, lines, aspect_ratio, pixel_width, pixel_height])]
                 
                 # Frame is embedded in grid. Update the frame parameters as well
-                [x_0_nm, y_0_nm] = parameters.get("center (nm)", [0, 0])
-                scan_range = parameters.get("domain (nm)", [100, 100])
-                sct.data.scan_processing_flags.update({"domain (nm)": scan_range})
-                [w_nm, h_nm] = scan_range
-                
-                angle_deg = parameters.get("angle (deg)", 0)
+                center = parameters.get("center (nm)", [0, 0])
+                [x_0_nm, y_0_nm] = center
+                domain = parameters.get("domain (nm)", [100, 100])
+                [w_nm, h_nm] = domain
                 aspect_ratio = h_nm / w_nm
+                angle_deg = parameters.get("angle (deg)", 0)                
+                
+                sct.data.scan_processing_flags.update({"frame": {"domain (nm)": domain, "center (nm)": center, "angle (deg)": angle_deg}})  
 
                 # Update the fields in the GUI
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["frame_height", "frame_width", "frame_x", "frame_y", "frame_angle", "frame_aspect"], [h_nm, w_nm, x_0_nm, y_0_nm, angle_deg, aspect_ratio])]
@@ -465,34 +443,6 @@ class ParameterManager(QtCore.QObject):
                 # Update the frame in the ImageView
                 sct.gui.frame.setFrame(parameters)
                 sct.gui.new_frame.setFrame(parameters)
-                
-                if not hasattr(sct.gui, "active_item"): return
-                try: sct.gui.activeItem.setFrame(parameters)
-                except: pass
-                
-                """
-                sct.gui.frame.setSize([w_nm, h_nm])
-                sct.gui.frame.setPos([0, 0])
-                sct.gui.frame.setAngle(angle = -angle_deg)
-
-                bounding_rect = sct.gui.frame.boundingRect()
-                local_center = bounding_rect.center()
-                abs_center = sct.gui.frame.mapToParent(local_center)
-                sct.gui.frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-                
-                # Update the new frame 'roi' in the ImageView
-                sct.gui.new_frame.setSize([w_nm, h_nm])
-                sct.gui.new_frame.setPos([0, 0])
-                sct.gui.new_frame.setAngle(angle = -angle_deg)
-
-                bounding_rect = sct.gui.new_frame.boundingRect()
-                local_center = bounding_rect.center()
-                abs_center = sct.gui.new_frame.mapToParent(local_center)
-                sct.gui.new_frame.setPos(x_0_nm - abs_center.x(), y_0_nm - abs_center.y())
-
-                # Refresh the transformations on the scan_item
-                if sct.gui.buttons["view"].state_name == "nanonis": sct.gui.scan_item.setGrid(parameters)
-                """
             
             case "path":
                 [coords, visible] = [parameters.get(key, None) for key in ["coordinates (nm)", "hidden"]]
@@ -519,6 +469,10 @@ class ParameterManager(QtCore.QObject):
                 if gains: sct.gui.comboboxes["tia_gain"].renewItems(gains)
                 current_gain = parameters.get("current_gain", None)
                 if current_gain: sct.gui.comboboxes["tia_gain"].selectItem(current_gain)
+                
+                [x_tilt, y_tilt] = [parameters.get(key) for key in ["x_tilt", "y_tilt"]]
+                sctgui.line_edits["x_tilt"].setValue(x_tilt)
+                sctgui.line_edits["y_tilt"].setValue(y_tilt)
 
             case "scan_metadata":
                 signals = parameters.get("signal_dict", None)

@@ -61,6 +61,7 @@ class Scantelligent(QtCore.QObject):
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
         self.focus_group = "connections"
         self.saved_items = []
+        self.timer = QtCore.QTimer()
                 
         # Dict to keep track of the hardware and experiment status
         self.status = {
@@ -80,7 +81,7 @@ class Scantelligent(QtCore.QObject):
         self.stdout_redirector = SCTWidgets.StreamRedirector()
         self.stdout_redirector.output_written.connect(lambda text: self.gui.consoles["output"].append(text))
         sys.stdout = self.stdout_redirector
-        sys.stderr = self.stdout_redirector
+        #sys.stderr = self.stdout_redirector
         now = datetime.now()
         self.logprint(now.strftime("Opening Scantelligent on %Y-%m-%d %H:%M:%S"), message_type = "message")
         return
@@ -92,10 +93,11 @@ class Scantelligent(QtCore.QObject):
                         
                         "bias_pulse": lambda: self.tip_prep("pulse"), "tip_shape": lambda: self.tip_prep("shape"), "paste": self.save_active_item, "save_image": self.save_image,
                         "rot_trans": self.rot_trans_changed, "fit_to_frame": lambda: self.set_view_range("frame"), "fit_to_range": lambda: self.set_view_range("piezo_range"),
-                        "frame": self.toggle_items, "path": self.toggle_items, "grid": self.toggle_items, "set_dz": self.set_dz, "limits": self.toggle_limits_view,
+                        "set_dz": self.set_dz, "limits": self.toggle_limits_view,
                         
                         "start_stop": self.control_experiment, "start_scan": self.quick_scan, "spectelligent": self.open_spectelligent, "spectelligent_2": self.open_spectelligent}
         
+        [button_slots.update({name: self.toggle_items}) for name in ["labels", "frame", "path", "grid", "target"]]
         [button_slots.update({hardware_component: lambda checked, hwc = hardware_component: self.dis_reconnect(target = hwc)}) for hardware_component in ["nanonis", "mla", "camera", "keithley"]]
         [button_slots.update({button_name: self.update_processing_flags}) for button_name in ["reciprocal", "sobel", "laplace", "normal", "gaussian", "direction", "image_projection"]]
         
@@ -130,8 +132,13 @@ class Scantelligent(QtCore.QObject):
         self.gui.limits_widget.stateChanged.connect(self.update_processing_flags)
         self.gui.button_groups["channels"].clicked.connect(self.update_pdi_visibility)
         
+        # Limits
+        self.gui.limits_widget.stateChanged.connect(self.limit_selection_changed)
+        
         # ImageView
         self.gui.image_view.scan_file_signal.connect(self.open_file)
+        self.gui.image_view.position_signal_middle_button.connect(self.mousewheel_clicked)
+        self.gui.image_view.position_signal.connect(self.receive_position)
         self.gui.image_view.getHistogramWidget().item.sigLevelChangeFinished.connect(self.histogram_levels_changed)
         [self.gui.groupboxes[name].clicked.connect(lambda name0 = name: self.focus_on_groupbox(name0)) for name in self.gui.groupboxes.keys()]
         
@@ -294,10 +301,6 @@ class Scantelligent(QtCore.QObject):
                 self.nanonis = NanonisAPI(hw_config = nanonis_config0)
                 
                 # Set up signal-slot connections
-                # Scantelligent -> Nanonis
-                self.gui.image_view.position_signal.connect(lambda x, y: self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, wait = True, unlink = True))
-                self.gui.image_view.position_signal_middle_button.connect(lambda x, y: self.parameters.set("grid"))
-
                 # Nanonis -> Scantelligent
                 self.nanonis.task_progress.connect(lambda val: self.gui.progress_bars["task"].setValue(val))
                 self.nanonis.parameters.connect(self.parameters.receive) # Parameter dictionaries are received in the ParameterManager class, instantiated as self.parameters
@@ -323,6 +326,10 @@ class Scantelligent(QtCore.QObject):
                 
                 # Get parameters from Nanonis
                 (nanonis_parameters1, _) = self.nanonis1.initialize(verbose = False)
+                
+                self.timer.setInterval(500)
+                self.timer.timeout.connect(self.query_tip_status)
+                self.timer.start()
                 
                 
                 
@@ -387,6 +394,19 @@ class Scantelligent(QtCore.QObject):
         self.logprint(text, message_type = mtype)
         return
 
+    @QtCore.pyqtSlot(float, float)
+    def receive_position(self, x, y) -> None:
+        match self.gui.buttons["target"].state_index:
+            case 0:
+                if not hasattr(self, "nanonis"): return
+                self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, wait = False, unlink = True)
+            case _:
+                try:
+                    self.gui.target0.setPos(x, y)
+                    self.gui.target0.text_item.setText(f"target location\n({x:.2f}, {y:.2f}) nm")
+                except: pass
+        return
+
     @QtCore.pyqtSlot(np.ndarray)
     def receive_image(self, image: np.ndarray) -> None:
         try: self.gui.camera_item.setImage(np.flipud(image), autoRange = False)
@@ -406,9 +426,12 @@ class Scantelligent(QtCore.QObject):
             self.active_item.array[tuple(indexer)] = data_slice
             
             image = self.active_item.getSlice()
-            (processed_scan, statistics, limits, error) = self.data.process_scan(image)
-            [self.gui.limits_widget.setValue("full", side, limits[index]) for index, side in enumerate(["min", "max"])]
+            if np.isnan(image).all(): return
             
+            (processed_scan, statistics, limits, error) = self.data.process_scan(image)
+            [self.gui.limits_widget.setValue("full", side, float(limits[index])) for index, side in enumerate(["min", "max"])]
+            
+            if np.isnan(processed_scan).all(): return
             self.active_item.setImage(processed_scan)
             self.gui.hist_item.setLevels(limits[0], limits[1])
         except Exception as e:
@@ -491,6 +514,9 @@ class Scantelligent(QtCore.QObject):
                     case QKey.Key_M: target = "modulators"
                     case _: target = ""
                 self.focus_on_groupbox(target)
+                
+                if self.focus_group == "limits": self.gui.widgets["image_processing"].show()
+                else: self.gui.widgets["image_processing"].hide()
             
             if event.modifiers() == QtCore.Qt.KeyboardModifier.ShiftModifier:
                 return
@@ -514,9 +540,10 @@ class Scantelligent(QtCore.QObject):
                     case (QKey.Key_PageDown, "experiment"): buttons["scan_direction"].click()
                     case (QKey.Key_Space, "tip"): buttons["tip"].click()
                     case (QKey.Key_Space, "horizontal"): buttons["composite"].click()
-                    case (QKey.Key_Space, "experiment"): buttons["start_stop"].click()
+                    case (QKey.Key_Enter, "experiment"): buttons["start_stop"].click()
                     
                     case (QKey.Key_Up, "horizontal"): buttons["n"].click()
+                    case (QKey.Key_E, "experiment"): self.gui.comboboxes["experiment"].toggleIndex()
                     case (QKey.Key_Right, "horizontal"): buttons["e"].click()
                     case (QKey.Key_Down, "horizontal"): buttons["s"].click()
                     case (QKey.Key_Left, "horizontal"): buttons["w"].click()
@@ -526,10 +553,16 @@ class Scantelligent(QtCore.QObject):
                     case (QKey.Key_End | QKey.Key_1), "horizontal": buttons["sw"].click()
                     
                     case (QKey.Key_A, "frame_grid"): line_edits["frame_angle"].focusAndSelect()
+                    case (QKey.Key_A, "limits"): buttons["absolute"].click()
                     case (QKey.Key_C, "connections"): buttons["camera"].click()
                     case (QKey.Key_D, "tip"): buttons["set_dz"].click()
                     case (QKey.Key_D, "bias"): line_edits["dV_nanonis"].focusAndSelect()
+                    case (QKey.Key_D, "limits"): buttons["deviations"].click()
                     case (QKey.Key_E, "experiment"): self.gui.comboboxes["experiment"].toggleIndex()
+                    case (QKey.Key_F, "limits"): buttons["full"].click()
+                    case (QKey.Key_G, "bias"): buttons["get_bias_parameters"].click()
+                    case (QKey.Key_G, "frame"): buttons["get_grid_parameters"].click()
+                    case (QKey.Key_G, "feedback"): buttons["get_feedback_parameters"].click()
                     case (QKey.Key_H, "frame_grid"): line_edits["frame_height"].focusAndSelect()
                     case (QKey.Key_K, "bias"): line_edits["V_keithley"].focusAndSelect()
                     case (QKey.Key_L, "frame_grid"): line_edits["grid_lines"].focusAndSelect()
@@ -537,8 +570,11 @@ class Scantelligent(QtCore.QObject):
                     case (QKey.Key_M, "connections"): buttons["mla"].click()
                     case (QKey.Key_N, "bias"): line_edits["V_nanonis"].focusAndSelect()
                     case (QKey.Key_N, "connections"): buttons["nanonis"].click()
+                    case (QKey.Key_P, "limits"): buttons["bg_plane"].click()
                     case (QKey.Key_P, "prep"): buttons["bias_pulse"].click()
                     case (QKey.Key_P, "frame_grid"): line_edits["grid_pixels"].focusAndSelect()
+                    case (QKey.Key_R, "limits"): buttons["percentiles"].click()
+                    case (QKey.Key_V, "connections"): self.toggle_view()
                     case (QKey.Key_W, "frame_grid"): line_edits["frame_width"].focusAndSelect()
                     case (QKey.Key_X, "frame_grid"): line_edits["frame_x"].focusAndSelect()
                     case (QKey.Key_Y, "frame_grid"): line_edits["frame_y"].focusAndSelect()
@@ -664,8 +700,8 @@ class Scantelligent(QtCore.QObject):
         return
 
     def toggle_limits_view(self) -> None:
-        if self.gui.buttons["limits"].isChecked(): self.gui.limits_widget.show()
-        else: self.gui.limits_widget.hide()
+        if self.gui.buttons["limits"].isChecked(): self.gui.widgets["image_processing"].show()
+        else: self.gui.widgets["image_processing"].hide()
         return
 
     def focus_on_groupbox(self, target: str = "") -> None:
@@ -742,6 +778,7 @@ class Scantelligent(QtCore.QObject):
             self.update_processing_flags()
             self.active_item.showImage(autoLevels = True)
             self.set_view_range("frame")
+            self.data.scan_processing_flags.update({"frame": frame})
             
             self.logprint(f"Successfully loaded scan file {file_path}", message_type = "success")
         except Exception as e:
@@ -777,6 +814,8 @@ class Scantelligent(QtCore.QObject):
         #self.user.save_parameter_sets()
         try: self.experiment_thread.requestInterruption()
         except: pass
+        try: self.camera_thread.requestInterruption()
+        except: pass
         
         try: self.nanonis.unlink()
         except: pass        
@@ -784,6 +823,11 @@ class Scantelligent(QtCore.QObject):
         except: pass
         try: self.toggle_view("none")
         except: pass
+        try:
+            self.timer.stop()
+            self.timer.deleteLater()
+        except:
+            pass
         
         for attribute_name in ["nanonis", "mla", "experiment", "experiment_thread", "camera", "camera_thread"]:
             try: delattr(self, attribute_name)
@@ -792,7 +836,8 @@ class Scantelligent(QtCore.QObject):
 
     def exit(self) -> None:
         self.cleanup()
-        self.logprint("Thank you for using Scantelligent!", message_type = "success")
+        try: self.logprint("Thank you for using Scantelligent!", message_type = "success")
+        except: pass
         SCTWidgets.Application.instance().quit()
 
     def closeEvent(self, event: QtCore.QEvent) -> None:
@@ -868,6 +913,7 @@ class Scantelligent(QtCore.QObject):
             self.active_item = array_item
             self.active_item.setZValue(64)
             self.gui.image_view.setItem(self.active_item)
+            self.data.scan_processing_flags.update({"frame": frame})
         
             view = self.gui.image_view.view
             [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem) and not item == self.active_item]
@@ -909,16 +955,17 @@ class Scantelligent(QtCore.QObject):
         # Reset ImageView. Remove old items. Prepare the QSplitters for resizing
         [min_view_height, min_graph_height, min_console_height] = [self.gui.splitters["image_graph"].widget(index).minimumSizeHint().height() for index in range(3)]
         total_splitter_height = self.gui.splitters["image_graph"].height()
+        view = self.gui.image_view.getViewBox()
 
         match new_view:
             case "camera":
                 self.gui.buttons["view"].setState("camera")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
-                [self.gui.view.removeItem(item) for item in self.gui.view.addedItems[:]]
+                [view.removeItem(item) for item in view.addedItems[:]]
                 self.gui.image_view.setItem(self.gui.camera_item)
                 camera_frame = self.camera.grab_frame()
-                self.gui.view.autoRange()
+                view.autoRange()
                 
                 # Set up the camera thread
                 self.camera_thread = QtCore.QThread()
@@ -939,11 +986,11 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["view"].setState("nanonis")
                 self.gui.splitters["image_graph"].setSizes([total_splitter_height - (min_graph_height + min_console_height), min_graph_height, min_console_height])
                 
-                try: self.gui.view.removeItem(self.gui.camera_item)
+                try: view.removeItem(self.gui.camera_item)
                 except: pass
 
-                [self.gui.view.addItem(item) for item in [self.gui.new_frame, self.gui.frame, self.gui.piezo_frame, self.gui.tip_target, self.gui.path_pdi]]
-                for item in self.saved_items: self.gui.view.addItem(item)
+                [view.addItem(item) for item in [self.gui.new_frame, self.gui.frame, self.gui.piezo_frame, self.gui.tip_target, self.gui.target0, self.gui.path_pdi]]
+                for item in self.saved_items: view.addItem(item)
                 try: self.nanonis.hardware_update()
                 except: pass
                 self.set_view_range("full")
@@ -961,8 +1008,13 @@ class Scantelligent(QtCore.QObject):
         return
 
     def toggle_items(self) -> None:
-        self.gui.path_pdi.setVisible(self.gui.buttons["path"].isChecked())
-        self.gui.new_frame.setVisible(self.gui.buttons["frame"].isChecked())
+        try:
+            self.gui.path_pdi.setVisible(self.gui.buttons["path"].isChecked())
+            self.gui.new_frame.setVisible(self.gui.buttons["frame"].isChecked())
+            self.gui.target0.setVisible(self.gui.buttons["target"].isChecked())
+            self.active_item.showLabels(self.gui.buttons["labels"].isChecked())
+        except:
+            pass
         
         grid_state = self.gui.buttons["grid"].state_name
         match grid_state:
@@ -992,6 +1044,7 @@ class Scantelligent(QtCore.QObject):
             self.active_item = selected_item
             self.active_item.showLabels(True)
             self.gui.frame.setFrame(self.active_item.frame)
+            self.data.scan_processing_flags.update({"frame": self.active_item.frame})
             
             view = self.gui.image_view.view
             [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem) and not item == selected_item]
@@ -1009,14 +1062,22 @@ class Scantelligent(QtCore.QObject):
     def histogram_levels_changed(self) -> None:
         hist_levels = self.gui.image_view.getHistogramWidget().item.getLevels()
 
-        self.gui.limits_widget.setValue("absolute", "min", hist_levels[0])
-        self.gui.limits_widget.setValue("absolute", "max", hist_levels[1])
+        self.gui.limits_widget.setValue("absolute", "min", float(hist_levels[0]))
+        self.gui.limits_widget.setValue("absolute", "max", float(hist_levels[1]))
         self.redraw_item()
+        return
+
+    def limit_selection_changed(self) -> None:
+        self.logprint(f"{self.gui.limits_widget.getMin() = }")
         return
 
     def save_image(self) -> None:
         self.gui.dialogs["save_file"].getSaveFileName()
         
+        return
+
+    def mousewheel_clicked(self) -> None:
+        self.parameters.set("grid")
         return
 
 
@@ -1092,13 +1153,14 @@ class Scantelligent(QtCore.QObject):
                         self.gui.limits_widget.setUnit("absolute", unit)
                         self.gui.limits_widget.setUnit("full", unit)
                 except Exception as e:
-                    self.logprint(f"{e}")
+                    self.logprint(f"Error setting the slice/axes comboboxes: {e}", message_type = "error")
             
             self.active_item.showImage()
             self.active_item.setFrame()
             self.gui.frame.setFrame(self.active_item.frame)
+            self.data.scan_processing_flags.update({"frame": self.active_item.frame})
         except Exception as e:
-            self.logprint(f"{e}", message_type = "error")
+            self.logprint(f"Error setting the slice/axes comboboxes: {e}", message_type = "error")
         return
 
     def rot_trans_changed(self) -> None:
@@ -1112,8 +1174,8 @@ class Scantelligent(QtCore.QObject):
                 self.active_item.setOffset(0, 0)
                 self.active_item.setAngle(0)
                 self.active_item.setFrame()
-                item_range = self.active_item.frame.get("domain (nm)")
-                self.gui.frame.setFrame({"domain (nm)": item_range, "center (nm)": [0, 0], "angle (deg)": 0})
+                item_domain = self.active_item.frame.get("domain (nm)")
+                self.gui.frame.setFrame({"domain (nm)": item_domain, "center (nm)": [0, 0], "angle (deg)": 0})
         except:
             self.logprint(f"Unable to apply rotation and translation", message_type = "error")
         return
@@ -1133,9 +1195,9 @@ class Scantelligent(QtCore.QObject):
             flags.update({"background": f"{bg_method[3:]}", "rotation": rot_trans, "offset": rot_trans})
             
             # Limits
-            [min_method, min_value] = self.gui.limits_widget.getMin()
-            [max_method, max_value] = self.gui.limits_widget.getMax()
-            flags.update({"min_method": f"{min_method}", "min_method_value": f"{min_value}", "max_method": f"{max_method}", "max_method_value": f"{max_value}"})
+            (min_method, min_value) = self.gui.limits_widget.getMin()
+            (max_method, max_value) = self.gui.limits_widget.getMax()
+            if isinstance(min_value, float | int) and isinstance(max_value, float | int): flags.update({"min_method": f"{min_method}", "min_method_value": f"{min_value}", "max_method": f"{max_method}", "max_method_value": f"{max_value}"})
 
             # Channel, direction, projection
             selected_channel = self.gui.comboboxes["slice_0"].name
@@ -1176,11 +1238,12 @@ class Scantelligent(QtCore.QObject):
                 self.active_item.setImage(image)
                 img_min = statistics.get("min")
                 img_max = statistics.get("max")
-                self.gui.limits_widget.setValue("full", "min", img_min)
-                self.gui.limits_widget.setValue("full", "max", img_max)
+                if isinstance(img_min, float | int) and isinstance(img_max, float | int):
+                    self.gui.limits_widget.setValue("full", "min", img_min)
+                    self.gui.limits_widget.setValue("full", "max", img_max)
                 
                 hist_item = self.gui.image_view.getHistogramWidget().item
-                hist_item.setLevels(limits[0], limits[1])
+                #hist_item.setLevels(limits[0], limits[1])
                 hist_item.autoHistogramRange()
             except Exception as e:
                 self.logprint(f"{e}")
@@ -1264,6 +1327,11 @@ class Scantelligent(QtCore.QObject):
             return False
 
         return True
+
+    def query_tip_status(self) -> None:
+        if not hasattr(self, "nanonis1"): return
+        self.nanonis1.tip_update(verbose = False)
+        return
 
     def coarse_move(self, direction: str = "n") -> bool:
         if not hasattr(self, "nanonis"): return
@@ -1501,6 +1569,7 @@ class Scantelligent(QtCore.QObject):
                 self.experiment.gui_parameters = copy.deepcopy(gui_parameters) # Pass a copy of (not a reference to) these parameters to the experiment object, so they can be read out locally
                 
                 self.receive_data(np.array(["clear"])) # Clear the grapher widget
+                if hasattr(self, "timer"): self.timer.blockSignals(True)
                 self.gui.image_view.blockDrops = True
                 start_button.setState("running")
                 self.gui.buttons["save"].setState("data_present")
@@ -1519,6 +1588,7 @@ class Scantelligent(QtCore.QObject):
         return True
 
     def experiment_cleanup(self) -> None:
+        if hasattr(self, "timer"): self.timer.blockSignals(False)
         self.experiment.deleteLater()
         self.experiment_thread.deleteLater()
         self.gui.buttons["start_stop"].setState("load")

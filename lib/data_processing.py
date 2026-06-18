@@ -80,7 +80,6 @@ class DataProcessing:
         }
         
         scan_processing_flags.update(entries)
-        
         return scan_processing_flags
     
     def create_spec_processing_flags(self) -> dict:
@@ -100,8 +99,7 @@ class DataProcessing:
             "moving_average_window": 1
         }
         
-        spec_processing_flags.update(entries)
-        
+        spec_processing_flags.update(entries)        
         return spec_processing_flags
 
 
@@ -511,29 +509,31 @@ class DataProcessing:
         limits = [0, 1]
 
         try:
-            # Apply matrix operations            
+            if np.isnan(image).all(): return (image, {}, [], "All-NaN image")
+            
+            # Apply matrix operations
             (processed_scan, error) = self.operate_scan(image)
-            if error: raise Exception(error)
+            if error: raise Exception("Scan operation error: " + error)
 
             # Calculate the image statistics and display them
             (statistics, error) = self.get_image_statistics(processed_scan)
-            if error: raise Exception(error)
+            if error: raise Exception("Scan statistics error: " + error)
         
             # Calculate the limits
             (limits, error) = self.calculate_limits(processed_scan)
             self.scan_processing_flags.update({"min_limit": limits[0], "max_limit": limits[1]})
-            if error: raise Exception(error)
+            if error: raise Exception("Scan limits error: " + error)
         
         except Exception as e:
+            print(f"{e}")
             error = e
-            print(f"Error encountered while processing the scan: {error}")
         
         return (processed_scan, statistics, limits, error)
 
     def operate_scan(self, image: np.ndarray) -> tuple[np.ndarray, bool | str]:
         error = False
         flags = self.scan_processing_flags.get_all()
-        scan_range_nm = flags.get("domain (nm)")
+        scan_range_nm = flags["frame"].get("domain (nm)")
         gaussian_sigma = flags.get("gaussian_width (nm)")
         
         # Background subtraction
@@ -592,6 +592,7 @@ class DataProcessing:
         
         try:
             (statistics, error) = self.get_image_statistics(image)
+            print(f"{statistics = }")
             if error:
                 print(f"Something went awry: {error}")
                 raise
@@ -627,6 +628,7 @@ class DataProcessing:
 
             limits = [min_limit, max_limit]
         except Exception as e:
+            print(f"Error calculating image limits: {e}")
             error = e
 
         return (limits, error)
@@ -860,7 +862,7 @@ class DataProcessing:
 
                 image_subtracted.append(line_subtracted)
 
-            image_subtracted = np.array(image_subtracted, dtype = np.float32)
+            image_subtracted = np.array(image_subtracted)
         
         except:
             error = "Error. Line subtraction algorithm failed."
@@ -1001,11 +1003,14 @@ class DataProcessing:
         try:
             data_flat = image.flatten()
             data_non_nan = data_flat[~np.isnan(data_flat)]
+            if len(data_non_nan) < 3: return ({}, "Not enough data to get statistics")
             data_sorted_complex = np.sort(data_non_nan)
             data_sorted = np.real(data_sorted_complex)
             n_pixels = len(data_sorted)
             data_firsthalf = data_sorted[:int(n_pixels / 2)]
             data_secondhalf = data_sorted[-int(n_pixels / 2):]
+            
+            print(f"{data_non_nan = }")
 
             range_mean = np.nanmean(data_sorted) # Calculate the mean
             Q1 = np.nanmean(data_firsthalf) # Calculate the first and third quartiles
@@ -1032,19 +1037,5 @@ class DataProcessing:
         except Exception as e:
             error = f"Image statistics could not be calculated. {e}"
             return ({}, error)
-        """
-        try:
-            n_bins = int(np.floor(n_pixels / pixels_per_bin))
-            counts, bounds = np.histogram(data_sorted, bins = n_bins)
-            binsize = bounds[1] - bounds[0]
-            padded_counts = np.pad(counts, 1, mode = "constant")
-            bincenters = np.concatenate([[bounds[0] - .5 * binsize], np.convolve(bounds, [.5, .5], mode = "valid"), [bounds[-1] + .5 * binsize]])
-            histogram = np.array([bincenters, padded_counts])
-
-            image_statistics.update({"histogram": histogram})
-        except:
-            error = "Error. Histogram could not be calculated."
-            return (image_statistics, error)
-        """
 
         return (image_statistics, error)

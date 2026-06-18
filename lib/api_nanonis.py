@@ -50,7 +50,7 @@ class NanonisAPI(QtCore.QObject):
             self.logprint("Failed to connect to Nanonis.", message_type = "error")
 
         try: self.status_callback(self.status)
-        except Exception as e: print(f"{e}")
+        except Exception as e: self.logprint(f"Error connecting Nanonis: {e}", message_type = "error")
         return f"Nanonis status: {self.status}"
 
     def unlink(self, verbose: str = False) -> str:
@@ -60,7 +60,7 @@ class NanonisAPI(QtCore.QObject):
         self.status = "idle"
 
         try: self.status_callback(self.status)
-        except Exception as e: print(f"{e}")
+        except Exception as e: self.logprint(f"Error disconnecting Nanonis: {e}", message_type = "error")
         return f"Nanonis status: {self.status}"
 
     def nanonis_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
@@ -365,12 +365,14 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             
             piezo_range = nhw.get_xyz_range_nm()
+            tilt = nhw.get_tilt()
             
             hardware_dict.update({
                 "x_min (nm)": -0.5 * piezo_range[0], "x_max (nm)": 0.5 * piezo_range[0],
                 "y_min (nm)": -0.5 * piezo_range[1], "y_max (nm)": 0.5 * piezo_range[1],
                 "z_min (nm)": -0.5 * piezo_range[2], "z_max (nm)": 0.5 * piezo_range[2],
-                "x_range (nm)": piezo_range[0], "y_range (nm)": piezo_range[1], "z_range (nm)": piezo_range[2]
+                "x_range (nm)": piezo_range[0], "y_range (nm)": piezo_range[1], "z_range (nm)": piezo_range[2],
+                "x_tilt": tilt[0], "y_tilt": tilt[1]
             })
             
             try: # This may fail if the TIA settings are not known
@@ -1046,12 +1048,14 @@ class NanonisAPI(QtCore.QObject):
         try:
             if verbose: self.logprint(f"nanonis.tip_prep({parameters})", "code")
             if not self.status == "running": self.link()
-            if parameters.get("action", "pulse") == "pulse":
-                V_pulse_V = parameters.get("V_pulse (V)", 6)
-                t_pulse_ms = parameters.get("t_pulse (ms)", 1000)
-                nhw.pulse(V_pulse_V, t_pulse_ms)
-            else:
-                nhw.shape_tip()
+            match parameters.get("action"):
+                case "pulse":
+                    V_pulse_V = parameters.get("V_pulse (V)", 6)
+                    t_pulse_ms = parameters.get("t_pulse (ms)", 1000)
+                    nhw.pulse(V_pulse_V, t_pulse_ms)
+                case _:
+                    self.logprint(f"Shaping tip using parameters: {parameters}")
+                    nhw.shape_tip()
 
         except Exception as e: error = e
         finally:

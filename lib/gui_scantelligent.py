@@ -86,7 +86,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
 
     # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
-    def make_labels(self) -> dict:
+    def make_labels(self) -> dict[SCTWidgets.Label]:
         LB = SCTWidgets.Label
         
         labels = {
@@ -101,6 +101,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
             "frame": LB(text = "frame"),
             "grid": LB(text = "grid"),
+            "limits": LB(text = "limits"),
+            "background": LB(text = "background"),
             "empty": LB(text = " "),
             
             "forward": LB(text = "forward"),
@@ -125,7 +127,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return labels
 
-    def make_buttons(self) -> dict:
+    def make_buttons(self) -> dict[SCTWidgets.MultiStateButton]:
         MSB = SCTWidgets.MultiStateButton
         
         sct_blue = self.colors["blue"]
@@ -146,7 +148,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                      {"name": "online", "color": self.colors["dark_green"], "tooltip": "Nanonis: online (idle)"},
                                      {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Nanonis: online (idle)"},
                                      {"name": "running", "color": sct_blue, "tooltip": "Nanonis: running"}]),
-            "mla": MSB(icon = icons.get("imp"), click_to_toggle = False,
+            "mla": MSB(icon = icons.get("mla"), click_to_toggle = False,
                        states = [{"name": "offline", "color": self.colors["dark_red"], "tooltip": "Multifrequency Lockin Amplifier: offline"},
                                  {"name": "online", "color": self.colors["dark_green"], "tooltip": "Multifrequency Lockin Amplifier: online (idle)"},
                                  {"name": "idle", "color": self.colors["dark_green"], "tooltip": "Multifrequency Lockin Amplifier: online (idle)"},
@@ -264,7 +266,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "v_tip": MSB(icon = icons.get("v_tip")),
             
             # Processing
-            "limits": MSB(tooltip = "Show / hide image limits controls", icon = icons.get("numbers"), states = [{"name": "hidden", "color": sct_black}, {"name": "shown", "color": sct_blue}]),
+            "limits": MSB(size = [88, 24], tooltip = "Show / hide image limits controls", icon = icons.get("limits_background"), states = [{"name": "hidden", "color": sct_black}, {"name": "shown", "color": sct_blue}]),
             "direction": MSB(tooltip = "Change scan direction\n(X)",
                              states = [{"name": "forward", "icon": icons.get("double_arrow"), "color": sct_black},
                                        {"name": "backward", "icon": rotate_icon(icons.get("double_arrow"), angle = 180), "color": sct_blue}]),
@@ -276,10 +278,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "standard_deviation": MSB(tooltip = sivr + "by standard deviations\n(D)", icon = icons.get("deviation")),
             "absolute_values": MSB(tooltip = sivr + "by absolute values\n(A)", icon = icons.get("numbers")),
             
-            "bg_none": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": sct_black}, {"color": sct_blue}]),
+            "bg_none": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0"), "color": sct_black}, {"color": sct_blue}]),
             "bg_plane": MSB(states = [{"tooltip": "Plane\n(0)", "icon": self.icons.get("plane_subtract"), "color": sct_black}, {"color": sct_blue}]),
             "bg_linewise": MSB(states = [{"tooltip": "Linewise\n(0)", "icon": self.icons.get("lines"), "color": sct_black}, {"color": sct_blue}]),
-            "bg_inferred": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("0_2"), "color": sct_black}, {"color": sct_blue}]),
+            "bg_inferred": MSB(states = [{"tooltip": "None\n(0)", "icon": self.icons.get("infer_tilt"), "color": sct_black}, {"color": sct_blue}]),
             
             "sobel": MSB(tooltip = "Compute the complex gradient d/dx + i d/dy\n(Shift + S)", icon = self.icons.get("sobel"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "laplace": MSB(tooltip = "Compute the Laplacian (d/dx)^2 + (d/dy)^2\n(Shift + L)", icon = self.icons.get("laplacian"), states = [{"color": sct_black}, {"color": sct_blue}]),
@@ -287,8 +289,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
                                              {"name": "real", "tooltip": "Reciprocal space representation (unit: nm-1)", "icon": icons.get("reciprocal_space"), "color": sct_black}]),
             "normal": MSB(tooltip = "Compute the z component of the surface normal\n(Shift + N)", icon = self.icons.get("surface_normal"), states = [{"color": sct_black}, {"color": sct_blue}]),
             "gaussian": MSB(tooltip = "Gaussian blur applied\n(Shift + G) or provide a width to toggle", icon = self.icons.get("gaussian"), states = [{"color": sct_black}, {"color": sct_blue}]),
-            "rot_trans": MSB(icon = self.icons.get("rot_trans"), states = [{"name": "local", "color": sct_black, "tooltip": "Scan is displayed in its local coordinates"},
-                                                                           {"name": "global", "color": sct_blue, "tooltip": "Scan is displayed in the global coordinates"}]),
+            "rot_trans": MSB(states = [{"name": "local", "color": sct_black, "tooltip": "Scan is displayed in its local coordinates", "icon": icons.get("local_coords")},
+                                       {"name": "global", "color": sct_blue, "tooltip": "Scan is displayed in the global coordinates", "icon": icons.get("global")}]),
             
             "image_projection": MSB(tooltip = "How to project complex-valued data", states = [{"name": "re", "color": sct_black, "icon": icons.get("re")},
                                                                                               {"name": "complex", "color": sct_black, "icon": icons.get("complex")},
@@ -316,6 +318,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "grid": MSB(states = [{"name": "off", "tooltip": "Grid lines not shown", "icon": icons.get("no_grid"), "color": sct_black},
                                   {"name": "below", "tooltip": "Showing grid lines below images", "icon": icons.get("grid_below"), "color": sct_blue},
                                   {"name": "above", "tooltip": "Showing grid lines above images", "icon": icons.get("grid_above"), "color": sct_blue}]),
+            "labels": MSB(icon = icons.get("labels"), states = [{"name": "off", "tooltip": "Not showing frame labels", "color": sct_black},
+                                                                {"name": "on", "tooltip": "Showing frame labels", "color": sct_blue}]),
             "trash": MSB(icon = icons.get("trash"), tooltip = "Discard the currently selected array item")
         }
         
@@ -325,13 +329,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [buttons.update({f"experiment_{i}": MSB(tooltip = f"experiment button {i}", icon = icons.get(f"{i}"))}) for i in range(6)]
 
         # Initialize
-        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view", "voltage_lock", "speed_lock", "frame", "path", "rot_trans"]]
+        [buttons[name].setState(1) for name in ["frame_aspect", "grid_aspect", "bg_none", "auto_paste", "view", "voltage_lock", "speed_lock", "frame", "path", "rot_trans", "labels"]]
         buttons["frame_aspect"].clicked.connect(lambda: self.update_lock("frame"))
         buttons["grid_aspect"].clicked.connect(lambda: self.update_lock("grid"))
 
         # Named groups
         self.arrow_buttons = [buttons[direction] for direction in ["nw", "n", "ne", "w", "n", "e", "sw", "s", "se"]]
-        self.action_buttons = [buttons[name] for name in ["withdraw", "retract", "advance", "approach"]]
 
         # Add the button handles to the tooltips
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
@@ -375,10 +378,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "background": BG(),
             "channels": BG(exclusive = False, keep_one_checked = False)
         }
-        limit_methods = ["full", "percentiles", "deviations", "absolute"]        
+        limit_methods = ["full", "percentiles", "deviations", "absolute"]
         [self.button_groups["min"].addButton(checkboxes[f"min_{method}"], f"min_{method}") for method in limit_methods]
         [self.button_groups["max"].addButton(checkboxes[f"max_{method}"], f"max_{method}") for method in limit_methods]
-        [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise"]]
+        [self.button_groups["background"].addButton(self.buttons[f"bg_{method}"], f"bg_{method}") for method in ["none", "plane", "linewise", "inferred"]]
         [self.button_groups["channels"].addButton(checkboxes[f"channel_{index}"], f"{index}") for index in range(35)]
         
         # Initialize
@@ -387,14 +390,15 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         return checkboxes
 
-    def make_comboboxes(self) -> dict:
+    def make_comboboxes(self) -> dict[SCTWidgets.ComboBox]:
         CB = SCTWidgets.ComboBox
         
         comboboxes = {
             "projection": CB(tooltip = "Select a projection or toggle with\n(Shift + ↑)", items = ["re", "im", "abs", "arg (b/w)", "arg (hue)", "complex", "abs^2", "log(abs)"]),
             "experiment": CB(tooltip = "Select an experiment"),
             "direction": CB(tooltip = "Select a scan direction / pattern"),
-            "axis": CB(tooltip = "Select the view axis", items = ["(x, y)", "(x, channel)", "(channel, y)"]),
+            
+            "items": CB(tooltip = "Array items", min_width = 150),
             "x_axis": CB(tooltip = "Select which data axis to map to the image x axis"),
             "y_axis": CB(tooltip = "Select which data axis to map to the image y axis"),
             "slice_0": CB(tooltip = "Select slice 0"),
@@ -409,7 +413,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "speeds": CB(tooltip = "Load speed parameters"),
             "frame_grid": CB(tooltip = "Load frame/grid parameters"),
             "spectroscopy": CB(tooltip = "Load spectroscopy parameters"),
-            "spectroscopy_parameter": CB(tooltip = "Load spectroscopy parameters", items = ["V_nanonis", "V_mla", "V_keithley", "f_mla", "z_nanonis"]),
             
             "approach_fb_parameters": CB(tooltip = "What feedback parameter set to use transiently during tip approach"),
                         
@@ -420,7 +423,6 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "mla_mod2": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             "mla_mod3": CB(tooltip = "Add MLA modulator 1 to this output port", items = ["port 1", "port 2"]),
             
-            "items": CB(tooltip = "Array items"),
             "graph_x_axis": CB(tooltip = "Channel to use for the x axis")
         }
         
@@ -503,17 +505,21 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "pulse_voltage": LE(value = 6, tooltip = "voltage to apply to the tip when pulsing", unit = "V", limits = [-10, 10], digits = 1, edited_color = sct_black),
             "pulse_duration": LE(value = 300, tooltip = "duration of the voltage pulse", unit = "ms", limits = [0, 5000], digits = 0, edited_color = sct_black),
             
-            "poke_voltage": LE(tooltip = "poke voltage\n(bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
-            "poke_depth": LE(tooltip = "poke depth\n(height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "poke_time": LE(tooltip = "poke time\n(duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            "poke_voltage": LE(value = 6, tooltip = "poke voltage\n(bias to apply during poking)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
+            "poke_depth": LE(value = 2, tooltip = "poke depth\n(height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "poke_time": LE(value = 1, tooltip = "poke time\n(duration of the poke)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
-            "lift_voltage": LE(tooltip = "lift voltage\n(bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
-            "lift_height": LE(tooltip = "lift height\n(height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
-            "lift_time": LE(tooltip = "lift time\n(duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
+            "lift_voltage": LE(value = 6, tooltip = "lift voltage\n(bias to apply during lifting)", unit = "V", limits = [-10, 10], digits = 2, edited_color = scanalyzer_blue),
+            "lift_height": LE(value = 25, tooltip = "lift height\n(height relative to setpoint)", unit = "nm", limits = [-1000, 1000], digits = 2, edited_color = scanalyzer_blue),
+            "lift_time": LE(value = 2, tooltip = "lift time\n(duration of the lift)", unit = "s", limits = [0, 10000], digits = 2, edited_color = scanalyzer_blue),
             
             # Processing
             "gaussian_width": LE(value = 0.000, tooltip = "width for Gaussian blur application", unit = "nm", digits = 3, max_width = 70, edited_color = sct_black),
             "graph_buffer_size": LE(value = 2000, tooltip = "graph buffer size", digits = 0, max_width = 70, edited_color = sct_black),
+            "x_tilt": LE(value = 0, tooltip = "x tilt as set in Nanonis", unit = "deg", digits = 3, limits = [-60, 60], edited_color = sct_black),
+            "y_tilt": LE(value = 0, tooltip = "y tilt as set in Nanonis", unit = "deg", digits = 3, limits = [-60, 60], edited_color = sct_black),
+            "x_tilt_inferred": LE(value = 0, tooltip = "x tilt after bg subtraction", unit = "deg", digits = 3, limits = [-60, 60], edited_color = sct_black),
+            "x_tilt_inferred": LE(value = 0, tooltip = "y tilt after bg subtraction", unit = "deg", digits = 3, limits = [-60, 60], edited_color = sct_black),
             
             # Lockins
             "nanonis_t": LE(tooltip = "Nanonis time constant (measurement window)", unit = "ms", limits = [0, 10000], digits = 3, min_width = 70),
@@ -554,7 +560,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [line_edits[f"frame_{key}"].editingFinished.connect(self.update_frame_from_fields) for key in ["x", "y", "width", "height", "angle", "aspect"]]
         return line_edits
 
-    def make_progress_bars(self) -> dict:
+    def make_progress_bars(self) -> dict[SCTWidgets.ProgressBar]:
         PB = SCTWidgets.ProgressBar
         
         progress_bars = {
@@ -570,7 +576,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return progress_bars
 
-    def make_layouts(self) -> dict:
+    def make_layouts(self) -> dict[QtWidgets.QBoxLayout]:
         layouts = {
             # Main
             "main": make_layout("h"),
@@ -647,6 +653,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "operations": make_layout("g"),
             "background_buttons": make_layout("h"),
             "limits": make_layout("g"),
+            "image_processing": make_layout("v"),
+            "background": make_layout("g"),
                         
             # STS
             "osc": make_layout("v"),
@@ -661,7 +669,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         pg.setConfigOptions(imageAxisOrder = "row-major", antialias = True)
         
         ss_path = self.paths["splash_screen"]
-        splash_screen_array = self.splash_screen = np.flipud(np.array(Image.open(ss_path)))
+        splash_screen_array = np.flipud(np.array(Image.open(ss_path))).astype(np.float32)
         camera_item = SCTWidgets.ArrayItem(name = "camera", array = splash_screen_array, color_image = True)
         
         plot_item = pg.PlotItem()
@@ -679,7 +687,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         self.hist_item = hist_widget.item
         return image_view
 
-    def make_image_view_widgets(self) -> tuple[pg.ROI, pg.ROI, pg.ROI]:
+    def make_image_view_widgets(self) -> tuple[SCTWidgets.FrameWidget, SCTWidgets.FrameWidget, SCTWidgets.FrameWidget, SCTWidgets.TargetItem, SCTWidgets.TargetItem, pg.PlotDataItem]:
         # ROIs (frames)
         piezo_frame = SCTWidgets.FrameWidget([-250, -250], [500, 500], pen = pg.mkPen(color = self.colors["orange"], width = 2), movable = False, resizable = False, rotatable = False)
         frame = SCTWidgets.FrameWidget([-50, -50], [100, 100], pen = pg.mkPen(color = self.colors["blue"], width = 2), movable = False, resizable = False, rotatable = False)
@@ -692,16 +700,17 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         # Target items
         tip_target = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"tip location\n(0, 0, 0) nm", movable = False)
-        target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0, 0) nm", movable = True)
+        target0 = SCTWidgets.TargetItem(pos = [0, 0], size = 10, tip_text = f"target location\n(0, 0) nm", movable = True)
         tip_target.setZValue(80)
         target0.setZValue(81)
+        target0.setVisible(False)
         
         # Path
         path_pdi = pg.PlotDataItem(pen = pg.mkPen(self.colors["orange"], width = 2))
         path_pdi.setZValue(82)
         return (piezo_frame, frame, new_frame, tip_target, target0, path_pdi)
 
-    def make_custom_widgets(self) -> dict:
+    def make_custom_widgets(self) -> tuple[dict[QtWidgets.QWidget], CurrentHeightIndicatorWidget, MinMaxMethods, SCTWidgets.PlotWidget, SCTWidgets.PhaseSlider]:
         QWgt = QtWidgets.QWidget
         
         widgets = {
@@ -723,7 +732,8 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "lockins": QWgt(),
             "osc": QWgt(),
             "image_view_controls": QWgt(),
-            "toolbar": QWgt()
+            "toolbar": QWgt(),
+            "image_processing": QWgt()
         }
         widgets["toolbar"].setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Preferred)
                
@@ -745,7 +755,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         sliders = {"phase": SCTWidgets.PhaseSlider(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
         return (widgets, current_height_widget, limits_widget, grapher, sliders)
 
-    def make_consoles(self) -> dict:
+    def make_consoles(self) -> dict[SCTWidgets.Console]:
         consoles = {
             "output": SCTWidgets.Console(tooltip = "Output console"),
             "input": SCTWidgets.Console(tooltip = "Input console")
@@ -762,7 +772,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return consoles
 
-    def make_dialogs(self) -> dict:
+    def make_dialogs(self) -> dict[QtWidgets.QDialog]:
         dialogs = {
             "parameters": QtWidgets.QInputDialog(),
             "info": QtWidgets.QInputDialog(),
@@ -876,7 +886,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         cv_layout.addWidget(line_edits["V_ver"], 0, 0, 1, 3, alignment = align_center)
         cv_layout.addWidget(line_edits["f_motor"], 1, 0, 1, 3, alignment = align_center)
         [cv_layout.addWidget(checkbox, 2 + i + int(i / 2), 0) for i, checkbox in enumerate(self.action_checkboxes)]
-        [cv_layout.addWidget(button, 2 + i + int(i / 2), 2) for i, button in enumerate(self.action_buttons)]
+        [cv_layout.addWidget(buttons[name], 2 + i + int(i / 2), 2) for i, name in enumerate(["withdraw", "retract", "advance", "approach"])]
         cv_layout.addWidget(line_edits["z_steps"], 3, 1)
         cv_layout.addWidget(labels["move_horizontally"], 4, 0, 1, 3)
         cv_layout.addWidget(line_edits["minus_z_steps"], 5, 1)
@@ -887,7 +897,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         
         # Bias
-        [layouts["bias_getset"].addWidget(buttons[f"{key}_bias_parameters"]) for key in ["get", "set", "get_mla", "set_mla", "get_keithley", "set_keithley"]]
+        #[layouts["bias_getset"].addWidget(buttons[f"{key}_bias_parameters"]) for key in ["get", "set", "get_mla", "set_mla", "get_keithley", "set_keithley"]]
         b_layout = layouts["bias"]
         [b_layout.addWidget(labels[name], 0, 2 * index) for index, name in enumerate(["nanonis", "mla", "keithley"])]
         [b_layout.addWidget(make_line("h", 1), 1, 2 * index) for index in range(3)]
@@ -898,7 +908,9 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [b_layout.addWidget(line_edits[name], 3 + index, 0) for index, name in enumerate(["dV_nanonis", "dt_nanonis"])]
         b_layout.addWidget(line_edits["dz_nanonis"], 4, 2)
         [b_layout.addWidget(line_edits[name], 3 + index, 4) for index, name in enumerate(["dV_keithley", "dt_keithley"])]
-        b_layout.addLayout(layouts["bias_getset"], 5, 0, 1, 5)
+        [b_layout.addWidget(buttons[f"set_{key}bias_parameters"], 5, 2 * index) for index, key in enumerate(["", "mla_", "keithley_"])]
+        b_layout.addWidget(buttons["get_bias_parameters"], 5, 1)
+        #b_layout.addLayout(layouts["bias_getset"], 5, 0, 1, 5)
         
         # Feedback
         [layouts["currents"].addWidget(line_edits[name]) for name in ["fb", "I_keithley_limit"]]
@@ -961,20 +973,26 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [[layouts["modulators"].addWidget(line_edits[f"nanonis_mod{number + 1}_{quantity}"], 1 + 2 * number, 1 + index) for index, quantity in enumerate(["n", "f", "phase"])] for number in range(2)]
         [[layouts["modulators"].addWidget(widget, 2 + 2 * number, 1 + index, 1, 1 + index) for index, widget in enumerate([line_edits[f"nanonis_mod{number + 1}_amp"], comboboxes[f"nanonis_mod{number + 1}"]])] for number in range(2)]
 
-        layouts["limits"].addWidget(self.limits_widget)
-        self.limits_widget.hide()
+        # Background and limits
+        layouts["image_processing"].addStretch(1)
+        [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise", "inferred"]]
+        #layouts["background"].addLayout(layouts["background_buttons"])
+        layouts["limits"].addWidget(labels["background"], 0, 0, 1, 2)
+        layouts["limits"].addWidget(make_line("h", 1), 1, 0, 1, 2)
+        layouts["limits"].addLayout(layouts["background_buttons"], 2, 0, 1, 2)
+        [layouts["limits"].addWidget(line_edits[f"{dim}_tilt"], 3, index, 1, 1) for index, dim in enumerate(["x", "y"])]
+        layouts["limits"].addWidget(labels["limits"], 5, 0, 1, 2)
+        layouts["limits"].addWidget(make_line("h", 1), 6, 0, 1, 2)
+        layouts["limits"].addWidget(self.limits_widget, 7, 0, 1, 2)
+        layouts["limits"].setRowStretch(4, 1)        
         
         
         
-        # Image_view
-        self.image_view.addWidget(self.limits_widget, 0, 3)
-        
-        layouts["image_view_controls"].addWidget(buttons["paste"])
+        # Image_view        
+        layouts["image_view_controls"].addWidget(buttons["trash"])
         [layouts["navigation"].addWidget(self.comboboxes[name]) for name in ["items", "x_axis", "y_axis", "slice_0", "slice_1", "slice_2"]]
-        [layouts["navigation"].addWidget(buttons[name], 1) for name in ["rot_trans", "fit_to_frame", "fit_to_range", "grid", "frame", "path", "target"]]
+        [layouts["navigation"].addWidget(buttons[name], 1) for name in ["labels", "rot_trans", "fit_to_frame", "fit_to_range", "grid", "frame", "path", "target"]]
         layouts["image_view_controls"].addLayout(layouts["navigation"])
-        [layouts["background_buttons"].addWidget(buttons[f"bg_{method}"]) for method in ["none", "plane", "linewise"]]
-        layouts["image_view_controls"].addLayout(layouts["background_buttons"])
                 
         o_layout = layouts["operations"]
         [o_layout.addWidget(buttons[name], 0, index) for index, name in enumerate(["reciprocal", "sobel", "normal", "laplace", "gaussian"])]
@@ -991,7 +1009,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
 
     # 4: Make widgets and groupboxes and set their layouts. Requires layouts.
-    def make_groupboxes(self) -> dict:
+    def make_groupboxes(self) -> dict[SCTWidgets.GroupBox]:
         SGB = SCTWidgets.GroupBox
         layouts = self.layouts
         
@@ -1011,7 +1029,10 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "bias": SGB(title = "bias", tooltip = "bias and ramp parameters", checkable = True),
             "feedback": SGB(title = "feedback", tooltip = "feedback and gains", checkable = True),
             "speeds": SGB(title = "speeds", tooltip = "speeds", checkable = True),
-            "experiment": SGB(title = "experiments", tooltip = "Perform experiments", checkable = True)
+            "experiment": SGB(title = "experiments", tooltip = "Perform experiments", checkable = True),
+            
+            # Image processing
+            "limits": SGB(title = "limits / background", tooltip = "image limits", checkable = True)
         }
 
         # Set layouts for the groupboxes
@@ -1019,9 +1040,12 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         # Make layouts of several groupboxes
         [layouts["coarse_control"].addWidget(groupboxes[name], 1) for name in ["horizontal", "vertical"]]
-        #layouts["coarse_prep"].addLayout(layouts["coarse_control"])
-        #layouts["coarse_prep"].addWidget(groupboxes["tip_prep"])        
         [layouts[name].addStretch(1) for name in ["parameters", "osc", "coarse_prep", "tip"]]
+        
+        layouts["image_processing"].addWidget(groupboxes["limits"])        
+        self.widgets["image_processing"].setLayout(layouts["image_processing"])
+        self.image_view.addWidget(self.widgets["image_processing"], 0, 3)
+        self.widgets["image_processing"].hide()
         return groupboxes
 
 
@@ -1160,7 +1184,4 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
     def keyPressEvent(self, event):
         self.key_pressed.emit(event)
         return super().keyPressEvent(event)
-
-        # 1. Install an event filter onto the group box
-        self.group_box.installEventFilter(self)
 
