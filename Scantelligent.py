@@ -858,8 +858,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     def save_active_item(self) -> None:
-        if hasattr(self, "active_item"):
-            self.saved_items.insert(0, self.active_item) # Save the active item to the saved_items
+        if hasattr(self, "active_item"): self.saved_items.insert(0, self.active_item) # Save the active item to the saved_items
         if len(self.saved_items) > 18: self.saved_items = self.saved_items[:18] # Clip the length of saved_items to a maximum number of 18
         
         saved_item_names = []
@@ -872,7 +871,7 @@ class Scantelligent(QtCore.QObject):
         [view.removeItem for item in view.items if isinstance(item, SCTWidgets.ArrayItem)]
         [view.addItem(item) for item in self.saved_items]
         [item.showLabels(False) for item in self.saved_items[1:]]
-        self.saved_items[0].showLabels(True)
+        if len(self.saved_items) > 0: self.saved_items[0].showLabels(True)
         return
     
     def create_array_item(self, name: str = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:

@@ -714,7 +714,7 @@ class NanonisAPI(QtCore.QObject):
             if x_nm: new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "center (nm)": [x_nm, y_nm]})
 
             angle_deg = parameters.get("angle (deg)", None)
-            if angle_deg: new_parameters.update({"angle (deg)": angle_deg})
+            if angle_deg is not None: new_parameters.update({"angle (deg)": angle_deg})
 
             frame = nhw.get_scan_frame_nm()
             if len(new_parameters) > 0:

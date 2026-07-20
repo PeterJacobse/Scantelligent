@@ -592,7 +592,7 @@ class DataProcessing:
         
         try:
             (statistics, error) = self.get_image_statistics(image)
-            print(f"{statistics = }")
+            #print(f"{statistics = }")
             if error:
                 print(f"Something went awry: {error}")
                 raise
@@ -1010,7 +1010,7 @@ class DataProcessing:
             data_firsthalf = data_sorted[:int(n_pixels / 2)]
             data_secondhalf = data_sorted[-int(n_pixels / 2):]
             
-            print(f"{data_non_nan = }")
+            #print(f"{data_non_nan = }")
 
             range_mean = np.nanmean(data_sorted) # Calculate the mean
             Q1 = np.nanmean(data_firsthalf) # Calculate the first and third quartiles
