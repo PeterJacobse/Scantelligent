@@ -17,6 +17,7 @@ class Experiment(BaseExperiment):
     @BaseExperiment.experiment_handler
     def run(self):        
         nn = self.nanonis # Using nn as an alias for self.nanonis
+        self.reset_nanonis_when_done = False # Do not reset the Nanonis parameters after this experiment
         
         # Get the start parameters
         gui_parameters = self.start_parameters["gui"]

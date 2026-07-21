@@ -39,7 +39,7 @@ class BaseExperiment(QObject):
         self.gui_setup = {}
         self.abort_requested = False
         self.current_spikes = 0
-        self.feedback_changed = False
+        self.reset_nanonis_when_done = True
         self.start_parameters = {}
         self.luts = {}
         self.gui_parameters = {}
@@ -426,12 +426,13 @@ class BaseExperiment(QObject):
         # Try to reset Nanonis
         try:
             self.nanonis.scan_action({"action": "stop"})
-            if self.feedback_changed: self.nanonis.tip_update({"z_rel (nm)": 1})
+            if not self.reset_nanonis_when_done: raise Exception("")
             
+            self.nanonis.tip_update({"z_rel (nm)": 1})            
             # Read the start parameters and try to reset all of them
             nanonis_parameters = self.start_parameters.get("nanonis")
             if not isinstance(nanonis_parameters, dict):
-                raise Exception("")
+                raise Exception(f"Problem encountered while trying to reset Nanonis. I could not read the start parameters. {e}")
             
             [grid, lockin_parameters, feedback_parameters, speed_parameters, bias, tip_status] = [nanonis_parameters.get(key, None) for key in ["grid", "lockin", "feedback", "speeds", "bias", "tip_status"]]
             if grid: self.nanonis.grid_update(grid, verbose = False)
@@ -445,7 +446,7 @@ class BaseExperiment(QObject):
             fb = tip_status.get("feedback")
             self.nanonis.tip_update({"feedback": fb, "withdrawn": withdrawn})
         except Exception as e:
-            self.logprint(f"Problem encountered while trying to reset Nanonis. I could not read the start parameters. {e}", message_type = "error")
+            self.logprint(f"{e}", message_type = "error")
         
         try:
             # Read the start parameters and try to reset all of them
