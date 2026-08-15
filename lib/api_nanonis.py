@@ -1,8 +1,105 @@
+import time, inspect
 import numpy as np
 from PyQt6 import QtCore
 from .hw_nanonis import NanonisHardware
 from .data_processing import DataProcessing
-import time
+from functools import wraps
+
+
+
+class NanonisUpdate:
+    def __init__(self, parent, instance_name: str = "nanonis_update"):
+        self.nn: NanonisAPI = parent
+        self.instance_name = instance_name
+
+    def connection_control(function):
+        signature = inspect.signature(function)
+        
+        @wraps(function)
+        def wrapper(self, *args, **kwargs):
+            parameters_out = {}
+            error = False
+            
+            try:
+                # Reading the method and its arguments
+                method_name = function.__name__
+                bound = signature.bind(self, *args, **kwargs)
+                bound.apply_defaults()
+                
+                if not self.nn.status == "running": self.nn.link()                
+                if "verbose" in bound.arguments:
+                    verbose = bound.arguments["verbose"]
+                    if verbose:
+                        if "parameters" in bound.arguments:
+                            parameters_in = bound.arguments["parameters"]
+                            if len(parameters_in) > 0:
+                                print(f"{self.instance_name}.{method_name}({parameters_in})")
+                            print(f"{self.instance_name}.{method_name}()")
+                        else:
+                            print(f"{self.instance_name}.{method_name}()")
+                
+                parameters_out, error = function(self, *args, **kwargs)
+                if self.nn.auto_unlink: self.nn.unlink()
+            except Exception as e:
+                print(f"Error encountered while executing a NanonisUpdate.{method_name}:\n{e}")
+
+            return parameters_out, error
+        return wrapper
+
+
+
+    @connection_control
+    def bias(self, parameters: dict = {}, verbose: bool = True) -> tuple[dict, bool | str]:
+        # Initalize outputs
+        error = False
+        nhw = self.nn.nanonis_hardware
+
+        # Extract parameters from the dictionary
+        V_tags = ["v", "v (v)", "v_nanonis", "v_nanonis (v)", "bias", "bias (v)"]
+        V = next((value for key, value in parameters.items() if key.lower() in V_tags), None)
+        dt = parameters.get("dt_nanonis (ms)", 5) / 1000
+        dV = parameters.get("dV_nanonis (mV)", 10) / 1000
+        dz_nm = parameters.get("dz_nanonis (nm)", 1)
+
+        bias_dict = {"dV_nanonis (mV)": dV * 1000, "dt_nanonis (ms)": dt * 1000, "dz_nanonis (nm)": dz_nm, "dict_name": "bias"}
+
+        try:
+            V_old = nhw.get_V() # Read data from Nanonis
+            if not isinstance(V, float | int): V = V_old # V not provided; substitute the old bias
+            bias_dict.update({"V_nanonis (V)": V})
+            if np.abs(V - V_old) < dV:
+                self.nn.parameters.emit(bias_dict)
+                if verbose: self.nn.logprint(f"{bias_dict}", message_type = "result")
+                return (bias_dict, error) # If the bias is unchanged, don't slew it
+
+            feedback = nhw.get_fb()
+            tip_height = nhw.get_z_nm()
+            polarity_difference = np.sign(V) * np.sign(V_old) < 0 # True if the sign changes
+            
+            if V > V_old: delta_V = dV # Change the sign of deltaV to get the arange right
+            else: delta_V = -dV
+            slew = np.arange(V_old, V, delta_V)
+
+            if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
+                nhw.set_fb(False)
+                time.sleep(.1) # If the tip height is set too quickly, the controller won't be off yet
+                nhw.set_z_nm(tip_height + dz_nm)
+
+            for V_t in slew: # Perform the slew to the new bias voltage
+                nhw.set_V(V_t)
+                time.sleep(dt)
+            nhw.set_V(V) # Final bias value
+        
+            if bool(feedback) and bool(polarity_difference):
+                nhw.set_fb(True) # Turn the feedback back on
+            
+            self.nn.parameters.emit(bias_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{bias_dict}", message_type = "result")
+
+        except Exception as error:
+            pass
+        
+        return (bias_dict, error)
 
 
 
@@ -29,9 +126,11 @@ class NanonisAPI(QtCore.QObject):
         # Note:
         # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
         # The exception should be caught in the code where the NanonisAPI object is instantiated
+        self.update = NanonisUpdate(parent = self, instance_name = "nanonis.update")
         self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.data = DataProcessing()
         self.piezo_range = {} # When self.piezo_range_update is called, this parameter is updated
+        self.auto_unlink = False
 
 
 

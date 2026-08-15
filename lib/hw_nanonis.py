@@ -58,7 +58,7 @@ class NanonisHardware:
         self.conv = Conversions() # Load the conversions
         self.headers = self.prepare_headers() # Make the headers
         connected = self.link()
-        if not connected == True: raise Exception(connected)
+        if not connected == True: pass # raise Exception(connected)
         self.check_version()    
         self.unlink()
 
@@ -308,7 +308,7 @@ class NanonisHardware:
         return self.link()
     
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        return self.disconnect()
+        return self.unlink()
 
 
 

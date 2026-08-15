@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from .gui_spectelligent import SpectelligentGUI
 from .sct_widgets import SCTWidgets
 from .data_processing import DataProcessing
-from .file_functions import FileFunctions
+from .io_functions import IOFunctions
 from .parameter_manager import ParameterManager, UserData
 from datetime import datetime
 
@@ -55,7 +55,7 @@ class Spectelligent(QtCore.QObject):
 
         # Important classes and objects
         self.user = UserData()
-        self.file_functions = FileFunctions()
+        self.file_functions = IOFunctions()
         self.data = DataProcessing() # Class for data processing and analysis
         self.lines = [] # Lines for plotting in the graph
         self.splash_screen = np.flipud(np.array(Image.open(os.path.join(self.paths["sys"], "splash_screen.png"))))

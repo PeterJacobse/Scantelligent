@@ -1,7 +1,6 @@
 import pint, re
 import numpy as np
 from matplotlib import colors
-from PyQt6.QtCore import QMutex, QMutexLocker
 from scipy.signal import convolve2d, fftconvolve
 from scipy.ndimage import gaussian_filter, binary_erosion
 from scipy.fft import fft2, fftshift
@@ -11,28 +10,7 @@ from scipy.special import factorial
 from python_tsp.heuristics import solve_tsp_simulated_annealing
 from sklearn.model_selection import train_test_split
 import sklearn.gaussian_process as gp
-
-
-
-class ThreadSafeDict:
-    def __init__(self):
-        self._data = {}
-        self._mutex = QMutex()
-    
-    def update(self, entry: dict = {}) -> None:
-        if not entry: return
-        
-        locker = QMutexLocker(self._mutex)
-        self._data.update(entry)
-        return
-    
-    def get(self, key: str = "", default = None) -> object:
-        locker = QMutexLocker(self._mutex)
-        return self._data.get(key, default)
-    
-    def get_all(self) -> dict:
-        locker = QMutexLocker(self._mutex)
-        return self._data.copy()
+from .sct_objects import ThreadSafeDict
 
 
 
