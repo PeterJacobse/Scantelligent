@@ -2,7 +2,7 @@ import os, time, h5py, types
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from datetime import datetime
-from .file_functions import FileFunctions
+from .io_functions import IOFunctions
 from .data_processing import DataProcessing
 from .api_mla import MLAAPI # For type checking only
 from .api_nanonis import NanonisAPI # For type checking only
@@ -34,7 +34,7 @@ class BaseExperiment(QObject):
         self.mla: MLAAPI = kwargs.pop("mla", None)
         self.nanonis: NanonisAPI = kwargs.pop("nanonis", None)
         
-        self.file_functions = FileFunctions()
+        self.io = IOFunctions()
         self.data = DataProcessing() # You can use self.data to access data processing functions. However, do not use self.data.scan_processing_flags to communicate with the GUI. Use self.scan_processing_flags instead
         self.gui_setup = {}
         self.abort_requested = False
@@ -361,12 +361,12 @@ class BaseExperiment(QObject):
             
             # 2. Request and emit data slices
             (scan_image, error) = self.nanonis.scan_update(nanonis_index, backward = False, emit_image = False, verbose = False)
-            self.file_functions.convert_data_to_unit(scan_image, nanonis_name) # This rescales the data slice to preferred nm, pA units
+            self.io.convert_data_to_unit(scan_image, nanonis_name) # This rescales the data slice to preferred nm, pA units
             self.array_slice.emit(scan_image.transpose(), [0, channel_index], [0, 1])
             dataset[0, channel_index] = scan_image.transpose()
             
             (scan_image_bwd, error) = self.nanonis.scan_update(nanonis_index, backward = True, emit_image = False, verbose = False)
-            self.file_functions.convert_data_to_unit(scan_image_bwd, nanonis_name)
+            self.io.convert_data_to_unit(scan_image_bwd, nanonis_name)
             self.array_slice.emit(scan_image_bwd.transpose(), [1, channel_index], [0, 1])
             dataset[1, channel_index] = scan_image_bwd.transpose()
 
@@ -398,13 +398,13 @@ class BaseExperiment(QObject):
             
             # 2. Request and emit data slices
             (scan_image, error) = self.nanonis.scan_update(nanonis_index, backward = False, emit_image = False, verbose = False)
-            self.file_functions.convert_data_to_unit(scan_image, nanonis_name) # This rescales the data slice to preferred nm, pA units
+            self.io.convert_data_to_unit(scan_image, nanonis_name) # This rescales the data slice to preferred nm, pA units
             self.array_slice.emit(scan_image.transpose(), [0, channel_index], [0, 1])
             dataset[0, channel_index] = scan_image.transpose()
             output_array[0, channel_index] = scan_image.transpose()
             
             (scan_image_bwd, error) = self.nanonis.scan_update(nanonis_index, backward = True, emit_image = False, verbose = False)
-            self.file_functions.convert_data_to_unit(scan_image_bwd, nanonis_name)
+            self.io.convert_data_to_unit(scan_image_bwd, nanonis_name)
             self.array_slice.emit(scan_image_bwd.transpose(), [1, channel_index], [0, 1])
             dataset[1, channel_index] = scan_image_bwd.transpose()
             output_array[1, channel_index] = scan_image.transpose()        

@@ -2,7 +2,7 @@ import os, sys, html, atexit, re, copy, time
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
 from lib import Spectelligent, SCTWidgets, ScantelligentGUI
-from lib import DataProcessing, FileFunctions, ParameterManager, UserData, AudioGenerator
+from lib import DataProcessing, IOFunctions, ParameterManager, UserData, AudioGenerator
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
 
@@ -55,7 +55,7 @@ class Scantelligent(QtCore.QObject):
 
         # Important classes and objects
         self.user = UserData()
-        self.file_functions = FileFunctions()
+        self.io = IOFunctions()
         self.data = DataProcessing() # Class for data processing and analysis
         self.lines = [] # Lines for plotting in the graph
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
@@ -117,7 +117,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.sliders["phase"].valueChanged.connect(self.update_processing_flags)
         
         # Comboboxes
-        experiments = self.file_functions.find_experiment_files(self.paths["experiments_folder"])
+        experiments = self.io.find_experiment_files(self.paths["experiments_folder"])
         self.experiments = [experiment for experiment in experiments if not experiment in ["spectroscopy", "auto_approach"]]
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
@@ -170,7 +170,7 @@ class Scantelligent(QtCore.QObject):
         self.logprint(f"Attempting to connect to the following hardware: {target}", message_type = "message")
 
         # Read hardware configurations from file
-        (hw_config, error) = self.file_functions.load_yaml(self.paths.get("config_file"))
+        (hw_config, error) = self.io.load_yaml(self.paths.get("config_file"))
         if error:
             self.logprint(".\\sys\\config.yml: Problem loading the hardware configurations from file", message_type = "error")
             return
@@ -644,7 +644,7 @@ class Scantelligent(QtCore.QObject):
         if hasattr(self, "parameters"): parameters_attributes = ["parameters." + attr for attr in self.parameters.__dict__ if not attr.startswith("_")]
         if hasattr(self, "user"): user_attributes = ["user." + attr for attr in self.user.__dict__ if not attr.startswith("_")]
         if hasattr(self, "data"): data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "file_functions"): file_function_attributes = ["file_functions." + attr for attr in self.file_functions.__dict__ if not attr.startswith("_")]
+        if hasattr(self, "io"): file_function_attributes = ["io." + attr for attr in self.io.__dict__ if not attr.startswith("_")]
         if hasattr(self, "keithley"): keithley_attributes = ["keithley." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
         if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.camera.__dict__ if not attr.startswith("_")]
         
@@ -734,7 +734,7 @@ class Scantelligent(QtCore.QObject):
         frame = None
 
         try:
-            file_data = self.file_functions.read_file(file_path)
+            file_data = self.io.read_file(file_path)
             [dataset, frame, axes, axes_data] = [file_data.get(key, None) for key in ["dataset", "frame", "axes", "axes_data"]]
         except Exception as e:
             self.logprint(f"Could not open this file: {e}", message_type = "error")
@@ -1146,7 +1146,7 @@ class Scantelligent(QtCore.QObject):
                     self.active_item.setSlice(axis = axis_name, slice = slice_index)
                     
                     slice_label = cbb.currentText()
-                    (quantity, unit, _, _) = self.file_functions.split_physical_quantity(slice_label)
+                    (quantity, unit, _, _) = self.io.split_physical_quantity(slice_label)
                     if isinstance(unit, str):
                         self.gui.image_view.setHistogramUnit(unit)
                         self.gui.limits_widget.setUnit("absolute", unit)
@@ -1200,7 +1200,7 @@ class Scantelligent(QtCore.QObject):
 
             # Channel, direction, projection
             selected_channel = self.gui.comboboxes["slice_0"].name
-            (quantity, unit, backward, error) = self.file_functions.split_physical_quantity(selected_channel)
+            (quantity, unit, backward, error) = self.io.split_physical_quantity(selected_channel)
             if isinstance(unit, str):
                 self.gui.limits_widget.setUnit("full", unit)
                 self.gui.limits_widget.setUnit("absolute", unit)
@@ -1496,7 +1496,7 @@ class Scantelligent(QtCore.QObject):
                     case _:
                         pass
                 
-                [previous_filename, next_filename] = self.file_functions.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
+                [previous_filename, next_filename] = self.io.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
                 experiment_filename = next_filename
                 if self.gui.buttons["save"].state_name == "data_present": experiment_filename = previous_filename # Overwrite the previous file if it was not saved
                 
@@ -1510,7 +1510,7 @@ class Scantelligent(QtCore.QObject):
                 try:
                     mla_pointer = None
                     if hasattr(self, "mla"): mla_pointer = self.mla                    
-                    self.experiment = self.file_functions.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scantelligent_folder = self.paths["parent_folder"],
+                    self.experiment = self.io.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scantelligent_folder = self.paths["parent_folder"],
                                                                                     scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis1, mla = mla_pointer)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
