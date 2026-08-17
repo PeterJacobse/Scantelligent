@@ -1,4 +1,4 @@
-import re, os, sys, yaml, pint, h5py
+import re, os, sys, yaml, pint, h5py, inspect
 import importlib.util
 import numpy as np
 import nanonispy2 as nap
@@ -657,6 +657,44 @@ class IOFunctions():
         next_formatted_index = f"{next_index:03d}"
         
         return [f"{base_name}_{current_formatted_index}{extension}", f"{base_name}_{next_formatted_index}{extension}"]
+
+    def trace_attributes(self, obj: object, object_name: str = "", visited = None, depth: int = 0, max_depth: int = 4) -> list:
+        if visited is None: visited = set()
+        
+        if depth > max_depth: return []
+        obj_id = id(obj)
+        if obj_id in visited: return []
+        visited.add(obj_id)
+        
+        attributes = [object_name] if object_name else []
+        obj_cls = obj.__class__
+        
+        for attribute_name in dir(obj):
+            if attribute_name.startswith("_"): continue
+            
+            try: attribute = getattr(obj, attribute_name)
+            except AttributeError: continue
+
+            # Check if the attribute is defined locally (on the instance or the specific class)
+            is_instance_attr = hasattr(obj, "__dict__") and attribute_name in obj.__dict__
+            is_class_attr = attribute_name in obj_cls.__dict__
+            
+            # Skip if it's inherited from any parent class
+            if not (is_instance_attr or is_class_attr):
+                continue
+
+            full_path = f"{object_name}.{attribute_name}" if object_name else attribute_name
+            has_dict_or_slots = hasattr(attribute, "__dict__") or hasattr(attribute, "__slots__")
+            
+            if has_dict_or_slots and not inspect.isroutine(attribute):
+                if depth < max_depth:
+                    subattributes = self.trace_attributes(attribute, full_path, visited = visited, depth = depth + 1, max_depth = max_depth)
+                    attributes.extend(subattributes)
+                else:
+                    attributes.append(full_path)
+            else:
+                attributes.append(full_path)
+        return attributes
 
 
 

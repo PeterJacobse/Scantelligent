@@ -1,6 +1,7 @@
 import os, sys, html, atexit, re, copy, time
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
+import qdarktheme
 from lib import Spectelligent, SCTWidgets, ScantelligentGUI
 from lib import DataProcessing, IOFunctions, ParameterManager, UserData, AudioGenerator
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
@@ -161,12 +162,10 @@ class Scantelligent(QtCore.QObject):
         return
 
     def connect_hardware(self, target: str = "all") -> None:
-        self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
-        self.populate_completer()
-        
         """
         Set up and test hardware connections, and request parameters from the hardware components
         """
+        self.process = QtCore.QProcess(self.gui) # Instantiate process for CLI-style commands (opening folders and other programs)
         self.logprint(f"Attempting to connect to the following hardware: {target}", message_type = "message")
 
         # Read hardware configurations from file
@@ -196,15 +195,6 @@ class Scantelligent(QtCore.QObject):
                 self.spt.gui.lockin_widget.volumes.connect(self.audio.volumes_update)
                 self.amplitudes.connect(self.audio.amplitudes_update)
                 self.frequencies.connect(self.audio.frequencies_update)
-                
-                # Add attributes to the input line edit
-                new_attributes = ["audio." + attr for attr in self.audio.__dict__ if not attr.startswith("_")]
-                completer = self.gui.line_edits["input"].completer()
-                model = completer.model()
-                string_list = model.stringList()
-                [string_list.append(item) for item in new_attributes if item not in string_list]
-                model.setStringList(string_list)
-                completer.setModel(model)
                                 
                 self.logprint(f"AudioGenerator: Successfully connected the audio generator, and instantiated AudioGenerator as audio", "success")
             except Exception as e:
@@ -331,24 +321,13 @@ class Scantelligent(QtCore.QObject):
                 self.timer.timeout.connect(self.query_tip_status)
                 self.timer.start()
                 
-                
-                
-                # Populate the input line edit completer
-                nanonis_attributes = ["nanonis." + attr for attr in self.nanonis.__dict__ if not attr.startswith("_")]
-                nanonis_hw_attributes = ["nanonis.nanonis_hardware." + attr for attr in self.nanonis.nanonis_hardware.__dict__ if not attr.startswith("_")]
-                completer = self.gui.line_edits["input"].completer()
-                model = completer.model()
-                string_list = model.stringList()
-                [string_list.append(item) for item in nanonis_attributes if item not in string_list]
-                [string_list.append(item) for item in nanonis_hw_attributes if item not in string_list]
-                model.setStringList(string_list)
-                completer.setModel(model)
-                                
                 self.logprint(f"Nanonis: Successfully connected to Nanonis, and instantiated NanonisAPI as nanonis", "success")
                 try: self.spt.get_fb_parameters()
                 except: pass
             except Exception as e:
                 self.logprint(f"Nanonis: Unable to connect to Nanonis: {e}", "error")
+
+            self.populate_completer()
         return
 
     def dis_reconnect(self, target: str = "nanonis") -> None:
@@ -619,37 +598,8 @@ class Scantelligent(QtCore.QObject):
 
     def populate_completer(self) -> None:
         # Populate the command input completer with all attributes and methods of self and self.gui
-        self.all_attributes = dir(self)
-        gui_attributes = ["gui." + attr for attr in self.gui.__dict__ if not attr.startswith('__')]
-        
-        nanonis_attributes = []
-        nanonis_hw_attributes = []
-        keithley_attributes = []
-        camera_attributes = []
-        mla_attributes = []
-        mla_analog_attributes = []
-        mla_osc_attributes = []
-        mla_lockin_attributes = []
-        user_attributes = []
-        parameters_attributes = []
-
-        if hasattr(self, "mla"):
-            mla_attributes = ["mla." + attr for attr in self.mla.__dict__ if not attr.startswith("_")]
-            try:
-                mla_lockin_attributes = ["mla.lockin." + attr for attr in self.mla.lockin.__dict__ if not attr.startswith("_")]
-                mla_osc_attributes = ["mla.osc." + attr for attr in self.mla.osc.__dict__ if not attr.startswith("_")]
-                mla_analog_attributes = ["mla.analog." + attr for attr in self.mla.analog.__dict__ if not attr.startswith("_")]
-            except:
-                pass
-        if hasattr(self, "parameters"): parameters_attributes = ["parameters." + attr for attr in self.parameters.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "user"): user_attributes = ["user." + attr for attr in self.user.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "data"): data_attributes = ["data." + attr for attr in self.data.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "io"): file_function_attributes = ["io." + attr for attr in self.io.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "keithley"): keithley_attributes = ["keithley." + attr for attr in self.keithley.__dict__ if not attr.startswith("_")]
-        if hasattr(self, "camera"): camera_attributes = ["camera." + attr for attr in self.camera.__dict__ if not attr.startswith("_")]
-        
-        [self.all_attributes.extend(attributes) for attributes in [gui_attributes, nanonis_attributes, nanonis_hw_attributes, data_attributes, file_function_attributes, parameters_attributes, user_attributes, mla_analog_attributes, mla_lockin_attributes, mla_osc_attributes, mla_attributes, keithley_attributes, camera_attributes]]
-        completer = SCTWidgets.Completer(self.all_attributes, self.gui)
+        all_attributes = self.io.trace_attributes(self)    
+        completer = SCTWidgets.Completer(all_attributes, self.gui)
         completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         completer.setCompletionMode(SCTWidgets.Completer.CompletionMode.PopupCompletion)
         self.gui.line_edits["input"].setCompleter(completer)
@@ -1626,5 +1576,6 @@ class Scantelligent(QtCore.QObject):
 # Main program
 if __name__ == "__main__":
     app = SCTWidgets.Application(sys.argv)
+    qdarktheme.setup_theme("dark")
     logic_app = Scantelligent()
     sys.exit(app.exec())

@@ -16,6 +16,7 @@ dependencies = [
     "pip>=25.3",
     "pymeasure>=0.15.0",
     "pyqt6>=6.10.0",
+    "pyqtdarktheme>=2.1.0",
     "pyqtgraph>=0.14.0",
     "python-tsp>=0.5.0",
     "pyyaml>=6.0.3",

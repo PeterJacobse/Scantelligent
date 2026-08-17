@@ -93,8 +93,8 @@ class BaseExperiment(QObject):
 
     def prepare_hdf5(self) -> None:
         self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
-        date_time_group = self.output_file.create_group("date_time")
-        date_time_group.attrs.update({"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
+        self.io.h5.setup_file(self.output_file, "main")
+        self.io.h5.create_group(self.output_file, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
         
         # Fetch the temperature using a Nanonis call and conversion using a lookup table
         if "DT-670" in self.luts.keys():
