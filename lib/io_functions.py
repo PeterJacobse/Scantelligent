@@ -1,5 +1,6 @@
 import re, os, sys, yaml, pint, h5py, inspect
 import importlib.util
+from contextlib import contextmanager
 import numpy as np
 import nanonispy2 as nap
 from datetime import datetime
@@ -9,13 +10,38 @@ from .data_processing import DataProcessing
 
 class HDF5Functions:
     def __init__(self, parent):
-        self.parent = parent
+        self.parent: IOFunctions = parent
 
-    def find_groups(self, root_or_group: h5py.File | h5py.Group) -> list:
-        return [key for key, value in root_or_group.items() if isinstance(value, h5py.Group)]
+    @contextmanager
+    def read_file(self, file_path: str):
+        if not os.path.isfile(file_path):
+            print(f"Invalid file path provided to read_file: {file_path}")
+            yield False
+            return
+        ext = os.path.splitext(file_path)
+        if not ext[1].lower() in {"h5", "hdf5"}:
+            print(f"Provided file path is not an HDF5 file: {file_path}")
+            yield False
+            return
+        
+        try:
+            root = h5py.File(file_path, "r")
+            yield root
+        finally:
+            root.close()
+        return
 
-    def find_datasets(self, root_or_group: h5py.File | h5py.Group) -> list:
-        return [key for key, value in root_or_group.items() if isinstance(value, h5py.Dataset)]
+    def get_attributes(self, root_or_group: h5py.File | h5py.Group) -> dict:
+        return {key: value for key, value in root_or_group.attrs.items()}
+
+    def get_groups(self, root_or_group: h5py.File | h5py.Group) -> dict:
+        return {key: value for key, value in root_or_group.items() if isinstance(value, h5py.Group)}
+
+    def get_datasets(self, root_or_group: h5py.File | h5py.Group) -> dict:
+        return {key: value for key, value in root_or_group.items() if isinstance(value, h5py.Dataset)}
+
+    def get_items(self, root_or_group: h5py.File | h5py.Group) -> dict:
+        return {key: value for key, value in root_or_group.items()}
 
     def create_attributes(self, h5object: h5py.Group | h5py.Dataset, attributes: dict = {}) -> None:
         for key, value in attributes.items():
@@ -33,24 +59,6 @@ class HDF5Functions:
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
         return
-
-    def setup_file(self, root: h5py.File, channel_names: list | str = "Channel_000", nsid_version: str = "0.0.2") -> tuple[h5py.Group, list[h5py.Group]]:
-        """ Set up a HDF5 file to make it NSID (Gwyddion) and H5web compliant """
-        entry_group = None
-        channel_groups = []
-        if isinstance(channel_names, str): channel_names = [channel_names]        
-        
-        try:
-            self.create_attributes(root, {"nsid_version": nsid_version, "default": "Measurement_000"})
-            entry_group = self.create_group(root, "Measurement_000", attributes = {"NX_class": "NXentry", "default": channel_names[0]})
-            
-            for channel_name in channel_names:
-                group = self.create_group(entry_group, channel_name, attributes = {"NX_class": "NXdata", "signal": "data"})
-                channel_groups.append(group)            
-        
-        except Exception as e:
-            print(f"Error encountered while setting up HDF5 file: {e}")
-        return entry_group, channel_groups
 
     def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", attributes: dict = {}, *, data: np.ndarray = None, dtype: h5py.Datatype | np.dtype = None, shape: tuple = None, **kwargs) -> h5py.Dataset:
         try:
@@ -92,11 +100,7 @@ class HDF5Functions:
             print(f"Failed to attach dataset {axis_dataset_name} to axis {dimension} of {target_dataset_name}")
         return
 
-    def read_file(self, file_path: str) -> dict:
-        if not os.path.isfile(file_path):
-            print("Invalid file path provided to read_hdf5")
-            return {}
-        
+    def get_data(self, file_path: str) -> dict:
         output_dict = {"file_path": file_path}
         frame = None
         dataset = None
@@ -109,25 +113,28 @@ class HDF5Functions:
                 """
                 Parsing the root
                 """
-                # Write root-level attributes to output dictionary
-                root_attrs = {key: value for key, value in root.attrs.items()}
-                output_dict.update(root_attrs)
                 
                 # Open groups at the root level
-                root_items = {key: value for key, value in root.items()}
-                groups = self.find_groups(root)
-                print(f"{groups = }")
-                                
+                root_items = self.get_items(root)
+                root_groups = self.get_groups(root)
+                root_attributes = self.get_attributes(root)
+                root_datasets = self.get_datasets(root)
+                
+                # Write root-level attributes to output dictionary
+                output_dict.update({"root": root_attributes})
+                
+
                 # Try to find the frame (or grid) at the root level
                 for obj in ["frame", "grid"]:
-                    if not obj in root_items.keys(): continue
+                    if not obj in root_groups.keys(): continue
                     
-                    input_frame = {key: value for key, value in root_items[obj].attrs.items()}
-                    frame = self.convert_to_sct_frame(input_frame)
+                    frame_group = root_items[obj]
+                    input_frame = self.get_attributes(frame_group)
+                    frame = self.parent.convert_to_sct_frame(input_frame)
                     if not "domain (nm)" in frame.keys(): frame = None
 
                 # Read the attributes from all groups. At the same time, try to find the main (Nexus) measurement group while reading the different groups.
-                for group_name, group in root_items.items():                
+                for group_name, group in root_groups.items():                
                     if "NX_class" in group.attrs:
                         main_group = root_items[group_name]
                         continue
@@ -245,6 +252,24 @@ class HDF5Functions:
         finally:
             pass
         return output_dict
+
+    def setup_file(self, root: h5py.File, channel_names: list | str = "Channel_000", nsid_version: str = "0.0.2") -> tuple[h5py.Group, list[h5py.Group]]:
+        """ Set up a HDF5 file to make it NSID (Gwyddion) and H5web compliant """
+        entry_group = None
+        channel_groups = []
+        if isinstance(channel_names, str): channel_names = [channel_names]        
+        
+        try:
+            self.create_attributes(root, {"nsid_version": nsid_version, "default": "Measurement_000"})
+            entry_group = self.create_group(root, "Measurement_000", attributes = {"NX_class": "NXentry", "default": channel_names[0]})
+            
+            for channel_name in channel_names:
+                group = self.create_group(entry_group, channel_name, attributes = {"NX_class": "NXdata", "signal": "data"})
+                channel_groups.append(group)            
+        
+        except Exception as e:
+            print(f"Error encountered while setting up HDF5 file: {e}")
+        return entry_group, channel_groups
 
 
 
