@@ -13,11 +13,12 @@ class HDF5Functions:
         self.parent: IOFunctions = parent
 
     @contextmanager
-    def read_file(self, file_path: str):
+    def read(self, file_path: str):
         if not os.path.isfile(file_path):
             print(f"Invalid file path provided to read_file: {file_path}")
             yield False
             return
+
         ext = os.path.splitext(file_path)
         if not ext[1].lower() in {"h5", "hdf5"}:
             print(f"Provided file path is not an HDF5 file: {file_path}")
@@ -26,6 +27,15 @@ class HDF5Functions:
         
         try:
             root = h5py.File(file_path, "r")
+            yield root
+        finally:
+            root.close()
+        return
+
+    @contextmanager
+    def write(self, file_path: str):
+        try:
+            root = h5py.File(file_path, "w")
             yield root
         finally:
             root.close()
