@@ -18,8 +18,9 @@ class HDF5Functions:
             print(f"Invalid file path provided to read_file: {file_path}")
             yield False
             return
+
         ext = os.path.splitext(file_path)
-        if not ext[1].lower() in {"h5", "hdf5"}:
+        if not ext[1].lower() in {".h5", ".hdf5"}:
             print(f"Provided file path is not an HDF5 file: {file_path}")
             yield False
             return
@@ -99,6 +100,49 @@ class HDF5Functions:
         except:
             print(f"Failed to attach dataset {axis_dataset_name} to axis {dimension} of {target_dataset_name}")
         return
+
+    def lazy_read(self, file_path: str) -> dict:
+        output_dict = {"file_path": file_path}
+
+        def recurse(h5obj: h5py.File | h5py.Group) -> dict:
+            node: dict = {}
+            # include attributes for this group if any
+            try:
+                attributes = self.get_attributes(h5obj)
+            except Exception:
+                attributes = {}
+            if attributes:
+                node.update({"__attrs__": attributes})
+
+            # iterate children
+            try:
+                for name, item in self.get_items(h5obj):
+                    if isinstance(item, h5py.Group):
+                        node[name] = recurse(item)
+                    elif isinstance(item, h5py.Dataset):
+                        # store dataset as a reference (h5py.Dataset object)
+                        node[name] = item
+                    else:
+                        node[name] = item
+            except Exception:
+                pass
+
+            return node
+
+        try:
+            with self.read_file(file_path) as root:
+                if root is False:
+                    return output_dict
+
+                # Build a nested dict representing the file tree. Datasets are returned
+                # as h5py.Dataset references so the caller can read data lazily.
+                file_tree = recurse(root)
+                output_dict.update({"root": file_tree})
+
+        except Exception as e:
+            print(f"Problem encountered while reading HDF5 file: {e}")
+
+        return output_dict
 
     def get_data(self, file_path: str) -> dict:
         output_dict = {"file_path": file_path}
