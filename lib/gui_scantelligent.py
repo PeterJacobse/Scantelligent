@@ -7,7 +7,7 @@ from PIL import Image
 
 
 
-class ScantelligentGUI(SCTWidgets.MainWindow):
+class ScantelligentGUI(QtWidgets.QMainWindow):
     key_pressed = QtCore.pyqtSignal(QtGui.QKeyEvent)
     
     def __init__(self):
@@ -73,7 +73,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
             "splash_screen": splash_screen_path
         }
         
-        icons = {}
+        icons: dict[str, QtGui.QIcon] = {}
         for icon_file in icon_files:
             [icon_name, extension] = os.path.splitext(os.path.basename(icon_file))
             try:
@@ -86,7 +86,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
 
     # 2: Create the specific GUI items using the items from the GUIItems class. Requires icons.
-    def make_labels(self) -> dict[SCTWidgets.Label]:
+    def make_labels(self) -> dict[str, SCTWidgets.Label]:
         LB = SCTWidgets.Label
         
         labels = {
@@ -127,7 +127,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return labels
 
-    def make_buttons(self) -> dict[SCTWidgets.MultiStateButton]:
+    def make_buttons(self) -> dict[str, SCTWidgets.MultiStateButton]:
         MSB = SCTWidgets.MultiStateButton
         
         sct_blue = self.colors["blue"]
@@ -390,7 +390,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
         return checkboxes
 
-    def make_comboboxes(self) -> dict[SCTWidgets.ComboBox]:
+    def make_comboboxes(self) -> dict[str, SCTWidgets.ComboBox]:
         CB = SCTWidgets.ComboBox
         
         comboboxes = {
@@ -560,7 +560,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         [line_edits[f"frame_{key}"].editingFinished.connect(self.update_frame_from_fields) for key in ["x", "y", "width", "height", "angle", "aspect"]]
         return line_edits
 
-    def make_progress_bars(self) -> dict[SCTWidgets.ProgressBar]:
+    def make_progress_bars(self) -> dict[str, SCTWidgets.ProgressBar]:
         PB = SCTWidgets.ProgressBar
         
         progress_bars = {
@@ -576,7 +576,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return progress_bars
 
-    def make_layouts(self) -> dict[QtWidgets.QBoxLayout]:
+    def make_layouts(self) -> dict[str, QtWidgets.QBoxLayout]:
         layouts = {
             # Main
             "main": make_layout("h"),
@@ -710,7 +710,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         path_pdi.setZValue(82)
         return (piezo_frame, frame, new_frame, tip_target, target0, path_pdi)
 
-    def make_custom_widgets(self) -> tuple[dict[QtWidgets.QWidget], CurrentHeightIndicatorWidget, MinMaxMethods, SCTWidgets.PlotWidget, SCTWidgets.PhaseSlider]:
+    def make_custom_widgets(self) -> tuple[dict[str, QtWidgets.QWidget], CurrentHeightIndicatorWidget, MinMaxMethods, SCTWidgets.PlotWidget, SCTWidgets.PhaseSlider]:
         QWgt = QtWidgets.QWidget
         
         widgets = {
@@ -755,7 +755,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         sliders = {"phase": SCTWidgets.PhaseSlider(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
         return (widgets, current_height_widget, limits_widget, grapher, sliders)
 
-    def make_consoles(self) -> dict[SCTWidgets.Console]:
+    def make_consoles(self) -> dict[str, SCTWidgets.Console]:
         consoles = {
             "output": SCTWidgets.Console(tooltip = "Output console"),
             "input": SCTWidgets.Console(tooltip = "Input console")
@@ -772,7 +772,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
         
         return consoles
 
-    def make_dialogs(self) -> dict[QtWidgets.QDialog]:
+    def make_dialogs(self) -> dict[str, QtWidgets.QDialog]:
         dialogs = {
             "parameters": QtWidgets.QInputDialog(),
             "info": QtWidgets.QInputDialog(),
@@ -1009,7 +1009,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
 
     # 4: Make widgets and groupboxes and set their layouts. Requires layouts.
-    def make_groupboxes(self) -> dict[SCTWidgets.GroupBox]:
+    def make_groupboxes(self) -> dict[str, SCTWidgets.GroupBox]:
         SGB = SCTWidgets.GroupBox
         layouts = self.layouts
         
@@ -1181,7 +1181,7 @@ class ScantelligentGUI(SCTWidgets.MainWindow):
 
 
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         self.key_pressed.emit(event)
         return super().keyPressEvent(event)
 
