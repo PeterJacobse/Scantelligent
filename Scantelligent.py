@@ -1,7 +1,6 @@
 import os, sys, html, atexit, re, copy, time
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
-import qdarktheme
 from lib import Spectelligent, SCTWidgets, ScantelligentGUI
 from lib import DataProcessing, IOFunctions, ParameterManager, UserData, AudioGenerator
 from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
@@ -823,8 +822,8 @@ class Scantelligent(QtCore.QObject):
         [item.showLabels(False) for item in self.saved_items[1:]]
         if len(self.saved_items) > 0: self.saved_items[0].showLabels(True)
         return
-    
-    def create_array_item(self, name: str = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
+
+    def create_array_item(self, name: str | None = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
         if not dtype: dtype = np.float32
         if not name: name = "active_item"
         
@@ -874,11 +873,12 @@ class Scantelligent(QtCore.QObject):
         self.slice_axes_changed()
         return
 
-    def toggle_view(self, view: str = None, verbose: bool = True) -> None:
+    def toggle_view(self, view: str | None = None, verbose: bool = True) -> None:
         old_view = self.gui.buttons["view"].state_name
         if old_view == view: return # Return if the view is not changed
 
         # Determine the new view mode
+        new_view = "nanonis"
         if isinstance(view, str) and view in ["nanonis", "camera", "graph", "none"]: # Explicit selection
             new_view = view
         else:
@@ -1576,6 +1576,12 @@ class Scantelligent(QtCore.QObject):
 # Main program
 if __name__ == "__main__":
     app = SCTWidgets.Application(sys.argv)
-    qdarktheme.setup_theme("dark")
+    
+    try:
+        import qdarktheme
+        qdarktheme.setup_theme("dark")
+    except:
+        print("Scantelligent was optimized for dark theme.\nInstall pyqtdarktheme into your virtual environment to use.")
+    
     logic_app = Scantelligent()
     sys.exit(app.exec())

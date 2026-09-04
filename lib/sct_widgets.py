@@ -2052,10 +2052,6 @@ class SCTWidgets:
             print("Warning. Factor0 and factor 1 cannot be updated in a mutually consistent way")
             return
 
-    class MainWindow(QtWidgets.QMainWindow):
-        def __init__(self):
-            super().__init__()
-
     class PlotWidget(pg.PlotWidget):
         def __init__(self, buffer_size: int = 2000, n_channels: int = 35, colors: list = []):
             super().__init__()
