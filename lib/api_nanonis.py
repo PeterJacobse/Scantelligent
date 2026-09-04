@@ -1,6 +1,8 @@
 import time, inspect
+from collections.abc import Callable
 import numpy as np
 from PyQt6 import QtCore
+from .helper_funcs import get_parameters_from_tags, put_kwargs_in_dict
 from .hw_nanonis import NanonisHardware
 from .data_processing import DataProcessing
 from functools import wraps
@@ -8,11 +10,11 @@ from functools import wraps
 
 
 def get_parameters_from_tags(parameters: dict, tags: list = [[]]) -> list:
-    if len(tags) < 1: return None
+    if len(tags) < 1: return []
     if not isinstance(tags[0], list): tags = [tags]
     if not isinstance(tags[0][0], str):
         print("Invalid tags provided to get_parameters_from_tags")
-        return None
+        return []
     
     output_parameters = []
     for tag_list in tags:
@@ -29,7 +31,7 @@ class NanonisUpdate:
         self.nn: NanonisAPI = parent
         self.instance_name: str = instance_name
 
-    def connection_control(function):
+    def connection_control(function: Callable):
         signature = inspect.signature(function)
         
         @wraps(function)
@@ -66,7 +68,7 @@ class NanonisUpdate:
 
 
     @connection_control
-    def bias(self, parameters: dict = {}, *, V: float | int = None, verbose: bool = True) -> tuple[dict, bool | str]:
+    def bias(self, parameters: dict = {}, *, V: float | int | None = None, verbose: bool = True) -> tuple[dict, bool | str]:
         # Initalize outputs
         error = False
         nhw = self.nn.nanonis_hardware
@@ -96,7 +98,7 @@ class NanonisUpdate:
             
             if V > V_old: delta_V = dV # Change the sign of deltaV to get the arange right
             else: delta_V = -dV
-            slew = np.arange(V_old, V, delta_V)
+            slew = np.arange(V_old, V + delta_V, delta_V)
 
             if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
                 nhw.set_fb(False)
@@ -106,7 +108,6 @@ class NanonisUpdate:
             for V_t in slew: # Perform the slew to the new bias voltage
                 nhw.set_V(V_t)
                 time.sleep(dt)
-            nhw.set_V(V) # Final bias value
         
             if bool(feedback) and bool(polarity_difference):
                 nhw.set_fb(True) # Turn the feedback back on
@@ -120,9 +121,9 @@ class NanonisUpdate:
         return (bias_dict, error)
 
     @connection_control
-    def session_path(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def session_path(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
         session_path = {"dict_name": "session_path"}
-        error = False
+        error = ""
         nhw = self.nn.nanonis_hardware
         try:
             if verbose: self.nn.logprint(f"{self.instance_name}.session_path()", "code")
@@ -130,14 +131,14 @@ class NanonisUpdate:
             session_path.update({"path": nhw.get_path()})
             self.nn.parameters.emit(session_path)
             if verbose: self.nn.logprint(f"{session_path}", message_type = "result")
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (session_path, error)
+        return session_path, error
 
     @connection_control
-    def scan(self, channel: int | str, backward: bool = False, emit_image: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, bool | str]:
+    def scan(self, channel: int | str, backward: bool = False, emit_image: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, str]:
         scan_data = None
         error = False
         nhw = self.nn.nanonis_hardware
