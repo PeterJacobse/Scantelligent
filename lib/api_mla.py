@@ -1,4 +1,5 @@
 import os, sys, time, inspect
+from importlib import util
 from collections.abc import Callable
 from functools import wraps
 from PyQt6 import QtCore
@@ -12,7 +13,7 @@ class MLAUpdate:
         self.parent: MLAAPI = parent
         self.instance_name: str = instance_name
 
-    def connection_control(function: Callable):
+    def connection_control(function: Callable) -> Callable:
         signature = inspect.signature(function)
         
         @wraps(function)
@@ -47,7 +48,7 @@ class MLAUpdate:
 
 
 
-    def bias(self, *, parameters: dict = {}, voltage_V: float | int | None = None, port: int | None = None, port1_V: int | float | None = None, port2_V: int | float | None = None, dt_ms: float | int | None = None, dV_mV: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def bias(self, *, parameters: dict[str, object] = {}, voltage_V: float | int | None = None, port: int | None = None, port1_V: int | float | None = None, port2_V: int | float | None = None, dt_ms: float | int | None = None, dV_mV: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """
         Returns the DC bias values on the MLA output ports, and optionally slews the bias on either output port of the MLA to a new value.
 
@@ -76,10 +77,11 @@ class MLAUpdate:
 
             # Extract parameters
             [dt_ms, dV_mV, port1_V_end, port2_V_end] = get_parameters_from_tags(parameters, [["dt", "dt_ms", "dt (ms)"], ["dV", "dV_mV", "dV (mV)"], ["port1", "port_1", "port1 (V)", "port_1 (V)", "port_1_V", "port1_V"], ["port2", "port_2", "port2 (V)", "port_2 (V)", "port_2_V", "port2_V"]])
-            dt_s = parameters.get("dt (ms)", 5) / 1000
-            dV_V = parameters.get("dV (mV)", 10) / 1000
+            if not isinstance(dt_ms, float | int): dt_ms = 5
+            if not isinstance(dV_mV, float | int): dV_mV = 10
+            dt_s = dt_ms / 1000
+            dV_V = dV_mV / 1000
             
-            [port1_V_end, port2_V_end] = [parameters.get(f"port_{index + 1} (V)", None) for index in range(2)]
             [port1_V_start, port2_V_start] = self.parent.V
             
             # Announce
@@ -123,7 +125,7 @@ class MLAUpdate:
         
         return output_dict, error
 
-    def time_constant(self, *, parameters: dict = {}, tm_ms: float | int | None = None, df_Hz: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def time_constant(self, *, parameters: dict[str, object] = {}, tm_ms: float | int | None = None, df_Hz: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """
         Retrieve the lockin fundamental time constant in ms and frequency resolution in Hz (called 'bandwidth' in IMP nomenclature), and update if desired. Provided values for the time constant override the frequency resolution.
         
@@ -183,7 +185,9 @@ class MLAUpdate:
         
         return output_dict, error
 
-    def frequencies(self, *, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+
+
+    def frequencies(self, *, parameters: dict[str, object] = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], bool | str]:
         error = False
         freq_dict = {"dict_name": "frequencies"}
         
@@ -241,7 +245,7 @@ class MLAUpdate:
 
 
 
-    def lockin(self, *, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def lockin(self, *, parameters: dict[str, object] = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """
         Returns all parameters from all update functions simultaneously
 
@@ -327,7 +331,7 @@ class MLAUpdate:
         
         return (parameters_out, error)
 
-    def amplitudes_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def amplitudes_update(self, parameters: dict[str, object] = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], bool | str]:
         error = False
         amp_dict = {"dict_name": "amplitudes"}
         
@@ -368,7 +372,7 @@ class MLAUpdate:
         
         return (amp_dict, error)
 
-    def phases_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def phases_update(self, parameters: dict[str, object] = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], bool | str]:
         error = False
         phase_dict = {"dict_name": "phases"}
         
@@ -409,7 +413,7 @@ class MLAUpdate:
         
         return (phase_dict, error)
 
-    def outputs_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def outputs_update(self, parameters: dict[str, object] = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], bool | str]:
         error = False
         outputs_dict = {"dict_name": "outputs"}
         
@@ -463,7 +467,7 @@ class MLAUpdate:
         
         return (outputs_dict, error)
 
-    def inputs_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def inputs_update(self, parameters: dict[str, object] = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], bool | str]:
         error = False
         inputs_dict = {"dict_name": "inputs"}
         
@@ -491,8 +495,337 @@ class MLAUpdate:
         
         return (inputs_dict, error)
 
+
+
+class MLASweeps:
+    def __init__(self, parent, instance_name: str = "mla.update"):
+        self.parent: MLAAPI = parent
+        self.instance_name: str = instance_name
+
+    # Parameter sweep experiments
+    def frequency(self,
+                  frequencies: list | np.ndarray, *, settle_pixels: int = 1, pixels_per_datapoint: int = 4,
+                  measurement: Callable | None = None,
+                  tia_gain_V_per_pA: float = 0,
+                  tia_corrections: list | np.ndarray | None = None,
+                  modulators: list = [0, 1], output_port: int = 1,
+                  abort_callback: Callable | None = None, data_callback: Callable | None = None, channel_names_callback: Callable | None = None,
+                  insert_parameter: tuple[str, float] | None = None,
+                  post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray, list[str]]:
+        """
+        Perform a frequency sweep experiment.
+
+        Args:
+            frequencies (np.ndarray): List of numpy array of frequencies. A np.linspace can be passed.
+            settle_pixels (int, optional): Number of lockin time constants to settle (throw away) before recording a measurement at each frequency datapoint. Defaults to 1.
+            pixels_per_datapoint (int, optional): Number of pixels to record and average over per datapoint. Defaults to 4.
+            measurement (Callable | None, optional): Measurement callback. Defaults to None, in which case it just acquires a pixel.
+            tia_gain_V_per_pA (float, optional): Gain of the transimpedance amplifier. Defaults to 0.
+            tia_corrections (list | np.ndarray | None, optional): _description_. Defaults to None.
+            modulators (list, optional): _description_. Defaults to [0, 1].
+            output_port (int, optional): _description_. Defaults to 1.
+            abort_callback (Callable | None, optional): _description_. Defaults to None.
+            data_callback (Callable | None, optional): _description_. Defaults to None.
+            channel_names_callback (Callable | None, optional): _description_. Defaults to None.
+            insert_parameter (tuple[str, float] | None, optional): _description_. Defaults to None.
+            post_sweep_outputs (str, optional): _description_. Defaults to "reset".
+
+        Returns:
+            tuple[np.ndarray, np.ndarray, list[str]]: data array, error array, list of channel names
+        """
         
-    
+        if isinstance(frequencies, list): np.array(frequencies)
+        
+        # In the future, more complicated data acquisitions can be passed rather than just get_pixels
+        if measurement: self.parent.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
+        measurement = lambda: self.parent.get_pixels(pixels_per_datapoint, average = True)
+        if not data_callback: data_callback = lambda data_chunk: self.parent.logprint(f"{data_chunk = }", message_type = "result")
+
+        start_outputs, error = self.parent.outputs_update(verbose = False) # Read for resetting after the sweep
+        measurement_output_masks = np.copy(start_outputs.get("output_masks", np.array([], dtype = np.float32)))
+        for mod_index in modulators: # Set the modulators according to what was passed
+            measurement_output_masks[output_port - 1, mod_index] = 1
+        self.parent.outputs_update({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
+        
+        amplitudes_dict, error = self.parent.amplitudes_update(verbose = False) # Read the amplitude
+        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)", [0])[0]
+        
+        # Prepare to plot these channels
+        channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (deg)", "|a1| (mV)", "arg(a1) (deg)", "|a2| (mV)", "arg(a2) (deg)"] # When a gain is given, convert the voltages to displacement currents and subsequently capacitances
+        if tia_gain_V_per_pA > 1E-12: channel_names = ["f1 (Hz)", "|a1_ref| (mV)", "arg(a1_ref) (deg)", "|a1| (mV)", "|a1| (pA)", "|C1| (fF)", "arg(a1) (deg)", "|a2| (mV)", "|a2| (pA)", "|C2| (fF)", "arg(a2) (deg)"]
+        
+        insert_value = None
+        if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
+            channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
+            insert_value = insert_parameter[1]
+        if channel_names_callback: channel_names_callback(np.array(channel_names))
+        measurement_array = np.empty((len(frequencies), len(channel_names)), dtype = np.float32)
+        error_array = np.empty_like(measurement_array, dtype = np.float32)
+        
+        
+        
+        # Main loop
+        n_total = len(frequencies)
+        self.parent.start_lockin()
+        for index, f in enumerate(frequencies):
+            if abort_callback: abort_callback()
+            self.parent.task_progress.emit(int(100 * index / n_total))
+            w = 2 * np.pi * int(f) # Frequency in rad per s
+            self.parent.time_constant_update({"df (Hz)": int(f)}, verbose = False)
+            (frequencies_dict, error) = self.parent.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False)
+            freqs = frequencies_dict.get("frequencies (Hz)")
+            
+            self.parent.get_pixels(settle_pixels) # Wait settle_pixels number of pixels
+            (pix_V, pix_V_var) = measurement()
+            pix_V_std_dev = np.sqrt(pix_V_var)
+            
+            if isinstance(tia_corrections, list | np.ndarray): # Apply correction
+                for tone in range(len(pix_V)):
+                    freq_int = int(round(freqs[tone]))
+                    if freq_int < len(tia_corrections):
+                        tone_correction = tia_corrections[freq_int]
+                        pix_V[tone] *= tone_correction
+                        pix_V_std_dev *= np.abs(tone_correction)
+            
+            a1refabs = 2000 * np.abs(pix_V[0]) # Reference signal = output directly copied to an MLA input port
+            a1refarg = np.rad2deg(np.angle(pix_V[0]))
+            
+            a1abs_mV = 2000 * np.abs(pix_V[1]) # Drive and second harmonic output measured on input port
+            a2abs_mV = 2000 * np.abs(pix_V[2])
+            a1_std_dev_mV = 2000 * np.sqrt(pix_V_std_dev[1])
+            a2_std_dev_mV = 2000 * np.sqrt(pix_V_std_dev[2])
+            
+            a1arg = np.rad2deg(np.angle(pix_V[1]))
+            a2arg = np.rad2deg(np.angle(pix_V[2]))
+
+            if tia_gain_V_per_pA > 1E-12: # When a gain is given, convert the voltages to displacement currents and subsequently capacitances. The factor 2 accounts for the discrepancy between the time-averaged lockin signal and the actual voltage amplitude
+                a1abs_pA = a1abs_mV / (1000 * tia_gain_V_per_pA) # Displacement current
+                a2abs_pA = a2abs_mV / (1000 * tia_gain_V_per_pA)
+                
+                a1_std_dev_pA = a1_std_dev_mV / (1000 * tia_gain_V_per_pA)
+                a2_std_dev_pA = a2_std_dev_mV / (1000 * tia_gain_V_per_pA)
+                
+                if mod_voltage_mV > .01: # Convert to femtofarad
+                    #a1abs_nS = a1abs_pA / mod_voltage_mV # Reactance
+                    #a2abs_nS = a2abs_pA / mod_voltage_mV
+                    
+                    wV = w * mod_voltage_mV
+                    a1abs_fF = 1E6 * a1abs_pA / wV # Capacitance is capacitive reactance divided by frequency
+                    a2abs_fF = 1E6 * a2abs_pA / wV
+                    
+                    a1_std_dev_fF = 1E6 * a1_std_dev_pA / wV
+                    a2_std_dev_fF = 1E6 * a2_std_dev_pA / wV
+                else:
+                    a1abs_fF = 0
+                    a2abs_fF = 0
+                    a1_std_dev_fF = 0
+                    a2_std_dev_fF = 0
+                
+                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1abs_pA, a1abs_fF, a1arg, a2abs_mV, a2abs_pA, a2abs_fF, a2arg], dtype = np.float32)
+                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, a1_std_dev_pA, a1_std_dev_fF, 0, a2_std_dev_mV, a2_std_dev_pA, a2_std_dev_fF, 0], dtype = np.float32)
+            else:
+                data_chunk = np.array([f, a1refabs, a1refarg, a1abs_mV, a1arg, a2abs_mV, a2arg], dtype = np.float32)
+                error_chunk = np.array([0, 0, 0, a1_std_dev_mV, 0, a2_std_dev_mV, 0], dtype = np.float32)
+            
+            if isinstance(insert_value, float | int):
+                data_chunk = np.insert(data_chunk, 0, insert_value)
+                error_chunk = np.insert(error_chunk, 0, 0)
+            
+            measurement_array[index] = data_chunk
+            error_array[index] = error_chunk
+            data_callback(data_chunk)
+                
+        self.parent.task_progress.emit(100) # Signal that the measurement is done
+        if post_sweep_outputs == "blank": self.parent.outputs_update({"output_masks": np.zeros((2, 32), dtype = int)}) # Reset outputs
+        elif post_sweep_outputs == "reset": self.parent.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
+        return (measurement_array, error_array, channel_names)
+
+    def amplitude(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, tia_gain_V_per_pA: float = 0,
+                        output_port: int = 1, modulators: list = [0], abort_callback: object = None, data_callback: object = None, channel_names_callback: object = None,
+                        insert_parameter: tuple[str, float] = None, tia_corrections: list | np.ndarray = None, post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray]:
+        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
+        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
+        measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
+        if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
+        
+        (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
+        measurement_output_masks = np.copy(start_outputs.get("output_masks"))
+        for mod_index in modulators: # Set the modulators according to what was passed
+            measurement_output_masks[output_port - 1, mod_index] = 1
+        self.outputs_update({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
+        
+        (frequencies_dict, error) = self.frequencies_update() # Knowledge of the absolute frequencies is relevant when correcting for the frequency-dependent response of the TIA
+        freqs = frequencies_dict.get("frequencies (Hz)")
+
+        # Prepare to plot these channels
+        channel_names = ["amp (mV)", "|a1_ref| (mV)"]
+        if tia_gain_V_per_pA > 1E-12: [channel_names.extend([f"Re(a{i + 1}) (nS)", f"Im(a{i + 1}) (nS)"]) for i in range (31)]
+        else: [channel_names.extend([f"Re(a{i + 1}) (mV)", f"Im(a{i + 1}) (mV)"]) for i in range (31)]
+        insert_value = None
+        if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
+            channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
+            insert_value = insert_parameter[1]
+        if channel_names_callback: channel_names_callback(np.array(channel_names)) # Signal the gui to start tracking/plotting these data
+        measurement_array = np.empty((len(amplitudes), len(channel_names)), dtype = np.float32)
+        error_array = np.empty_like(measurement_array, dtype = np.float32)
+
+
+
+        # Main loop
+        n_total = len(amplitudes)
+        self.start_lockin()
+        for index, amp_mV in enumerate(amplitudes):
+            if abort_callback: abort_callback()
+            self.task_progress.emit(int(100 * index / n_total))
+            self.amplitudes_update({"amplitudes (mV)": {number: amp_mV for number in modulators}}, verbose = False)
+            
+            self.get_pixels(settle_pixels)
+            (pix_V, pix_V_var) = measurement()
+            pix_V_std_dev = np.sqrt(pix_V_var)
+            
+            if isinstance(tia_corrections, list | np.ndarray): # Apply correction
+                for tone in range(len(pix_V)):
+                    freq_int = int(round(freqs[tone]))
+                    if freq_int < len(tia_corrections):
+                        tone_correction = tia_corrections[freq_int]
+                        pix_V[tone] *= tone_correction
+                        pix_V_std_dev *= np.abs(tone_correction)
+            
+            if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = np.float32)
+            else: data_chunk = np.zeros((len(channel_names)), dtype = np.float32)
+            error_chunk = np.zeros_like(data_chunk)
+            data_chunk[0] = amp_mV
+            data_chunk[1] = 2000 * np.abs(pix_V[0]) # Factor 2 to account for discrepancy between amplitude and lockin measured amplitude
+            
+            harmonics_V = np.array([[np.real(tone), np.imag(tone)] for tone in pix_V[1:]]).flatten()
+            errors_V = np.sqrt(np.array([[tone, 0] for tone in pix_V_std_dev[1:]]).flatten())
+            if tia_gain_V_per_pA > 1E-12:
+                harmonics_pA = 2 * harmonics_V / tia_gain_V_per_pA
+                data_chunk[2:] = harmonics_pA
+                
+                errors_pA = 2 * errors_V / tia_gain_V_per_pA
+                error_chunk[2:] = errors_pA
+            else:
+                harmonics_mV = 2000 * harmonics_V
+                data_chunk[2:] = harmonics_mV
+                
+                errors_mV = 2000 * errors_V
+                error_chunk[2:] = errors_mV
+
+            if isinstance(insert_value, float | int):
+                data_chunk = np.insert(data_chunk, 0, insert_value)
+                error_chunk = np.insert(error_chunk, 0, 0)
+            
+            measurement_array[index] = data_chunk
+            error_array[index] = error_chunk
+            data_callback(data_chunk)
+
+        self.task_progress.emit(100) # Signal that the measurement is done
+        if post_sweep_outputs == "blank": self.outputs_update({"output_masks": np.zeros((2, 32), dtype = int)}) # Reset outputs
+        elif post_sweep_outputs == "reset": self.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
+        return (measurement_array, error_array, channel_names)
+
+    def voltage(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, tia_gain_V_per_pA: float = 0,
+                      output_port: int = 1, modulators: list = [0], abort_callback: object = None, data_callback: object = None, channel_names_callback: object = None,
+                      insert_parameter: tuple[str, float] = None, return_type: str = "conductance", tia_corrections: list | np.ndarray = None, post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray]:
+        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
+        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
+        measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
+        if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
+        
+        (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
+        measurement_output_masks = np.copy(start_outputs.get("output_masks"))
+        for mod_index in modulators: # Set the modulators according to what was passed
+            measurement_output_masks[output_port - 1, mod_index] = 1
+        self.outputs_update({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
+        
+        # Read the TIA gain and oscillator amplitude to be able to convert values
+        (frequencies_dict, error) = self.frequencies_update()
+        freqs = frequencies_dict.get("frequencies (Hz)")
+        (amplitudes_dict, error) = self.amplitudes_update(verbose = False)
+        mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
+        
+        # Prepare to plot these channels
+        channel_names = [f"V_port{output_port} (V)", "|a1_ref| (mV)"]
+        if tia_gain_V_per_pA > 1E-12:
+            if return_type == "conductance": [channel_names.extend([f"Re(a{i + 1}) (nS)", f"Im(a{i + 1}) (nS)"]) for i in range(31)] # return_type = conductance
+            else: [channel_names.extend([f"Re(a{i + 1}) (pA)", f"Im(a{i + 1}) (pA)"]) for i in range(31)] # return_type = displacement current
+        else:
+            [channel_names.extend([f"Re(a{i + 1}) (mV)", f"Im(a{i + 1}) (mV)"]) for i in range(31)] # return_type = raw voltages
+        insert_value = None
+        if isinstance(insert_parameter, tuple) and isinstance(insert_parameter[0], str) and isinstance(insert_parameter[1], float | int):
+            channel_names.insert(0, insert_parameter[0]) # When passed, an extra parameter can be inserted at position 0 of the channels
+            insert_value = insert_parameter[1]
+        if channel_names_callback: channel_names_callback(np.array(channel_names))
+        measurement_array = np.empty((len(voltages), len(channel_names)), dtype = np.float32)
+        error_array = np.empty_like(measurement_array, dtype = np.float32)
+
+
+
+        # Main loop
+        n_total = len(voltages)
+        self.start_lockin()
+        for index, voltage in enumerate(voltages):
+            if abort_callback: abort_callback()
+            self.task_progress.emit(int(100 * index / n_total))
+            self.bias_update({f"port_{output_port} (V)": voltage}, verbose = False)
+            
+            self.get_pixels(settle_pixels)
+            (pix_V, pix_V_var) = measurement()
+            pix_V_std_dev = np.sqrt(pix_V_var)
+            
+            if isinstance(tia_corrections, list | np.ndarray): # Apply correction for tia response if desired
+                for tone in range(len(pix_V)):
+                    freq_int = int(round(freqs[tone]))
+                    if freq_int < len(tia_corrections):
+                        tone_correction = tia_corrections[freq_int]
+                        pix_V[tone] *= tone_correction
+                        pix_V_std_dev *= np.abs(tone_correction)
+                        
+            if isinstance(insert_value, float | int): data_chunk = np.zeros((len(channel_names) - 1), dtype = np.float32)
+            else: data_chunk = np.zeros((len(channel_names)), dtype = np.float32)
+            error_chunk = np.zeros_like(data_chunk)
+            data_chunk[0] = voltage
+            data_chunk[1] = 2000 * np.abs(pix_V[0]) # Reference signal in mA
+            
+            harmonics_V = np.array([[np.real(tone), np.imag(tone)] for tone in pix_V[1:]]).flatten()
+            errors_V = np.sqrt(np.array([[tone, 0] for tone in pix_V_std_dev[1:]]).flatten())            
+            if tia_gain_V_per_pA > 1E-12:
+                harmonics_pA = 2 * harmonics_V / tia_gain_V_per_pA
+                errors_pA = 2 * errors_V / tia_gain_V_per_pA
+                
+                if mod_voltage_mV > 1E-3:
+                    harmonics_nS = harmonics_pA / mod_voltage_mV
+                    errors_nS = errors_pA / mod_voltage_mV
+                else: # Conductance diverges for zero modulation bias. Replace with zero
+                    harmonics_nS = 0 * harmonics_pA
+                    errors_nS = 0
+                
+                if return_type == "conductance":
+                    data_chunk[2:] = harmonics_nS
+                    error_chunk[2:] = errors_nS
+                else:
+                    data_chunk[2:] = harmonics_pA
+                    error_chunk[2:] = errors_pA
+            else:
+                data_chunk[2:] = 2000 * harmonics_V
+                error_chunk[2:] = 2000 * errors_V
+            
+            if isinstance(insert_value, float | int):
+                data_chunk = np.insert(data_chunk, 0, insert_value)
+                error_chunk = np.insert(error_chunk, 0, 0)
+            
+            measurement_array[index] = data_chunk
+            error_array[index] = error_chunk
+            data_callback(data_chunk)
+        
+        self.task_progress.emit(100) # Signal that the measurement is done
+        if post_sweep_outputs == "blank": self.outputs_update({"output_masks": np.zeros((2, 32), dtype = int)}) # Reset outputs
+        elif post_sweep_outputs == "reset": self.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
+        return (measurement_array, error_array, channel_names)
+
+
+
 class MLAAPI(QtCore.QObject):
     message = QtCore.pyqtSignal(str, str)
     parameters = QtCore.pyqtSignal(dict)    
@@ -512,12 +845,11 @@ class MLAAPI(QtCore.QObject):
         
         mla_path = False
         if "mla" in hw_config.keys():
-            mla_dict = hw_config["mla"]
-            if "library_path" in mla_dict:
-                mla_path = mla_dict["library_path"]
+            mla_dict: dict = hw_config.get("mla", {})
+            mla_path = mla_dict.get("library_path")
         
         if not isinstance(mla_path, str): raise Exception("Could not read the MLA library path")
-        if not os.path.isdir(mla_path): raise Exception("The library path provided does not point to a valid folder")
+        if not os.path.isdir(mla_path): raise IOError("The library path provided does not point to a valid folder")
 
         self.mla_path = mla_path
 
@@ -529,6 +861,7 @@ class MLAAPI(QtCore.QObject):
         settings = mla_globals.read_config()
         self.mla = mla_api.MLA(settings)
         self.update = MLAUpdate(parent = self, instance_name = "mla.update")
+        #self.sweep = MLASweeps(parent = self, instance_name = "mla.experiments")
         self.lockin_running = False
         self.parameters_init()
 
@@ -624,11 +957,22 @@ class MLAAPI(QtCore.QObject):
             self.logprint(f"{e}")
         return
 
-    def get_pixels(self, number: int = 1, average: bool = False, bessel_correct: bool = True, data_format: str = "IQ", wait_for_new: bool = True) -> tuple[np.ndarray, None | np.ndarray]:
+    def get_pixels(self, *, number: int = 1, average: bool = False, bessel_correct: bool = True, data_format: str = "IQ", wait_for_new: bool = True) -> tuple[np.ndarray, None | np.ndarray]:
         """
         Returns MLA lockin measurements. When average is False, the first element returned is a 2D array comprising a list of pixels.
         When average is True, the list of pixels is turned into an average and the variance is returned as the second element.
+
+        Args:
+            number (int, optional): Number of pixels. Defaults to 1.
+            average (bool, optional): Whether or not to average over a number of pixels. Defaults to False.
+            bessel_correct (bool, optional): Whether of not to use the Bessel correction to compute the variance. Defaults to True.
+            data_format (str, optional): _description_. Defaults to "IQ".
+            wait_for_new (bool, optional): _description_. Defaults to True.
+
+        Returns:
+            tuple[np.ndarray, None | np.ndarray]: _description_
         """
+        
         if not self.lockin_running: raise Exception("Requesting locking data while it is not running. Call mla.start_lockin() first.")
         
         if self.test_mode:
@@ -648,10 +992,10 @@ class MLAAPI(QtCore.QObject):
             pix = np.average(pix, axis = 1)
         
         self.parameters.emit({"dict_name": "pixels", "pixels": pix})
-        return (pix, pix_var)
+        return pix, pix_var
     
     def get_phases(self, number_pixels: int = 1) -> np.ndarray:
-        return self.get_pixels(number = number_pixels, average = True, data_format = "phase")
+        return self.get_pixels(number = number_pixels, average = True, data_format = "phase")[0]
 
     def set_DACs_ADCs_safe_range(self) -> None:
         # Set all analog inputs to the correct configuration (range = +-20 V)
@@ -667,11 +1011,9 @@ class MLAAPI(QtCore.QObject):
         self.mla.osc.set_downsampling(250)
         return
 
-    def set_12V_output(self, value: bool = True):
-        if not isinstance(value, bool): return
-        self.mla.hardware.set_output_relay(1, bypass = not value, event = True)
-        self.mla.hardware.set_output_relay(2, bypass = not value, event = True)
-        return
+    def set_12V_output(self, value: bool = True, port: int = 1):
+        if not isinstance(value, bool) or not isinstance(port, int) or port < 1 or port > 2: return
+        return self.mla.hardware.set_output_relay(port, bypass = not value, event = True)
 
     def set_input_multiplexer(self, port_array: np.ndarray | list) -> None:
         self.mla.lockin.set_input_multiplexer(port_array)
@@ -713,13 +1055,13 @@ class MLAAPI(QtCore.QObject):
 
     def expose_dIdV(self, output_port: str = "A") -> None:
         if not output_port in ["A", "B", "C", "D"]: return
-        self.mla.feedback.setup(gain = 1.0, offset = 0.0, output_port = "A")
+        self.mla.feedback.setup(gain = 1.0, offset = 0.0, output_port = output_port)
         self.mla.feedback.set_feedback_type_slow(7)
         return
 
 
 
-    # 'Update' methods that both take and apply parameters supplied to them and read from the mla
+    # 'Update' methods that both take and apply parameters supplied to them and read from the mla. To be deprecated later
     def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
         parameters_out = {"dict_name": "mla_parameters"}

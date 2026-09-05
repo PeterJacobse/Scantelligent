@@ -61,7 +61,7 @@ class HDF5Functions:
             except: pass
         return
 
-    def create_group(self, root_or_group: h5py.File | h5py.Group, name: str = "", attributes: dict = {}) -> h5py.Group:
+    def create_group(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, attributes: dict = {}) -> h5py.Group:
         try:
             new_group = root_or_group.create_group(name)
             self.create_attributes(new_group, attributes)
@@ -70,7 +70,7 @@ class HDF5Functions:
             raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
         return
 
-    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", attributes: dict = {}, *, data: np.ndarray = None, dtype: h5py.Datatype | np.dtype = None, shape: tuple = None, **kwargs) -> h5py.Dataset:
+    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
         try:
             if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, *kwargs)
             else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, *kwargs)
@@ -82,7 +82,7 @@ class HDF5Functions:
             raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name} under {root_or_group}")
         return
 
-    def attach_axes_to_dataset(self, target_dataset: h5py.Dataset, axes_datasets: list[h5py.Dataset] = [], axes: int | list = None) -> None:
+    def attach_axes_to_dataset(self, target_dataset: h5py.Dataset, axes_datasets: list[h5py.Dataset] = [], axes: int | list | None = None) -> None:
         try:
             target_dataset_name = os.path.basename(target_dataset.name)
             target_dataset_group = target_dataset.parent
@@ -330,7 +330,14 @@ class SXMFunctions:
     def __init__(self, parent):
         self.parent: IOFunctions = parent
 
-    def get_raw_header(self, file_path: str) -> list:
+    def _get_raw_header(self, file_path: str) -> list:
+        """
+        Args:
+            file_path (str): file path
+
+        Returns:
+            list: raw header
+        """
         header_end_tag = ":SCANIT_END:"
         raw_header = []
         
@@ -345,9 +352,17 @@ class SXMFunctions:
             print(f"Unable to retrieve raw sxm header: {e}")
         return raw_header
 
-    def read_header_quick(self, file_path: str) -> tuple[np.ndarray, dict]:
+    def read_header(self, file_path: str, quick: bool = True) -> tuple[np.ndarray, dict]:
+        """
+        Args:
+            file_path (str): File path string
+            quick (bool, optional): _description_. Defaults to True.
+
+        Returns:
+            tuple[np.ndarray, dict]: _description_
+        """
         try:
-            raw_header = self.get_raw_header(file_path)
+            raw_header = self._get_raw_header(file_path)
             header = np.array(raw_header, dtype = np.str_)
 
             nanonis_tags = [":SCAN_RANGE:\n", ":SCAN_ANGLE:\n", ":SCAN_OFFSET:\n", ":REC_TIME:\n", ":REC_DATE:\n", ":SCAN_PIXELS:\n", ":SCAN_DIR:\n", ":BIAS:\n"]
@@ -357,7 +372,7 @@ class SXMFunctions:
             for nanonis_tag, sct_tag in zip(nanonis_tags, sct_tags):
                 try:
                     index = np.where(header == nanonis_tag)[0][0]
-                    values_split = header[index + 1].split()
+                    values_split = str(header[index + 1]).split()
 
                     if nanonis_tag in [":REC_TIME:\n", ":REC_DATE:\n", ":SCAN_DIR:\n"]:
                         sct_dict.update({sct_tag: values_split[0]})
@@ -412,7 +427,7 @@ class YAMLFunctions:
     def __init__(self, parent):
         self.parent = parent
 
-    def save(self, data, path: str) -> bool:
+    def save(self, data: object, path: str) -> bool:
         try: # Save the currently opened scan folder to the config yaml file so it opens automatically on startup next time
             with open(path, "w") as file:
                 yaml.safe_dump(data, file)
@@ -421,7 +436,7 @@ class YAMLFunctions:
             print(f"Error saving data to YAML: {e}")
             return False
 
-    def load_yaml(self, path: str) -> object:
+    def load(self, path: str) -> object:
         try: # Read the last scan file from the config yaml file
             with open(path, "r") as file:
                 yaml_data = yaml.safe_load(file)
@@ -554,7 +569,7 @@ class IOFunctions():
         
         return (quantity, unit, backward, error)
 
-    def convert_data_to_unit(self, data: np.ndarray, quantity: str, target_unit: str = None) -> str:
+    def convert_data_to_unit(self, data: np.ndarray, quantity: str, target_unit: str | None = None) -> str:
         """
         This function converts data (in np.ndarray form) from a certain physical quantity to a different quantity.
         The np.ndarray is changes in place, while the funciton exports the new quantity with the new unit attached to it.

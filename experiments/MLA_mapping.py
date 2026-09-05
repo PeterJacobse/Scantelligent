@@ -4,7 +4,7 @@ from scipy.ndimage import gaussian_filter
 import h5py
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
-from lib import BaseExperiment
+from lib import BaseExperiment, MLAAPI, NanonisAPI, KeithleyAPI
 
 
 
@@ -21,9 +21,9 @@ class Experiment(BaseExperiment):
         # [self.connect_hardware(component) for component in ["nanonis", "mla"]] # Set up the required hardware connections
         
         # Aliases
-        nn = self.nanonis
-        mla = self.mla
-                
+        nn: NanonisAPI = self.nanonis
+        mla: MLAAPI = self.mla
+        
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]

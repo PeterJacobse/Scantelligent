@@ -1,4 +1,5 @@
 import os, time, h5py, types
+from collections.abc import Callable
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 from datetime import datetime
@@ -86,7 +87,7 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
         return
 
-    def create_array_item(self, name: str = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
+    def create_array_item(self, name: str | None = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
         array_dict = {"dict_name": "array_item", "name": name, "shape": shape, "dtype": dtype, "axes": axes, "axis_values": axis_values, "frame": frame}
         self.parameters.emit(array_dict)
         return
@@ -237,7 +238,7 @@ class BaseExperiment(QObject):
 
 
 
-    def experiment_handler(run):
+    def experiment_handler(run: Callable):
         def wrapper(self: BaseExperiment):
             self.logprint("Starting the experiment", "success")
             self.start_parameters.update({"gui": self.gui_parameters})
@@ -271,7 +272,7 @@ class BaseExperiment(QObject):
                 self.finish_experiment()
         return wrapper
 
-    def nanonis_scan_old(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset = None, iterations: int = 10, verbose: bool = True) -> np.ndarray:
+    def nanonis_scan_old(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset | None = None, iterations: int = 10, verbose: bool = True) -> np.ndarray:
         if verbose: self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
         self.nanonis.scan_action({"action": "start", "direction": direction})
         
@@ -324,7 +325,7 @@ class BaseExperiment(QObject):
             scan_data[1, index] = backward_scan
         return scan_data
 
-    def nanonis_scan(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset = None, verbose: bool = True) -> np.ndarray:
+    def nanonis_scan(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset | None = None, verbose: bool = True) -> np.ndarray:
         if verbose: self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
         self.nanonis.scan_action({"action": "start", "direction": direction})
         
