@@ -52,7 +52,7 @@ class Conversions:
 
 
 
-class NanonisHardware:
+class NanonisCore:
     def __init__(self, hw_config: dict):
         self.configure(hw_config) # Extract the TCP parameters from the provided hardware dict
         self.conv = Conversions() # Load the conversions

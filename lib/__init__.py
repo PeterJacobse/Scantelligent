@@ -2,7 +2,7 @@ from .Spectelligent import Spectelligent
 from .sct_widgets import SCTWidgets, rotate_icon, make_layout, make_line
 from .gui_scantelligent import ScantelligentGUI
 from .gui_spectelligent import SpectelligentGUI
-from .hw_nanonis import NanonisHardware, Conversions
+from .core_nanonis import NanonisCore, Conversions
 from .api_nanonis import NanonisAPI
 from .api_camera import CameraAPI
 from .api_keithley import KeithleyAPI
