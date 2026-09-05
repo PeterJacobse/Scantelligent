@@ -272,13 +272,13 @@ class BaseExperiment(QObject):
                 self.finish_experiment()
         return wrapper
 
-    def nanonis_scan_old(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset | None = None, iterations: int = 10, verbose: bool = True) -> np.ndarray:
+    def nanonis_scan_old(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset | None = None, iterations: int = 10, verbose: bool = True) -> tuple[np.ndarray, np.ndarray]:
         if verbose: self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
         self.nanonis.scan_action({"action": "start", "direction": direction})
         
-        (scan_metadata, error) = self.nanonis.scan_metadata_update(verbose = False) # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
-        channel_dict = scan_metadata.get("channel_dict")
-        channel_indices = channel_dict.values()
+        scan_metadata, error = self.nanonis.scan_metadata_update(verbose = False) # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
+        channel_dict: dict = scan_metadata.get("channel_dict", {})
+        channel_indices = list(channel_dict.values())
         
         # Loop to check scan progress
         t_start = time.time()
@@ -295,7 +295,7 @@ class BaseExperiment(QObject):
             backward = self.scan_processing_flags.get("backward")
             
             if channel_index in channel_indices:
-                (scan_image, error) = self.nanonis.scan_update(channel = channel_index, backward = backward, verbose = False)
+                scan_image, error = self.nanonis.scan_update(channel = channel_index, backward = backward, verbose = False)
                 nan_mask = np.isnan(scan_image)
                 scan_finished = not bool(np.any(nan_mask))
             
@@ -311,9 +311,11 @@ class BaseExperiment(QObject):
         
         scan_data = self.scan_data_update(channel_indices, dataset)        
         if verbose: self.logprint(f"Scan completed", message_type = "success")
-        return (scan_image, scan_data)
+        return scan_image, scan_data
 
-    def scan_data_update(self, channel_indices: list | np.ndarray, dataset: h5py.Dataset) -> None:
+    def scan_data_update(self, channel_indices: list | np.ndarray, dataset: h5py.Dataset | None = None) -> np.ndarray:
+        if not isinstance(dataset, h5py.Dataset): return np.zeros((2, 2))
+        
         scan_data = np.zeros(dataset.shape, dtype = np.float32)
         
         for index, channel_index in enumerate(channel_indices):

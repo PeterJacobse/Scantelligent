@@ -83,10 +83,10 @@ class DataProcessing:
 
 
     # Misc
-    def split_physical_quantity(self, text: str) -> tuple:
+    def split_physical_quantity(self, text: str) -> tuple[str, str, bool, bool]:
         error = False
-        quantity = None
-        unit = None
+        quantity = ""
+        unit = ""
         backward = False
         first_bracket_index = None
         
@@ -99,11 +99,11 @@ class DataProcessing:
                     if text_item[1:-1] not in {"fwd", "forward", "bwd", "backward"}: unit = text_item[1:-1]
             quantity = " ".join(split_text[:first_bracket_index])
 
-            return (quantity, unit, backward, error)
+            return quantity, unit, backward, error
         except:
             error = True
         
-        return (quantity, unit, backward, error)
+        return quantity, unit, backward, error
 
     def convert_data_to_unit(self, data: np.ndarray, quantity: str, target_unit: str) -> tuple[np.ndarray, str]:
         output_data = data

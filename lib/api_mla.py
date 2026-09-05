@@ -63,7 +63,7 @@ class MLAUpdate:
             verbose (bool, optional): Whether or not to print the resulting output dictionary to the terminal. Default: True.
 
         Returns:
-            tuple[dict, str]: Updated parameters dictionary containing the new bias values, and an error message if something went wrong
+            tuple[dict, str]: Updated parameters dictionary containing the new bias values, and an error message if anything went wrong
         """        
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "mla_bias"}

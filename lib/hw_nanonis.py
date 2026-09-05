@@ -9,40 +9,40 @@ class Conversions:
     def __init__(self):
         pass
 
-    def to_hex(self, conv, num_bytes):
-        if(conv >= 0): return hex(conv)[2:].zfill(2 * num_bytes)
-        if(conv < 0):  return hex((conv + (1 << 8 * num_bytes)) % (1 << 8 * num_bytes))[2:]
+    def to_hex(self, conv, num_bytes: int) -> str:
+        if conv >= 0: return hex(conv)[2:].zfill(2 * num_bytes)
+        else: return hex((conv + (1 << 8 * num_bytes)) % (1 << 8 * num_bytes))[2:]
 
-    def hex_to_int16(self,h16):
+    def hex_to_int16(self, h16) -> int:
         return struct.unpack("<h", struct.pack("H", int("0x" + h16.hex(), 16)))[0]
 
-    def hex_to_uint16(self, h16):
+    def hex_to_uint16(self, h16) -> int:
         return struct.unpack("<H",struct.pack("H",int("0x" + h16.hex(),16)))[0]
 
-    def hex_to_int32(self, h32):
+    def hex_to_int32(self, h32) -> int:
         return struct.unpack("<i", struct.pack("I", int("0x" + h32.hex(), 16)))[0]
 
-    def hex_to_uint32(self, h32):
+    def hex_to_uint32(self, h32) -> int:
         return struct.unpack("<I", struct.pack("I",int("0x" + h32.hex(), 16)))[0]
 
-    def hex_to_float32(self, h32):
+    def hex_to_float32(self, h32) -> float:
         return struct.unpack("<f", struct.pack("I", int("0x" + h32.hex(), 16)))[0]
 
-    def hex_to_float64(self, h64):
+    def hex_to_float64(self, h64) -> float:
         return struct.unpack("<d", struct.pack("Q",int("0x" + h64.hex(), 16)))[0]
 
-    def float32_to_hex(self, f32):
-        if(f32 == 0): return "00000000"                                         # workaround for zero. look into this later
-        return hex(struct.unpack('<I', struct.pack('<f', f32))[0])[2:]          # float32 to hex
+    def float32_to_hex(self, f32: float) -> str:
+        if(f32 == 0): return "00000000"
+        return hex(struct.unpack("<I", struct.pack("<f", f32))[0])[2:]
 
-    def float64_to_hex(self, f64):
+    def float64_to_hex(self, f64: float) -> str:
         if(f64 == 0): return "0000000000000000"
         return hex(struct.unpack('<Q', struct.pack('<d', f64))[0])[2:]
 
-    def string_to_hex(self, string: str):
+    def string_to_hex(self, string: str) -> str:
         return string.encode('utf-8').hex()
 
-    def make_header(self, command_name: str, body_size: int, resp = True):
+    def make_header(self, command_name: str, body_size: int, resp = True) -> str:
         hex_rep = command_name.encode('utf-8').hex()                            # command name
         hex_rep += "{0:#0{1}}".format(0,(64 - len(hex_rep)))                    # command name (fixed 32)
         hex_rep += self.to_hex(body_size, 4)                                    # Body size (fixed 4)
@@ -64,7 +64,7 @@ class NanonisHardware:
 
 
 
-    def configure(self, hw_config) -> None:
+    def configure(self, hw_config: dict[str, object] = {}) -> None:
         """
         Extract the IP, port and version from the provided hardware dict
         """
@@ -76,6 +76,7 @@ class NanonisHardware:
 
         if "nanonis" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["nanonis"], dict): nn_config = hw_config.get("nanonis")
         else: nn_config = hw_config
+        assert isinstance(nn_config, dict)
 
         ip_tags = ["tcp_ip", "ip", "ip_address", "nanonis_ip"]
         port_tags = ["tcp_port", "port", "nanonis_port"]
@@ -90,7 +91,7 @@ class NanonisHardware:
 
     def prepare_headers(self) -> dict:
         make_header = self.conv.make_header
-
+        
         headers = {
             # Auto Approach
             "auto_approach": make_header('AutoApproach.OnOffSet', body_size = 2),
@@ -222,25 +223,23 @@ class NanonisHardware:
 
         return headers
 
-    def send_command(self, message) -> None:
+    def send_command(self, message: str) -> int:
         return self.s.send(bytes.fromhex(message))
 
-    def receive_response(self, error_index: int = -1, keep_header: bool = False) -> str:
+    def receive_response(self, error_index: int = -1, keep_header: bool = False) -> bytes:
         response = self.s.recv(self.max_buf_size)
                 
         body_size = self.conv.hex_to_int32(response[32 : 36])
         while(True): 
-            if(len(response) == body_size + 40): break                          # body_size + header size (40)
+            if(len(response) == body_size + 40): break
             response += self.s.recv(self.max_buf_size)
-
-        if(error_index > -1): self.check_error(response[40:], error_index)      # error_index < 0 skips error check
         
-        if(not keep_header):
-            return response[40:]                                                # Header is fixed to 40 bytes - drop it
+        if error_index > -1: self.check_error(response[40:], error_index)
         
+        if not keep_header: return response[40:]        
         return response
     
-    def check_error(self, response: str, error_index: int = 0) -> None:
+    def check_error(self, response: bytes, error_index: int = 0) -> None:
         """
         Checks the response from nanonis for error messages
 
@@ -282,9 +281,7 @@ class NanonisHardware:
                 # old protocol has no code or size prefix — remainder is message
                 error_description = response[i:].decode(errors = 'replace')
                 raise Exception(error_description)
-
             return
-                               # raise the exception
 
     def check_version(self) -> None:
         try: self.get_signals_in_slots()
@@ -304,9 +301,9 @@ class NanonisHardware:
         self.s.close()
         sleep(.05) # Give time to properly close the socket
 
-    def __enter__(self) -> None:
+    def __enter__(self) -> bool | Exception:
         return self.link()
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         return self.unlink()
 
@@ -324,41 +321,63 @@ class NanonisHardware:
 
     # Util
     def get_path(self) -> str:
+        """
+        Get the path of the session folder
+
+        Returns:
+            str: Session folder path
+        """
         command = self.headers["get_path"]
         self.send_command(command)
         
         response = self.receive_response()
         
         session_path_size = self.conv.hex_to_int32(response[0 : 4])
-        session_path = response[4 : 4 + session_path_size].decode()
-        
+        session_path = response[4 : 4 + session_path_size].decode()        
         return session_path
     
     # Bias
     def get_V(self) -> float:
+        """
+        Get the Nanonis bias in V
+
+        Returns:
+            float: bias voltage
+        """
         command = self.headers["get_V"]        
         self.send_command(command)
         
         response = self.receive_response(4)        
-        bias = self.conv.hex_to_float32(response[0 : 4])
-        
+        bias = self.conv.hex_to_float32(response[0 : 4])        
         return bias
 
     def set_V(self, V: float) -> None:
+        """
+        Set the Nanonis bias in V
+
+        Args:
+            V (float): bias voltage
+        """
         command = self.headers["set_V"] + self.conv.float32_to_hex(V)
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     def pulse(self, V_pulse: float, t_pulse_ms: float, wait: bool = True) -> None:
+        """
+        Execute a voltage pulse
+
+        Args:
+            V_pulse (float): Pulse voltage
+            t_pulse_ms (float): Pulse time
+            wait (bool, optional): Whether to block script execution until the pulse is finished. Defaults to True.
+        """
         command = self.headers["pulse"] + self.headers[str(wait)] + self.conv.float32_to_hex(t_pulse_ms / 1000)
         command += self.conv.float32_to_hex(V_pulse) + self.conv.to_hex(1, 2) + self.conv.to_hex(0, 2)
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     # BiasSpectr
@@ -530,7 +549,7 @@ class NanonisHardware:
         
         return sts_parameters
 
-    def get_sts_channels(self) -> list:
+    def get_sts_channels(self) -> list[int]:
         """
         Returns the list of recorded channels in Bias Spectroscopy
 
@@ -555,83 +574,105 @@ class NanonisHardware:
         for i in range(number_of_channels):
             channel_index = self.conv.hex_to_int32(response[idx : idx + 4])
             channel_indices.append(channel_index)
-            idx += 4
-        
+            idx += 4        
         return channel_indices
 
 
 
     # Folme
-    def get_xy(self, wait: bool = True) -> str:
+    def get_xy(self, wait: bool = True) -> bytes:
+        """
+        Get the (x, y)-position of the tip as a bare bytes object
+        
+        Args:
+            wait (bool, optional):Defaults to True.
+
+        Returns:
+            bytes: Position
+        """
         command = self.headers["get_xy"] + self.headers[str(wait)]
         self.send_command(command)
-        response = self.receive_response(16)
-        
+        response = self.receive_response(16)        
         return response
     
-    def get_xy_nm(self, wait: bool = True) -> list:
+    def get_xy_nm(self, wait: bool = True) -> list[float]:
+        """
+        Get the (x, y)-position of the tip in nm
+
+        Args:
+            wait (bool, optional): _description_. Defaults to True.
+
+        Returns:
+            list: _description_
+        """
         xy = self.get_xy(wait = wait)
         x = self.conv.hex_to_float64(xy[0 : 8]) * 1E9
         y = self.conv.hex_to_float64(xy[8 : 16]) * 1E9
         return [x, y]
     
     def set_xy(self, xy_hex: str, wait: bool = False) -> None:
+        """
+        Set the tip position from a hexadecimal string
+
+        Args:
+            xy_hex (str): hex value of the (x, y)-position
+            wait (bool, optional): Defaults to False.
+        """
         command = self.headers["set_xy"] + xy_hex + self.headers[str(wait)]
 
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     def set_xy_nm(self, xy_nm: list, wait: bool = False) -> None:
+        """
+        Set the tip position from a list [x_nm, y_nm]
+
+        Args:
+            xy_nm (list): tip position
+            wait (bool, optional): Defaults to False.
+        """
         [x_hex, y_hex] = [self.conv.float64_to_hex(dim * 1E-9) for dim in xy_nm]
         xy_hex = x_hex + y_hex
         
-        self.set_xy(xy_hex, wait = wait)
-        
+        self.set_xy(xy_hex, wait = wait)        
         return
 
-    def get_v_xy(self) -> str:
+    def get_v_xy(self) -> bytes:
         command = self.headers["get_v_xy"]
         
         self.send_command(command)
-        response = self.receive_response(8)
-        
+        response = self.receive_response(8)        
         return response
 
     def get_v_xy_nm_per_s(self) -> float:
         speed_hex = self.get_v_xy()
-        speed = self.conv.hex_to_float32(speed_hex[0 : 4]) * 1E9
-        
+        speed = self.conv.hex_to_float32(speed_hex[0 : 4]) * 1E9        
         return speed
 
     def set_v_xy(self, v_xy_hex: str) -> None:
         command = self.headers["set_v_xy"] + v_xy_hex + self.headers["True"]
         self.send_command(command)
         self.receive_response(0)
-
         return
         
     def set_v_xy_nm_per_s(self, v_xy_nm_per_s: float) -> None:
         v_xy_hex = self.conv.float32_to_hex(v_xy_nm_per_s * 1E-9)
-        self.set_v_xy(v_xy_hex)
-        
+        self.set_v_xy(v_xy_hex)        
         return 
 
 
 
     # Current
-    def get_I(self) -> str:
+    def get_I(self) -> bytes:
         command = self.headers["get_I"]
         self.send_command(command)
-        response = self.receive_response(4)
-        
+        response = self.receive_response(4)        
         return response[0 : 4]
 
     def get_I_pA(self) -> float:
         current = self.get_I()
-        I_pA = self.conv.hex_to_float32(current) * 1E12
-        
+        I_pA = self.conv.hex_to_float32(current) * 1E12        
         return I_pA
 
     def get_I_gain(self) -> dict:
@@ -674,41 +715,48 @@ class NanonisHardware:
 
 
     # ZController
-    def get_z(self) -> str:
+    def get_z(self) -> bytes:
         command = self.headers["get_z"]
         self.send_command(command)
         
         response = self.receive_response(4)
         z = response[0 : 4]        
-        
         return z
 
     def get_z_nm(self) -> float:
         z = self.get_z()
-        z_nm = self.conv.hex_to_float32(z) * 1E9
-        
+        z_nm = self.conv.hex_to_float32(z) * 1E9        
         return z_nm
 
     def set_z(self, z_hex: str) -> None:
+        """
+        Set the tip height
+
+        Args:
+            z_hex (str): hex string
+        """
         command = self.headers["set_z"] + z_hex
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
     
     def set_z_nm(self, z_nm: float) -> None:
+        """
+        Set the tip height
+
+        Args:
+            z_nm (str): tip height in nm
+        """
         z_hex = self.conv.float32_to_hex(z_nm * 1E-9)
-        self.set_z(z_hex)
-        
+        self.set_z(z_hex)        
         return
 
     def set_fb(self, status: bool = True) -> None:
         command = self.headers["set_fb"] + self.headers[str(status)]
         
-        self.send_command(command)        
-        self.receive_response(0)
-        
+        self.send_command(command)
+        self.receive_response(0)        
         return
     
     def get_fb(self) -> bool:
@@ -716,16 +764,14 @@ class NanonisHardware:
         
         self.send_command(command)
         response = self.receive_response(4)
-        z_status = bool(self.conv.hex_to_uint32(response[0 : 4]))
-        
+        z_status = bool(self.conv.hex_to_uint32(response[0 : 4]))        
         return z_status
 
-    def get_I_fb(self) -> str:
+    def get_I_fb(self) -> bytes:
         command = self.headers["get_I_fb"]
         
         self.send_command(command)
-        response = self.receive_response(4)
-        
+        response = self.receive_response(4)        
         return response[0 : 4]
     
     def get_I_fb_pA(self) -> float:
@@ -738,14 +784,12 @@ class NanonisHardware:
         command = self.headers["set_I_fb"] + setpoint_hex
         
         self.send_command(command)        
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     def set_I_fb_pA(self, setpoint_pA: float = 0) -> None:
         setpoint_hex = self.conv.float32_to_hex(setpoint_pA * 1E-12)
         self.set_I_fb(setpoint_hex)
-
         return
 
     def get_gains(self) -> dict:
@@ -761,9 +805,8 @@ class NanonisHardware:
         parameters = {
             "p_gain (pm)": p_gain * 1E12,
             "t_const (us)": t_const * 1E6,
-            "i_gain (nm/s)": i_gain * 1E9            
-        }
-        
+            "i_gain (nm/s)": i_gain * 1E9
+        }        
         return parameters
 
     def set_gains(self, gains: dict) -> None:
@@ -787,32 +830,28 @@ class NanonisHardware:
         command = self.headers["set_gains"] + p_gain_hex + t_const_hex + i_gain_hex
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
-    def get_z_limits(self) -> str:
+    def get_z_limits(self) -> bytes:
         command = self.headers["get_z_limits"]
         self.send_command(command)
         
-        response = self.receive_response(8)
-        
+        response = self.receive_response(0)        
         return response[0 : 8]
     
-    def get_z_limits_nm(self) -> list:
+    def get_z_limits_nm(self) -> list[float]:
         limits_hex = self.get_z_limits()
         
         z_max_nm = self.conv.hex_to_float32(limits_hex[0 : 4]) * 1E9
-        z_min_nm = self.conv.hex_to_float32(limits_hex[4 : 8]) * 1E9
-        
+        z_min_nm = self.conv.hex_to_float32(limits_hex[4 : 8]) * 1E9        
         return [z_min_nm, z_max_nm]
 
-    def withdraw(self, wait: bool = True, timeout: int = 60000) -> None:
-        command = self.headers["withdraw"] + self.headers[str(wait)] + self.conv.to_hex(timeout, 4)
+    def withdraw(self, wait: bool = True, timeout_ms: int = 60000) -> None:
+        command = self.headers["withdraw"] + self.headers[str(wait)] + self.conv.to_hex(timeout_ms, 4)
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     def get_z_controllers(self) -> tuple[list, str]:
@@ -820,18 +859,21 @@ class NanonisHardware:
         response = self.receive_response()
         
         n_controllers = self.conv.hex_to_int16(response[4 : 8])
-        if n_controllers < 1: return [[], -1]
+        if n_controllers < 1: return ([], "")
+        assert isinstance(n_controllers, int)
         
-        idx = 8
-        controllers = []
-        for _ in range(n_controllers):
+        idx: int = 8
+        controllers: list[str] = []
+        
+        for _ in range(n_controllers):            
             size = self.conv.hex_to_int16(response[idx : idx + 4])
-            controllers.append(response[idx + 4 : idx + 4 + size].decode())
+            controller_name = response[idx + 4 : idx + 4 + size]
+            controllers.append(controller_name.decode())
             idx += size + 4
         
         active_controller_index = self.conv.hex_to_int32(response[idx : idx + 4])
         active_controller = controllers[active_controller_index]        
-        return [controllers, active_controller]
+        return (controllers, active_controller)
 
     def set_z_controller(self, index: int) -> None:
         self.send_command(self.headers["set_z_controller"] + self.conv.to_hex(index, 4))
@@ -854,8 +896,7 @@ class NanonisHardware:
         lock_param = self.conv.hex_to_uint16(response[16 : 18])
         v_ratio = self.conv.hex_to_float32(response[18 : 22])
         
-        speeds = {"v_fwd (nm/s)": v_fwd * 1E9, "v_bwd (nm/s)": v_bwd * 1E9, "t_fwd (s)": t_fwd, "t_bwd (s)": t_bwd, "lock_v_or_t": lock_param, "v_ratio": v_ratio}
-        
+        speeds = {"v_fwd (nm/s)": v_fwd * 1E9, "v_bwd (nm/s)": v_bwd * 1E9, "t_fwd (s)": t_fwd, "t_bwd (s)": t_bwd, "lock_v_or_t": lock_param, "v_ratio": v_ratio}        
         return speeds
 
     def set_v_scan(self, speeds: dict = {}) -> None:
@@ -863,9 +904,9 @@ class NanonisHardware:
         
         # Get current parameters
         speeds_0 = self.get_v_scan()
-        [v_fwd_nm_per_s_0, v_bwd_nm_per_s_0, lock_param_0] = [speeds_0.get(key, None) for key in ["v_fwd (nm/s)", "v_bwd (nm/s)", "lock_v_or_t"]]
+        [v_fwd_nm_per_s_0, v_bwd_nm_per_s_0, lock_param_0] = [speeds_0.get(key, 10.) for key in ["v_fwd (nm/s)", "v_bwd (nm/s)", "lock_v_or_t"]]
         frame = self.get_scan_frame_nm()
-        frame_width_nm = frame.get("width (nm)")
+        frame_width_nm = frame.get("width (nm)", 10.)
         
         if t_fwd_s: # If the forward time is given but not the forward speed, then
             v_fwd_nm_per_s = frame_width_nm / t_fwd_s # calculate the forward speed accordingly (time takes precedence over speed if both are given)
@@ -892,15 +933,13 @@ class NanonisHardware:
         
         self.send_command(command)
         self.receive_response(0)
-
         return
 
-    def get_scan_frame(self) -> str:
+    def get_scan_frame(self) -> bytes:
         command = self.headers["get_scan_frame"]
         
         self.send_command(command)
-        response = self.receive_response(20)
-        
+        response = self.receive_response(20)        
         return response
     
     def get_scan_frame_nm(self) -> dict:
@@ -920,25 +959,24 @@ class NanonisHardware:
         command = self.headers["set_scan_frame"] + frame_hex
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
     
     def set_scan_frame_nm(self, frame: dict) -> None:
         if "domain (nm)" in frame.keys():
-            [w_nm, h_nm] = frame.get("domain (nm)")
+            [w_nm, h_nm] = frame["domain (nm)"]
         elif "scan_range (nm)" in frame.keys():
-            [w_nm, h_nm] = frame.get("scan_range (nm)")
+            [w_nm, h_nm] = frame["scan_range (nm)"]
         elif "size (nm)" in frame.keys():
-            [w_nm, h_nm] = frame.get("size (nm)")
+            [w_nm, h_nm] = frame["size (nm)"]
         elif "width (nm)" in frame.keys():
-            w_nm = frame.get("width (nm)")
+            w_nm = frame["width (nm)"]
             h_nm = frame.get("height (nm)", w_nm)
         
         if "center (nm)" in frame.keys():
-            [x_nm, y_nm] = frame.get("center (nm)")
+            [x_nm, y_nm] = frame["center (nm)"]
         elif "offset (nm)" in frame.keys():
-            [x_nm, y_nm] = frame.get("offset (nm)")
+            [x_nm, y_nm] = frame["offset (nm)"]
         elif "x (nm)" in frame.keys():
             x_nm = frame.get("x (nm)", 0)
             y_nm = frame.get("y (nm)", x_nm)
@@ -977,11 +1015,10 @@ class NanonisHardware:
         pixel_ratio = lines / pixels
         size = lines * pixels
         
-        parameters = {"num_channels": num_channels, "channel_indices": channel_indices, "pixels": pixels, "lines": lines, "pixel_ratio": pixel_ratio, "size": size}
-        
+        parameters = {"num_channels": num_channels, "channel_indices": channel_indices, "pixels": pixels, "lines": lines, "pixel_ratio": pixel_ratio, "size": size}        
         return parameters
 
-    def set_scan_buffer(self, channel_indices = None, pixels = None, lines = None) -> None:
+    def set_scan_buffer(self, channel_indices: list = [], pixels: int | None = None, lines: int | None = None) -> None:
         """
         Configures the scan buffer parameters
 
@@ -1002,6 +1039,7 @@ class NanonisHardware:
         """
         old_parameters = self.get_scan_buffer()
         [old_channel_indices, old_pixels, old_lines] = [old_parameters.get(key) for key in ["channel_indices", "pixels", "lines"]]
+        if not old_channel_indices: old_channel_indices = []
         
         if not channel_indices: channel_indices = old_channel_indices
         if not pixels: pixels = old_pixels
@@ -1017,7 +1055,6 @@ class NanonisHardware:
         
         command += self.conv.to_hex(pixels, 4) + self.conv.to_hex(lines, 4)
         self.send_command(command)
-
         self.receive_response(0)
         return
 
@@ -1046,7 +1083,6 @@ class NanonisHardware:
         modules_names = []
             
         parameters = {"continuous": bool(continuous_scan), "bouncy": bool(bouncy_scan), "auto_save": bool(auto_save), "series_name": series_name, "comment": comment, "modules_names": modules_names}
-
         return parameters
 
     def get_scan_data(self, channel_index: int, backward: bool = False) -> dict:
@@ -1087,31 +1123,24 @@ class NanonisHardware:
         scan_direction = self.conv.hex_to_int32(response[index : index + 4])
         scan_direction = ["down", "up"][scan_direction]
         
-        parameters = {"scan_data": scan_data, "channel_name": channel_name, "scan_direction": scan_direction}
-        
+        parameters = {"scan_data": scan_data, "channel_name": channel_name, "scan_direction": scan_direction}        
         return parameters
 
     def start_scan(self, direction: str = "up") -> None:
-        # action_dict = {"start": 0, "stop": 1, "pause" : 2, "resume": 3, "down": 0, "up": 1}
-
         if direction == "up": dir_command = self.conv.to_hex(1, 4)
         else: dir_command = self.conv.to_hex(0, 4)
         command = self.headers["scan_action"] + self.conv.to_hex(0, 2) + dir_command
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     def pause_scan(self) -> None:
-        action_dict = {"start": 0, "stop": 1, "pause" : 2, "resume": 3, "down": 0, "up": 1}
-
         dir_command = self.conv.to_hex(0, 4)
         command = self.headers["scan_action"] + self.conv.to_hex(2, 2) + dir_command
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     def stop_scan(self) -> None:
@@ -1119,8 +1148,7 @@ class NanonisHardware:
         command = self.headers["scan_action"] + self.conv.to_hex(1, 2) + dir_command
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
     def resume_scan(self) -> None:
@@ -1128,14 +1156,13 @@ class NanonisHardware:
         command = self.headers["scan_action"] + self.conv.to_hex(3, 2) + dir_command
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
 
 
     # Signals
-    def get_signals_in_slots(self) -> dict:
+    def get_signals_in_slots(self) -> dict[str, list]:
         command = self.headers["get_signals_in_slots"]
         
         self.send_command(command)
@@ -1158,8 +1185,7 @@ class NanonisHardware:
             signal_index = self.conv.hex_to_int32(response[index : index + 4])
             signal_indices.append(signal_index)
         
-        parameters = {"names": signal_names, "indices": signal_indices}
-            
+        parameters = {"names": signal_names, "indices": signal_indices}            
         return parameters
 
     def set_signal_in_slot(self, slot: int, signal_index: int) -> None:
@@ -1181,7 +1207,7 @@ class NanonisHardware:
         self.receive_response(0)
         return
 
-    def get_signal_names(self) -> list:
+    def get_signal_names(self) -> list[str]:
         command = self.headers["get_signal_names"]
         
         self.send_command(command)
@@ -1196,8 +1222,7 @@ class NanonisHardware:
             idx += 4
             signal_name = response[idx:idx+size].decode()
             idx += size
-            signal_names.append(signal_name)
-        
+            signal_names.append(signal_name)        
         return signal_names
 
     def get_signal_value(self, signal_index: int, wait: bool = True) -> float:
@@ -1207,7 +1232,6 @@ class NanonisHardware:
         response = self.receive_response(4)
 
         signal_value = float(self.conv.hex_to_float32(response[0 : 4]))
-
         return signal_value        
 
 
@@ -1218,8 +1242,7 @@ class NanonisHardware:
         self.send_command(command)
         response = self.receive_response(8)
 
-        result = {"f_motor (Hz)": self.conv.hex_to_float32(response[0 : 4]), "V_motor (V)": self.conv.hex_to_float32(response[4 : 8])}
-        
+        result = {"f_motor (Hz)": self.conv.hex_to_float32(response[0 : 4]), "V_motor (V)": self.conv.hex_to_float32(response[4 : 8])}        
         return result
         
     def set_motor_f_A(self, parameters: dict) -> None:
@@ -1236,11 +1259,9 @@ class NanonisHardware:
         parameters = old_parameters
         if "axis" not in parameters.keys(): parameters.update({"axis": 0})
 
-        command = self.headers["set_motor_f_A"] + self.conv.float32_to_hex(parameters.get("f_motor (Hz)")) + self.conv.float32_to_hex(parameters.get("V_motor (V)")) + self.conv.to_hex(parameters.get("axis", 0), 2)
-        self.send_command(command)
-        
-        self.receive_response(0)
-        
+        command = self.headers["set_motor_f_A"] + self.conv.float32_to_hex(parameters.get("f_motor (Hz)", 1000)) + self.conv.float32_to_hex(parameters.get("V_motor (V)", 120)) + self.conv.to_hex(parameters.get("axis", 0), 2)
+        self.send_command(command)        
+        self.receive_response(0)        
         return
 
     def coarse_move(self, parameters: dict = {}, wait: bool = True) -> None:
@@ -1264,39 +1285,35 @@ class NanonisHardware:
         command = self.headers["coarse_move"] + self.conv.to_hex(direction_int, 4) + self.conv.to_hex(steps_int, 2) + self.conv.to_hex(group, 4) + self.headers[str(wait)]
         
         self.send_command(command)
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return
 
 
 
     # Piezo
-    def get_xyz_range(self) -> str:
+    def get_xyz_range(self) -> bytes:
         command = self.headers["get_range"]
         
         self.send_command(command)
-        response = self.receive_response(12)
-        
+        response = self.receive_response(12)        
         return response
 
-    def get_xyz_range_nm(self) -> list:
+    def get_xyz_range_nm(self) -> list[float]:
         range_str = self.get_xyz_range()
 
         xyz_nm = [self.conv.hex_to_float32(range_str[i : i + 4]) * 1E9 for i in range(0, 12, 4)]
-
         return xyz_nm
 
-    def get_tilt(self) -> list:
+    def get_tilt(self) -> list[float]:
         command = self.headers["get_tilt"]
         self.send_command(command)
         
         response = self.receive_response(8)        
         x_tilt = self.conv.hex_to_float32(response[0 : 4])
-        y_tilt = self.conv.hex_to_float32(response[4 : 8])
-        
+        y_tilt = self.conv.hex_to_float32(response[4 : 8])        
         return [x_tilt, y_tilt]
     
-    def set_tilt(self, x_tilt: float = None, y_tilt: float = None) -> None:
+    def set_tilt(self, x_tilt: float | None = None, y_tilt: float | None = None) -> None:
         current_tilt = self.get_tilt()
         if not x_tilt: x_tilt = current_tilt[0]
         if not y_tilt: y_tilt = current_tilt[1]
@@ -1331,8 +1348,7 @@ class NanonisHardware:
         
         parameter_dict = {"switch_off_delay (s)": switch_off_delay_s, "change_bias": change_bias, "poke_bias (V)": poke_bias_V, "poke_depth (nm)": poke_depth_nm,
                           "poke_time (s)": poke_time_s, "lift_bias (V)": lift_bias_V, "bias_settling_time (s)": bias_settling_time_s, "lift_height (nm)": lift_height_nm,
-                          "lift_time (s)": lift_time_s, "end_wait_time (s)": end_wait_time_s, "restore_feedback": restore_feedback}
-        
+                          "lift_time (s)": lift_time_s, "end_wait_time (s)": end_wait_time_s, "restore_feedback": restore_feedback}        
         return parameter_dict
 
     def set_tip_shaper(self, parameters: dict) -> dict:
@@ -1356,8 +1372,7 @@ class NanonisHardware:
         command += self.conv.to_hex(int(parameters["restore_feedback"]), 4)
         
         self.send_command(command)        
-        self.receive_response(0)
-        
+        self.receive_response(0)        
         return parameters
 
     def shape_tip(self, wait: bool = True, timeout_s = 60) -> None:
@@ -1372,7 +1387,6 @@ class NanonisHardware:
             self.receive_response(0)
         finally:
             self.s.settimeout(timeout_old)
-
         return
 
 
@@ -1383,16 +1397,14 @@ class NanonisHardware:
         
         self.send_command(command)
         response = self.receive_response()
-        lockin_onoff = bool(self.conv.hex_to_uint32(response[0 : 4]))
-        
+        lockin_onoff = bool(self.conv.hex_to_uint32(response[0 : 4]))        
         return lockin_onoff
 
-    def set_mod_on(self, mod_number: int = 1, on: bool = True) -> None:
+    def set_mod_on(self, mod_number: int = 1, on: bool = True) -> bytes:
         command = self.headers["set_mod"] + self.conv.to_hex(mod_number, 4) + self.conv.to_hex(int(on), 4)
         
         self.send_command(command)
-        response = self.receive_response(0)
-        return
+        return self.receive_response(0)
 
     def get_mod_signal(self, mod_number: int = 1) -> None:
         command = self.headers["get_mod_signal"] + self.conv.to_hex(mod_number, 4)
@@ -1402,7 +1414,7 @@ class NanonisHardware:
         signal_index = self.conv.hex_to_uint32(response[0 : 4])        
         return signal_index
 
-    def set_mod_signal(self, mod_number: int = 1, signal_index: int = 0) -> None:
+    def set_mod_signal(self, mod_number: int = 1, signal_index: int = 0) -> bytes:
         """
         Selects the modulated signal of the specified Lock-In modulator.
 
@@ -1418,8 +1430,7 @@ class NanonisHardware:
         """
         command = self.headers["set_mod_signal"] + self.conv.to_hex(mod_number, 4) + self.conv.to_hex(signal_index, 4)
         self.send_command(command)
-        self.receive_response(0)
-        return
+        return self.receive_response(0)
 
     def get_mod_amp(self, mod_number: int = 1) -> float:
         command = self.headers["get_mod_amp"] + self.conv.to_hex(mod_number, 4)

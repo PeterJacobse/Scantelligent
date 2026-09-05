@@ -1,4 +1,6 @@
-from typing import Any, List, Union
+import inspect
+from types import UnionType
+from typing import Any, List, Union, get_origin
 
 
 
@@ -13,8 +15,10 @@ def put_kwargs_in_dict(dictionary: dict = {}, kwargs_dict: dict[str, tuple[objec
         kwargs_dict (dict[str, tuple[object, object]], optional): Dictionary of replacements. Defaults to {}.
     """        
     for key, value in kwargs_dict.items():
-        if isinstance(value, tuple) and len(value) > 1 and isinstance(value[1], type) and isinstance(value[0], value[1]): dictionary.update({key: value[0]})
-    return None
+        if not isinstance(value, tuple) or len(value) < 2: continue
+        if isinstance(value[1], UnionType) or get_origin(value[1]) is Union or inspect.isclass(value[1]):
+            if isinstance(value[0], value[1]): dictionary.update({key: value[0]})
+    return
 
 def get_parameters_from_tags(parameters: dict[str, object], tags: Union[List[str], List[List[str]]] | None = None) -> List[Any]:
     """

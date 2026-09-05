@@ -9,23 +9,6 @@ from functools import wraps
 
 
 
-def get_parameters_from_tags(parameters: dict, tags: list = [[]]) -> list:
-    if len(tags) < 1: return []
-    if not isinstance(tags[0], list): tags = [tags]
-    if not isinstance(tags[0][0], str):
-        print("Invalid tags provided to get_parameters_from_tags")
-        return []
-    
-    output_parameters = []
-    for tag_list in tags:
-        lowercase_list = [tag.lower() for tag in tag_list]
-        parameter_value = next((value for key, value in parameters.items() if value.lower() in lowercase_list), None)
-        output_parameters.append(parameter_value)
-
-    return output_parameters
-
-
-
 class NanonisUpdate:
     def __init__(self, parent, instance_name: str = "nanonis_update"):
         self.nn: NanonisAPI = parent
@@ -68,36 +51,63 @@ class NanonisUpdate:
 
 
     @connection_control
-    def bias(self, parameters: dict = {}, *, V: float | int | None = None, verbose: bool = True) -> tuple[dict, bool | str]:
-        # Initalize outputs
-        error = False
+    def bias(self, parameters: dict = {}, *, V: float | int | None = None, dV_mV: float | int | None = None, dt_ms: float | int | None = None, dz_nm: float | int | None = 1, verbose: bool = True) -> tuple[dict, str]:
+        """
+        Returns the DC bias value, and optionally slews it to a new value.
+
+        Args:
+            parameters (dict, optional): Dictionary containing parameter values. Recognized entries are 'V (V)', 'dV (mV)', 'dt (ms)', and 'dz (nm)'. Defaults to {}.
+            V (float | int | None, optional): Bias voltage. Defaults to None (read only).
+            dV_mV (float | int | None, optional): Slew voltage step. When set, it overrides the value in the parameters dict. Default value when provided neither here or in the parameters dict: 10 mV per step.
+            dt_ms (float | int | None, optional): Slew step time. When set, it overrides the value in the parameters dict. Default value when provided neither here or in the parameters dict: 5 ms per step.
+            dz_nm (float | int | None, optional): Relative height to transiently retract the tip to when slewing to a different voltage polarity while in feedback. Defaults to 1 nm.            
+            verbose (bool, optional): Whether or not to print the resulting output dictionary to the terminal. Default: True.
+
+        Returns:
+            tuple[dict, str]: Updated parameters dictionary containing the new bias values, and an error message if anything went wrong
+
+        Args:
+            parameters (dict, optional): _description_. Defaults to {}.
+            V (float | int | None, optional): _description_. Defaults to None.
+
+
+        Returns:
+            tuple[dict, str]: _description_
+        """
+
+        error: str = ""        
+        output_dict: dict[str, object] = {"dict_name": "bias"}
         nhw = self.nn.nanonis_hardware
 
-        # Extract parameters from the dictionary
-        dt = next((value for key, value in parameters.items() if key.lower() in dt_tags), 5) / 1000
-        dt = parameters.get("dt_nanonis (ms)", 5) / 1000
-        dV = parameters.get("dV_nanonis (mV)", 10) / 1000
-        dz_nm = parameters.get("dz_nanonis (nm)", 1)
-        [V0, dt0, dV0, dz_nm0] = get_parameters_from_tags(parameters, [["V", "V (V)", "V_nanonis", "V_nanonis (V)", "bias", "bias (V)"], ["dt", "dt (ms)", "dt_nanonis", "dt_nanonis (ms)"], ["dV", "dV (mV)", "dV_nanonis", "dV_nanonis (mV)"], ["dz", "dz (nm)", "dz_nanonis", "dz_nanonis (nm)"]])
-        if not isinstance(V, float | int): V = V0
-        
-        bias_dict = {"dV_nanonis (mV)": dV * 1000, "dt_nanonis (ms)": dt * 1000, "dz_nanonis (nm)": dz_nm, "dict_name": "bias"}
-
         try:
+            # Read input values
+            put_kwargs_in_dict(parameters, {"V (V)": (V, float | int), "dt (ms)": (dt_ms, float | int), "dV (mV)": (dV_mV, float | int), "dz (nm)": (dz_nm, float | int)})
+            
+            # Extract parameters
+            [V, dt_ms, dV_mV, dz_nm] = get_parameters_from_tags(parameters, [["V", "V_V", "V (V)", "V_nanonis", "V_nanonis (V)", "bias", "bias_V", "bias (V)"], ["dt", "dt_ms", "dt (ms)", "dt_nanonis", "dt_nanonis (ms)"],
+                                                                             ["dV", "dV_mV", "dV (mV)", "dV_nanonis", "dV_nanonis (mV)"], ["dz", "dz_nm", "dz (nm)", "dz_nanonis", "dz_nanonis (nm)"]])
+            if not isinstance(dt_ms, float | int): dt_ms = 5
+            if not isinstance(dV_mV, float | int): dV_mV = 10
+            if not isinstance(dz_nm, float | int): dz_nm = 1
+            dt_s = dt_ms / 1000
+            dV_V = dV_mV / 1000
+            output_dict.update({"dV (mV)": dV_V, "dt (ms)": dt_ms, "dz (nm)": dz_nm})
+            
+            # Announce            
             V_old = nhw.get_V() # Read data from Nanonis
             if not isinstance(V, float | int): V = V_old # V not provided; substitute the old bias
-            bias_dict.update({"V_nanonis (V)": V})
-            if np.abs(V - V_old) < dV:
-                self.nn.parameters.emit(bias_dict)
-                if verbose: self.nn.logprint(f"{bias_dict}", message_type = "result")
-                return (bias_dict, error) # If the bias is unchanged, don't slew it
+            output_dict.update({"V (V)": V})
+            if np.abs(V - V_old) < dV_V:
+                self.nn.parameters.emit(output_dict)
+                if verbose: self.nn.logprint(f"{output_dict}", message_type = "result")
+                return output_dict, error # If the bias is unchanged, don't slew it
 
             feedback = nhw.get_fb()
             tip_height = nhw.get_z_nm()
             polarity_difference = np.sign(V) * np.sign(V_old) < 0 # True if the sign changes
             
-            if V > V_old: delta_V = dV # Change the sign of deltaV to get the arange right
-            else: delta_V = -dV
+            if V > V_old: delta_V = dV_V # Change the sign of deltaV to get the arange right
+            else: delta_V = -dV_V
             slew = np.arange(V_old, V + delta_V, delta_V)
 
             if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
@@ -106,48 +116,49 @@ class NanonisUpdate:
                 nhw.set_z_nm(tip_height + dz_nm)
 
             for V_t in slew: # Perform the slew to the new bias voltage
-                nhw.set_V(V_t)
-                time.sleep(dt)
+                nhw.set_V(float(V_t))
+                time.sleep(dt_s)
         
             if bool(feedback) and bool(polarity_difference):
                 nhw.set_fb(True) # Turn the feedback back on
             
-            self.nn.parameters.emit(bias_dict)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{bias_dict}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as error:
-            pass
-        
-        return (bias_dict, error)
+        except Exception as e:
+            error = str(e)        
+        return output_dict, error
 
     @connection_control
-    def session_path(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
-        session_path = {"dict_name": "session_path"}
-        error = ""
+    def session_path(self, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        output_dict: dict[str, object] = {"dict_name": "session_path"}
+        error: str = ""
         nhw = self.nn.nanonis_hardware
+        
         try:
             if verbose: self.nn.logprint(f"{self.instance_name}.session_path()", "code")
             if not self.nn.status == "running": self.nn.link()
-            session_path.update({"path": nhw.get_path()})
-            self.nn.parameters.emit(session_path)
-            if verbose: self.nn.logprint(f"{session_path}", message_type = "result")
+            output_dict.update({"path": nhw.get_path()})
+            self.nn.parameters.emit(output_dict)
+            if verbose: self.nn.logprint(f"{output_dict}", message_type = "result")
         except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return session_path, error
+        return output_dict, error
 
     @connection_control
-    def scan(self, channel: int | str, backward: bool = False, emit_image: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, str]:
-        scan_data = None
-        error = False
+    def scan(self, channel: int | str, backward: bool = False, *, emit_image: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, str]:
+        error: str = ""
         nhw = self.nn.nanonis_hardware
-        scan_image = None
+        
+        scan_data = None
+        scan_image = np.zeros((2, 2))
 
         try:
             if verbose: self.nn.logprint(f"{self.instance_name}.scan(channel_index = {channel}, backward = {backward})", "code")
             if isinstance(channel, str):
-                (metadata, _) = self.nn.update.scan_metadata(verbose = False, unlink = False)
+                metadata, error = self.scan_metadata(verbose = False, unlink = False)
                 channel_dict = metadata.get("channel_dict")
                 channel_index = channel_dict.get(channel)
             else:
@@ -155,12 +166,12 @@ class NanonisUpdate:
 
             if not isinstance(channel_index, int):
                 error = "Requested channel not found"
-                return (scan_image, error)
+                return scan_image, error
 
             if not self.nn.status == "running": self.nn.link()
 
             scan_data = nhw.get_scan_data(channel_index, not backward)
-            scan_image = np.flipud(scan_data.get("scan_data"))
+            scan_image = np.flipud(scan_data["scan_data"])
 
             n_scan_image = np.size(scan_image)
             n_nans = np.count_nonzero(np.isnan(scan_image))
@@ -170,26 +181,28 @@ class NanonisUpdate:
 
             if emit_image: self.nn.image.emit(scan_image)
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (scan_image, error)
+        return scan_image, error
 
     @connection_control
-    def signals(self, signals: str | list, samples: int = 1, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
+    def signals(self, signals: str | list, *, samples: int = 1, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "signals"}
         nhw = self.nn.nanonis_hardware
-        parameter_values = {"dict_name": "signals"}
-        signal_dict = {}
-
-        if isinstance(signals, str | int): signals = [signals]
+        
         try:
+            signal_dict = {}
+            if isinstance(signals, str | int): signals = [signals]
+            
+            # Announce
             if verbose: self.nn.logprint(f"{self.instance_name}.signals({signals})", "code")
             if not self.nn.status == "running": self.nn.link()
 
             if name_lookup:
-                (scan_metadata, error) = self.nn.update.scan_metadata(verbose = False, unlink = False)
+                scan_metadata, error = self.scan_metadata(verbose = False, unlink = False)
                 if error: raise Exception(error)
                 signal_dict = scan_metadata.get("signal_dict", {})
 
@@ -197,7 +210,7 @@ class NanonisUpdate:
             for signal in signals:
                 if isinstance(signal, str):
                     if not signal_dict:
-                        (scan_metadata, error) = self.nn.update.scan_metadata(verbose = False, unlink = False)
+                        scan_metadata, error = self.scan_metadata(verbose = False, unlink = False)
                         if error: raise Exception(error)
                         signal_dict = scan_metadata.get("signal_dict", {})
 
@@ -215,7 +228,7 @@ class NanonisUpdate:
                     signal_values[list_index] += float(signal_value / samples)
 
             for signal_index, signal_value, signal in zip(signal_indices, signal_values, signals):
-                if signal_index < 0 or signal_index > 127: parameter_values.update({signal: (-1, 0, "signal not found")})
+                if signal_index < 0 or signal_index > 127: output_dict.update({signal: (-1, 0, "signal not found")})
                 else:
                     if isinstance(signal_dict, dict):
                         signal_name = ""
@@ -223,23 +236,23 @@ class NanonisUpdate:
                             if value == signal_index:
                                 signal_name = key
                                 break
-                        parameter_values.update({signal: (signal_index, signal_value, signal_name)})
-                    else: parameter_values.update({signal: (signal_index, signal_value, "")})
+                        output_dict.update({signal: (signal_index, signal_value, signal_name)})
+                    else: output_dict.update({signal: (signal_index, signal_value, "")})
 
-            self.nn.parameters.emit(parameter_values)
-            if verbose: self.nn.logprint(f"{parameter_values}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose: self.nn.logprint(f"{output_dict}", message_type = "result")
 
         except Exception as e: error = f"Unable to retrieve the requested parameters. {e}"
         finally:
             if unlink: self.nn.unlink()
 
-        return (parameter_values, error)
+        return output_dict, error
 
     @connection_control
-    def hardware(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
+    def hardware(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""        
+        output_dict: dict[str, object] = {"dict_name": "hardware"}
         nhw = self.nn.nanonis_hardware
-        hardware_dict = {"dict_name": "hardware"}
 
         try:
             if verbose:
@@ -250,7 +263,7 @@ class NanonisUpdate:
             piezo_range = nhw.get_xyz_range_nm()
             tilt = nhw.get_tilt()
 
-            hardware_dict.update({
+            output_dict.update({
                 "x_min (nm)": -0.5 * piezo_range[0], "x_max (nm)": 0.5 * piezo_range[0],
                 "y_min (nm)": -0.5 * piezo_range[1], "y_max (nm)": 0.5 * piezo_range[1],
                 "z_min (nm)": -0.5 * piezo_range[2], "z_max (nm)": 0.5 * piezo_range[2],
@@ -260,7 +273,7 @@ class NanonisUpdate:
 
             try:
                 current_gain = nhw.get_I_gain()
-                hardware_dict.update(current_gain)
+                output_dict.update(current_gain)
                 if "gain" in parameters.keys():
                     gain = parameters["gain"]
                     if isinstance(gain, int) and gain < len(current_gain["gains"]): nhw.set_I_gain(gain)
@@ -272,36 +285,38 @@ class NanonisUpdate:
 
                     time.sleep(.1)
                     new_gain = nhw.get_I_gain()
-                    hardware_dict.update(new_gain)
+                    output_dict.update(new_gain)
             except:
                 pass
 
-            self.nn.parameters.emit(hardware_dict)
-            if verbose: self.nn.logprint(f"{hardware_dict}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-            self.nn.piezo_range = hardware_dict
+            self.nn.piezo_range = output_dict
 
         except Exception as e: error = e
         finally:
             if unlink: self.nn.unlink()
 
-        return (hardware_dict, error)
+        return output_dict, error
 
     @connection_control
-    def tip(self, parameters: dict = {}, wait: bool = False, fast_mode: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, bool | str]:
-        tip_status = None
-        error = False
+    def tip(self, parameters: dict = {}, *, wait: bool = False, fast_mode: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "tip"}
         nhw = self.nn.nanonis_hardware
+        
         distance_nm = 0
-        z_min = None
-        z_max = None
-
-        [withdraw, feedback, x_nm, y_nm, z_nm, z_rel_nm] = [parameters.get(key, None) for key in ["withdraw", "feedback", "x (nm)", "y (nm)", "z (nm)", "z_rel (nm)"]]
-        if withdraw == None: withdraw = False
-        if x_nm and y_nm: xy_target_nm = [x_nm, y_nm]
-        else: xy_target_nm = None
+        z_min = -100
+        z_max = 100
 
         try:
+            [withdraw, feedback, x_nm, y_nm, z_nm, z_rel_nm] = [parameters.get(key, None) for key in ["withdraw", "feedback", "x (nm)", "y (nm)", "z (nm)", "z_rel (nm)"]]
+            if withdraw == None: withdraw = False
+            if x_nm and y_nm: xy_target_nm = [x_nm, y_nm]
+            else: xy_target_nm = None
+            
+            # Announce
             if verbose:
                 if len(parameters) > 0: self.nn.logprint(f"{self.instance_name}.tip({parameters})", "code")
                 else: self.nn.logprint(f"{self.instance_name}.tip()", "code")
@@ -342,35 +357,35 @@ class NanonisUpdate:
 
                 feedback_new = nhw.get_fb()
 
-            tip_status = {"dict_name": "tip_status", "x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6), "z (nm)": round(z_nm, 6), "I (pA)": round(I_pA, 6)}
-            if not fast_mode: tip_status.update({"location (nm)": [round(x_nm, 6), round(y_nm, 6), round(z_nm, 6)], "z_limits (nm)": [round(z_min, 6), round(z_max, 6)], "feedback": feedback_new, "withdrawn": withdrawn})
+            output_dict.update({"x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6), "z (nm)": round(z_nm, 6), "I (pA)": round(I_pA, 6)})
+            if not fast_mode: output_dict.update({"location (nm)": [round(x_nm, 6), round(y_nm, 6), round(z_nm, 6)], "z_limits (nm)": [round(z_min, 6), round(z_max, 6)], "feedback": feedback_new, "withdrawn": withdrawn})
 
             if wait:
                 while distance_nm > .1:
                     xy_nm = nhw.get_xy_nm()
                     distance_nm = np.linalg.norm(np.array(xy_nm) - np.array(xy_target_nm))
                     [x_nm, y_nm] = xy_nm
-                    tip_status.update({"x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6)})
-                    self.nn.parameters.emit(tip_status)
+                    output_dict.update({"x (nm)": round(x_nm, 6), "y (nm)": round(y_nm, 6)})
+                    self.nn.parameters.emit(output_dict)
                     time.sleep(.05)
 
-            tip_status.update({"x (nm)": round(xy_target_nm[0], 6), "y (nm)": round(xy_target_nm[1], 6)})
-            self.nn.parameters.emit(tip_status)
+            output_dict.update({"x (nm)": round(xy_target_nm[0], 6), "y (nm)": round(xy_target_nm[1], 6)})
+            self.nn.parameters.emit(output_dict)
             self.nn.finished.emit()
 
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{tip_status}", message_type = "result")
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (tip_status, error)
+        return output_dict, error
 
     @connection_control
-    def coarse_parameters(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
+    def coarse_parameters(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""        
+        output_dict: dict[str, object] = {"dict_name": "coarse_parameters"}
         nhw = self.nn.nanonis_hardware
-        motor_dict = {}
 
         try:
             if verbose:
@@ -378,32 +393,31 @@ class NanonisUpdate:
                 else: self.nn.logprint(f"{self.instance_name}.coarse_parameters()", "code")
             if not self.nn.status == "running": self.nn.link()
 
-            motor_dict = nhw.get_motor_f_A()
-            motor_dict.update({"dict_name": "coarse_parameters"})
+            output_dict.update(nhw.get_motor_f_A())
 
-            if "V_motor (V)" in parameters.keys(): motor_dict.update({"V_motor (V)": parameters.get("V_motor (V)")})
-            if "f_motor (Hz)" in parameters.keys(): motor_dict.update({"f_motor (Hz)": parameters.get("f_motor (Hz)")})
+            if "V_motor (V)" in parameters.keys(): output_dict.update({"V_motor (V)": parameters.get("V_motor (V)")})
+            if "f_motor (Hz)" in parameters.keys(): output_dict.update({"f_motor (Hz)": parameters.get("f_motor (Hz)")})
 
-            if "V_motor (V)" in parameters.keys() or "f_motor (Hz)" in parameters.keys(): nhw.set_motor_f_A(motor_dict)
+            if "V_motor (V)" in parameters.keys() or "f_motor (Hz)" in parameters.keys(): nhw.set_motor_f_A(output_dict)
 
-            self.nn.parameters.emit(motor_dict)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{motor_dict}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (motor_dict, error)
+        return output_dict, error
 
     @connection_control
-    def speeds(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
-        speed_parameters = {"dict_name": "speeds"}
+    def speeds(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "speeds"}
         nhw = self.nn.nanonis_hardware
 
-        [v_xy_nm_per_s, v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param] = [parameters.get(key, None) for key in ["v_xy (nm/s)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "lock_v_or_t"]]
-
         try:
+            [v_xy_nm_per_s, v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param] = [parameters.get(key, None) for key in ["v_xy (nm/s)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "lock_v_or_t"]]
+            
             if verbose:
                 if len(parameters) > 0: self.nn.logprint(f"{self.instance_name}.scan_speeds({parameters})", "code")
                 else: self.nn.logprint(f"{self.instance_name}.scan_speeds()", "code")
@@ -415,24 +429,24 @@ class NanonisUpdate:
             if len(new_speed_dict) > 0: nhw.set_v_scan(new_speed_dict)
 
             speed_dict = nhw.get_v_scan()
-            speed_parameters.update(speed_dict)
+            output_dict.update(speed_dict)
 
             v_xy_nm_per_s = nhw.get_v_xy_nm_per_s()
-            speed_parameters.update({"v_xy (nm/s)": v_xy_nm_per_s, "v_tip (nm/s)": v_xy_nm_per_s})
+            output_dict.update({"v_xy (nm/s)": v_xy_nm_per_s, "v_tip (nm/s)": v_xy_nm_per_s})
 
-            self.nn.parameters.emit(speed_parameters)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{speed_parameters}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (speed_parameters, error)
+        return (output_dict, error)
 
     @connection_control
-    def tip_shaper(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
-        new_parameters = {}
+    def tip_shaper(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "tip_shaper"}
         nhw = self.nn.nanonis_hardware
 
         try:
@@ -441,22 +455,22 @@ class NanonisUpdate:
                 else: self.nn.logprint(f"{self.instance_name}.tip_shaper()", "code")
             if not self.nn.status == "running": self.nn.link()
 
-            new_parameters = {"dict_name": "tip_shaper"} | nhw.set_tip_shaper(parameters)
+            output_dict.update(nhw.set_tip_shaper(parameters))
 
-            self.nn.parameters.emit(new_parameters)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{new_parameters}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (new_parameters, error)
+        return output_dict, error
 
     @connection_control
-    def feedback(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
+    def feedback(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""        
+        output_dict: dict[str, object] = {"dict_name": "feedback"}
         nhw = self.nn.nanonis_hardware
-        feedback_dict = {"dict_name": "feedback"}
 
         feedback = parameters.get("feedback", None)
         controller = parameters.get("active_controller", None)
@@ -469,7 +483,7 @@ class NanonisUpdate:
 
             if isinstance(controller, int): nhw.set_z_controller(controller)
 
-            (gains_dict, error) = self.nn.update.gains(parameters, unlink = False, verbose = False)
+            gains_dict, error = self.gains(parameters, unlink = False, verbose = False)
             [controllers, active_controller] = nhw.get_z_controllers()
 
             if "current" in active_controller.lower():
@@ -477,34 +491,34 @@ class NanonisUpdate:
                 if fb_setpoint: nhw.set_I_fb(nhw.conv.float32_to_hex(fb_setpoint * 1E-12))
 
                 fb_setpoint = nhw.conv.hex_to_float32(nhw.get_I_fb()) * 1E12
-                feedback_dict.update({"I_fb (pA)": fb_setpoint})
+                output_dict.update({"I_fb (pA)": fb_setpoint})
             if "dIdV" in active_controller.lower():
                 fb_setpoint = parameters.get("dIdV_fb (nS)", None)
                 if fb_setpoint: nhw.set_I_fb(nhw.conv.float32_to_hex(fb_setpoint * 1E-9))
 
                 fb_setpoint = nhw.conv.hex_to_float32(nhw.get_I_fb()) * 1E9
-                feedback_dict.update({"dIdV_fb (nS)": fb_setpoint})
+                output_dict.update({"dIdV_fb (nS)": fb_setpoint})
 
             if isinstance(feedback, bool): nhw.set_fb(feedback)
             else: feedback = nhw.get_fb()
 
             gains_dict.pop("dict_name")
-            feedback_dict.update(gains_dict)
-            feedback_dict.update({"feedback": feedback, "controllers": controllers, "active_controller": active_controller})
+            output_dict.update(gains_dict)
+            output_dict.update({"feedback": feedback, "controllers": controllers, "active_controller": active_controller})
 
-            self.nn.parameters.emit(feedback_dict)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{feedback_dict}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (feedback_dict, error)
+        return output_dict, error
 
     @connection_control
-    def gains(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        gains_dict = {}
-        error = False
+    def gains(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "gains"}       
         nhw = self.nn.nanonis_hardware
 
         try:
@@ -515,27 +529,26 @@ class NanonisUpdate:
 
             [p_gain_pm, t_const_us, i_gain_nm_per_s] = [parameters.get(name, None) for name in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
 
-            gains_dict = nhw.get_gains()
-            if p_gain_pm: gains_dict.update({"p_gain (pm)": p_gain_pm})
-            if t_const_us: gains_dict.update({"t_const (us)": t_const_us})
-            if p_gain_pm or t_const_us: nhw.set_gains(gains_dict)
+            output_dict.update(nhw.get_gains())
+            if p_gain_pm: output_dict.update({"p_gain (pm)": p_gain_pm})
+            if t_const_us: output_dict.update({"t_const (us)": t_const_us})
+            if p_gain_pm or t_const_us: nhw.set_gains(output_dict)
 
-            gains_dict.update({"dict_name": "gains"})
-            self.nn.parameters.emit(gains_dict)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{gains_dict}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (gains_dict, error)
+        return output_dict, error
 
     @connection_control
-    def frame(self, parameters: dict = {}, unlink: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def frame(self, parameters: dict = {}, *, unlink: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, str]:
         frame = None
-        error = False
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "frame"}
         nhw = self.nn.nanonis_hardware
-        new_parameters = {}
 
         try:
             if verbose:
@@ -546,31 +559,31 @@ class NanonisUpdate:
             w_nm = None
             h_nm = None
             if "domain (nm)" in parameters.keys():
-                [w_nm, h_nm] = list(parameters.get("domain (nm)"))
+                [w_nm, h_nm] = list(parameters.get("domain (nm)", [0, 0]))
             elif "size (nm)" in parameters.keys():
-                [w_nm, h_nm] = list(parameters.get("size (nm)"))
+                [w_nm, h_nm] = list(parameters.get("size (nm)", [0, 0]))
             elif "width (nm)" in parameters.keys():
                 w_nm = parameters.get("width (nm)")
                 h_nm = parameters.get("height (nm)", w_nm)
-            if w_nm: new_parameters.update({"width (nm)": w_nm, "height (nm)": h_nm, "domain (nm)": [w_nm, h_nm]})
+            if w_nm: output_dict.update({"width (nm)": w_nm, "height (nm)": h_nm, "domain (nm)": [w_nm, h_nm]})
 
             x_nm = None
             y_nm = None
             if "center (nm)" in parameters.keys():
-                [x_nm, y_nm] = list(parameters.get("center (nm)"))
+                [x_nm, y_nm] = list(parameters.get("center (nm)", [0., 0.]))
             elif "offset (nm)" in parameters.keys():
-                [x_nm, y_nm] = list(parameters.get("offset (nm)"))
+                [x_nm, y_nm] = list(parameters.get("offset (nm)", [0., 0.]))
             elif "x (nm)" in parameters.keys():
                 x_nm = parameters.get("x (nm)")
                 y_nm = parameters.get("y (nm)", x_nm)
-            if x_nm: new_parameters.update({"x (nm)": x_nm, "y (nm)": y_nm, "center (nm)": [x_nm, y_nm]})
+            if x_nm: output_dict.update({"x (nm)": x_nm, "y (nm)": y_nm, "center (nm)": [x_nm, y_nm]})
 
             angle_deg = parameters.get("angle (deg)", None)
-            if angle_deg is not None: new_parameters.update({"angle (deg)": angle_deg})
+            if angle_deg is not None: output_dict.update({"angle (deg)": angle_deg})
 
             frame = nhw.get_scan_frame_nm()
-            if len(new_parameters) > 0:
-                frame.update(new_parameters)
+            if len(output_dict) > 0:
+                frame.update(output_dict)
                 nhw.set_scan_frame_nm(frame)
 
             frame.update({"dict_name": "frame"})
@@ -581,16 +594,16 @@ class NanonisUpdate:
                 frame.update({"dict_name": "new_frame"})
                 self.nn.parameters.emit(frame)
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (frame, error)
+        return output_dict, error
 
     @connection_control
-    def grid(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        grid = {}
-        error = False
+    def grid(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "grid"}
         nhw = self.nn.nanonis_hardware
 
         try:
@@ -604,24 +617,26 @@ class NanonisUpdate:
             if "pixels" in parameters.keys() and "lines" in parameters.keys(): nhw.set_scan_buffer(pixels = parameters["pixels"], lines = parameters["lines"])
 
             frame = nhw.get_scan_frame_nm()
+            output_dict.update(frame)
             buffer = nhw.get_scan_buffer()
+            output_dict.update(buffer)
 
             for key, value in parameters.items():
                 if key in ["domain (nm)", "center (nm)", "angle (deg)"]:
-                    (frame, error) = self.nn.update.frame(parameters, verbose = False)
+                    frame, error = self.frame(parameters, verbose = False)
                     break
 
-            [width, height, angle] = [frame.get(key) for key in ["width (nm)", "height (nm)", "angle (deg)"]]
-            [pixels, lines] = [buffer.get(key) for key in ["pixels", "lines"]]
+            [width, height, angle] = [frame.get(key, 0.) for key in ["width (nm)", "height (nm)", "angle (deg)"]]
+            [pixels, lines] = [buffer.get(key, 1) for key in ["pixels", "lines"]]
             pix_width = width / pixels
             pix_height = height / lines
-            grid = frame | buffer | {"pixel_width (nm)": pix_width, "pixel_height (nm)": pix_height, "dict_name": "grid"}
+            output_dict.update({"pixel_width (nm)": pix_width, "pixel_height (nm)": pix_height})
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        if error: return (grid, error)
+        if error: return output_dict, error
 
         try:
             x_coords_local = np.linspace(pix_width / 2 -width / 2, width / 2 - pix_width / 2, pixels)
@@ -638,32 +653,31 @@ class NanonisUpdate:
                     x_grid[i, j] = x_grid_local[i, j] * cos + y_grid_local[i, j] * sin
                     y_grid[i, j] = y_grid_local[i, j] * cos - x_grid_local[i, j] * sin
 
-            x_grid += grid["x (nm)"]
-            y_grid += grid["y (nm)"]
+            x_grid += frame.get("x (nm)", 0.)
+            y_grid += frame.get("y (nm)", 0.)
 
             frame_vertices = np.asarray([[x_grid[0, 0], y_grid[0, 0]], [x_grid[-1, 0], y_grid[-1, 0]], [x_grid[-1, -1], y_grid[-1, -1]], [x_grid[0, -1], y_grid[0, -1]]])
             bottom_left_corner = frame_vertices[0]
             top_left_corner = frame_vertices[1]
-            grid.update({"vertices (nm)": frame_vertices, "bottom_left_corner (nm)": bottom_left_corner, "top_left_corner (nm)": top_left_corner})
+            output_dict.update({"vertices (nm)": frame_vertices, "bottom_left_corner (nm)": bottom_left_corner, "top_left_corner (nm)": top_left_corner})
 
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{grid}", message_type = "result")
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-            grid.update({"x_grid (nm)": x_grid, "y_grid (nm)": y_grid})
+            output_dict.update({"x_grid (nm)": x_grid, "y_grid (nm)": y_grid})
 
-            self.nn.parameters.emit(grid)
+            self.nn.parameters.emit(output_dict)
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (grid, error)
+        return output_dict, error
 
     @connection_control
-    def lockin(self, parameters: dict = {}, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
-        error = False
+    def lockin(self, parameters: dict = {}, *, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "lockin"}
         nhw = self.nn.nanonis_hardware
-
-        lockin_parameters = {"dict_name": "lockin"}
 
         try:
             if verbose:
@@ -674,7 +688,7 @@ class NanonisUpdate:
             mod2_dict = parameters.get("mod2", None)
 
             if name_lookup:
-                (scan_metadata, error) = self.nn.update.scan_metadata(verbose = False, unlink = False)
+                scan_metadata, error = self.scan_metadata(verbose = False, unlink = False)
                 if error: raise Exception(error)
                 signal_dict = scan_metadata.get("signal_dict", {})
 
@@ -733,23 +747,22 @@ class NanonisUpdate:
                             pass
 
                 time.sleep(.2)
-                lockin_parameters.update({f"mod{mod_number + 1}": mod_new})
+                output_dict.update({f"mod{mod_number + 1}": mod_new})
 
-            self.nn.parameters.emit(lockin_parameters)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{lockin_parameters}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
         except Exception as e: error = e
         finally:
             if unlink: self.nn.unlink()
 
-        return (lockin_parameters, error)
+        return output_dict, error
 
     @connection_control
-    def sts(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict | str]:
-        error = False
+    def sts(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "sts"}
         nhw = self.nn.nanonis_hardware
-
-        sts_parameters = {"dict_name": "sts"}
 
         try:
             if verbose:
@@ -759,23 +772,23 @@ class NanonisUpdate:
             if not self.nn.status == "running": self.nn.link()
 
             retrieved_parameters = nhw.get_sts_parameters()
-            sts_parameters.update(retrieved_parameters)
+            output_dict.update(retrieved_parameters)
 
-            self.nn.parameters.emit(sts_parameters)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{sts_parameters}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (sts_parameters, error)
+        return output_dict, error
 
     @connection_control
-    def scan_metadata(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        scan_metadata = {"dict_name": "scan_metadata"}
-        error = False
+    def scan_metadata(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "scan_metadata"}
         nhw = self.nn.nanonis_hardware
-
+        
         try:
             if verbose:
                 if len(parameters) > 0: self.nn.logprint(f"{self.instance_name}.scan_metadata({parameters})", "code")
@@ -788,13 +801,13 @@ class NanonisUpdate:
                     nhw.set_scan_buffer(channel_indices = indices)
 
             props = nhw.get_scan_properties()
-            scan_metadata.update(props)
+            output_dict.update(props)
 
             buffer = nhw.get_scan_buffer()
-            channel_indices = buffer.get("channel_indices")
+            channel_indices = buffer.get("channel_indices", [])
             signal_names = nhw.get_signal_names()
             all_signals = {signal_name: index for index, signal_name in enumerate(signal_names)}
-            scan_metadata.update({"all_signals": all_signals})
+            output_dict.update({"all_signals": all_signals})
 
             if nhw.version < 14000:
                 sig_in_slots = nhw.get_signals_in_slots()
@@ -802,16 +815,16 @@ class NanonisUpdate:
 
             signal_dict = {signal_name: index for index, signal_name in enumerate(signal_names)}
             channel_dict = {signal_names[index]: index for index in channel_indices}
-            scan_metadata.update({"channel_dict": channel_dict, "signal_dict": signal_dict})
+            output_dict.update({"channel_dict": channel_dict, "signal_dict": signal_dict})
 
-            self.nn.parameters.emit(scan_metadata)
-            if verbose and len(parameters) < 1: self.nn.logprint(f"{scan_metadata}", message_type = "result")
+            self.nn.parameters.emit(output_dict)
+            if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
 
-        except Exception as e: error = e
+        except Exception as e: error = str(e)
         finally:
             if unlink: self.nn.unlink()
 
-        return (scan_metadata, error)
+        return output_dict, error
 
 
 
@@ -823,7 +836,7 @@ class NanonisAPI(QtCore.QObject):
     finished = QtCore.pyqtSignal() # Signal to indicate an experiment is finished
     data_array = QtCore.pyqtSignal(np.ndarray) # 2D array of collected data, with columns representing progression of the experiment and the rows being the different parameters being measured
     
-    def __init__(self, hw_config: dict, message_callback: object = None, status_callback: object = None):
+    def __init__(self, hw_config: dict, message_callback: Callable | None = None, status_callback: Callable | None = None):
         super().__init__()
 
         self.status_callback = lambda status: self.send_status(status) # Use a parameter dict to signal the status to ParameterManager
@@ -839,14 +852,14 @@ class NanonisAPI(QtCore.QObject):
         # Instantiation of NanonisHardware triggers a connection test, and an exception is raised when the connection fails
         # The exception should be caught in the code where the NanonisAPI object is instantiated
         self.update = NanonisUpdate(parent = self, instance_name = "nanonis.update")
-        self.status = "idle" # status turns to 'running' when an active TCP-IP connection exists
+        self.status: str = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.data = DataProcessing()
-        self.piezo_range = {} # When self.piezo_range_update is called, this parameter is updated
-        self.auto_unlink = False
+        self.piezo_range: dict = {} # When self.piezo_range_update is called, this parameter is updated
+        self.auto_unlink: bool = False
 
 
 
-    def link(self, verbose: str = False) -> str:
+    def link(self, verbose: bool = False) -> str | bool:
         nhw = self.nanonis_hardware
         if self.status == "running":
             self.logprint("Attempting to connect to Nanonis while it is already running. Operation aborted.", message_type = "error")
@@ -864,7 +877,7 @@ class NanonisAPI(QtCore.QObject):
         except Exception as e: self.logprint(f"Error connecting Nanonis: {e}", message_type = "error")
         return f"Nanonis status: {self.status}"
 
-    def unlink(self, verbose: str = False) -> str:
+    def unlink(self, verbose: bool = False) -> str:
         nhw = self.nanonis_hardware
         if verbose: self.logprint("nanonis.unlink()", message_type = "code")
         nhw.unlink()
@@ -874,84 +887,84 @@ class NanonisAPI(QtCore.QObject):
         except Exception as e: self.logprint(f"Error disconnecting Nanonis: {e}", message_type = "error")
         return f"Nanonis status: {self.status}"
 
-    def nanonis_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def nanonis_update(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
         return self.initialize(unlink = unlink, verbose = verbose)
 
-    def initialize(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
-        parameters = {"dict_name": "nanonis_parameters"}
+    def initialize(self, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error = ""
+        output_dict: dict[str, dict | str] = {"dict_name": "nanonis_parameters"}
 
         try:
             if not self.status == "running": self.link()
             self.logprint("nanonis.initialize()", message_type = "code")
 
-            (session_path, error) = self.session_path_update(verbose = verbose) # Sends piezo range data with "dict_name": "piezo_range"
+            (session_path, error) = self.update.session_path(verbose = verbose) # Sends piezo range data with "dict_name": "piezo_range"
             if error: raise Exception(error)
-            else: parameters.update({session_path.get("dict_name"): session_path})
+            else: output_dict.update({"session_path": session_path})
             
             (hardware, error) = self.hardware_update(verbose = verbose) # Piezo range and transimpedance amplifier gain
             if error: raise Exception(error)
-            else: parameters.update({hardware.get("dict_name"): hardware})
+            else: output_dict.update({"hardware": hardware})
             
             (tip_status, error) = self.tip_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
-            else: parameters.update({tip_status.get("dict_name"): tip_status})
+            else: output_dict.update({"tip": tip_status})
             
-            (lockin_parameters, error) = self.lockin_update(name_lookup = True, verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            lockin_parameters, error = self.lockin_update(name_lookup = True, verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error: raise Exception(error)
-            else: parameters.update({lockin_parameters.get("dict_name"): lockin_parameters})
+            else: output_dict.update({"lockin": lockin_parameters})
 
-            (frame, error) = self.frame_update(update_new_frame = True, verbose = verbose) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
+            frame, error = self.frame_update(update_new_frame = True, verbose = verbose) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
             if error: raise Exception(error)
-            else: parameters.update({frame.get("dict_name"): frame})
+            else: output_dict.update({"frame": frame})
 
-            (bias, error) = self.bias_update(verbose = verbose)
+            bias, error = self.bias_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters.update({bias.get("dict_name"): bias})
+            else: output_dict.update({"bias": bias})
             
-            (feedback, error) = self.feedback_update(verbose = verbose)
+            feedback, error = self.feedback_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters.update({feedback.get("dict_name"): feedback})
+            else: output_dict.update({"feedback": feedback})
             
-            (speeds, error) = self.speeds_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
+            speeds, error = self.speeds_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
             if error: raise Exception(error)
-            else: parameters.update({speeds.get("dict_name"): speeds})
+            else: output_dict.update({"speeds": speeds})
             
-            (grid, error) = self.grid_update(verbose = verbose) # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid" (parent of self.frame_update())
+            grid, error = self.grid_update(verbose = verbose) # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid" (parent of self.frame_update())
             if error: raise Exception(error)
-            else: parameters.update({grid.get("dict_name"): grid})
+            else: output_dict.update({"grid": grid})
             
-            (scan_metadata, error) = self.scan_metadata_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
+            scan_metadata, error = self.scan_metadata_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
             if error: raise Exception(error)
-            else: parameters.update({scan_metadata.get("dict_name"): scan_metadata})
+            else: output_dict.update({"scan_metadata": scan_metadata})
             
             #(sts_parameters, error) = self.sts_update(verbose = verbose)
             #if error: raise Exception(error)
             #else: parameters.update({sts_parameters.get("dict_name"): sts_parameters})
             
-            (coarse_parameters, error) = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            coarse_parameters, error = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error:
                 self.logprint("Warning. Could not read the coarse parameters", message_type = "warning")
                 pass # Not useful to raise this error because the simulator does not have motor control
-            else: parameters.update({coarse_parameters.get("dict_name"): coarse_parameters})
+            else: output_dict.update({"coarse_parameters": coarse_parameters})
             
             (tip_shaper, error) = self.tip_shaper_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error:
                 self.logprint("Warning. Could not read parameters from the tip shaper module. It may be closed", message_type = "warning")
                 pass
-            else: parameters.update({tip_shaper.get("dict_name"): tip_shaper})
+            else: output_dict.update({"tip_shaper": tip_shaper})
 
             self.logprint("Initialization successful", "success")
 
         except Exception as e:
-            error = e
+            error = str(e)
             self.logprint(f"Initialization failed: {e}", "error")
-            self.status == "offline"
+            self.status = "offline"
             self.status_callback(self.status)
         finally:
             if unlink: self.unlink()
 
-        return (parameters, error)
+        return output_dict, error
 
 
 

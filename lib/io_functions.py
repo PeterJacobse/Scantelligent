@@ -388,7 +388,7 @@ class SXMFunctions:
 
     def read_header_full(self, file_path: str) -> tuple[np.ndarray, dict]:
         try:
-            (header_array, sct_dict) = self.read_header_quick(file_path)
+            (header_array, sct_dict) = self.read_header(file_path)
             [pixels, lines] = [int(sct_dict.get("grid_size", [1, 1])[i]) for i in range(2)]
             sct_dict.update({"pixels": pixels, "lines": lines})
             
