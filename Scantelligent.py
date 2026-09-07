@@ -1,4 +1,5 @@
 import os, sys, html, atexit, re, copy, time
+import pandas as pd
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
 from lib import Spectelligent, SCTWidgets, ScantelligentGUI
@@ -32,10 +33,7 @@ class Scantelligent(QtCore.QObject):
         atexit.register(self.exit)
 
         # Paths
-        self.paths = {
-            "script": os.path.abspath(__file__), # The full path of Scanalyzer.py
-            "parent_folder": os.path.dirname(os.path.abspath(__file__)),            
-        }
+        self.paths: dict[str, str] = {"script": os.path.abspath(__file__), "parent_folder": os.path.dirname(os.path.abspath(__file__))}
         self.paths["lib"] = os.path.join(self.paths["parent_folder"], "lib")
         self.paths["sys"] = os.path.join(self.paths["parent_folder"], "sys")
         self.paths["config_file"] = os.path.join(self.paths["sys"], "config.yml")
@@ -168,18 +166,18 @@ class Scantelligent(QtCore.QObject):
         self.logprint(f"Attempting to connect to the following hardware: {target}", message_type = "message")
 
         # Read hardware configurations from file
-        (hw_config, error) = self.io.load_yaml(self.paths.get("config_file"))
-        if error:
+        hw_config = self.io.yaml.load(self.paths.get("config_file", ""))
+        if not isinstance(hw_config, dict):
             self.logprint(".\\sys\\config.yml: Problem loading the hardware configurations from file", message_type = "error")
             return
-        else:
-            self.logprint(".\\sys\\config.yml: Loaded hardware configurations from file as (dict) hw_config", message_type = "success")
+        
+        self.logprint(".\\sys\\config.yml: Loaded hardware configurations from file as (dict) hw_config", message_type = "success")
         self.hw_config = hw_config
 
         # MLA (library)
         mla_config = hw_config.get("mla")
         if isinstance(mla_config, dict):
-            mla_path = mla_config.get("library_path")
+            mla_path = mla_config.get("library_path", "")
             if os.path.isdir(mla_path):
                 self.paths.update({"mla": mla_path})
                 sys.path.insert(0, mla_path) # Path to the MLA library
@@ -1249,7 +1247,7 @@ class Scantelligent(QtCore.QObject):
         return True
 
     def change_tip_status(self) -> bool:
-        if not hasattr(self, "nanonis"): return
+        if not hasattr(self, "nanonis"): return False
         
         try:
             tip_status = self.status["tip"]
@@ -1257,19 +1255,14 @@ class Scantelligent(QtCore.QObject):
             tip_in_feedback = tip_status.get("feedback")
             
             if tip_withdrawn: # Tip is withdrawn: land it
-                (tip_status, error) = self.nanonis.tip_update({"feedback": True}, unlink = True)
-                if error:
-                    self.logprint(f"Error: {e}")
-                elif type(tip_status) == dict:
-                    self.status["tip"] = tip_status
-                    self.logprint(f"nanonis.tip_update({{\"feedback\": True}})", message_type = "code")
+                tip_status, error = self.nanonis.update.tip(feedback = True, unlink = True)
             
-            else: # Toggle the feedback                
-                (tip_status, error) = self.nanonis.tip_update({"feedback": not tip_in_feedback}, unlink = True)
+            else: # Toggle the feedback
+                tip_status, error = self.nanonis.update.tip(feedback = not tip_in_feedback, unlink = True)
                 if error:
                     self.logprint(f"Error. {e}")
-                if type(tip_status) == dict:
-                    self.status["tip"] = tip_status
+                else:
+                    self.status["tip"].update(tip_status)
 
         except Exception as e:
             self.logprint(f"Error toggling the tip status: {e}", message_type = "error")

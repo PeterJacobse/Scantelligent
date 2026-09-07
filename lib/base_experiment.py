@@ -27,23 +27,25 @@ class BaseExperiment(QObject):
     array_slice = pyqtSignal(np.ndarray, list, list)
 
     def __init__(self, *args, **kwargs):
-        self.hw_config = kwargs.pop("hw_config", None) # Will become redundant again
-        self.scan_processing_flags = kwargs.pop("scan_processing_flags", None)
-        self.experiment_file = kwargs.pop("experiment_file", None)
-        self.sct_folder = kwargs.pop("scantelligent_folder", None)
+        self.scan_processing_flags: dict = kwargs.pop("scan_processing_flags", {})
+        self.experiment_file: str = kwargs.pop("experiment_file", "") # This is simply the path
+        self.sct_folder: str = kwargs.pop("scantelligent_folder", "")
+        self.output_file: h5py.File
+        self.entry_group: h5py.Group
         
-        self.mla: MLAAPI = kwargs.pop("mla", None)
+        self.mla: MLAAPI | None = kwargs.pop("mla", None)
         self.nanonis: NanonisAPI = kwargs.pop("nanonis", None)
         
         self.io = IOFunctions()
-        self.data = DataProcessing() # You can use self.data to access data processing functions. However, do not use self.data.scan_processing_flags to communicate with the GUI. Use self.scan_processing_flags instead
-        self.gui_setup = {}
-        self.abort_requested = False
-        self.current_spikes = 0
-        self.reset_nanonis_when_done = True
-        self.start_parameters = {}
-        self.luts = {}
-        self.gui_parameters = {}
+        self.data = DataProcessing() # You can use self.data to access data processing functions.
+        # However, do not use self.data.scan_processing_flags to communicate with the GUI. Use self.scan_processing_flags instead. This is because of thread safety.
+        self.gui_setup: dict = {}
+        self.abort_requested: bool = False
+        self.current_spikes: int = 0
+        self.reset_nanonis_when_done: bool = True
+        self.start_parameters: dict[str, dict[str, object]] = {}
+        self.luts: dict = {}
+        self.gui_parameters: dict[str, object] = {}
         
         super().__init__()
         
@@ -87,24 +89,27 @@ class BaseExperiment(QObject):
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": channels_dict})
         return
 
-    def create_array_item(self, name: str | None = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list | np.ndarray = [], axis_values: list[np.ndarray] = [np.empty((0,))], frame: dict = {}) -> None:
+    def create_array_item(self, name: str | None = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list[str] | np.ndarray = [], axis_values: list[np.ndarray] | list[list] = [np.empty((0,))], frame: dict = {}) -> None:
+        for index, values in enumerate(axis_values):
+            if isinstance(values, list): axis_values[index] = np.array(values)        
         array_dict = {"dict_name": "array_item", "name": name, "shape": shape, "dtype": dtype, "axes": axes, "axis_values": axis_values, "frame": frame}
         self.parameters.emit(array_dict)
         return
 
-    def prepare_hdf5(self) -> None:
-        self.output_file = self.io.h5.create_nsid_file(self.experiment_file, channel_names = ["Channel_000"], close = False, existsok = True)
-        assert isinstance(self.output_file, h5py.File)
-        self.entry_group = self.io.h5.get_object(self.output_file, "Measurement_000") # Measurement_000 is the default entry group name
-        assert isinstance(self.entry_group, h5py.Group)
+    def prepare_hdf5(self, file_path: str = "", main_dataset_names: list[str] = ["Channel_000"]) -> tuple[h5py.File, h5py.Group]:
+        output_file = self.io.h5.create_nsid_file(file_path, channel_names = main_dataset_names, close = False, existsok = True)
+        if not isinstance(output_file, h5py.File): raise Exception(f"Could not create the HDF5 output file {self.experiment_file}.")
+        entry_group = self.io.h5.get_object(output_file, "Measurement_000") # Measurement_000 is the default entry group name
+        if not isinstance(entry_group, h5py.Group): raise Exception("Could not create an 'entry group' in the HDF5 output file.")
         
         # Fetch the temperature using a Nanonis call and conversion using a lookup table
         if "DT-670" in self.luts.keys():
             temp_calib = self.luts["DT-670"]
             try:
                 # Find the signal index corresponding to the temperature sensor
-                metadata = self.start_parameters["nanonis"].get("scan_metadata")
-                signal_dict = metadata.get("signal_dict")                
+                metadata = self.start_parameters["nanonis"].get("scan_metadata", {})
+                assert isinstance(metadata, dict)
+                signal_dict = metadata.get("signal_dict", {})
                 for key, value in signal_dict.items():
                     if "temperature" in key.lower():
                         temp_channel = value
@@ -116,24 +121,26 @@ class BaseExperiment(QObject):
                 if result:
                     temp_V = result[temp_channel][1]
                     temp_K = float(np.interp(temp_V, temp_calib[:, 0][::-1], temp_calib[:, 1][::-1]))
-                    self.io.h5.create_group(self.entry_group, "conditions", attributes = {"temperature (K)": temp_K})
+                    self.io.h5.create_group(entry_group, "conditions", attributes = {"temperature (K)": temp_K})
             except:
                 pass
         
         [bias, feedback, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "grid", "tip", "hardware"]]
-        feedback_attributes = {"V_Nanonis (V)": bias.get(f"V_nanonis (V)")} | feedback | {"feedback on": tip.get("feedback")}
+        assert isinstance(bias, dict) and isinstance(feedback, dict) and isinstance(tip, dict) and isinstance(hardware, dict) and isinstance(grid, dict)
+        feedback_attributes = {"V_Nanonis (V)": bias.get(f"V (V)", 0)} | feedback | {"feedback": tip.get("feedback", True)}
         feedback_attributes.pop("dict_name")
         if "mla" in self.start_parameters.keys():
             mla_bias = self.start_parameters["mla"].get("mla_bias", {})
+            assert isinstance(mla_bias, dict)
             feedback_attributes.update({"MLA port_1 (V)": mla_bias.get("port_1 (V)", "unknown"), "MLA port_2 (V)": mla_bias.get("port_2 (V)", "unknown")})
         [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
                 
-        self.io.h5.create_group(self.entry_group, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
-        self.io.h5.create_group(self.entry_group, "grid", attributes = {key: grid.get(key) for key in ["center (nm)", "domain (nm)", "angle (deg)", "pixels", "lines"]})
-        self.io.h5.create_group(self.entry_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
-        self.io.h5.create_group(self.entry_group, "feedback_settings", attributes = feedback_attributes)
-        self.io.h5.create_group(self.entry_group, "transimpedance_amplifier", attributes = {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pa})
-        return
+        self.io.h5.create_group(entry_group, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
+        self.io.h5.create_group(entry_group, "grid", attributes = {key: grid.get(key) for key in ["center (nm)", "domain (nm)", "angle (deg)", "pixels", "lines"]})
+        self.io.h5.create_group(entry_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
+        self.io.h5.create_group(entry_group, "feedback_settings", attributes = feedback_attributes)
+        self.io.h5.create_group(entry_group, "transimpedance_amplifier", attributes = {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pa})
+        return output_file, entry_group
 
     def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = False) -> str:
         """
@@ -144,10 +151,10 @@ class BaseExperiment(QObject):
         if verbose: self.logprint(f"Testing and autophasing the lock-in amplifier, starting with Nanonis", message_type = "message")
         
         lockin_signal_names = ["LI Demod 1 X (A)", "LI Demod 1 Y (A)"]
-        (signal_dict, error) = nn.signals_update(lockin_signal_names, verbose = verbose) # Retrieve the signal indices for more efficient lookup
-        lockin_signal_indices = [signal_dict.get(signal)[0] for signal in lockin_signal_names]
-        (lockin, error) = nn.lockin_update({"mod1": {"on": True, "amplitude (mV)": amplitude_mV, "frequency (Hz)": frequency_Hz, "phase (deg)": 0}, "mod2": {"on": True}}, verbose = verbose)
-        (signal_dict, error) = nn.signals_update(lockin_signal_indices, verbose = False)
+        signal_dict, error = nn.update.signals(lockin_signal_names, verbose = verbose) # Retrieve the signal indices for more efficient lookup
+        lockin_signal_indices = [signal_dict.get(signal, -1)[0] for signal in lockin_signal_names]
+        lockin, error = nn.update.lockin({"mod1": {"on": True, "amplitude (mV)": amplitude_mV, "frequency (Hz)": frequency_Hz, "phase (deg)": 0}, "mod2": {"on": True}}, verbose = verbose)
+        signal_dict, error = nn.update.signals(lockin_signal_indices, verbose = False)
         [li_x_pA, li_y_pA] = [signal_dict[index][1] * 1E12 for index in lockin_signal_indices]
         li_complex_pA = (li_x_pA + 1j * li_y_pA)
         
@@ -169,7 +176,7 @@ class BaseExperiment(QObject):
                 mla.set_input_multiplexer(input_multiplexer)
                 amplitudes = np.zeros((32), dtype = float)
                 amplitudes[0] = 200
-                mla.lockin_update({"df (Hz)": frequency_Hz, "numbers": output_numbers, "amplitudes (mV)": amplitudes}, verbose = verbose)
+                mla.update.lockin({"df (Hz)": frequency_Hz, "numbers": output_numbers, "amplitudes (mV)": amplitudes}, verbose = verbose)
                 mla.outputs_update({"blank": True, "mod0": {"on": True, "port": output_port}}, verbose = verbose)
                 
                 mla.start_lockin()
@@ -188,12 +195,12 @@ class BaseExperiment(QObject):
                     li_phase = np.rad2deg(np.angle(li_complex_V))
                     phases = np.zeros((32), dtype = float)
                     phases[0] = 90 - li_phase
-                    mla.phases_update({"phases (deg)": phases}, verbose = verbose)
-                    if verbose: self.logprint(f"The MLA seems to be connected. I autophased the lockin amplifier to {phases[0]:.4f} degree", message_type = "message")
+                    #mla.phases_update({"phases (deg)": phases}, verbose = verbose)
+                    if verbose: self.logprint(f"The MLA seems to be connected.", message_type = "message")
                 
                 # Calculate the capacitance
                 if verbose:
-                    (hardware, error) = nn.hardware_update()
+                    hardware, error = nn.update.hardware()
                     if "gain (V/pA)" in hardware.keys():
                         li_complex_pA = li_complex_V / hardware["gain (V/pA)"]
                         cap_fC = np.abs(1000 * li_complex_pA / (2 * np.pi * frequency_Hz * amplitude_mV))
@@ -221,9 +228,9 @@ class BaseExperiment(QObject):
         if autophase:
             li_phase = np.rad2deg(np.angle(li_complex_pA))
             new_phase = li_phase - 90
-            (lockin, error) = nn.lockin_update({"mod1": {"on": True, "amplitude (mV)": amplitude_mV, "frequency (Hz)": frequency_Hz, "phase (deg)": new_phase}, "mod2": {"on": False}}, verbose = verbose)
+            lockin, error = nn.update.lockin({"mod1": {"on": True, "amplitude (mV)": amplitude_mV, "frequency (Hz)": frequency_Hz, "phase (deg)": new_phase}, "mod2": {"on": False}}, verbose = verbose)
             if verbose: self.logprint(f"Nanonis lockin amplifier autophased to {new_phase:.4f} degree", message_type = "message")
-        nn.lockin_update({"mod1": {"on": False}}, verbose = verbose)
+        nn.update.lockin({"mod1": {"on": False}}, verbose = verbose)
         
         if verbose:
             cap_fC = np.abs(1000 * li_complex_pA / (2 * np.pi * frequency_Hz * amplitude_mV))
@@ -246,7 +253,7 @@ class BaseExperiment(QObject):
                 self.start_parameters.update({"mla": mla_parameters})
             
             # Create the experiment HDF5 file
-            self.prepare_hdf5()
+            self.output_file, self.entry_group = self.prepare_hdf5(file_path = self.experiment_file)
 
 
             
@@ -435,13 +442,13 @@ class BaseExperiment(QObject):
                 raise Exception(f"Problem encountered while trying to reset Nanonis. I could not read the start parameters. {e}")
             
             [grid, lockin_parameters, feedback_parameters, speed_parameters, bias, tip_status] = [nanonis_parameters.get(key, None) for key in ["grid", "lockin", "feedback", "speeds", "bias", "tip_status"]]
-            if grid: self.nanonis.grid_update(grid, verbose = False)
-            if lockin_parameters: self.nanonis.lockin_update(lockin_parameters, verbose = False)
+            if grid: self.nanonis.update.grid(grid, verbose = False)
+            if lockin_parameters: self.nanonis.update.lockin(lockin_parameters, verbose = False)
             V_nanonis = round(bias.get("V_nanonis (V)", None), 2)
             if isinstance(V_nanonis, float | int): self.nanonis.bias_update({"V_nanonis (V)": V_nanonis}, verbose = False)
-            self.nanonis.feedback_update(feedback_parameters, verbose = False)
-            self.nanonis.speeds_update(speed_parameters, verbose = False)
-            
+            self.nanonis.update.feedback(feedback_parameters, verbose = False)
+            self.nanonis.update.speeds(speed_parameters, verbose = False)
+
             withdrawn = tip_status.get("withdrawn")
             fb = tip_status.get("feedback")
             self.nanonis.tip_update({"feedback": fb, "withdrawn": withdrawn})

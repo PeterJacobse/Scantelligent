@@ -1200,7 +1200,7 @@ class NanonisAPI(QtCore.QObject):
         
         return error
 
-    def jitter_tip(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def jitter_tip(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, list], str]:
         error = ""
         
         [iterations, radius] = [parameters.get(parameter) for parameter in ["iterations", "radius (nm)"]]
@@ -1455,6 +1455,15 @@ class NanonisUpdate:
         return output_dict, error
 
     def session_path(self, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Return the current Nanonis session path.
+
+        Args:
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A session-path dictionary and an error message.
+        """
         output_dict: dict[str, object] = {"dict_name": "session_path"}
         error: str = ""
         core = self.nn.core
@@ -1472,7 +1481,22 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def scan(self, channel: int | str, backward: bool = False, *, emit_image: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, str]:
+    def scan(self, channel: int | str | None = None, backward: bool = False, *, parameters: dict = {}, channel_index: int | str | None = None, emit_image: bool = True, unlink: bool = False, verbose: bool = True) -> tuple[np.ndarray, str]:
+        """Retrieve a scan channel as an image.
+
+        Args:
+            channel: Channel index or signal name.
+            backward: Whether to retrieve the backward scan.
+            parameters: Dictionary containing ``channel``, ``channel_index``,
+                or ``backward``.
+            channel_index: Channel index or signal name, overriding the dictionary.
+            emit_image: Whether to emit the resulting image.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request.
+
+        Returns:
+            The scan image and an error message.
+        """
         error: str = ""
         core = self.nn.core
         
@@ -1480,6 +1504,10 @@ class NanonisUpdate:
         scan_image = np.zeros((2, 2))
 
         try:
+            put_kwargs_in_dict(parameters, {"channel": (channel, int | str), "channel_index": (channel_index, int | str), "backward": (backward, bool)})
+            channel, backward, channel_index = get_parameters_from_tags(parameters, [["channel", "channel_index"], ["backward", "backwards"], ["channel_index"]])
+            if channel is None: channel = channel_index
+            if channel is None: raise ValueError("A scan channel is required")
             if verbose: self.nn.logprint(f"{self.instance_name}.scan(channel_index = {channel}, backward = {backward})", "code")
             if isinstance(channel, str):
                 metadata, error = self.scan_metadata(verbose = False, unlink = False)
@@ -1511,12 +1539,29 @@ class NanonisUpdate:
 
         return scan_image, error
 
-    def signals(self, signals: str | list, *, samples: int = 1, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def signals(self, signals: str | list | int | None = None, *, parameters: dict = {}, samples: int = 1, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read one or more Nanonis signal values.
+
+        Args:
+            signals: Signal names or indices.
+            parameters: Dictionary containing ``signals``, ``samples``, or
+                ``name_lookup``.
+            samples: Number of samples to average.
+            name_lookup: Whether to resolve signal names from scan metadata.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A signal-value dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "signals"}
         core = self.nn.core
         
         try:
+            put_kwargs_in_dict(parameters, {"signals": (signals, str | list | int), "samples": (samples, int), "name_lookup": (name_lookup, bool)})
+            signals, samples, name_lookup = get_parameters_from_tags(parameters, [["signals", "signal"], ["samples", "n_samples"], ["name_lookup"]])
+            if signals is None: raise ValueError("Signals are required")
             signal_dict = {}
             if isinstance(signals, str | int): signals = [signals]
             
@@ -1570,12 +1615,25 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def hardware(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def hardware(self, parameters: dict = {}, *, gain: int | str | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read hardware limits and optionally set the current gain.
+
+        Args:
+            parameters: Dictionary containing the optional ``gain`` value.
+            gain: Gain index or gain name, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A hardware-parameter dictionary and an error message.
+        """
         error: str = ""        
         output_dict: dict[str, object] = {"dict_name": "hardware"}
         core = self.nn.core
 
         try:
+            put_kwargs_in_dict(parameters, {"gain": (gain, int | str)})
+            [gain] = get_parameters_from_tags(parameters, [["gain", "I_gain", "current_gain"]])
             if verbose: self.echo_function_call("hardware", parameters)
             if not self.nn.status == "running": self.nn.link()
 
@@ -1593,8 +1651,7 @@ class NanonisUpdate:
             try:
                 current_gain = core.get_I_gain()
                 output_dict.update(current_gain)
-                if "gain" in parameters.keys():
-                    gain = parameters["gain"]
+                if gain is not None:
                     if isinstance(gain, int) and gain < len(current_gain["gains"]): core.set_I_gain(gain)
                     elif isinstance(gain, str):
                         for index, entry in enumerate(current_gain["gains"]):
@@ -1721,12 +1778,26 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def coarse_parameters(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def coarse_parameters(self, parameters: dict = {}, *, V_motor: float | int | None = None, f_motor: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set coarse-approach motor voltage and frequency.
+
+        Args:
+            parameters: Dictionary containing ``V_motor (V)`` or ``f_motor (Hz)``.
+            V_motor: Motor voltage, overriding the dictionary value.
+            f_motor: Motor frequency, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A coarse-parameter dictionary and an error message.
+        """
         error: str = ""        
         output_dict: dict[str, object] = {"dict_name": "coarse_parameters"}
         core = self.nn.core
 
         try:
+            put_kwargs_in_dict(parameters, {"V_motor (V)": (V_motor, float | int), "f_motor (Hz)": (f_motor, float | int)})
+            V_motor, f_motor = get_parameters_from_tags(parameters, [["V_motor (V)", "V_motor"], ["f_motor (Hz)", "f_motor"]])
             if verbose: self.echo_function_call("coarse_parameters", parameters)
             if not self.nn.status == "running": self.nn.link()
 
@@ -1746,13 +1817,29 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def speeds(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def speeds(self, parameters: dict = {}, *, v_fwd_nm_per_s: float | int | None = None, v_bwd_nm_per_s: float | int | None = None, t_fwd_s: float | int | None = None, t_bwd_s: float | int | None = None, lock_v_or_t: int | str | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set scan speed and timing parameters.
+
+        Args:
+            parameters: Dictionary containing scan speed, time, or lock parameters.
+            v_fwd_nm_per_s: Forward speed, overriding the dictionary value.
+            v_bwd_nm_per_s: Backward speed, overriding the dictionary value.
+            t_fwd_s: Forward scan time, overriding the dictionary value.
+            t_bwd_s: Backward scan time, overriding the dictionary value.
+            lock_v_or_t: Nanonis speed/time lock setting, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A speed-parameter dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "speeds"}
         core = self.nn.core
 
         try:
-            [v_xy_nm_per_s, v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param] = [parameters.get(key, None) for key in ["v_xy (nm/s)", "v_fwd (nm/s)", "v_bwd (nm/s)", "t_fwd (s)", "t_bwd (s)", "lock_v_or_t"]]
+            put_kwargs_in_dict(parameters, {"v_fwd (nm/s)": (v_fwd_nm_per_s, float | int), "v_bwd (nm/s)": (v_bwd_nm_per_s, float | int), "t_fwd (s)": (t_fwd_s, float | int), "t_bwd (s)": (t_bwd_s, float | int), "lock_v_or_t": (lock_v_or_t, int | str)})
+            [v_xy_nm_per_s, v_fwd_nm_per_s, v_bwd_nm_per_s, t_fwd_s, t_bwd_s, lock_param] = get_parameters_from_tags(parameters, [["v_xy (nm/s)"], ["v_fwd (nm/s)", "v_fwd_nm_per_s"], ["v_bwd (nm/s)", "v_bwd_nm_per_s"], ["t_fwd (s)", "t_fwd_s"], ["t_bwd (s)", "t_bwd_s"], ["lock_v_or_t"]])
             
             if verbose: self.echo_function_call("speeds", parameters)
             if not self.nn.status == "running": self.nn.link()
@@ -1778,6 +1865,16 @@ class NanonisUpdate:
         return (output_dict, error)
 
     def tip_shaper(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set tip-shaper parameters.
+
+        Args:
+            parameters: Tip-shaper settings accepted by the Nanonis core.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A tip-shaper dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "tip_shaper"}
         core = self.nn.core
@@ -1797,7 +1894,21 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def feedback(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def feedback(self, parameters: dict = {}, *, feedback: bool | None = None, active_controller: int | None = None, I_fb_pA: float | int | None = None, dIdV_fb_nS: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set feedback state, controller, setpoint, and gains.
+
+        Args:
+            parameters: Dictionary containing feedback settings.
+            feedback: Whether feedback is enabled, overriding the dictionary value.
+            active_controller: Controller index, overriding the dictionary value.
+            I_fb_pA: Current setpoint, overriding the dictionary value.
+            dIdV_fb_nS: Conductance setpoint, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A feedback dictionary and an error message.
+        """
         error: str = ""        
         output_dict: dict[str, object] = {"dict_name": "feedback"}
         core = self.nn.core
@@ -1806,6 +1917,8 @@ class NanonisUpdate:
         controller = parameters.get("active_controller", None)
 
         try:
+            put_kwargs_in_dict(parameters, {"feedback": (feedback, bool), "active_controller": (active_controller, int), "I_fb (pA)": (I_fb_pA, float | int), "dIdV_fb (nS)": (dIdV_fb_nS, float | int)})
+            feedback, controller, I_fb_pA, dIdV_fb_nS = get_parameters_from_tags(parameters, [["feedback", "fb"], ["active_controller", "controller"], ["I_fb (pA)", "I_fb_pA"], ["dIdV_fb (nS)", "dIdV_fb_nS"]])
             if verbose: self.echo_function_call("feedback", parameters)
             if not self.nn.status == "running": self.nn.link()
 
@@ -1843,7 +1956,20 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def gains(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def gains(self, parameters: dict = {}, *, p_gain_pm: float | int | None = None, t_const_us: float | int | None = None, i_gain_nm_per_s: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set feedback controller gains.
+
+        Args:
+            parameters: Dictionary containing gain values.
+            p_gain_pm: Proportional gain, overriding the dictionary value.
+            t_const_us: Time constant, overriding the dictionary value.
+            i_gain_nm_per_s: Integral gain, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A gains dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "gains"}       
         core = self.nn.core
@@ -1852,7 +1978,8 @@ class NanonisUpdate:
             if verbose: self.echo_function_call("gains", parameters)
             if not self.nn.status == "running": self.nn.link()
 
-            [p_gain_pm, t_const_us, i_gain_nm_per_s] = [parameters.get(name, None) for name in ["p_gain (pm)", "t_const (us)", "i_gain (nm/s)"]]
+            put_kwargs_in_dict(parameters, {"p_gain (pm)": (p_gain_pm, float | int), "t_const (us)": (t_const_us, float | int), "i_gain (nm/s)": (i_gain_nm_per_s, float | int)})
+            [p_gain_pm, t_const_us, i_gain_nm_per_s] = get_parameters_from_tags(parameters, [["p_gain (pm)", "p_gain_pm"], ["t_const (us)", "t_const_us"], ["i_gain (nm/s)", "i_gain_nm_per_s"]])
 
             output_dict.update(core.get_gains())
             if p_gain_pm: output_dict.update({"p_gain (pm)": p_gain_pm})
@@ -1868,13 +1995,31 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def frame(self, parameters: dict = {}, *, unlink: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def frame(self, parameters: dict = {}, *, width_nm: float | int | None = None, height_nm: float | int | None = None, x_nm: float | int | None = None, y_nm: float | int | None = None, angle_deg: float | int | None = None, unlink: bool = False, update_new_frame: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set the scan frame.
+
+        Args:
+            parameters: Dictionary containing frame size, center, and angle values.
+            width_nm: Frame width, overriding the dictionary value.
+            height_nm: Frame height, overriding the dictionary value.
+            x_nm: Frame center x position, overriding the dictionary value.
+            y_nm: Frame center y position, overriding the dictionary value.
+            angle_deg: Frame angle, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            update_new_frame: Whether to emit the result as a new-frame update.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A frame dictionary and an error message.
+        """
         frame = None
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "frame"}
         core = self.nn.core
 
         try:
+            put_kwargs_in_dict(parameters, {"width (nm)": (width_nm, float | int), "height (nm)": (height_nm, float | int), "x (nm)": (x_nm, float | int), "y (nm)": (y_nm, float | int), "angle (deg)": (angle_deg, float | int)})
+            width_nm, height_nm, x_nm, y_nm, angle_deg = get_parameters_from_tags(parameters, [["width (nm)", "width_nm"], ["height (nm)", "height_nm"], ["x (nm)", "x_nm"], ["y (nm)", "y_nm"], ["angle (deg)", "angle_deg"]])
             if verbose: self.echo_function_call("frame", parameters)
             if not self.nn.status == "running": self.nn.link()
 
@@ -1922,12 +2067,26 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def grid(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def grid(self, parameters: dict = {}, *, pixels: int | None = None, lines: int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set scan-grid dimensions and calculated coordinates.
+
+        Args:
+            parameters: Dictionary containing grid dimensions or frame settings.
+            pixels: Number of scan pixels, overriding the dictionary value.
+            lines: Number of scan lines, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A grid dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "grid"}
         core = self.nn.core
 
         try:
+            put_kwargs_in_dict(parameters, {"pixels": (pixels, int), "lines": (lines, int)})
+            pixels, lines = get_parameters_from_tags(parameters, [["pixels"], ["lines"]])
             if verbose:
                 if len(parameters) > 0:
                     shown_parameters = {key: value for key, value in parameters.items() if not key in ["x_grid (nm)", "y_grid (nm)", "vertices (nm)", "bottom_left_corner (nm)", "top_left_corner (nm)"]}
@@ -1935,7 +2094,7 @@ class NanonisUpdate:
                 else: self.nn.logprint(f"{self.instance_name}.grid()", "code")
             if not self.nn.status == "running": self.nn.link()
 
-            if "pixels" in parameters.keys() and "lines" in parameters.keys(): core.set_scan_buffer(pixels = parameters["pixels"], lines = parameters["lines"])
+            if pixels is not None and lines is not None: core.set_scan_buffer(pixels = pixels, lines = lines)
 
             frame = core.get_scan_frame_nm()
             output_dict.update(frame)
@@ -1994,12 +2153,27 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def lockin(self, parameters: dict = {}, *, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def lockin(self, parameters: dict = {}, *, mod1: dict | None = None, mod2: dict | None = None, name_lookup: bool = False, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Read or set the two lock-in modulation configurations.
+
+        Args:
+            parameters: Dictionary containing ``mod1`` and/or ``mod2`` settings.
+            mod1: First modulation settings, overriding the dictionary value.
+            mod2: Second modulation settings, overriding the dictionary value.
+            name_lookup: Whether to include signal names.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A lock-in dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "lockin"}
         core = self.nn.core
 
         try:
+            put_kwargs_in_dict(parameters, {"mod1": (mod1, dict), "mod2": (mod2, dict), "name_lookup": (name_lookup, bool)})
+            mod1, mod2, name_lookup = get_parameters_from_tags(parameters, [["mod1"], ["mod2"], ["name_lookup"]])
             if verbose: self.echo_function_call("lockin", parameters)
             if not self.nn.status == "running": self.nn.link()
             mod1_dict = parameters.get("mod1", None)
@@ -2077,6 +2251,16 @@ class NanonisUpdate:
         return output_dict, error
 
     def sts(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Return the current scanning-tunneling spectroscopy parameters.
+
+        Args:
+            parameters: Reserved for compatibility; no STS values are currently set.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            An STS-parameter dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "sts"}
         core = self.nn.core
@@ -2097,17 +2281,30 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def scan_metadata(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def scan_metadata(self, parameters: dict = {}, *, channel_indices: list[int] | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        """Return scan properties and active signal mappings.
+
+        Args:
+            parameters: Dictionary containing optional ``channel_indices``.
+            channel_indices: Channels to configure, overriding the dictionary value.
+            unlink: Whether to disconnect after the request.
+            verbose: Whether to log the request and result.
+
+        Returns:
+            A scan-metadata dictionary and an error message.
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "scan_metadata"}
         core = self.nn.core
         
         try:
+            put_kwargs_in_dict(parameters, {"channel_indices": (channel_indices, list)})
+            [channel_indices] = get_parameters_from_tags(parameters, [["channel_indices", "channels"]])
             if verbose: self.echo_function_call("scan_metadata", parameters)
             if not self.nn.status == "running": self.nn.link()
 
-            if "channel_indices" in parameters.keys():
-                indices = parameters["channel_indices"]
+            if channel_indices is not None:
+                indices = channel_indices
                 if isinstance(indices, list) and len(indices) > 0 and isinstance(indices[0], int):
                     core.set_scan_buffer(channel_indices = indices)
 

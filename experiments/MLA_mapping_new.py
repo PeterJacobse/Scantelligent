@@ -28,6 +28,7 @@ class Experiment(BaseExperiment):
         gui_parameters = self.start_parameters["gui"]
         [spec_button_states, spec_line_edits] = [gui_parameters.get(key) for key in ["spectroscopy_buttons", "spectroscopy_line_edits"]]
         [t_settle, t_int] = [int(spec_line_edits[f"t_{key}"]) for key in ["settle", "int"]]
+        assert isinstance(t_settle, int) and isinstance(t_int, int)
         [nanonis_or_mla, tia_correct] = [spec_button_states.get(key) for key in ["nanonis_mla", "tia_correct"]]
         nanonis_or_mla = spec_button_states.get("nanonis_mla")
         if nanonis_or_mla == "nanonis": self.logprint(f"Nanonis sweep not yet implemented. Try setting the spectroscopy to MLA")
@@ -74,38 +75,18 @@ class Experiment(BaseExperiment):
         main_group_name = entry_group_attributes.get("default", "Channel_000")
         main_group = self.io.h5.get_object(self.entry_group, main_group_name)
         assert isinstance(main_group, h5py.Group)
-        """
-        main_ds = self.io.h5.create_dataset(main_group, "data", units = "nm", shape = (len(directions), len(sct_names), pixels, lines), dtype = np.float32)
-        dir_ds = self.io.h5.create_dataset(main_group, "direction", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        dir_indices_ds = self.io.h5.create_dataset(main_group, "direction indices", units = "none", data = np.array([0, 1], dtype = np.int32))
-        channel_ds = self.io.h5.create_dataset(main_group, "channel", data = np.array([item.encode("utf-8") for item in sct_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        channel_indices_ds = self.io.h5.create_dataset(main_group, "channel indices", units = "none", data = np.arange(len(sct_names), dtype = np.int32))
-        x_ds = self.io.h5.create_dataset(main_group, "x", data = x_values, units = "nm", dtype = np.float32)
-        y_ds = self.io.h5.create_dataset(main_group, "y", data = y_values, units = "nm", dtype = np.float32)
-        self.io.h5.attach_axes_to_dataset(main_ds, axes_datasets = [dir_indices_ds, channel_indices_ds, x_ds, y_ds])
-        """
-        channel_ds = main_group.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        channel_indices_ds = main_group.create_dataset("channel index axis", data = np.arange(len(channel_names), dtype = np.int32))
-        channel_indices_ds.make_scale("channel indices")
-        x_ds = main_group.create_dataset("x axis", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
-        x_ds.make_scale("x values")
-        y_ds = main_group.create_dataset("y axis", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
-        y_ds.make_scale("y values")
         
-        map_array = np.empty((n_channels, lines, pixels), dtype = np.float32)
-        map_ds = main_group.create_dataset("map", shape = ((n_channels, lines, pixels)), dtype = np.float32)
-        map_ds.dims[0].attach_scale(channel_indices_ds)
-        map_ds.dims[1].attach_scale(y_ds)
-        map_ds.dims[2].attach_scale(x_ds)
-        map_errors_ds = main_group.create_dataset("map_errors", shape = ((n_channels, lines, pixels)), dtype = np.float32)
-        map_errors_ds.dims[0].attach_scale(channel_indices_ds)
-        map_errors_ds.dims[1].attach_scale(y_ds)
-        map_errors_ds.dims[2].attach_scale(x_ds)
+        x_values = np.linspace(-width_nm / 2, width_nm / 2, pixels)
+        y_values = np.linspace(-height_nm / 2, height_nm / 2, lines)
         
-        main_group.attrs.update({"signal": "map"})
-        main_group.attrs.update({"axes": ["channel index axis", "y axis", "x axis"]})
-        main_group.attrs.update({"units": ["", "nm", "nm"]})
-        
+        main_ds = self.io.h5.create_dataset(main_group, "data", shape = ((n_channels, lines, pixels)), dtype = np.float32)
+        [channel_indices_ds, x_ds, y_ds] = self.io.h5.create_axis_datasets(
+            main_group, main_ds, names = ["channel_indices", "x", "y"], units = ["mixed", "nm", "nm"], data = [np.arange(len(channel_names), dtype = np.int32), x_values, y_values])
+        channel_ds = self.io.h5.create_dataset(main_group, "channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+        main_array = np.empty((n_channels, lines, pixels), dtype = np.float32)
+        main_errors_ds = self.io.h5.create_dataset(main_group, "errors", shape = ((n_channels, lines, pixels)), dtype = np.float32)
+        self.io.h5.create_attributes(main_group, {"errors": "error"})        
+
 
 
         # Main loop
@@ -133,7 +114,7 @@ class Experiment(BaseExperiment):
                     raise Exception("Aborting")
 
                 data_chunk = np.array([t_elapsed, V_dc, x_nm, y_nm, z_nm, I_pA])
-                (pix_V, pix_V_var) = mla.get_pixels(t_int, average = True)
+                pix_V, pix_V_var = mla.get_pixels(t_int, average = True)
                 pix_V_std_dev = np.sqrt(pix_V_var)
                 
                 if isinstance(tia_corrections, list | np.ndarray): # Apply correction for tia response if desired
@@ -159,11 +140,11 @@ class Experiment(BaseExperiment):
                 error_pixel = np.zeros_like(combined_pixel)
                 error_pixel[6 : len(pix_nS_std_dev) + 6] = pix_nS_std_dev
                 
-                map_ds[:, line_index, pix_index] = combined_pixel
-                map_array[:, line_index, pix_index] = combined_pixel
+                main_ds[:, line_index, pix_index] = combined_pixel
+                main_array[:, line_index, pix_index] = combined_pixel
                 
                 channel_index = self.scan_processing_flags.get("channel_index")                
-                try: self.image.emit(map_array[channel_index])
+                try: self.image.emit(main_array[channel_index])
                 except: pass                
             
                 self.check_abort_request()

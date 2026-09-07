@@ -90,6 +90,27 @@ class HDF5Functions:
         except Exception as e:
             raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name} under {root_or_group}: {e}")
 
+    def create_axis_datasets(self, root_or_group: h5py.File | h5py.Group, main_dataset: h5py.Dataset, names: list[str] = [""], units: list[str | None] = [""], data: list[np.ndarray | None] = [np.empty(0)], shapes: list[tuple[int] | None] | None = None, attributes: list[dict] | None = None) -> list[h5py.Dataset]:
+        datasets = []
+        if not isinstance(shapes, list): shapes = [None for _ in range(len(names))]
+        if not isinstance(attributes, list): attributes = [{} for _ in range(len(names))]
+        
+        try:
+            for dataset_name, dataset_units, dataset_data, dataset_shape, dataset_attributes in zip(names, units, data, shapes, attributes):
+                print(f"Creating dataset {dataset_name}")
+                if not isinstance(dataset_units, str): dataset_units = "none"
+                if not isinstance(dataset_data, np.ndarray):
+                    if not isinstance(dataset_shape, tuple): raise Exception(f"Error creating axis datasets. Neither a numpy array nor a shape were provided to dataset with name {dataset_name}")
+                    else: new_dataset = self.create_dataset(root_or_group, dataset_name, units = dataset_units, shape = dataset_shape, attributes = dataset_attributes)
+                else: new_dataset = self.create_dataset(root_or_group, dataset_name, units = dataset_units, data = dataset_data, attributes = dataset_attributes)
+                datasets.append(new_dataset)
+        
+            print(f"{datasets = }")
+            self.attach_axes_to_dataset(target_dataset = main_dataset, axes_datasets = datasets)
+        except Exception as e:
+            print(f"Problem encountered while trying to make axis datasets: {e}")
+        return datasets
+
     def attach_axes_to_dataset(self, target_dataset: h5py.Dataset, axes_datasets: list[h5py.Dataset] = [], axes: int | list | None = None) -> None:
         try:
             target_dataset_name = os.path.basename(target_dataset.name)

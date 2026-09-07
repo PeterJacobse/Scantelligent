@@ -23,18 +23,16 @@ class Experiment(BaseExperiment):
         gui_parameters = self.start_parameters["gui"]
         assert isinstance(gui_parameters, dict)
         spec_buttons = gui_parameters.get("spectroscopy_buttons", {})
-        direction = spec_buttons.get("scan_direction")
-        if direction == "gaussian_process":
-            raise Exception("Gaussian Process not valid for measure_drift. Select a different scan direction.")
-                
-        [scan_metadata, grid, tip_status] = [self.start_parameters["nanonis"].get(key) for key in ["scan_metadata", "grid", "tip"]]
+        direction = spec_buttons.get("scan_direction", "up")
+
+        [scan_metadata, grid, tip_status] = [self.start_parameters["nanonis"].get(key, {}) for key in ["scan_metadata", "grid", "tip"]]
         [pixels, lines, domain] = [grid.get(key) for key in ["pixels", "lines", "domain (nm)"]]
         [x_range, y_range] = domain
         x_values = np.linspace(-.5 * x_range, .5 * x_range, pixels)
         y_values = np.linspace(-.5 * y_range, .5 * y_range, lines)
 
         # Determine the scan direction if 'nearest tip' is selected
-        if direction == "nearest_tip":            
+        if direction == "nearest_tip":
             tip_location = [tip_status[f"{dim} (nm)"] for dim in ["x", "y"]]
             [blc, tlc] = [grid.get(f"{side}_left_corner (nm)") for side in ["bottom", "top"]]
 
@@ -43,10 +41,9 @@ class Experiment(BaseExperiment):
             
             if dist_to_tlc < dist_to_blc: direction = "down"
             else: direction = "up"
-        if direction not in ["up", "down"]: raise Exception("Unkown scan direction")
 
         # Find the channels to scan over
-        signal_dict = scan_metadata.get("signal_dict") # All signals
+        signal_dict = scan_metadata.get("signal_dict", {}) # All signals
         inverted_signal_dict = {value: key for key, value in signal_dict.items()}
         nanonis_channel_indices = list(scan_metadata.get("channel_dict").values()) # Signals currently checked to be recorded
         fb_channel_indices = [signal_dict.get(channel_name) for channel_name in ["Z (m)"]] # Retrieve the channel indices from the signal_dict
@@ -77,13 +74,20 @@ class Experiment(BaseExperiment):
             self.io.h5.create_attributes(main_group, {"quantity": "Topography"})
             
             main_ds = self.io.h5.create_dataset(main_group, "data", units = "nm", shape = (len(directions), len(sct_names), pixels, lines), dtype = np.float32)
+            [dir_indices_ds, channel_indices_ds, x_ds, y_ds] = self.io.h5.create_axis_datasets(
+                main_group, main_dataset = main_ds, names = ["direction_indices", "channel_indices", "x", "y"], units = [None, None, "nm", "nm"],
+                data = [np.array([0, 1], dtype = np.int32), np.arange(len(sct_names), dtype = np.int32), x_values, y_values],                
+                shapes = [None, None, None, None])
+            
             dir_ds = self.io.h5.create_dataset(main_group, "direction", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
-            dir_indices_ds = self.io.h5.create_dataset(main_group, "direction indices", units = "none", data = np.array([0, 1], dtype = np.int32))
             channel_ds = self.io.h5.create_dataset(main_group, "channel", data = np.array([item.encode("utf-8") for item in sct_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+            """
+            dir_indices_ds = self.io.h5.create_dataset(main_group, "direction indices", units = "none", data = np.array([0, 1], dtype = np.int32))            
             channel_indices_ds = self.io.h5.create_dataset(main_group, "channel indices", units = "none", data = np.arange(len(sct_names), dtype = np.int32))
             x_ds = self.io.h5.create_dataset(main_group, "x", data = x_values, units = "nm", dtype = np.float32)
             y_ds = self.io.h5.create_dataset(main_group, "y", data = y_values, units = "nm", dtype = np.float32)
             self.io.h5.attach_axes_to_dataset(main_ds, axes_datasets = [dir_indices_ds, channel_indices_ds, x_ds, y_ds])
+            """
             
             # Start the scan. Passing the dataset will allow it to be updated during scanning
             self.set_view("nanonis")
@@ -140,11 +144,11 @@ class Experiment(BaseExperiment):
                 for point_number, coordinate in enumerate(xy_ordered_nm[1:]):
                     if point_number == 10: self.image.emit(np.flipud(z_fit_nm))
                     self.check_abort_request()
-                    (tip_status, error) = nn.tip_update({"x (nm)": coordinate[0], "y (nm)": coordinate[1]}, verbose = False, wait = True, fast_mode = True)
-                    (jitter_dict, error) = nn.jitter_tip({"radius (nm)": .1, "iterations": 4}, verbose = False)
-                    z_values = jitter_dict.get("z_values (nm)")
-                    z_avg_nm = np.average(z_values)
-                    z_var_nm2 = np.var(z_values, ddof = 1)
+                    tip_status, error = nn.update.tip(x_nm = coordinate[0], y_nm = coordinate[1], verbose = False, wait = True, fast_mode = True)
+                    jitter_dict, error = nn.jitter_tip({"radius (nm)": .1, "iterations": 4}, verbose = False)
+                    z_values = jitter_dict.get("z_values (nm)", [])
+                    z_avg_nm = float(np.average(z_values))
+                    z_var_nm2 = float(np.var(z_values, ddof = 1))
                     
                     t_elapsed = time.time() - t_start
                     if not error:
@@ -164,12 +168,12 @@ class Experiment(BaseExperiment):
                 gpr.kernel = gpr.kernel_
                 
                 # Extrapolate the GPR fit to model the entire surface
-                (z_fit_col, z_std_dev_col) = gpr.predict(xy_list, return_std = True)
+                z_fit_col, z_std_dev_col = gpr.predict(xy_list, return_std = True)
                 z_fit_nm = z_fit_col.reshape(x_grid.shape)
                 self.image.emit(np.flipud(z_fit_nm))
-            
-                       
-            
+
+
+
                 # Calculate the next points to sample
                 z_std_dev_nm_masked = z_std_dev_col.copy()
                 l2 = (gpr.kernel_.get_params().get("k1__length_scale", .5)) ** 2
