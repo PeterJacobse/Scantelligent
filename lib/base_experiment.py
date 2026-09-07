@@ -15,7 +15,7 @@ class AbortedError(Exception):
         super().__init__()
 
 
-    
+
 class BaseExperiment(QObject):
     task_progress = pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of a task
     exp_progress = pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of the experiment
@@ -51,8 +51,8 @@ class BaseExperiment(QObject):
         if isinstance(self.sct_folder, str) and os.path.isdir(self.sct_folder):
             try:
                 sys_folder = os.path.join(self.sct_folder, "sys")
-                with h5py.File(os.path.join(sys_folder, "LUTs.hdf5"), "r") as f:
-                    datasets = {key: value for key, value in f.items() if isinstance(value, h5py.Dataset)} # Filter out datasets from the items in the HDF5 file
+                with self.io.h5.read_file(os.path.join(sys_folder, "LUTs.hdf5")) as root:
+                    datasets = self.io.h5.get_datasets(root)
                     self.luts.update({key: datasets[key][:] for key in datasets.keys() if key in ["LN 10^9", "LN 10^8", "LN 10^7"]}) # Transimpedance amplifier corrections are stored as a dict with key given by the TIA setting name
                     
                     # Retrieve the temperature diode calibration
@@ -93,9 +93,10 @@ class BaseExperiment(QObject):
         return
 
     def prepare_hdf5(self) -> None:
-        self.output_file = h5py.File(self.experiment_file, "w") # Open the new HDF5 file
-        self.io.h5.setup_file(self.output_file, "main")
-        self.io.h5.create_group(self.output_file, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
+        self.output_file = self.io.h5.create_nsid_file(self.experiment_file, channel_names = ["Channel_000"], close = False, existsok = True)
+        assert isinstance(self.output_file, h5py.File)
+        self.entry_group = self.io.h5.get_object(self.output_file, "Measurement_000") # Measurement_000 is the default entry group name
+        assert isinstance(self.entry_group, h5py.Group)
         
         # Fetch the temperature using a Nanonis call and conversion using a lookup table
         if "DT-670" in self.luts.keys():
@@ -110,35 +111,28 @@ class BaseExperiment(QObject):
                         break
                 
                 result = None
-                if temp_channel: (result, error) = self.nanonis.signals_update([temp_channel], samples = 4, verbose = False)
+                if temp_channel:
+                    result, error = self.nanonis.update.signals([temp_channel], samples = 4, verbose = False)
                 if result:
                     temp_V = result[temp_channel][1]
                     temp_K = float(np.interp(temp_V, temp_calib[:, 0][::-1], temp_calib[:, 1][::-1]))
-                    temp_group = self.output_file.create_group("temperature")
-                    temp_group.attrs.update({"temperature (K)": temp_K})
+                    self.io.h5.create_group(self.entry_group, "conditions", attributes = {"temperature (K)": temp_K})
             except:
                 pass
         
-        # Add the bias, grid and tip data
-        [bias, feedback, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "grid", "tip_status", "hardware"]]
-        grid_group = self.output_file.create_group("grid")
-        grid_group.attrs.update({key: grid.get(key) for key in ["center (nm)", "domain (nm)", "angle (deg)", "pixels", "lines"]})
-        tip_group = self.output_file.create_group("tip_status")
-        tip_group.attrs.update({"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
-
-        feedback.pop("dict_name")
-        feedback_group = self.output_file.create_group("bias_feedback_settings")
-        feedback_group.attrs.update({"V_Nanonis (V)": bias.get(f"V_nanonis (V)")} | feedback)
-        feedback_group.attrs.update({"feedback on": tip.get("feedback")})
-        active_controller = feedback.get("active_controller", "")
-        
+        [bias, feedback, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "grid", "tip", "hardware"]]
+        feedback_attributes = {"V_Nanonis (V)": bias.get(f"V_nanonis (V)")} | feedback | {"feedback on": tip.get("feedback")}
+        feedback_attributes.pop("dict_name")
         if "mla" in self.start_parameters.keys():
             mla_bias = self.start_parameters["mla"].get("mla_bias", {})
-            feedback_group.attrs.update({"MLA port_1 (V)": mla_bias.get("port_1 (V)", "unknown"), "MLA port_2 (V)": mla_bias.get("port_2 (V)", "unknown")})
-        
-        tia_group = self.output_file.create_group("transimpedance_amplifier")
+            feedback_attributes.update({"MLA port_1 (V)": mla_bias.get("port_1 (V)", "unknown"), "MLA port_2 (V)": mla_bias.get("port_2 (V)", "unknown")})
         [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
-        tia_group.attrs.update({"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pa})
+                
+        self.io.h5.create_group(self.entry_group, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
+        self.io.h5.create_group(self.entry_group, "grid", attributes = {key: grid.get(key) for key in ["center (nm)", "domain (nm)", "angle (deg)", "pixels", "lines"]})
+        self.io.h5.create_group(self.entry_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
+        self.io.h5.create_group(self.entry_group, "feedback_settings", attributes = feedback_attributes)
+        self.io.h5.create_group(self.entry_group, "transimpedance_amplifier", attributes = {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pa})
         return
 
     def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = False) -> str:
@@ -244,11 +238,11 @@ class BaseExperiment(QObject):
             self.start_parameters.update({"gui": self.gui_parameters})
             
             if hasattr(self, "nanonis"):
-                (nanonis_parameters, error) = self.nanonis.initialize(verbose = False)
+                nanonis_parameters, error = self.nanonis.initialize(verbose = False)
                 self.start_parameters.update({"nanonis": nanonis_parameters})
             
             if hasattr(self, "mla") and self.mla.status == "running":
-                (mla_parameters, error) = self.mla.initialize(verbose = False)
+                mla_parameters, error = self.mla.initialize(verbose = False)
                 self.start_parameters.update({"mla": mla_parameters})
             
             # Create the experiment HDF5 file
@@ -265,8 +259,11 @@ class BaseExperiment(QObject):
                 self.logprint(f"Error: {e}", message_type = "error")
                 self.abort_requested = True
             finally:
-                try: self.output_file["date_time"].attrs.update({"end_time": datetime.now().strftime("%H:%M:%S"), "experiment_aborted": self.abort_requested})
-                except: pass
+                try:
+                    date_time_group = self.entry_group["date_time"]
+                    self.io.h5.create_attributes(date_time_group, {"end_time": datetime.now().strftime("%H:%M:%S"), "experiment_aborted": self.abort_requested})
+                except:
+                    pass
                 try: self.output_file.close()
                 except: pass
                 self.finish_experiment()

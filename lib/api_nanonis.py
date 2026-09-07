@@ -10,6 +10,12 @@ from functools import wraps
 
 
 class NanonisAPI(QtCore.QObject):
+    """
+    High-level API for communicating with Nanonis.
+    Functions are quite fault-tolerant, with error checking and flexible input.
+    Most functions output dictionaries with information (which self-describe the parameter type in their 'dict-name' entry), and these same dictionaries are also emitted as pyqt signals to permit threading.
+    TCP connections will dynamically be set up if necessary.
+    """
     task_progress = QtCore.pyqtSignal(int) # Integer between 0 and 100 to indicate the progress of an experiment
     message = QtCore.pyqtSignal(str, str) # First argument is the message string, sedond argument is the message type, like 'warning', 'code', 'result', 'message', or 'error'
     parameters = QtCore.pyqtSignal(dict) # Any parameters dictionary sent through this signal should include a self-reference 'dict_name' such that the receiver can read it and understand what kind of parameters they are
@@ -35,12 +41,21 @@ class NanonisAPI(QtCore.QObject):
         self.update = NanonisUpdate(parent = self, instance_name = "nanonis.update")
         self.status: str = "idle" # status turns to 'running' when an active TCP-IP connection exists
         self.data = DataProcessing()
-        self.piezo_range: dict = {} # When self.piezo_range_update is called, this parameter is updated
+        self.piezo_range: dict = {} # When self.update.hardware is called, this parameter is updated
         self.auto_unlink: bool = False
 
 
 
     def link(self, verbose: bool = False) -> str | bool:
+        """
+        Create a TCP/IP connection with the host.
+
+        Args:
+            verbose (bool, optional): Whether to echo the function call. Defaults to False.
+
+        Returns:
+            str | bool: False if the connection fails, "Nanonis status: <status>" otherwise.
+        """
         core = self.core
         if self.status == "running":
             self.logprint("Attempting to connect to Nanonis while it is already running. Operation aborted.", message_type = "error")
@@ -59,6 +74,15 @@ class NanonisAPI(QtCore.QObject):
         return f"Nanonis status: {self.status}"
 
     def unlink(self, verbose: bool = False) -> str:
+        """
+        End a TCP/IP connection with the host.
+
+        Args:
+            verbose (bool, optional): Whether to echo the function call. Defaults to False.
+
+        Returns:
+            str: "Nanonis status: <status>"
+        """
         core = self.core
         if verbose: self.logprint("nanonis.unlink()", message_type = "code")
         core.unlink()
@@ -79,43 +103,43 @@ class NanonisAPI(QtCore.QObject):
             if not self.status == "running": self.link()
             self.logprint("nanonis.initialize()", message_type = "code")
 
-            (session_path, error) = self.update.session_path(verbose = verbose) # Sends piezo range data with "dict_name": "piezo_range"
+            session_path, error = self.update.session_path(verbose = verbose) # Sends piezo range data with "dict_name": "piezo_range"
             if error: raise Exception(error)
             else: output_dict.update({"session_path": session_path})
             
-            (hardware, error) = self.hardware_update(verbose = verbose) # Piezo range and transimpedance amplifier gain
+            hardware, error = self.update.hardware(verbose = verbose) # Piezo range and transimpedance amplifier gain
             if error: raise Exception(error)
             else: output_dict.update({"hardware": hardware})
             
-            (tip_status, error) = self.tip_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
+            tip_status, error = self.update.tip(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error: raise Exception(error)
             else: output_dict.update({"tip": tip_status})
             
-            lockin_parameters, error = self.lockin_update(name_lookup = True, verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            lockin_parameters, error = self.update.lockin(name_lookup = True, verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error: raise Exception(error)
             else: output_dict.update({"lockin": lockin_parameters})
 
-            frame, error = self.frame_update(update_new_frame = True, verbose = verbose) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
+            frame, error = self.update.frame(update_new_frame = True, verbose = verbose) # Sends frame offset (relative to scan range origin), rotation angle and scan_range (size) with "dict_name": "frame"
             if error: raise Exception(error)
             else: output_dict.update({"frame": frame})
 
-            bias, error = self.bias_update(verbose = verbose)
+            bias, error = self.update.bias(verbose = verbose)
             if error: raise Exception(error)
             else: output_dict.update({"bias": bias})
             
-            feedback, error = self.feedback_update(verbose = verbose)
+            feedback, error = self.update.feedback(verbose = verbose)
             if error: raise Exception(error)
             else: output_dict.update({"feedback": feedback})
             
-            speeds, error = self.speeds_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
+            speeds, error = self.update.speeds(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
             if error: raise Exception(error)
             else: output_dict.update({"speeds": speeds})
             
-            grid, error = self.grid_update(verbose = verbose) # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid" (parent of self.frame_update())
+            grid, error = self.update.grid(verbose = verbose) # Sends frame data combined with grid aspects like number of pixels and lines and calculated x_grid and y_grid, with "dict_name": "grid" (parent of self.update.frame())
             if error: raise Exception(error)
             else: output_dict.update({"grid": grid})
             
-            scan_metadata, error = self.scan_metadata_update(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
+            scan_metadata, error = self.update.scan_metadata(verbose = verbose) # Sends scan metadata like the channels being recorded in Nanonis; "dict_name": "grid"
             if error: raise Exception(error)
             else: output_dict.update({"scan_metadata": scan_metadata})
             
@@ -123,13 +147,13 @@ class NanonisAPI(QtCore.QObject):
             #if error: raise Exception(error)
             #else: parameters.update({sts_parameters.get("dict_name"): sts_parameters})
             
-            coarse_parameters, error = self.coarse_parameters_update(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
+            coarse_parameters, error = self.update.coarse_parameters(verbose = verbose) # Sends coarse parameter data with "dict_name": "coarse_parameters"
             if error:
                 self.logprint("Warning. Could not read the coarse parameters", message_type = "warning")
                 pass # Not useful to raise this error because the simulator does not have motor control
             else: output_dict.update({"coarse_parameters": coarse_parameters})
             
-            (tip_shaper, error) = self.tip_shaper_update(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
+            tip_shaper, error = self.update.tip_shaper(verbose = verbose) # Sends tip status, position and current data with "dict_name": "tip_status"
             if error:
                 self.logprint("Warning. Could not read parameters from the tip shaper module. It may be closed", message_type = "warning")
                 pass
@@ -224,7 +248,7 @@ class NanonisAPI(QtCore.QObject):
         if isinstance(signals, str): signals = [signals]
         if not isinstance(signals, list | np.ndarray): return return_dict
 
-        (scan_metadata, error) = self.scan_metadata_update()
+        scan_metadata, error = self.update.scan_metadata()
         signal_dict = scan_metadata.get("signal_dict")
         
         for signal in signals:
@@ -1188,7 +1212,7 @@ class NanonisAPI(QtCore.QObject):
         try:
             if verbose: self.logprint(f"nanonis.jitter_tip({parameters})", "code")
             if not self.status == "running": self.link()
-            (begin_status, error) = self.tip_update(verbose = False)
+            (begin_status, error) = self.update.tip(verbose = False)
             [x_start_nm, y_start_nm, z_start_nm, I_start_pA] = [begin_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
 
             rng = np.random.default_rng()
@@ -1233,8 +1257,8 @@ class NanonisAPI(QtCore.QObject):
             self.parameters.emit({"dict_name": "view_request", "view": "camera"})
             
             [LI_X_index, LI_Y_index] = self.signal_lookup(["LI demod 1 x", "LI demod 1 y"])
-            (lockin, error) = self.lockin_update({"mod1": {"on": True, "amplitude (mV)": amp_approach_mV, "frequency (Hz)": f_approach_Hz}})
-            (tip_status, error) = self.tip_update({"feedback": True}, fast_mode = True)
+            (lockin, error) = self.update.lockin({"mod1": {"on": True, "amplitude (mV)": amp_approach_mV, "frequency (Hz)": f_approach_Hz}})
+            (tip_status, error) = self.update.tip({"feedback": True}, fast_mode = True)
             z_tip_nm = tip_status.get("z (nm)")
             [z_min_nm, z_max_nm] = tip_status.get("z_limits (nm)")
             
@@ -1248,12 +1272,12 @@ class NanonisAPI(QtCore.QObject):
                 
                 self.logprint(f"Auto approach step {step}", message_type = "message")
                 counter = 0
-                (tip_status, error) = self.tip_update({"feedback": True}, fast_mode = False, verbose = False) # Switch fb on
+                tip_status, error = self.update.tip({"feedback": True}, fast_mode = False, verbose = False) # Switch fb on
                 
                 for observation in range(max_observations):
-                    (tip_status, error) = self.tip_update(fast_mode = True, verbose = False) # Get tip status
+                    tip_status, error = self.update.tip(fast_mode = True, verbose = False) # Get tip status
                     if error: break
-                    (signal_dict, error) = self.signals_update([LI_X_index, LI_Y_index], name_lookup = False, verbose = False)
+                    signal_dict, error = self.update.signals([LI_X_index, LI_Y_index], name_lookup = False, verbose = False)
                     if error: break
                     t_elapsed = time.time() - t0
                     
@@ -1275,7 +1299,7 @@ class NanonisAPI(QtCore.QObject):
                     if z_tip_nm < z_min_nm + 1: break
                     if abort_callback: abort_callback(withdraw = True)
 
-                self.tip_update({"withdraw": True}, verbose = False)
+                self.update.tip({"withdraw": True}, verbose = False)
                 
                 if surface_reached:
                     self.logprint(f"Surface detected!", message_type = "message")
@@ -1287,7 +1311,7 @@ class NanonisAPI(QtCore.QObject):
         except Exception as e:
             self.logprint(f"Error encountered when performing auto-approach: {e}")
         finally:
-            try: self.tip_update({"withdraw": True}, verbose = False) # End by withdrawing
+            try: self.update.tip({"withdraw": True}, verbose = False) # End by withdrawing
             except: pass
         return
 
@@ -1370,7 +1394,7 @@ class NanonisUpdate:
 
 
         Returns:
-            tuple[dict, str]: _description_
+            tuple[dict, str]: (new parameters, error message)
         """
 
         error: str = ""        
@@ -1393,6 +1417,7 @@ class NanonisUpdate:
             
             # Announce
             if verbose: self.echo_function_call("bias", parameters)
+            if not self.nn.status == "running": self.nn.link()
             
             V_old = core.get_V() # Read data from Nanonis
             if not isinstance(V, float | int): V = V_old # V not provided; substitute the old bias
@@ -1437,6 +1462,7 @@ class NanonisUpdate:
         try:
             if verbose: self.echo_function_call("session_path")
             if not self.nn.status == "running": self.nn.link()
+            
             output_dict.update({"path": core.get_path()})
             self.nn.parameters.emit(output_dict)
             if verbose: self.nn.logprint(f"{output_dict}", message_type = "result")
@@ -1593,7 +1619,26 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def tip(self, parameters: dict = {}, *, wait: bool = False, fast_mode: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, str]:
+    def tip(self, parameters: dict = {}, *, withdraw: bool | None = None, feedback: bool | None = None, x_nm: float | int | None = None, y_nm: float | int | None = None, z_nm: float | int | None = None, z_rel_nm: float | int | None = None, wait: bool = False, fast_mode: bool = False, unlink: bool = False, verbose: int = True) -> tuple[dict, str]:
+        """
+        Request the status (position and feedback) of the tip, and set a new position if desired
+
+        Args:
+            parameters (dict, optional): Dictionary containing parameter values. Recognized entries are 'withdraw', 'feedback', 'x (nm)', 'y (nm)', 'z (nm)' and 'dz (nm)'. Defaults to {}.
+            withdraw (bool | None, optional): Whether or not to withdraw the tip. Defaults to None (no change).
+            feedback (bool | None, optional): Bool that sets the feedback. Defaults to None (no change).
+            x_nm (float | int | None, optional): x position of the tip. Defaults to None (no change).
+            y_nm (float | int | None, optional): y position of the tip. Defaults to None (no change).
+            z_nm (float | int | None, optional): z position of the tip. Defaults to None (no change).
+            z_rel_nm (float | int | None, optional): z step of the tip relative to its current height. Defaults to None (no change).
+            wait (bool, optional): Whether or not to wait for a tip motion to finalize. Defaults to False.
+            fast_mode (bool, optional): Fast mode. Defaults to False.
+            unlink (bool, optional): Whether or not to unlink after execution. Defaults to False.
+            verbose (int, optional): Whether or not to print information. Defaults to True.
+
+        Returns:
+            tuple[dict, str]: (new parameters, error message)
+        """
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "tip"}
         core = self.nn.core
@@ -1603,39 +1648,42 @@ class NanonisUpdate:
         z_max = 100
 
         try:
+            # Read input values
+            put_kwargs_in_dict(parameters, {"withdraw": (withdraw, bool), "feedback": (feedback, bool), "x (nm)": (x_nm, float | int), "y (nm)": (y_nm, float | int), "z (nm)": (z_nm, float | int), "z_rel (nm)": (z_rel_nm, float | int)})
+            
+            # Extract parameters
             [withdraw, feedback, x_nm, y_nm, z_nm, z_rel_nm] = get_parameters_from_tags(parameters, [["withdraw", "wd"], ["feedback", "fb"], ["x (nm)", "x_nm", "x"], ["y (nm)", "y_nm", "y"], ["z (nm)", "z_nm", "z"],
                                                                                                      ["z_rel (nm)", "z_relative (nm)", "delta_z (nm)", "dz (nm)", "d_z (nm)", "z_rel", "z_relative", "delta_z", "dz", "d_z"]])
-            #[parameters.get(key, None) for key in ["withdraw", "feedback", "x (nm)", "y (nm)", "z (nm)", "z_rel (nm)"]]
-            
+                        
             if withdraw == None: withdraw = False
             if x_nm and y_nm: xy_target_nm = [x_nm, y_nm]
             else: xy_target_nm = None
             
             if verbose: self.echo_function_call("tip", parameters)
             if not self.nn.status == "running": self.nn.link()
-
+            
             xy_nm = core.get_xy_nm()
             [x_nm, y_nm] = xy_nm
             if xy_target_nm: core.set_xy_nm(xy_target_nm)
             else: xy_target_nm = xy_nm
             distance_nm = np.linalg.norm(np.array(xy_nm) - np.array(xy_target_nm))
 
-            if z_nm:
+            if z_nm is not None:
                 core.set_fb(False)
                 time.sleep(.2)
                 core.set_z_nm(z_nm)
             z_nm = core.get_z_nm()
-            if z_rel_nm:
+            if z_rel_nm is not None:
                 z_nm += z_rel_nm
                 core.set_fb(False)
                 time.sleep(.2)
                 core.set_z_nm(z_nm)
             if not fast_mode: [z_min, z_max] = core.get_z_limits_nm()
-
+            
             I_pA = core.get_I_pA()
 
             if not fast_mode:
-                if type(feedback) == bool:
+                if isinstance(feedback, bool):
                     core.set_fb(feedback)
                     time.sleep(.1)
 
@@ -1729,7 +1777,7 @@ class NanonisUpdate:
 
         return (output_dict, error)
 
-    def tip_shaper(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
+    def tip_shaper(self, parameters: dict = {}, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "tip_shaper"}
         core = self.nn.core

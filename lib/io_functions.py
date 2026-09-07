@@ -13,7 +13,7 @@ class HDF5Functions:
         self.parent: IOFunctions = parent
 
     @contextmanager
-    def read(self, file_path: str):
+    def read_file(self, file_path: str):
         if not os.path.isfile(file_path):
             print(f"Invalid file path provided to read_file: {file_path}")
             yield False
@@ -33,9 +33,18 @@ class HDF5Functions:
         return
 
     @contextmanager
-    def write(self, file_path: str):
+    def write_file(self, file_path: str):
         try:
             root = h5py.File(file_path, "w")
+            yield root
+        finally:
+            root.close()
+        return
+
+    @contextmanager
+    def append_file(self, file_path: str):
+        try:
+            root = h5py.File(file_path, "a")
             yield root
         finally:
             root.close()
@@ -68,27 +77,26 @@ class HDF5Functions:
             return new_group
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
-        return
 
-    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
+    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
         try:
             if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, *kwargs)
             else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, *kwargs)
             
             attributes.update({"title": name, "long_name": name})
+            if isinstance(units, str): attributes.update({"units": units})
             self.create_attributes(dataset, attributes)
             return dataset
-        except:
-            raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name} under {root_or_group}")
-        return
+        except Exception as e:
+            raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name} under {root_or_group}: {e}")
 
     def attach_axes_to_dataset(self, target_dataset: h5py.Dataset, axes_datasets: list[h5py.Dataset] = [], axes: int | list | None = None) -> None:
         try:
             target_dataset_name = os.path.basename(target_dataset.name)
-            target_dataset_group = target_dataset.parent
+            target_dataset_group: h5py.Group | h5py.File = target_dataset.parent
             
             if isinstance(axes, int): axes = [axes]
-            if not isinstance(axes, list): axes = range(min(len(axes_datasets), target_dataset.ndim))
+            if not isinstance(axes, list): axes = list(range(min(len(axes_datasets), target_dataset.ndim)))
             
             axis_labels = []
             axes_units = []
@@ -99,62 +107,94 @@ class HDF5Functions:
                 axis_labels.append(axis_dataset_name)
                 axes_units.append(axis_units)
                 
+                match dimension:
+                    case 0: self.create_attributes(target_dataset, {"x_unit": axis_units})
+                    case 1: self.create_attributes(target_dataset, {"y_unit": axis_units})
+                    case 2: self.create_attributes(target_dataset, {"z_unit": axis_units})
+                                
                 # Make scale and attach scale for NSID compliance
                 axis_dataset.make_scale(axis_dataset_name)
                 target_dataset.dims[dimension].attach_scale(axis_dataset)
             
             # Declaration of axes and units for Nexus compliance
             self.create_attributes(target_dataset, {"DIMENSION_LABELS": axis_labels})
-            self.create_attributes(target_dataset_group, {"axes": axis_labels, "units": axes_units})
+            self.create_attributes(target_dataset_group, {"axes": axis_labels})
         except:
             print(f"Failed to attach dataset {axis_dataset_name} to axis {dimension} of {target_dataset_name}")
         return
 
-    def lazy_read(self, file_path: str) -> dict:
-        output_dict = {"file_path": file_path}
+    def read(self, file_path: str, lazy: bool = True) -> dict:
+        output_dict: dict[str, object] = {}
+        nx_entries: list[str] = []
 
-        def recurse(h5obj: h5py.File | h5py.Group) -> dict:
-            node: dict = {}
-            # include attributes for this group if any
-            try:
-                attributes = self.get_attributes(h5obj)
-            except Exception:
-                attributes = {}
+        def recurse(h5obj: h5py.File | h5py.Group, current_path: str = "") -> None:
+            # Find attributes, groups and datasets
+            attributes = self.get_attributes(h5obj)
+            datasets = self.get_datasets(h5obj)
+            groups = self.get_groups(h5obj)            
+
             if attributes:
-                node.update({"__attrs__": attributes})
+                attribute_key = "." if current_path == "" else current_path
+                output_dict.update({f"{attribute_key}/attrs": attributes})
+                
+                if attributes.get("NX_class", None) in ("NXdata", b"NXdata"):
+                    nx_entries.append(current_path)
 
-            # iterate children
-            try:
-                for name, item in self.get_items(h5obj):
-                    if isinstance(item, h5py.Group):
-                        node[name] = recurse(item)
-                    elif isinstance(item, h5py.Dataset):
-                        # store dataset as a reference (h5py.Dataset object)
-                        node[name] = item
-                    else:
-                        node[name] = item
-            except Exception:
-                pass
+            for dataset_name, dataset in datasets.items():
+                prefix = f"{current_path}/" if current_path else ""
+                dataset_path = f"{prefix}{dataset_name}"
+                
+                if lazy: output_dict.update({dataset_path: dataset})
+                else: output_dict.update({dataset_name: dataset[()]})
 
-            return node
+            for group_name, group in groups.items():
+                # Build the cumulative internal path string
+                prefix = f"{current_path}/" if current_path else ""
+                
+                recurse(group, f"{prefix}{group_name}")
+            
+            return
 
         try:
             with self.read_file(file_path) as root:
                 if root is False:
                     return output_dict
 
-                # Build a nested dict representing the file tree. Datasets are returned
-                # as h5py.Dataset references so the caller can read data lazily.
                 file_tree = recurse(root)
-                output_dict.update({"root": file_tree})
+                output_dict.update({"./": file_tree, "NXdata": nx_entries})
 
         except Exception as e:
             print(f"Problem encountered while reading HDF5 file: {e}")
 
         return output_dict
 
+    def get_object(self, root_or_path: str | h5py.File | h5py.Group, internal_path: str = "") -> h5py.Group | h5py.Dataset | h5py.Datatype | None:
+        should_close = isinstance(root_or_path, str)
+        
+        if should_close: root = h5py.File(root_or_path, "r")
+        elif isinstance(root_or_path, h5py.File | h5py.Group): root = root_or_path
+        else:
+            print(f"Invalid type {type(root_or_path)} provided to get_dataset")
+            return None
+        
+        try:
+            obj = root.get(internal_path, None)
+            if obj == None:
+                print(f"Path {internal_path} not found in HDF5 file")
+                return None
+            
+            elif isinstance(obj, h5py.Dataset): return obj[()]
+            return obj
+        
+        except Exception as e:
+            print(f"Could not retrieve object from file using internal path {internal_path}")
+        
+        finally:
+            if should_close: root.close()
+        return
+
     def get_data(self, file_path: str) -> dict:
-        output_dict = {"file_path": file_path}
+        output_dict: dict[str, object] = {"file_path": file_path}
         frame = None
         dataset = None
         main_group = None
@@ -162,10 +202,11 @@ class HDF5Functions:
         axis_data = {}
 
         try:
-            with h5py.File(file_path, "r") as root:
+            with self.read_file(file_path) as root:
                 """
                 Parsing the root
                 """
+                assert isinstance(root, h5py.File)
                 
                 # Open groups at the root level
                 root_items = self.get_items(root)
@@ -176,7 +217,6 @@ class HDF5Functions:
                 # Write root-level attributes to output dictionary
                 output_dict.update({"root": root_attributes})
                 
-
                 # Try to find the frame (or grid) at the root level
                 for obj in ["frame", "grid"]:
                     if not obj in root_groups.keys(): continue
@@ -306,23 +346,48 @@ class HDF5Functions:
             pass
         return output_dict
 
-    def setup_file(self, root: h5py.File, channel_names: list | str = "Channel_000", nsid_version: str = "0.0.2") -> tuple[h5py.Group, list[h5py.Group]]:
-        """ Set up a HDF5 file to make it NSID (Gwyddion) and H5web compliant """
-        entry_group = None
+    def create_nsid_file(self, file_path: str, close: bool = True, existsok: bool = False, channel_names: list | str = "Channel_000", nsid_version: str = "0.0.2") -> h5py.File | None:
+        """
+        Generate a NSID and Nexus-compatible HDF5 file for n-dimensional parameter space measurements.
+
+        Args:
+            file_path (str): File path as as string
+            close (bool, optional): Whether to close the file after creation or keep it open and return a reference to the root. Defaults to True.
+            existsok (bool, optional): Whether to overwrite if a file with the same path already exists. Defaults to True.
+            channel_names (list | str, optional): Names of the different measurements. Defaults to "Channel_000".
+            nsid_version (str, optional): String reflecting the NSID compatibility version. Defaults to "0.0.2".
+
+        Returns:
+            h5py.File | None: Root or None, depending on whether 'close' is True or False.
+        """
         channel_groups = []
-        if isinstance(channel_names, str): channel_names = [channel_names]        
+        if isinstance(channel_names, str): channel_names = [channel_names] 
+        
+        if os.path.isfile(file_path):
+            if existsok:
+                print(f"File already exists at path {file_path}. Overwriting")
+            else:
+                print(f"File already exists at path {file_path}. Aborting")
+                return
         
         try:
+            root = h5py.File(file_path, "w")
             self.create_attributes(root, {"nsid_version": nsid_version, "default": "Measurement_000"})
             entry_group = self.create_group(root, "Measurement_000", attributes = {"NX_class": "NXentry", "default": channel_names[0]})
+            self.create_group(root, "thumbnail")
             
             for channel_name in channel_names:
                 group = self.create_group(entry_group, channel_name, attributes = {"NX_class": "NXdata", "signal": "data"})
-                channel_groups.append(group)            
+                channel_groups.append(group)   
         
         except Exception as e:
             print(f"Error encountered while setting up HDF5 file: {e}")
-        return entry_group, channel_groups
+
+        if close:
+            root.close()
+            return
+        else:
+            return root
 
 
 

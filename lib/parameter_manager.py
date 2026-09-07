@@ -23,12 +23,12 @@ class ParameterManager(QtCore.QObject):
 
         match parameter_type:
             case "bias":
-                if hasattr(sct, "nanonis"): sct.nanonis.bias_update(unlink = True)
+                if hasattr(sct, "nanonis"): sct.nanonis.update.bias(unlink = True)
                 if hasattr(sct, "mla") and sct.mla.status == "running": sct.mla.bias_update(unlink = False)
             case "feedback":
-                sct.nanonis.feedback_update(unlink = False)
-                sct.nanonis.hardware_update(unlink = False)
-                sct.nanonis.tip_update(unlink = True)
+                sct.nanonis.update.feedback(unlink = False)
+                sct.nanonis.update.hardware(unlink = False)
+                sct.nanonis.update.tip(unlink = True)
             case "frame": sct.nanonis.frame_update(unlink = True, update_new_frame = True)
             case "grid": sct.nanonis.grid_update(unlink = True)
             case "speed" | "speeds": sct.nanonis.speeds_update(unlink = True)                
@@ -67,7 +67,7 @@ class ParameterManager(QtCore.QObject):
                     if isinstance(val, int | float): parameters.update({parameter: val})
                 parameters.update({"I_fb (pA)": line_edits["fb"].getValue()})
 
-                sct.nanonis.bias_update(parameters, unlink = True)
+                sct.nanonis.update.bias(parameters, unlink = True)
 
             case "feedback":
                 parameters = {"dict_name": "feedback"}
@@ -325,7 +325,7 @@ class ParameterManager(QtCore.QObject):
                     line = sct.gui.grapher.plot()
                     sct.lines.append(line)
 
-            case "tip_status":
+            case "tip" | "tip_status":
                 tip_status = parameters
                 sct.status.update({"tip": tip_status})
                 
@@ -363,11 +363,11 @@ class ParameterManager(QtCore.QObject):
 
             case "bias":
                 [line_edits[name].setValue(parameter) for name, parameter in zip(["V_nanonis", "dV_nanonis", "dt_nanonis", "dz_nanonis"],
-                                                                                 [parameters.get(name) for name in ["V_nanonis (V)", "dV_nanonis (mV)", "dt_nanonis (ms)", "dz_nanonis (nm)"]])]
+                                                                                 [parameters.get(name) for name in ["V (V)", "dV (mV)", "dt (ms)", "dz (nm)"]])]
                 if sct.gui.buttons["voltage_lock"].isChecked() and hasattr(sct, "mla") and hasattr(sct.mla, "mla") and hasattr(sct.mla.mla, "lockin"):
                     try:
-                        V_nanonis = parameters.get("V_nanonis (V)")
-                        sct.mla.bias_update({"port_1 (V)": V_nanonis, "port_2 (V)": V_nanonis})
+                        V_nanonis = parameters.get("V (V)")
+                        sct.mla.update.bias({"port_1 (V)": V_nanonis, "port_2 (V)": V_nanonis})
                     except:
                         pass
 

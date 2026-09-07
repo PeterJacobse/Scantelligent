@@ -57,7 +57,7 @@ class Experiment(BaseExperiment):
 
         # Prepare the output
         channel_names = ["t (s)", "V (V)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"]
-        [channel_names.extend([f"Re(G{demod_index + 1}) (nS)", f"Im(G{demod_index + 1}) (nS)"]) for demod_index in range(32)]
+        channel_names.extend([f"G({demod_index + 1}) (nS)" for demod_index in range(32)])
         n_channels = len(channel_names)
         self.data_array.emit(np.array(channel_names)) # This triggers the GUI to start graphing data
         self.parameters.emit({"dict_name": "scan_metadata", "channel_dict": {channel_name: index for index, channel_name in enumerate(channel_names)}}) # This triggers the GUI and scan_processing_flags to assign the correct scan channels to the slices of the data array
@@ -67,14 +67,14 @@ class Experiment(BaseExperiment):
         # Set up the HDF5 datasets and groups
         entry_group_attributes = self.io.h5.get_attributes(self.entry_group)
         spec_attributes = {"device": "MLA", "MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
-                      "f / df": 1, "settling time (1 / df)": t_settle, "pixels per datapoint (1 / df)": t_int, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA}
+                           "f / df": 1, "settling time (1 / df)": t_settle, "pixels per datapoint (1 / df)": t_int, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA}
         spec_settings_group = self.io.h5.create_group(self.entry_group, "spectroscopy_settings", attributes = spec_attributes)
         self.io.h5.create_dataset(spec_settings_group, "MLA_settings", data = mla_setup_array)        
         
         main_group_name = entry_group_attributes.get("default", "Channel_000")
         main_group = self.io.h5.get_object(self.entry_group, main_group_name)
         assert isinstance(main_group, h5py.Group)
-        
+        """
         main_ds = self.io.h5.create_dataset(main_group, "data", units = "nm", shape = (len(directions), len(sct_names), pixels, lines), dtype = np.float32)
         dir_ds = self.io.h5.create_dataset(main_group, "direction", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
         dir_indices_ds = self.io.h5.create_dataset(main_group, "direction indices", units = "none", data = np.array([0, 1], dtype = np.int32))
@@ -83,7 +83,7 @@ class Experiment(BaseExperiment):
         x_ds = self.io.h5.create_dataset(main_group, "x", data = x_values, units = "nm", dtype = np.float32)
         y_ds = self.io.h5.create_dataset(main_group, "y", data = y_values, units = "nm", dtype = np.float32)
         self.io.h5.attach_axes_to_dataset(main_ds, axes_datasets = [dir_indices_ds, channel_indices_ds, x_ds, y_ds])
-        
+        """
         channel_ds = main_group.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
         channel_indices_ds = main_group.create_dataset("channel index axis", data = np.arange(len(channel_names), dtype = np.int32))
         channel_indices_ds.make_scale("channel indices")

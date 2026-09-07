@@ -340,7 +340,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [buttons[name].changeToolTip(f"gui.buttons[\"{name}\"]", line = 10) for name in buttons.keys()]
         return buttons
 
-    def make_checkboxes(self) -> tuple[dict, dict]:
+    def make_checkboxes(self) -> tuple[dict, SCTWidgets.CheckBox]:
         CB = SCTWidgets.CheckBox
         BG = SCTWidgets.ButtonGroup
 
@@ -430,7 +430,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [comboboxes[name].changeToolTip(f"gui.comboboxes[\"{name}\"]", line = 10) for name in comboboxes.keys()]        
         return comboboxes
 
-    def make_line_edits(self) -> dict:
+    def make_line_edits(self) -> dict[str, QtWidgets.QLineEdit]:
         LE = SCTWidgets.PhysicsLineEdit
         ILE = SCTWidgets.InputLineEdit
         RG = SCTWidgets.ReciprocalGroup
@@ -1060,7 +1060,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         layouts["left_side"].setContentsMargins(0, 0, 0, 0)
         layouts["toolbar"].setContentsMargins(2, 2, 2, 2)
         
-        # Create the toolbar        
+        # Create the toolbar
         layouts["toolbar"].addWidget(groupboxes["connections"], 0, 0, 1, 2)
         layouts["toolbar"].addWidget(groupboxes["tip"], 1, 0)
         layouts["toolbar"].addWidget(groupboxes["experiment"], 1, 1)

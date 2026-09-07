@@ -377,7 +377,7 @@ class Scantelligent(QtCore.QObject):
         match self.gui.buttons["target"].state_index:
             case 0:
                 if not hasattr(self, "nanonis"): return
-                self.nanonis.tip_update({"x (nm)": x, "y (nm)": y}, wait = False, unlink = True)
+                self.nanonis.update.tip({"x (nm)": x, "y (nm)": y}, wait = False, unlink = True)
             case _:
                 try:
                     self.gui.target0.setPos(x, y)
@@ -940,7 +940,7 @@ class Scantelligent(QtCore.QObject):
 
                 [view.addItem(item) for item in [self.gui.new_frame, self.gui.frame, self.gui.piezo_frame, self.gui.tip_target, self.gui.target0, self.gui.path_pdi]]
                 for item in self.saved_items: view.addItem(item)
-                try: self.nanonis.hardware_update()
+                try: self.nanonis.update.hardware()
                 except: pass
                 self.set_view_range("full")
             
@@ -1226,7 +1226,7 @@ class Scantelligent(QtCore.QObject):
         return
 
     def toggle_withdraw(self) -> bool:
-        if not hasattr(self, "nanonis"): return
+        if not hasattr(self, "nanonis"): return False
         
         error = False
 
@@ -1235,12 +1235,12 @@ class Scantelligent(QtCore.QObject):
             tip_withdrawn = tip_status.get("withdrawn")
             
             if tip_withdrawn:
-                (tip_status, error) = self.nanonis.tip_update({"feedback": True}, unlink = True)
+                (tip_status, error) = self.nanonis.update.tip({"feedback": True}, unlink = True)
                 if error: raise Exception(error)
             else:
-                (tip_status, error) = self.nanonis.tip_update({"withdraw": True}, unlink = False)
+                (tip_status, error) = self.nanonis.update.tip({"withdraw": True}, unlink = False)
                 time.sleep(.2)
-                (tip_status, error) = self.nanonis.tip_update(unlink = True, verbose = False)
+                (tip_status, error) = self.nanonis.update.tip(unlink = True, verbose = False)
                 if error: raise Exception(error)
 
         except Exception as e:
@@ -1279,7 +1279,7 @@ class Scantelligent(QtCore.QObject):
 
     def query_tip_status(self) -> None:
         if not hasattr(self, "nanonis1"): return
-        self.nanonis1.tip_update(verbose = False)
+        self.nanonis1.update.tip(verbose = False)
         return
 
     def coarse_move(self, direction: str = "n") -> bool:
@@ -1363,7 +1363,7 @@ class Scantelligent(QtCore.QObject):
             mod1_on = self.gui.buttons["nanonis_mod1"].isChecked()
             mod2_on = self.gui.buttons["nanonis_mod2"].isChecked()
 
-            self.nanonis.lockin_update({"modulator_1": {"on": mod1_on}, "modulator_2": {"on": mod2_on}})
+            self.nanonis.update.lockin({"modulator_1": {"on": mod1_on}, "modulator_2": {"on": mod2_on}})
             
         except Exception as e:
             self.logprint(f"Error controlling modulator {modulator_number}: {e}", message_type = "error")
@@ -1373,7 +1373,7 @@ class Scantelligent(QtCore.QObject):
         if not hasattr(self, "nanonis"): return
         try:
             z_rel_nm = self.gui.line_edits["z_rel"].getValue()
-            self.nanonis.tip_update({"z_rel (nm)": z_rel_nm})
+            self.nanonis.update.tip({"z_rel (nm)": z_rel_nm})
         except Exception as e:
             self.logprint(f"Error: {e}", message_type = "error")
         return
@@ -1446,7 +1446,7 @@ class Scantelligent(QtCore.QObject):
                     case _:
                         pass
                 
-                [previous_filename, next_filename] = self.io.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".hdf5")
+                [previous_filename, next_filename] = self.io.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".h5")
                 experiment_filename = next_filename
                 if self.gui.buttons["save"].state_name == "data_present": experiment_filename = previous_filename # Overwrite the previous file if it was not saved
                 
@@ -1580,6 +1580,19 @@ if __name__ == "__main__":
     try:
         import qdarktheme
         qdarktheme.setup_theme("dark")
+        custom_qss = """
+        QGroupBox {
+            margin-top: 18px; /* Adjust this value if your font size is larger */
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding-left: 3px;
+            padding-right: 3px;
+        }
+        """
+        app.setStyleSheet(app.styleSheet() + custom_qss)
+
     except:
         print("Scantelligent was optimized for dark theme.\nInstall pyqtdarktheme into your virtual environment to use.")
     

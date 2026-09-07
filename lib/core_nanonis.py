@@ -53,6 +53,10 @@ class Conversions:
 
 
 class NanonisCore:
+    """
+    Low-level API for communicating with Nanonis.
+    Allows faster hardware communication but is trickier to use, with stricter and typically not self-descriptive input/output and less error/connection handling.
+    """
     def __init__(self, hw_config: dict):
         self.configure(hw_config) # Extract the TCP parameters from the provided hardware dict
         self.conv = Conversions() # Load the conversions
@@ -771,7 +775,7 @@ class NanonisCore:
         command = self.headers["get_I_fb"]
         
         self.send_command(command)
-        response = self.receive_response(4)        
+        response = self.receive_response()        
         return response[0 : 4]
     
     def get_I_fb_pA(self) -> float:
@@ -837,7 +841,7 @@ class NanonisCore:
         command = self.headers["get_z_limits"]
         self.send_command(command)
         
-        response = self.receive_response(0)        
+        response = self.receive_response()        
         return response[0 : 8]
     
     def get_z_limits_nm(self) -> list[float]:
