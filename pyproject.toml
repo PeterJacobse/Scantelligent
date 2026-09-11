@@ -14,7 +14,7 @@ dependencies = [
     "paramiko>=4.0.0",
     "pint>=0.25.2",
     "pip>=25.3",
-    "pylablib-lightweight",
+    "pylablib",
     "pymeasure>=0.15.0",
     "pyqt6>=6.10.0",
     "pyqtdarktheme>=2.1.0",
@@ -28,4 +28,6 @@ dependencies = [
 ]
 
 [tool.uv]
-no-binary-package = ["pylablib-lightweight"]
+override-dependencies = [
+    "PyQt5 ; extra == 'never-install-this'" 
+]

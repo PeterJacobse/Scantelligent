@@ -1,4 +1,4 @@
-import os, re
+import os, re, time
 import numpy as np
 from PyQt6 import QtCore
 import pylablib
@@ -53,28 +53,16 @@ class AndorAPI(QtCore.QObject):
 
         # Make sure the camera is cooled and the shutter is closed
         cam.setup_shutter(mode = "closed")
-        if cooldown: self.cooldown(T_setpoint = T_setpoint)
 
         cam.set_acquisition_mode("single") # We want to acquire single spectra
         cam.set_exposure(3.0) # Targeted exposure time in seconds
         
         self.cam = cam
         self.spec = spec
+        self.cam.set_cooler(on = False)
+        if cooldown: self.cooldown(T_setpoint = T_setpoint)
+        
         print(f"Initialization successful. The camera and spectrograph are accessible as attributes 'cam' and 'spec', respectively.")
-        return
-
-    def cooldown(self, T_setpoint: float | int | None = None) -> None:
-        if isinstance(T_setpoint, float | int): self.cam.set_temperature(T_setpoint, enable_cooler = True)
-        self.cam.set_fan_mode("full")
-        T_camera = self.cam.get_temperature()
-        T_setpoint_measured = self.cam.get_temperature_setpoint()
-        print(f"Cooldown started. Current temperature: {T_camera = } C; T_setpoint = {T_setpoint_measured} C.")
-        return
-
-    def warmup(self) -> None:
-        self.cam.set_fan_mode("off")
-        T_camera = self.cam.get_temperature()
-        print(f"Warmup started. Current temperature: {T_camera = } C.")
         return
 
     def shutdown(self, cooler_off: bool = False, wait_for_warmup: bool = False) -> None:
@@ -102,16 +90,69 @@ class AndorAPI(QtCore.QObject):
         camera.close()
         print(f"Andor camera is closed")
         return
-    
+
+
+
+    def cooldown(self, T_setpoint: float | int | None = None) -> None:
+        if isinstance(T_setpoint, float | int): self.cam.set_temperature(T_setpoint, enable_cooler = False)
+        self.cam.set_fan_mode("full")
+        self.cam.set_cooler(on = True)
+        T_camera = self.cam.get_temperature()
+        T_setpoint_measured = self.cam.get_temperature_setpoint()
+        print(f"Cooldown started. Current temperature: {T_camera = } C; T_setpoint = {T_setpoint_measured} C.")
+        return
+
+    def warmup(self) -> None:
+        self.cam.set_cooler(on = False)
+        self.cam.set_fan_mode("off")
+        T_camera = self.cam.get_temperature()
+        print(f"Warmup started. Current temperature: {T_camera = } C.")
+        return
+
+    def fan(self) -> str:
+        return str(self.cam.get_fan_mode())
+
+    def cooler(self) -> str:
+        if self.cam.is_cooler_on(): return "on"
+        else: return "off"
+
+    def set_temperature_setpoint(self, T_setpoint: float | int | None = None) -> None:
+        if not isinstance(T_setpoint, float | int): return
+        self.cam.set_temperature(T_setpoint, enable_cooler = False)
+        return
+
     def get_temperature(self) -> float:
         return self.cam.get_temperature()
+
+    def temperature(self) -> float:
+        return self.get_temperature()
 
     def get_temperature_setpoint(self) -> float | None:
         return self.cam.get_temperature_setpoint()
 
+
+
     def set_exposure_time(self, time_s: float = 3) -> None:
         self.cam.set_exposure(time_s)
         return
+    
+    def open_shutter(self, open: bool = True) -> None:
+        """Opens the camera shutter
+
+        Args:
+            close (bool, optional): Defaults to True. Passing False closes the shutter instead.
+        """
+        if open: self.cam.setup_shutter("open")
+        else: self.cam.setup_shutter("closed")
+
+    def close_shutter(self, close: bool = True) -> None:
+        """Closes the camera shutter
+
+        Args:
+            close (bool, optional): Defaults to True. Passing False opens the shutter instead.
+        """
+        if close: self.cam.setup_shutter("closed")
+        else: self.cam.setup_shutter("open")
 
     def get_spectrum(self, time_s: float = 3, max_temperature_difference: float = 8) -> np.ndarray:
         """Acquire a spectrum from the Andor camera. A spectrum will not be acquired if the camera is too warm.
@@ -135,7 +176,6 @@ class AndorAPI(QtCore.QObject):
         if abs(T_camera - T_setpoint) > max_temperature_difference:
             print(f"The camera temperature ({T_camera = } C) is too far from the setpoint temperature ({T_setpoint = } C). Aborting the acquisition.")
             intensities = np.zeros_like(wavelengths_nm)
-            return np.empty((2, 2))
         else:
             if not shutter == "open": print(f"Warning. Acquiring a spectrum with the shutter closed.")    
             self.cam.set_exposure(time_s)
@@ -143,24 +183,8 @@ class AndorAPI(QtCore.QObject):
         
         spectrum = np.array([wavelengths_nm, intensities], dtype = np.float32)
         return spectrum
-    
-    def open_shutter(self, open: bool = True) -> None:
-        """Opens the camera shutter
 
-        Args:
-            close (bool, optional): Defaults to True. Passing False closes the shutter instead.
-        """
-        if open: self.cam.setup_shutter("open")
-        else: self.cam.setup_shutter("closed")
 
-    def close_shutter(self, close: bool = True) -> None:
-        """Closes the camera shutter
-
-        Args:
-            close (bool, optional): Defaults to True. Passing False opens the shutter instead.
-        """
-        if close: self.cam.setup_shutter("closed")
-        else: self.cam.setup_shutter("open")
 
     def get_flipper(self, side: int | str) -> str:
         """Get the state of a flipper mirror
@@ -225,9 +249,5 @@ class AndorAPI(QtCore.QObject):
         try: self.spec.set_grating(grating_number)
         except Exception as e: print(f"Unable to set grating to {grating_number}: {e}")
         return
-
-
-
-# andor = AndorAPI(sdk_path = "C:\\Program Files\\Andor SDK", shamrock_path = "C:\\Program Files\\Andor SDK\\Shamrock64")
 
 

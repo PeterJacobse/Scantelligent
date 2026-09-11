@@ -1122,8 +1122,6 @@ class MLAUpdate:
         
         return output_dict, error
 
-
-
     def frequencies(self, *, parameters: dict[str, object] = {}, frequencies_Hz: list | np.ndarray | dict | None = None, numbers: list | np.ndarray | dict | None = None, times_ms: list | np.ndarray | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """Read or set the MLA lock-in frequencies.
 
@@ -1187,8 +1185,6 @@ class MLAUpdate:
             if unlink: self.parent.unlink()
         
         return (freq_dict, error)
-
-
 
     def lockin(self, *, parameters: dict[str, object] = {}, tm_ms: float | int | None = None, df_Hz: float | int | None = None, frequencies_Hz: list | np.ndarray | dict | None = None, numbers: list | np.ndarray | dict | None = None, times_ms: list | np.ndarray | None = None, amplitudes_mV: list | np.ndarray | dict | None = None, phases_deg: list | np.ndarray | dict | None = None, output_masks: np.ndarray | list | None = None, input_mask: np.ndarray | list | None = None, blank: bool | None = None, mod0: dict | None = None, mod1: dict | None = None, mod2: dict | None = None, mod3: dict | None = None, port1_V: float | int | None = None, port2_V: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """
