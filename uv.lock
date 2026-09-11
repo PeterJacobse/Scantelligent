@@ -905,6 +905,17 @@ wheels = [
 ]
 
 [[package]]
+name = "pylablib-lightweight"
+version = "1.4.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d5/e0/ffb4afc02946ed16b189486448119cf40c7f67b74cc2758aa48c814ae9b6/pylablib-lightweight-1.4.3.tar.gz", hash = "sha256:c64046af041712edca43c718798e9feaec6202a626e12940ea0ea41071b60575", size = 1780828, upload-time = "2024-05-05T12:42:06.996Z" }
+
+[[package]]
 name = "pymeasure"
 version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1187,6 +1198,7 @@ dependencies = [
     { name = "paramiko" },
     { name = "pint" },
     { name = "pip" },
+    { name = "pylablib-lightweight" },
     { name = "pymeasure" },
     { name = "pyqt6" },
     { name = "pyqtdarktheme" },
@@ -1210,6 +1222,7 @@ requires-dist = [
     { name = "paramiko", specifier = ">=4.0.0" },
     { name = "pint", specifier = ">=0.25.2" },
     { name = "pip", specifier = ">=25.3" },
+    { name = "pylablib-lightweight" },
     { name = "pymeasure", specifier = ">=0.15.0" },
     { name = "pyqt6", specifier = ">=6.10.0" },
     { name = "pyqtdarktheme", specifier = ">=2.1.0" },
