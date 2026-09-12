@@ -68,14 +68,15 @@ class AndorAPI(QtCore.QObject):
     def shutdown(self, cooler_off: bool = False, wait_for_warmup: bool = False) -> None:
         camera = self.cam
         spectrograph = self.spec
+        if wait_for_warmup: cooler_off = True
         
         camera.setup_shutter("closed") # Close the shutter
         camera.set_cooler(on = not cooler_off)
-        if cooler_off: camera.set_fan_mode("off")
         spectrograph.close()
         print(f"Andor spectrograph is closed")
         
         if not wait_for_warmup:
+            camera.set_fan_mode("off")
             camera.close()
             print(f"Andor camera is closed")
             return
@@ -87,11 +88,26 @@ class AndorAPI(QtCore.QObject):
                 T_camera = camera.get_temperature()
                 time.sleep(5)
         
+        camera.set_fan_mode("off")
         camera.close()
         print(f"Andor camera is closed")
         return
+    
+    def unlink(self, cooler_off: bool = False, wait_for_warmup: bool = False) -> None:
+        return self.shutdown(cooler_off = cooler_off, wait_for_warmup = wait_for_warmup)
 
 
+
+    def set_cooler(self, on: bool = True) -> None:
+        self.cam.set_cooler(on = on)
+        return
+
+    def set_fan(self, mode: str = "high") -> None:
+        if not mode in {"high", "low", "off"}:
+            print(f"Unknown fan mode {mode}")
+            return
+        self.cam.set_fan_mode(mode)
+        return
 
     def cooldown(self, T_setpoint: float | int | None = None) -> None:
         if isinstance(T_setpoint, float | int): self.cam.set_temperature(T_setpoint, enable_cooler = False)
