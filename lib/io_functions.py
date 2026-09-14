@@ -1,4 +1,5 @@
 import re, os, sys, yaml, pint, h5py, inspect
+from typing import Literal
 import importlib.util
 from contextlib import contextmanager
 import numpy as np
@@ -33,9 +34,10 @@ class HDF5Functions:
         return
 
     @contextmanager
-    def write_file(self, file_path: str):
+    def write_file(self, file_path: str, label_root: bool = True):
         try:
             root = h5py.File(file_path, "w")
+            if label_root: self.create_attributes(root, {"NX_class": "NXroot"})
             yield root
         finally:
             root.close()
@@ -78,9 +80,49 @@ class HDF5Functions:
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
 
-    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
+    def create_entry_group(self, root: h5py.File, name: str = "", *, attributes: dict = {}) -> h5py.Group:
         try:
-            if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, *kwargs)
+            attributes.update({"NX_class": "NXentry"})
+            new_group = self.create_group(root, name, attributes = attributes)
+            return new_group
+        except:
+            raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root}")
+
+    def create_data_group(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, attributes: dict = {}) -> h5py.Group:
+        try:
+            attributes.update({"NX_class": "NXdata"})
+            new_group = self.create_group(root_or_group, name, attributes = attributes)
+            return new_group
+        except:
+            raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
+
+    def create_instrument_group(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, attributes: dict = {}) -> h5py.Group:
+        try:
+            attributes.update({"NX_class": "NXinstrument"})
+            new_group = self.create_group(root_or_group, name, attributes = attributes)
+            return new_group
+        except:
+            raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
+
+    def create_thumbnail_group(self, root_or_group: h5py.File | h5py.Group, *, attributes: dict = {}) -> h5py.Group:
+        try:
+            attributes.update({"NX_class": "NXimage"})
+            new_group = self.create_group(root_or_group, "thumbnail", attributes = attributes)
+            return new_group
+        except:
+            raise Exception(f"Error encountered while attempting to create a new h5py group called \"thumbnail\" under {root_or_group}")
+
+    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", dataset_type: Literal["main", "ancillary"] = "main", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
+        try:
+            group_attributes = self.get_attributes(root_or_group)
+            group_class = group_attributes.get("NX_class", "")
+            match group_class:
+                case "NXentry":
+                    dataset_group = self.create_data_group(root_or_group, name, attributes = {"signal": "data"})
+                case _:
+                    dataset_group = root_or_group
+            
+            if isinstance(data, np.ndarray): dataset = dataset_group.create_dataset(name, data = data, *kwargs)
             else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, *kwargs)
             
             attributes.update({"title": name, "long_name": name})
@@ -97,15 +139,15 @@ class HDF5Functions:
         
         try:
             for dataset_name, dataset_units, dataset_data, dataset_shape, dataset_attributes in zip(names, units, data, shapes, attributes):
-                print(f"Creating dataset {dataset_name}")
                 if not isinstance(dataset_units, str): dataset_units = "none"
+                
+                # If not explicit data are provided, try and read the shape attribute
                 if not isinstance(dataset_data, np.ndarray):
                     if not isinstance(dataset_shape, tuple): raise Exception(f"Error creating axis datasets. Neither a numpy array nor a shape were provided to dataset with name {dataset_name}")
                     else: new_dataset = self.create_dataset(root_or_group, dataset_name, units = dataset_units, shape = dataset_shape, attributes = dataset_attributes)
                 else: new_dataset = self.create_dataset(root_or_group, dataset_name, units = dataset_units, data = dataset_data, attributes = dataset_attributes)
                 datasets.append(new_dataset)
-        
-            print(f"{datasets = }")
+
             self.attach_axes_to_dataset(target_dataset = main_dataset, axes_datasets = datasets)
         except Exception as e:
             print(f"Problem encountered while trying to make axis datasets: {e}")
@@ -367,9 +409,9 @@ class HDF5Functions:
             pass
         return output_dict
 
-    def create_nsid_file(self, file_path: str, close: bool = True, existsok: bool = False, channel_names: list | str = "Channel_000", nsid_version: str = "0.0.2") -> h5py.File | None:
+    def create_nsid_file(self, file_path: str, close: bool = True, existsok: bool = False, channels: list | str = "Channel_000", nsid_version: str = "0.0.2") -> None | tuple[h5py.File, h5py.Group, list[h5py.Group]]:
         """
-        Generate a NSID and Nexus-compatible HDF5 file for n-dimensional parameter space measurements.
+        Generate a NSID and NeXus-compatible HDF5 file for n-dimensional parameter space measurements.
 
         Args:
             file_path (str): File path as as string
@@ -379,10 +421,10 @@ class HDF5Functions:
             nsid_version (str, optional): String reflecting the NSID compatibility version. Defaults to "0.0.2".
 
         Returns:
-            h5py.File | None: Root or None, depending on whether 'close' is True or False.
+            (None | tuple[h5py.File, h5py.Group, list[h5py.Group]]): None if 'close' is True. Otherwise, a tuple with the file root as first element, the entry group as second argument, and a list of channel groups as the third argument.
         """
         channel_groups = []
-        if isinstance(channel_names, str): channel_names = [channel_names] 
+        if isinstance(channels, str): channels = [channels]
         
         if os.path.isfile(file_path):
             if existsok:
@@ -390,16 +432,18 @@ class HDF5Functions:
             else:
                 print(f"File already exists at path {file_path}. Aborting")
                 return
-        
+
         try:
             root = h5py.File(file_path, "w")
-            self.create_attributes(root, {"nsid_version": nsid_version, "default": "Measurement_000"})
-            entry_group = self.create_group(root, "Measurement_000", attributes = {"NX_class": "NXentry", "default": channel_names[0]})
-            self.create_group(root, "thumbnail")
-            
-            for channel_name in channel_names:
-                group = self.create_group(entry_group, channel_name, attributes = {"NX_class": "NXdata", "signal": "data"})
-                channel_groups.append(group)   
+            self.create_thumbnail_group(root)
+            self.create_attributes(root, {"nsid_version": nsid_version, "default": "Measurement_000", "NX_class": "NXroot"})
+            entry_group = self.create_entry_group(root, "Measurement_000", attributes = {"default": channels[0]})
+
+            """
+            for channel_name in channels:
+                group = self.create_data_group(entry_group, channel_name, attributes = {"signal": "data"})
+                channel_groups.append(group)
+            """
         
         except Exception as e:
             print(f"Error encountered while setting up HDF5 file: {e}")
@@ -408,7 +452,7 @@ class HDF5Functions:
             root.close()
             return
         else:
-            return root
+            return root, entry_group, channel_groups
 
 
 
