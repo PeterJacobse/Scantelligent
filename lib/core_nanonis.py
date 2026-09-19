@@ -858,12 +858,12 @@ class NanonisCore:
         self.receive_response(0)        
         return
 
-    def get_z_controllers(self) -> tuple[list, str]:
+    def get_z_controllers(self) -> tuple[list[str], str]:
         self.send_command(self.headers["get_z_controllers"])
         response = self.receive_response()
         
         n_controllers = self.conv.hex_to_int16(response[4 : 8])
-        if n_controllers < 1: return ([], "")
+        if n_controllers < 1: return ([""], "")
         assert isinstance(n_controllers, int)
         
         idx: int = 8
@@ -876,8 +876,9 @@ class NanonisCore:
             idx += size + 4
         
         active_controller_index = self.conv.hex_to_int32(response[idx : idx + 4])
-        active_controller = controllers[active_controller_index]        
-        return (controllers, active_controller)
+        try: active_controller = controllers[active_controller_index]
+        except IndexError: active_controller = ""
+        return controllers, active_controller
 
     def set_z_controller(self, index: int) -> None:
         self.send_command(self.headers["set_z_controller"] + self.conv.to_hex(index, 4))

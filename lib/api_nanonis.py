@@ -1433,7 +1433,7 @@ class NanonisUpdate:
             
             if V > V_old: delta_V = dV_V # Change the sign of deltaV to get the arange right
             else: delta_V = -dV_V
-            slew = np.arange(V_old, V + delta_V, delta_V)
+            slew = np.arange(V_old, V, delta_V)
 
             if bool(feedback) and bool(polarity_difference): # If the bias polarity is switched, switch off the feedback and lift the tip by dz for safety
                 core.set_fb(False)
@@ -1443,6 +1443,7 @@ class NanonisUpdate:
             for V_t in slew: # Perform the slew to the new bias voltage
                 core.set_V(float(V_t))
                 time.sleep(dt_s)
+            core.set_V(V)
         
             if bool(feedback) and bool(polarity_difference):
                 core.set_fb(True) # Turn the feedback back on
@@ -1711,7 +1712,7 @@ class NanonisUpdate:
             # Extract parameters
             [withdraw, feedback, x_nm, y_nm, z_nm, z_rel_nm] = get_parameters_from_tags(parameters, [["withdraw", "wd"], ["feedback", "fb"], ["x (nm)", "x_nm", "x"], ["y (nm)", "y_nm", "y"], ["z (nm)", "z_nm", "z"],
                                                                                                      ["z_rel (nm)", "z_relative (nm)", "delta_z (nm)", "dz (nm)", "d_z (nm)", "z_rel", "z_relative", "delta_z", "dz", "d_z"]])
-                        
+
             if withdraw == None: withdraw = False
             if x_nm and y_nm: xy_target_nm = [x_nm, y_nm]
             else: xy_target_nm = None
@@ -1725,12 +1726,14 @@ class NanonisUpdate:
             else: xy_target_nm = xy_nm
             distance_nm = np.linalg.norm(np.array(xy_nm) - np.array(xy_target_nm))
 
-            if z_nm is not None:
+            if isinstance(z_nm, float | int):
+                if verbose: print(f"Lifting the tip to {z_nm = }")
                 core.set_fb(False)
                 time.sleep(.2)
                 core.set_z_nm(z_nm)
             z_nm = core.get_z_nm()
-            if z_rel_nm is not None:
+            if isinstance(z_rel_nm, float | int) and abs(z_rel_nm) > .0001:
+                if verbose: print(f"Lifting the tip by {z_rel_nm = }")
                 z_nm += z_rel_nm
                 core.set_fb(False)
                 time.sleep(.2)
@@ -1894,7 +1897,7 @@ class NanonisUpdate:
 
         return output_dict, error
 
-    def feedback(self, parameters: dict = {}, *, feedback: bool | None = None, active_controller: int | None = None, I_fb_pA: float | int | None = None, dIdV_fb_nS: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+    def feedback(self, parameters: dict = {}, *, feedback: bool | None = None, active_controller: int | None = None, I_fb_pA: float | int | None = None, p_gain_pm: float | int | None = None, t_const_us: float | int | None = None, i_gain_nm_per_s: float | int | None = None, dIdV_fb_nS: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
         """Read or set feedback state, controller, setpoint, and gains.
 
         Args:
@@ -1903,6 +1906,9 @@ class NanonisUpdate:
             active_controller: Controller index, overriding the dictionary value.
             I_fb_pA: Current setpoint, overriding the dictionary value.
             dIdV_fb_nS: Conductance setpoint, overriding the dictionary value.
+            p_gain_pm: Proportional gain, overriding the dictionary value.
+            t_const_us: Time constant, overriding the dictionary value.
+            i_gain_nm_per_s: Integral gain, overriding the dictionary value.
             unlink: Whether to disconnect after the request.
             verbose: Whether to log the request and result.
 
@@ -1917,7 +1923,7 @@ class NanonisUpdate:
         controller = parameters.get("active_controller", None)
 
         try:
-            put_kwargs_in_dict(parameters, {"feedback": (feedback, bool), "active_controller": (active_controller, int), "I_fb (pA)": (I_fb_pA, float | int), "dIdV_fb (nS)": (dIdV_fb_nS, float | int)})
+            put_kwargs_in_dict(parameters, {"feedback": (feedback, bool), "active_controller": (active_controller, int), "I_fb (pA)": (I_fb_pA, float | int), "dIdV_fb (nS)": (dIdV_fb_nS, float | int), "p_gain (pm)": (p_gain_pm, float | int), "i_gain (nm/s)": (i_gain_nm_per_s, float | int), "t_const (us)": (t_const_us, float | int)})
             feedback, controller, I_fb_pA, dIdV_fb_nS = get_parameters_from_tags(parameters, [["feedback", "fb"], ["active_controller", "controller"], ["I_fb (pA)", "I_fb_pA"], ["dIdV_fb (nS)", "dIdV_fb_nS"]])
             if verbose: self.echo_function_call("feedback", parameters)
             if not self.nn.status == "running": self.nn.link()

@@ -3,6 +3,9 @@ import numpy as np
 from PyQt6 import QtCore
 import pylablib
 from pylablib.devices import Andor
+from typing import Literal
+from lib import NanonisAPI # For type checking
+from concurrent.futures import ThreadPoolExecutor
 
 
 
@@ -30,6 +33,8 @@ class AndorAPI(QtCore.QObject):
         os.add_dll_directory(sdk_path)
         os.add_dll_directory(shamrock_path)
         super().__init__()
+        
+        self.experiments = AndorExperiments(parent = self)
 
 
 
@@ -125,12 +130,18 @@ class AndorAPI(QtCore.QObject):
         print(f"Warmup started. Current temperature: {T_camera = } C.")
         return
 
-    def fan(self) -> str:
+    def get_fan(self) -> str:
         return str(self.cam.get_fan_mode())
 
-    def cooler(self) -> str:
+    def fan(self) -> str:
+        return self.get_fan()
+
+    def get_cooler(self) -> str:
         if self.cam.is_cooler_on(): return "on"
         else: return "off"
+
+    def cooler(self) -> str:
+        return self.get_cooler()
 
     def set_temperature_setpoint(self, T_setpoint: float | int | None = None) -> None:
         if not isinstance(T_setpoint, float | int): return
@@ -151,6 +162,12 @@ class AndorAPI(QtCore.QObject):
     def set_exposure_time(self, time_s: float = 3) -> None:
         self.cam.set_exposure(time_s)
         return
+
+    def get_shutter(self) -> str:
+        return self.cam.get_shutter()
+    
+    def shutter(self) -> str:
+        return self.get_shutter()
     
     def open_shutter(self, open: bool = True) -> None:
         """Opens the camera shutter
@@ -215,6 +232,9 @@ class AndorAPI(QtCore.QObject):
         if self.spec.is_flipper_present(side): flipper_state = self.spec.get_flipper_port(side)
         return flipper_state
 
+    def flipper(self, side: int | str) -> str:
+        return self.get_flipper(side)
+
     def get_flippers(self) -> dict[str, str]:
         """Get the states of the flipper mirrors
 
@@ -224,6 +244,9 @@ class AndorAPI(QtCore.QObject):
         input_flipper_state = self.get_flipper("input")
         output_flipper_state = self.get_flipper("output")        
         return {"input": input_flipper_state, "output": output_flipper_state}
+    
+    def flippers(self) -> dict[str, str]:
+        return self.get_flippers()
 
     def set_flipper(self, flipper: int | str = "input", state: str | None = None) -> None:
         if not flipper in {"input", "output", 1, 2}:
@@ -258,7 +281,14 @@ class AndorAPI(QtCore.QObject):
         for index in range(1, 5):
             try: self.get_grating(index)
             except: pass
+        
+        print("Current grating:")
+        try: self.get_grating()
+        except: pass
         return
+
+    def grating(self) -> None:
+        return self.get_gratings()
 
     def set_grating(self, grating_number: int | None = None) -> None:
         if not isinstance(grating_number, int): return
@@ -266,4 +296,128 @@ class AndorAPI(QtCore.QObject):
         except Exception as e: print(f"Unable to set grating to {grating_number}: {e}")
         return
 
+    def set_mode(self, mode: Literal["acquisition", "alignment"]) -> None:
+        """Convenience function that stores our specific parameters for the setup to toggle between acquisition and laser alignment"""
+        
+        match mode:
+            case "acquisition":
+                self.cooldown()
+                self.set_flippers({'input': 'direct', 'output': 'direct'})
+                self.set_grating(1)
+                self.open_shutter()
+            case _:
+                self.close_shutter()
+                self.set_flippers({"input": "direct", "output": "side"})
+                self.set_grating(4)
+                self.warmup()
+        return
+
+
+
+class AndorExperiments:
+    def __init__(self, parent):
+        self.parent: AndorAPI = parent
+        
+    def get_spectra_at_feedback(self, nanonis: NanonisAPI, V: float | int = 3.7, I_fb_pA: float | int = 8000., p_gain_pm: float | int = .2, t_const_us: float | int = 167., t_acquisition_s: float | int = 3., t_settle_s: float | int = 3., verbose: bool = True) -> dict[str, object]:
+        andor = self.parent
+        output_dict = {}
+        tip_is_stable = True
+        n_measurements = 100
+        stability_measurement_dark = np.zeros((n_measurements, 3), dtype = np.float32)
+        stability_measurement_bright = np.zeros((n_measurements, 3), dtype = np.float32)
+        
+        try:
+            # Read parameters from Nanonis
+            bias_dict, error = nanonis.update.bias()
+            if error: raise Exception(error)
+            feedback_dict, error = nanonis.update.feedback()
+            if error: raise Exception(error)
+            
+            V_start = bias_dict["V (V)"]
+            [I_fb_start, p_gain_start, t_const_start] = [feedback_dict.get(key, None) for key in ["I_fb (pA)", "p_gain (pm)", "t_const (us)"]]
+            
+            # Acquire a background spectrum using non-emission parameters while analyzing the tip height stability / current peaks            
+            with ThreadPoolExecutor() as executor:
+                if verbose: print("Acquiring emission background spectrum.")
+                # Submit spectrum acquisition
+                future = executor.submit(andor.get_spectrum, t_acquisition_s)
+                
+                # Tip stability analysis: measure the tip height stability / current peaks
+                t_start = time.time()
+                for iter in range(n_measurements):
+                    tip_parameters, error = nanonis.update.tip(z_rel_nm = 0., fast_mode = True)
+                    t_s = time.time() - t_start
+                    [I_pA, z_nm] = [tip_parameters.get(key) for key in ["I (pA)", "z (nm)"]]
+                    stability_measurement_dark[iter] = [t_s, I_pA, z_nm]
+                output_dict.update({"stability_measurement_dark": stability_measurement_dark})
+    
+                I_pA_avg = np.average(stability_measurement_dark[:, 1])
+                z_nm_avg = np.average(stability_measurement_dark[:, 2])
+                z_nm_std = np.sqrt(np.var(stability_measurement_dark[:, 2]))
+                I_pA_std = np.sqrt(np.var(stability_measurement_dark[:, 1]))
+                if z_nm_std > .1 or I_pA_std > 40: tip_is_stable = False
+                word = "stable" if tip_is_stable else "unstable"
+                if verbose: print(f"Tip heights are distributed at z = ({z_nm_avg:.4f} +- {z_nm_std:.4f}) nm; Measured currents are I = ({I_pA_avg:.4f} +- {I_pA_std:.4f}) pA\nThe tip seems to be {word}")        
+                output_dict.update({"I_pA_avg": I_pA_avg, "I_pA_std": I_pA_std, "z_nm_avg": z_nm_avg, "z_nm_std": z_nm_std, "tip_is_stable": tip_is_stable})
+                
+                # Retrieve the spectrum
+                bg_spectrum = future.result()
+            
+            
+            
+            # Go into emission mode (bright mode)
+            nanonis.update.tip(feedback = False, z_rel_nm = 0.)
+            time.sleep(.2)
+            nanonis.update.tip(feedback = False, z_rel_nm = 1.)
+            nanonis.update.bias(V = V, dV_mV = 40)
+            nanonis.update.feedback(I_fb_pA = I_fb_pA, p_gain_pm = p_gain_pm, t_const_us = t_const_us)
+            nanonis.update.tip(feedback = True, z_rel_nm = 0.)
+            if verbose: print("Tip is in emission mode. Checking stability.")
+            time.sleep(t_settle_s)
+                        
+            # Acquiring the spectrum in bright mode while analyzing the tip height stability / current peaks            
+            with ThreadPoolExecutor() as executor:
+                # Submit spectrum acquisition
+                if verbose: print("Acquiring emission spectrum.")
+                future = executor.submit(andor.get_spectrum, t_acquisition_s)
+                
+                # Tip stability analysis: measure the tip height stability / current peaks
+                t_start = time.time()
+                for iter in range(n_measurements):
+                    tip_parameters, error = nanonis.update.tip(z_rel_nm = 0., fast_mode = True)
+                    t_s = time.time() - t_start
+                    [I_pA, z_nm] = [tip_parameters.get(key) for key in ["I (pA)", "z (nm)"]]
+                    stability_measurement_bright[iter] = [t_s, I_pA, z_nm]
+                output_dict.update({"stability_measurement_bright": stability_measurement_bright})
+    
+                I_pA_avg = np.average(stability_measurement_bright[:, 1])
+                z_nm_avg = np.average(stability_measurement_bright[:, 2])
+                z_nm_std = np.sqrt(np.var(stability_measurement_bright[:, 2]))
+                I_pA_std = np.sqrt(np.var(stability_measurement_bright[:, 1]))
+                if z_nm_std > .1 or I_pA_std > 40: tip_is_stable = False
+                word = "stable" if tip_is_stable else "unstable"
+                if verbose: print(f"Tip heights are distributed at z = ({z_nm_avg:.4f} +- {z_nm_std:.4f}) nm; Measured currents are I = ({I_pA_avg:.4f} +- {I_pA_std:.4f}) pA\nThe tip seems to be {word}")        
+                output_dict.update({"I_pA_avg": I_pA_avg, "I_pA_std": I_pA_std, "z_nm_avg": z_nm_avg, "z_nm_std": z_nm_std, "tip_is_stable": tip_is_stable})
+                
+                # Retrieve the spectrum
+                spectrum = future.result()
+            
+            diff_spectrum = np.array([spectrum[0], spectrum[1] - bg_spectrum[1]], dtype = np.float32)
+            combined_spectra = np.array([spectrum[0], bg_spectrum[1], spectrum[1], diff_spectrum[1]], dtype = np.float32)
+            output_dict.update({"combined_spectra": combined_spectra})
+            
+            if max(diff_spectrum[1]) > 200:
+                print("The difference spectrum has a peak at over 200 counts. That seems interesting.")
+
+        except Exception as e:
+            print(f"Error running get_spectra_at_feedback: {e}")
+        
+        finally:
+            # Return to the start settings
+            try:
+                nanonis.update.feedback(I_fb_pA = I_fb_start, p_gain_pm = p_gain_start, t_const_us = t_const_start)
+                nanonis.update.bias(V = V_start, dV_mV = 40)
+            except Exception as e:
+                print(f"Error returning to start feedback settings: {e}")
+        return output_dict
 
