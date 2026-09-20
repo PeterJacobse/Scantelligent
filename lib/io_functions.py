@@ -4,8 +4,8 @@ import importlib.util
 from contextlib import contextmanager
 import numpy as np
 import nanonispy2 as nap
-from datetime import datetime
-from .data_processing import DataProcessing
+from datetime import datetime, timezone
+from .data_processing import DataProcessing, ThreadSafeDict
 
 
 
@@ -52,8 +52,8 @@ class HDF5Functions:
             root.close()
         return
 
-    def get_attributes(self, root_or_group: h5py.File | h5py.Group) -> dict:
-        return {key: value for key, value in root_or_group.attrs.items()}
+    def get_attributes(self, h5object: h5py.File | h5py.Group | h5py.Dataset) -> dict:
+        return {key: value for key, value in h5object.attrs.items()}
 
     def get_groups(self, root_or_group: h5py.File | h5py.Group) -> dict:
         return {key: value for key, value in root_or_group.items() if isinstance(value, h5py.Group)}
@@ -64,7 +64,7 @@ class HDF5Functions:
     def get_items(self, root_or_group: h5py.File | h5py.Group) -> dict:
         return {key: value for key, value in root_or_group.items()}
 
-    def create_attributes(self, h5object: h5py.Group | h5py.Dataset, attributes: dict = {}) -> None:
+    def create_attributes(self, h5object: h5py.File | h5py.Group | h5py.Dataset, attributes: dict = {}) -> None:
         for key, value in attributes.items():
             try:
                 if isinstance(value, str): h5object.attrs.create(key, value, dtype = h5py.string_dtype(encoding = "utf-8"))
@@ -80,13 +80,52 @@ class HDF5Functions:
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
 
-    def create_entry_group(self, root: h5py.File, name: str = "", *, attributes: dict = {}) -> h5py.Group:
+    def entry_group(self, root: h5py.File, name: str = "Measurement000", verbose: bool = False) -> h5py.Group:
+        """Finds the entry group in an HDF5 file, first by searching for the default tag at the root, then by trying to find the NXentry tags in the groups at the root level. If the entry group does not exist, it is created.
+
+        Args:
+            root (h5py.File): HDF5 file
+            name (str, optional): Name of the entry group: only relevant when creating a new group. Defaults to "Measurement000".
+            verbose (bool, optional): Whether to output messages. Defaults to False.
+
+        Returns:
+            h5py.Group: The entry group
+        """
         try:
-            attributes.update({"NX_class": "NXentry"})
-            new_group = self.create_group(root, name, attributes = attributes)
-            return new_group
-        except:
-            raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root}")
+            root_attributes = self.get_attributes(root)
+            root_groups = self.get_groups(root)
+            
+            if "default" in root_attributes.keys(): # Cases where the root has the default attribute that is supposed to point to an entry group
+                entry_group_name = root_attributes["default"]
+                
+                if verbose: print(f"Entry group {entry_group_name} was found from the 'default' tag at the root.")
+                if entry_group_name in root_groups.keys(): # Case 1: The default attribute in the root points to a valid entry group
+                    entry_group = root_groups[entry_group_name]
+                    if verbose: print(f"Entry group is valid ({entry_group = }).")
+                    
+                    entry_group_attrs = self.get_attributes(entry_group)
+                    if not "NX_class" in entry_group_attrs.keys(): self.create_attributes(entry_group, {"NX_class": "NXentry"})
+                    return entry_group
+                else:
+                    if verbose: print(f"Entry group is invalid.")
+            
+            for group_name, group in root_groups.items():
+                group_attrs = self.get_attributes(group)
+                group_class = group_attrs.get("NX_class", None)
+                if group_class == "NXentry":
+                    entry_group = group
+                    if verbose: print(f"Entry group {group_name} was found from its NX_class tag.")
+                    self.create_attributes(root, {"default": group_name})
+                    if verbose: print(f"The 'default' tag was added to the root to point to the entry group.")
+                    return entry_group
+
+            if verbose: print(f"No valid entry group was found. Creating a new entry group")
+            self.create_attributes(root, {"default": name})
+            entry_group = self.create_group(root, name, attributes = {"NX_class": "NXentry"})        
+            return entry_group
+        
+        except Exception as e:
+            raise Exception(f"Error encountered while finding or creating an entry group: {e}")
 
     def create_data_group(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, attributes: dict = {}) -> h5py.Group:
         try:
@@ -96,94 +135,151 @@ class HDF5Functions:
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
 
-    def create_instrument_group(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, attributes: dict = {}) -> h5py.Group:
+    def create_instrument(self, root: h5py.File, name: str = "", *, long_name: str = "", vendor: str = "", attributes: dict = {}) -> h5py.Group:
         try:
             attributes.update({"NX_class": "NXinstrument"})
-            new_group = self.create_group(root_or_group, name, attributes = attributes)
-            return new_group
-        except:
-            raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
+            if vendor: attributes.update({"vendor": vendor})
+            if long_name: attributes.update({"long_name": long_name})
+            
+            instrument_group = self.create_group(root, name, attributes = attributes)
+            return instrument_group
+        except Exception as e:
+            raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root}: {e}")
 
     def create_thumbnail_group(self, root_or_group: h5py.File | h5py.Group, *, attributes: dict = {}) -> h5py.Group:
         try:
             attributes.update({"NX_class": "NXimage"})
-            new_group = self.create_group(root_or_group, "thumbnail", attributes = attributes)
+            new_group = self.create_group(root_or_group, "Thumbnail", attributes = attributes)
             return new_group
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called \"thumbnail\" under {root_or_group}")
 
-    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", dataset_type: Literal["main", "ancillary"] = "main", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
-        try:
-            group_attributes = self.get_attributes(root_or_group)
-            group_class = group_attributes.get("NX_class", "")
-            match group_class:
-                case "NXentry":
-                    dataset_group = self.create_data_group(root_or_group, name, attributes = {"signal": "data"})
-                case _:
-                    dataset_group = root_or_group
-            
-            if isinstance(data, np.ndarray): dataset = dataset_group.create_dataset(name, data = data, *kwargs)
+    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
+        try:            
+            if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, *kwargs)
             else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, *kwargs)
             
-            attributes.update({"title": name, "long_name": name})
+            attributes.update({"title": name, "quantity": name, "long_name": name})
             if isinstance(units, str): attributes.update({"units": units})
             self.create_attributes(dataset, attributes)
             return dataset
         except Exception as e:
             raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name} under {root_or_group}: {e}")
 
-    def create_axis_datasets(self, root_or_group: h5py.File | h5py.Group, main_dataset: h5py.Dataset, names: list[str] = [""], units: list[str | None] = [""], data: list[np.ndarray | None] = [np.empty(0)], shapes: list[tuple[int] | None] | None = None, attributes: list[dict] | None = None) -> list[h5py.Dataset]:
-        datasets = []
-        if not isinstance(shapes, list): shapes = [None for _ in range(len(names))]
-        if not isinstance(attributes, list): attributes = [{} for _ in range(len(names))]
+    def create_main_dataset(self, root: h5py.File, name: str = "", *, existsok: bool = True, units: str | None = None, modality: str = "SPM", make_default: bool = True, attributes: dict = {},
+                            data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, verbose: bool = False) -> h5py.Dataset:
+        try:
+            # Find or create the entry group
+            entry_group = self.entry_group(root, name = "Measurement000", verbose = verbose)
+            entry_subgroups = self.get_groups(entry_group)
+            
+            if name in entry_subgroups.keys():
+                if existsok:
+                    print(f"Warning: A dataset with the same name ({name}) was already found in this HDF5 file. Overwriting.")
+                    data_group = entry_subgroups[name]
+                else:
+                    raise Exception(f"Error: A dataset with the same name ({name}) was already found in this HDF5 file. Aborting.")
+            else: data_group = self.create_group(entry_group, name, attributes = {"signal": name, "NX_class": "NXdata"})
+            
+            data_type = "2D_image"
+            if isinstance(data, np.ndarray):
+                if data.ndim > 2: data_type = "hyperspectral_image"
+                elif data.ndim < 2: data_type = "graph"
+            if isinstance(shape, tuple):
+                if len(shape) > 2: data_type = "hyperspectral_image"
+                elif len(shape) < 2: data_type = "graph"
+            
+            # Create the dataset
+            dset_attributes = {"units": units, "data_type": data_type, "modality": modality} | attributes
+            if isinstance(data, np.ndarray): dataset = self.create_dataset(data_group, name, data = data, dtype = dtype, attributes = dset_attributes)
+            elif isinstance(shape, tuple): dataset = self.create_dataset(data_group, name, shape = shape, dtype = dtype, attributes = dset_attributes)
+            else:
+                raise Exception("Neither data nor shape were provided when attempting to create a dataset")
+            
+            if make_default: self.create_attributes(entry_group, {"default": name})
+            return dataset
         
-        try:
-            for dataset_name, dataset_units, dataset_data, dataset_shape, dataset_attributes in zip(names, units, data, shapes, attributes):
-                if not isinstance(dataset_units, str): dataset_units = "none"
-                
-                # If not explicit data are provided, try and read the shape attribute
-                if not isinstance(dataset_data, np.ndarray):
-                    if not isinstance(dataset_shape, tuple): raise Exception(f"Error creating axis datasets. Neither a numpy array nor a shape were provided to dataset with name {dataset_name}")
-                    else: new_dataset = self.create_dataset(root_or_group, dataset_name, units = dataset_units, shape = dataset_shape, attributes = dataset_attributes)
-                else: new_dataset = self.create_dataset(root_or_group, dataset_name, units = dataset_units, data = dataset_data, attributes = dataset_attributes)
-                datasets.append(new_dataset)
-
-            self.attach_axes_to_dataset(target_dataset = main_dataset, axes_datasets = datasets)
         except Exception as e:
-            print(f"Problem encountered while trying to make axis datasets: {e}")
-        return datasets
+            raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name}: {e}")
 
-    def attach_axes_to_dataset(self, target_dataset: h5py.Dataset, axes_datasets: list[h5py.Dataset] = [], axes: int | list | None = None) -> None:
+    def create_ancillary_dataset(self, root: h5py.File, name: str = "", *, existsok: bool = True, units: str | None = None, attributes: dict = {},
+                                 data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, verbose: bool = False) -> h5py.Dataset:
         try:
-            target_dataset_name = os.path.basename(target_dataset.name)
-            target_dataset_group: h5py.Group | h5py.File = target_dataset.parent
+            # Find or create the entry group
+            entry_group = self.entry_group(root, name = "Measurement000", verbose = verbose)
+            entry_subgroups = self.get_groups(entry_group)
             
-            if isinstance(axes, int): axes = [axes]
-            if not isinstance(axes, list): axes = list(range(min(len(axes_datasets), target_dataset.ndim)))
+            # Find or create the Ancillary group (The group that stores the axes)
+            if "Ancillary" in entry_subgroups.keys(): ancillary_group = entry_subgroups["Ancillary"]
+            else: ancillary_group = self.create_group(entry_group, name = "Ancillary", attributes = {"NX_class": "NXaxes"})
             
-            axis_labels = []
-            axes_units = []
-            for dimension in axes:
-                axis_dataset: h5py.Dataset = axes_datasets[dimension]
-                axis_dataset_name = os.path.basename(axis_dataset.name)
-                axis_units = axis_dataset.attrs.get("units", "none")
-                axis_labels.append(axis_dataset_name)
-                axes_units.append(axis_units)
-                
-                match dimension:
-                    case 0: self.create_attributes(target_dataset, {"x_unit": axis_units})
-                    case 1: self.create_attributes(target_dataset, {"y_unit": axis_units})
-                    case 2: self.create_attributes(target_dataset, {"z_unit": axis_units})
-                                
-                # Make scale and attach scale for NSID compliance
-                axis_dataset.make_scale(axis_dataset_name)
-                target_dataset.dims[dimension].attach_scale(axis_dataset)
+            ancillary_datasets = self.get_datasets(ancillary_group)
             
-            # Declaration of axes and units for Nexus compliance
-            self.create_attributes(target_dataset, {"DIMENSION_LABELS": axis_labels})
-            self.create_attributes(target_dataset_group, {"axes": axis_labels})
-        except:
-            print(f"Failed to attach dataset {axis_dataset_name} to axis {dimension} of {target_dataset_name}")
+            if name in ancillary_datasets.keys():
+                if existsok: print(f"Warning: A dataset with the same name ({name}) was already found in this HDF5 file. Overwriting.")
+                else: raise Exception(f"Error: A dataset with the same name ({name}) was already found in this HDF5 file. Aborting.")
+            
+            # Interpret the dimension type
+            dimension_type = "spectral"
+            if units in {"m", "dm", "cm", "mm", "um", "nm", "pm", "Ang"}: dimension_type = "spatial"
+            
+            # Create the dataset
+            dset_attributes = {"NX_class": "NXaxis", "units": units, "dimension_type": dimension_type} | attributes
+            if isinstance(data, np.ndarray): dataset = self.create_dataset(ancillary_group, name, data = data, dtype = dtype, attributes = dset_attributes)
+            elif isinstance(shape, tuple): dataset = self.create_dataset(ancillary_group, name, shape = shape, dtype = dtype, attributes = dset_attributes)
+            else: raise Exception("Neither data nor shape were provided when attempting to create a dataset")
+            return dataset
+        
+        except Exception as e:
+            raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name}: {e}")
+
+    def attach_axis(self, main_dataset: h5py.Dataset, ancillary_dataset: h5py.Dataset, axis: int = 0) -> None:
+        try:
+            # Extract all the information from the main dataset and its parent group
+            main_dataset_path = main_dataset.name
+            main_dataset_group = main_dataset.parent
+            assert isinstance(main_dataset_path, str) and isinstance(main_dataset_group, h5py.Group | h5py. File)
+            main_dataset_name = os.path.basename(main_dataset_path)
+            main_dataset_group_attrs = self.get_attributes(main_dataset_group)
+            main_dataset_rank = main_dataset.ndim
+            
+            # Extract all the information from the axis dataset and its parent group
+            axis_dataset_path = ancillary_dataset.name
+            axis_dataset_group = ancillary_dataset.parent
+            assert isinstance(axis_dataset_path, str) and isinstance(axis_dataset_group, h5py.Group | h5py.File)
+            axis_name = os.path.basename(axis_dataset_path)        
+            axis_attrs = self.get_attributes(ancillary_dataset)
+            
+            axis_units = axis_attrs.get("units", "none")        
+            axis_dtype = ancillary_dataset.dtype
+            axis_data = ancillary_dataset[:]
+            axis_range = np.array([min(axis_data), max(axis_data)], dtype = axis_dtype)
+            axis_dpoints = len(axis_data)
+        
+            # Put the axis dataset in the main dataset group in the form of a soft link to its origin in the Ancillary group
+            main_dataset_group[axis_name] = h5py.SoftLink(axis_dataset_path)
+            local_axis_ds = main_dataset_group[axis_name]
+            assert isinstance(local_axis_ds, h5py.Dataset)
+            
+            # Attach it directly for NSID compliance
+            local_axis_ds.make_scale(axis_name)
+            main_dataset.dims[axis].attach_scale(local_axis_ds)
+            
+            # Find the declared axes (NeXus) attribute in the main dataset group and update it with the name of the axis dataset
+            main_dataset_axes = main_dataset_group_attrs.get("axes", None)
+            if not isinstance(main_dataset_axes, list | np.ndarray) or not len(main_dataset_axes) == main_dataset_rank: main_dataset_axes = ["none" for _ in range(main_dataset_rank)]        
+            main_dataset_axes[axis] = axis_name
+            self.create_attributes(main_dataset_group, {"axes": main_dataset_axes})
+            
+            # Attributes for Gwyddion compatibility
+            match axis:
+                case 0: [self.create_attributes(target, {"X Range": axis_range, "X Units": axis_units, "X No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
+                case 1: [self.create_attributes(target, {"Y Range": axis_range, "Y Units": axis_units, "Y No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
+                case 2: [self.create_attributes(target, {"Z Range": axis_range, "Z Units": axis_units, "Z No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
+                case _: pass
+        
+        except Exception as e:
+            print(f"Failed to attach dataset {axis_name} to axis {axis} of {main_dataset_name}: {e}")
         return
 
     def read(self, file_path: str, lazy: bool = True) -> dict:
@@ -409,7 +505,7 @@ class HDF5Functions:
             pass
         return output_dict
 
-    def create_nsid_file(self, file_path: str, close: bool = True, existsok: bool = False, channels: list | str = "Channel_000", nsid_version: str = "0.0.2") -> None | tuple[h5py.File, h5py.Group, list[h5py.Group]]:
+    def create_file(self, file_path: str, close: bool = True, existsok: bool = False, nsid_version: str = "0.0.2") -> None | h5py.File:
         """
         Generate a NSID and NeXus-compatible HDF5 file for n-dimensional parameter space measurements.
 
@@ -422,10 +518,7 @@ class HDF5Functions:
 
         Returns:
             (None | tuple[h5py.File, h5py.Group, list[h5py.Group]]): None if 'close' is True. Otherwise, a tuple with the file root as first element, the entry group as second argument, and a list of channel groups as the third argument.
-        """
-        channel_groups = []
-        if isinstance(channels, str): channels = [channels]
-        
+        """        
         if os.path.isfile(file_path):
             if existsok:
                 print(f"File already exists at path {file_path}. Overwriting")
@@ -436,14 +529,11 @@ class HDF5Functions:
         try:
             root = h5py.File(file_path, "w")
             self.create_thumbnail_group(root)
-            self.create_attributes(root, {"nsid_version": nsid_version, "default": "Measurement_000", "NX_class": "NXroot"})
-            entry_group = self.create_entry_group(root, "Measurement_000", attributes = {"default": channels[0]})
-
-            """
-            for channel_name in channels:
-                group = self.create_data_group(entry_group, channel_name, attributes = {"signal": "data"})
-                channel_groups.append(group)
-            """
+            
+            creation_timestamp = os.path.getctime(file_path)
+            creation_datetime = datetime.fromtimestamp(creation_timestamp, tz = timezone.utc)
+            datetime_iso_8601 = creation_datetime.isoformat()            
+            self.create_attributes(root, {"filename": os.path.basename(file_path), "file_time": datetime_iso_8601, "creator": "Scantelligent", "data_model": "NSID", "version": nsid_version, "nsid_version": nsid_version, "NX_class": "NXroot"})
         
         except Exception as e:
             print(f"Error encountered while setting up HDF5 file: {e}")
@@ -452,7 +542,7 @@ class HDF5Functions:
             root.close()
             return
         else:
-            return root, entry_group, channel_groups
+            return root
 
 
 
@@ -657,7 +747,8 @@ class IOFunctions():
                 
         return found_files
 
-    def load_experiment_from_file(self, file_path: str, hw_config: dict = {}, experiment_file: str = "", scantelligent_folder: str = "", scan_processing_flags = None, nanonis: object = None, mla: object = None):
+    def load_experiment_from_file(self, file_path: str, hw_config: dict = {}, experiment_file: str = "", scantelligent_folder: str = "", scan_processing_flags: ThreadSafeDict | None = None,
+                                  nanonis: object = None, mla: object = None, keithley: object = None, andor: object = None):
         """
         Finds and instantiates the 'Experiment' class from a specific file.
         """
@@ -671,8 +762,9 @@ class IOFunctions():
         spec.loader.exec_module(module)
 
         # 2. Get the 'Experiment' class and instantiate it
-        experiment = getattr(module, "Experiment")        
-        return experiment(hw_config = hw_config, experiment_file = experiment_file, scantelligent_folder = scantelligent_folder, scan_processing_flags = scan_processing_flags, nanonis = nanonis, mla = mla)
+        experiment = getattr(module, "Experiment")
+        return experiment(hw_config = hw_config, experiment_file = experiment_file, scantelligent_folder = scantelligent_folder, scan_processing_flags = scan_processing_flags,
+                          nanonis = nanonis, mla = mla, keithley = keithley, andor = andor)
 
 
 

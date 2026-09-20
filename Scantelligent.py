@@ -1451,10 +1451,15 @@ class Scantelligent(QtCore.QObject):
                 self.gui.line_edits["experiment_filename"].setText(self.paths["experiment_filename"])
                 
                 try:
-                    mla_pointer = None
-                    if hasattr(self, "mla"): mla_pointer = self.mla                    
-                    self.experiment = self.io.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scantelligent_folder = self.paths["parent_folder"],
-                                                                                    scan_processing_flags = self.data.scan_processing_flags, nanonis = self.nanonis1, mla = mla_pointer)
+                    if hasattr(self, "mla"): mla_pointer = self.mla
+                    else: mla_pointer = None
+                    if hasattr(self, "keithley"): keithley_pointer = self.keithley
+                    else: keithley_pointer = None
+                    if hasattr(self, "andor"): andor_pointer = self.andor
+                    else: andor_pointer = None
+                    
+                    self.experiment = self.io.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scantelligent_folder = self.paths["parent_folder"], scan_processing_flags = self.data.scan_processing_flags,
+                                                                        nanonis = self.nanonis1, mla = mla_pointer, keithley = keithley_pointer, andor = andor_pointer)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
                     

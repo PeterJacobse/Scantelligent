@@ -7,6 +7,8 @@ from .io_functions import IOFunctions
 from .data_processing import DataProcessing
 from .api_mla import MLAAPI # For type checking only
 from .api_nanonis import NanonisAPI # For type checking only
+from .api_keithley import KeithleyAPI # For type checking only
+from .api_andor import AndorAPI # For type checking only
 
 
 
@@ -33,8 +35,10 @@ class BaseExperiment(QObject):
         self.output_file: h5py.File
         self.entry_group: h5py.Group
         
-        self.mla: MLAAPI | None = kwargs.pop("mla", None)
         self.nanonis: NanonisAPI = kwargs.pop("nanonis", None)
+        self.mla: MLAAPI | None = kwargs.pop("mla", None)
+        self.keithley: KeithleyAPI | None = kwargs.pop("keithley", None)
+        self.andor: AndorAPI | None = kwargs.pop("andor", None)
         
         self.io = IOFunctions()
         self.data = DataProcessing() # You can use self.data to access data processing functions.
@@ -43,7 +47,7 @@ class BaseExperiment(QObject):
         self.abort_requested: bool = False
         self.current_spikes: int = 0
         self.reset_nanonis_when_done: bool = True
-        self.start_parameters: dict[str, dict[str, object]] = {}
+        self.start_parameters: dict[str, dict[str, object]] = {} # Hardware, dict_name, property, like self.start_parameters["nanonis"]["tip"]["x (nm)"]
         self.luts: dict = {}
         self.gui_parameters: dict[str, object] = {}
         
@@ -96,11 +100,15 @@ class BaseExperiment(QObject):
         self.parameters.emit(array_dict)
         return
 
-    def prepare_hdf5(self, file_path: str = "", main_dataset_names: list[str] = ["Channel_000"]) -> tuple[h5py.File, h5py.Group]:
-        output_file = self.io.h5.create_nsid_file(file_path, channel_names = main_dataset_names, close = False, existsok = True)
-        if not isinstance(output_file, h5py.File): raise Exception(f"Could not create the HDF5 output file {self.experiment_file}.")
-        entry_group = self.io.h5.get_object(output_file, "Measurement_000") # Measurement_000 is the default entry group name
-        if not isinstance(entry_group, h5py.Group): raise Exception("Could not create an 'entry group' in the HDF5 output file.")
+    def prepare_hdf5(self, file_path: str = "") -> h5py.File:
+        root = self.io.h5.create_file(file_path, close = False, existsok = True)
+        if not isinstance(root, h5py.File): raise Exception(f"Could not create the HDF5 output file {self.experiment_file}.")
+        self.io.h5.create_group(root, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
+        
+        stm_group = self.io.h5.create_instrument(root, "LT-STM", vendor = "CreaTec Fischer & Co. GMBH", long_name = "Low-Temperature Scanning Tunneling Microscope")
+        stm_parameters_group = self.io.h5.create_group(stm_group, "parameters")
+        
+        
         
         # Fetch the temperature using a Nanonis call and conversion using a lookup table
         if "DT-670" in self.luts.keys():
@@ -121,7 +129,7 @@ class BaseExperiment(QObject):
                 if result:
                     temp_V = result[temp_channel][1]
                     temp_K = float(np.interp(temp_V, temp_calib[:, 0][::-1], temp_calib[:, 1][::-1]))
-                    self.io.h5.create_group(entry_group, "conditions", attributes = {"temperature (K)": temp_K})
+                    self.io.h5.create_attributes(stm_parameters_group, {"temperature (K)": temp_K})
             except:
                 pass
         
@@ -129,18 +137,17 @@ class BaseExperiment(QObject):
         assert isinstance(bias, dict) and isinstance(feedback, dict) and isinstance(tip, dict) and isinstance(hardware, dict) and isinstance(grid, dict)
         feedback_attributes = {"V_Nanonis (V)": bias.get(f"V (V)", 0)} | feedback | {"feedback": tip.get("feedback", True)}
         feedback_attributes.pop("dict_name")
+        
         if "mla" in self.start_parameters.keys():
             mla_bias = self.start_parameters["mla"].get("mla_bias", {})
             assert isinstance(mla_bias, dict)
             feedback_attributes.update({"MLA port_1 (V)": mla_bias.get("port_1 (V)", "unknown"), "MLA port_2 (V)": mla_bias.get("port_2 (V)", "unknown")})
         [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
-                
-        self.io.h5.create_group(entry_group, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
-        self.io.h5.create_group(entry_group, "grid", attributes = {key: grid.get(key) for key in ["center (nm)", "domain (nm)", "angle (deg)", "pixels", "lines"]})
-        self.io.h5.create_group(entry_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
-        self.io.h5.create_group(entry_group, "feedback_settings", attributes = feedback_attributes)
-        self.io.h5.create_group(entry_group, "transimpedance_amplifier", attributes = {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pa})
-        return output_file, entry_group
+        self.io.h5.create_attributes(stm_parameters_group, {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pa})
+        
+        self.io.h5.create_group(stm_parameters_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
+        self.io.h5.create_group(stm_parameters_group, "feedback_settings", attributes = feedback_attributes)        
+        return root
 
     def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = False) -> str:
         """
@@ -253,7 +260,7 @@ class BaseExperiment(QObject):
                 self.start_parameters.update({"mla": mla_parameters})
             
             # Create the experiment HDF5 file
-            self.output_file, self.entry_group = self.prepare_hdf5(file_path = self.experiment_file)
+            self.output_file = self.prepare_hdf5(file_path = self.experiment_file)
 
 
             
