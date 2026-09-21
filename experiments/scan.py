@@ -61,7 +61,7 @@ class Experiment(BaseExperiment):
             sct_channel_names.append(" ".join((quantity.lower(), f"({unit})")))
         directions = ["forward", "backward"]
 
-        # Create the ArrayItem (for the GUI) and the hdf5 datasets to store the measurement data        
+        # Create the ArrayItem in the GUI to store the measurement data
         self.create_array_item(name = f"{os.path.basename(self.experiment_file)}", axes = ["direction", "channel", "x (nm)", "y (nm)"],
                                shape = (len(directions), len(sct_channel_names), pixels, lines), frame = grid, dtype = np.float32, axis_values = [directions, sct_channel_names, x_values, y_values])
 

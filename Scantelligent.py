@@ -1428,7 +1428,6 @@ class Scantelligent(QtCore.QObject):
                         active_controller = self.gui.comboboxes["controller"].currentText()
                         feedback = bool(self.gui.buttons["tip"].state_index % 2)
                         scan_range = [self.gui.line_edits["frame_width"].getValue(), self.gui.line_edits["frame_height"].getValue()]
-                        print(f"{scan_range = }")
                         if not feedback: experiment = "constant_height_scan"
                         elif scan_range[0] > 100 and scan_range[1] > 100: experiment = "overview_scan"
                         else:
@@ -1527,8 +1526,7 @@ class Scantelligent(QtCore.QObject):
                 start_button.setState("aborted")
                 if hasattr(self, "experiment_thread"):
                     if not self.experiment_thread.isRunning(): return False
-                    else:
-                        self.experiment_thread.requestInterruption()
+                    else: self.experiment_thread.requestInterruption()
             
             case _:
                 pass

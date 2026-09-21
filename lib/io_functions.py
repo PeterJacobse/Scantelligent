@@ -12,6 +12,7 @@ from .data_processing import DataProcessing, ThreadSafeDict
 class HDF5Functions:
     def __init__(self, parent):
         self.parent: IOFunctions = parent
+        self.stringtype = h5py.string_dtype(encoding = "utf-8")
 
     @contextmanager
     def read_file(self, file_path: str):
@@ -67,7 +68,7 @@ class HDF5Functions:
     def create_attributes(self, h5object: h5py.File | h5py.Group | h5py.Dataset, attributes: dict = {}) -> None:
         for key, value in attributes.items():
             try:
-                if isinstance(value, str): h5object.attrs.create(key, value, dtype = h5py.string_dtype(encoding = "utf-8"))
+                if isinstance(value, str): h5object.attrs.create(key, value, dtype = self.stringtype)
                 else: h5object.attrs[key] = value
             except: pass
         return
@@ -156,7 +157,7 @@ class HDF5Functions:
 
     def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
         try:            
-            if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, *kwargs)
+            if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, dtype = dtype, *kwargs)
             else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, *kwargs)
             
             attributes.update({"title": name, "quantity": name, "long_name": name})

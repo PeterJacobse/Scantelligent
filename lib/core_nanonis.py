@@ -87,10 +87,11 @@ class NanonisCore:
             if key.lower() in ip_tags: self.ip = value
             if key.lower() in port_tags: self.port = value
         
-        if "stm" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["stm"], dict): stm_config = hw_config["stm"]
-        for key, value in stm_config.items():
-            if key.lower() == "long_name": self.long_name = value
-            if key.lower() == "vendor": self.vendor = value
+        if "stm" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["stm"], dict):
+            stm_config = hw_config["stm"]
+            for key, value in stm_config.items():
+                if key.lower() == "long_name": self.long_name = value
+                if key.lower() == "vendor": self.vendor = value
             
         if not (self.ip and self.port and self.version): raise Exception("Could not extract the required TCP-IP parameters from the provided hardware dictionary")
         return

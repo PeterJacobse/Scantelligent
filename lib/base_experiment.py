@@ -100,6 +100,8 @@ class BaseExperiment(QObject):
         return
 
     def prepare_hdf5(self, file_path: str = "") -> h5py.File:
+        print(f"Now preparing the HDF5 file")
+        
         # Create the HDF5 file
         root = self.io.h5.create_file(file_path, close = False, existsok = True)
         if not isinstance(root, h5py.File): raise Exception(f"Could not create the HDF5 output file {self.experiment_file}.")
@@ -136,17 +138,13 @@ class BaseExperiment(QObject):
             except:
                 pass
         
-        [bias, feedback, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key) for key in ["bias", "feedback", "grid", "tip", "hardware"]]
+        [bias, feedback, grid, tip, hardware] = [self.start_parameters["nanonis"].get(key, {}) for key in ["bias", "feedback", "grid", "tip", "hardware"]]
         assert isinstance(bias, dict) and isinstance(feedback, dict) and isinstance(tip, dict) and isinstance(hardware, dict) and isinstance(grid, dict)
         feedback_attributes = {"V_Nanonis (V)": bias.get(f"V (V)", 0)} | feedback | {"feedback": tip.get("feedback", True)}
         feedback_attributes.pop("dict_name")
         
-        if "mla" in self.start_parameters.keys():
-            mla_bias = self.start_parameters["mla"].get("mla_bias", {})
-            assert isinstance(mla_bias, dict)
-            feedback_attributes.update({"MLA port_1 (V)": mla_bias.get("port_1 (V)", "unknown"), "MLA port_2 (V)": mla_bias.get("port_2 (V)", "unknown")})
-        [tia_gain, tia_gain_V_per_pa] = [hardware.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
-        self.io.h5.create_attributes(stm_parameters_group, {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pa})
+        [tia_gain, tia_gain_V_per_pA] = [hardware.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
+        self.io.h5.create_attributes(stm_parameters_group, {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pA})
         
         self.io.h5.create_group(stm_parameters_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
         self.io.h5.create_group(stm_parameters_group, "feedback_settings", attributes = feedback_attributes)        
@@ -154,11 +152,21 @@ class BaseExperiment(QObject):
         
         
         # Start an MLA instrument group
-        if isinstance(self.mla, MLAAPI):
+        if isinstance(self.mla, MLAAPI) and self.mla.status == "running":
             vendor = self.mla.vendor if hasattr(self.mla, "vendor") and isinstance(self.mla.vendor, str) else "unknown"
             long_name = self.mla.long_name if hasattr(self.mla, "long_name") and isinstance(self.mla.long_name, str) else "unknown"
             mla_group = self.io.h5.create_instrument(root, "MLA", vendor = vendor, long_name = long_name)
-            mla_parameters_group = self.io.h5.create_group(mla_group, "parameters")        
+                        
+            [time_constant_dict, mla_bias, frequencies, amplitudes, phases] = [self.start_parameters["mla"].get(key, {}) for key in ["time_constant", "mla_bias", "frequencies", "amplitudes", "phases"]]
+            assert isinstance(time_constant_dict, dict) and isinstance(mla_bias, dict) and isinstance(frequencies, dict) and isinstance(amplitudes, dict) and isinstance(phases, dict)
+        
+            mla_attributes = {"tm (ms)": time_constant_dict.get("tm (ms)", ""), "df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0)}
+            mla_attributes.update({"tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA})
+            mla_parameters_group = self.io.h5.create_group(mla_group, "parameters", attributes = mla_attributes)
+            
+            self.io.h5.create_dataset(mla_parameters_group, name = "frequencies (Hz)", data = frequencies.get("frequencies (Hz)", []))
+            self.io.h5.create_dataset(mla_parameters_group, name = "numbers", data = frequencies.get("numbers", []))
+            self.io.h5.create_dataset(mla_parameters_group, name = "amplitudes (mV)", data = amplitudes.get("amplitudes (mV)", []))
         return root
 
     def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = False) -> str:
@@ -424,23 +432,23 @@ class BaseExperiment(QObject):
             self.nanonis.scan_action({"action": "stop"})
             if not self.reset_nanonis_when_done: raise Exception("")
             
-            self.nanonis.tip_update({"z_rel (nm)": 1})            
+            self.nanonis.update.tip(z_rel_nm = 1)            
             # Read the start parameters and try to reset all of them
             nanonis_parameters = self.start_parameters.get("nanonis")
             if not isinstance(nanonis_parameters, dict):
                 raise Exception(f"Problem encountered while trying to reset Nanonis. I could not read the start parameters. {e}")
             
-            [grid, lockin_parameters, feedback_parameters, speed_parameters, bias, tip_status] = [nanonis_parameters.get(key, None) for key in ["grid", "lockin", "feedback", "speeds", "bias", "tip_status"]]
+            [grid, lockin_parameters, feedback_parameters, speed_parameters, bias, tip_status] = [nanonis_parameters.get(key, None) for key in ["grid", "lockin", "feedback", "speeds", "bias", "tip"]]
             if grid: self.nanonis.update.grid(grid, verbose = False)
             if lockin_parameters: self.nanonis.update.lockin(lockin_parameters, verbose = False)
-            V_nanonis = round(bias.get("V_nanonis (V)", None), 2)
-            if isinstance(V_nanonis, float | int): self.nanonis.bias_update({"V_nanonis (V)": V_nanonis}, verbose = False)
+            V_nanonis = round(bias.get("V (V)", None), 2)
+            if isinstance(V_nanonis, float | int): self.nanonis.update.bias(V = V_nanonis, verbose = False)
             self.nanonis.update.feedback(feedback_parameters, verbose = False)
             self.nanonis.update.speeds(speed_parameters, verbose = False)
 
-            withdrawn = tip_status.get("withdrawn")
-            fb = tip_status.get("feedback")
-            self.nanonis.tip_update({"feedback": fb, "withdrawn": withdrawn})
+            withdrawn = tip_status.get("withdrawn", False)
+            fb = tip_status.get("feedback", True)
+            self.nanonis.update.tip(feedback = fb, withdraw = withdrawn)
         except Exception as e:
             self.logprint(f"{e}", message_type = "error")
         
@@ -449,7 +457,7 @@ class BaseExperiment(QObject):
             mla_parameters = self.start_parameters.get("mla")
             if isinstance(mla_parameters, dict):
                 [time_constant, mla_bias, amplitudes_dict, frequencies_dict, outputs_dict] = [self.start_parameters["mla"].get(key) for key in ["time_constant", "mla_bias", "amplitudes", "frequencies", "outputs"]]
-                self.mla.lockin_update({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_2 (V)"),
+                self.mla.update.lockin({"df (Hz)": time_constant.get("df (Hz)"), "frequencies (Hz)": frequencies_dict.get("frequencies (Hz)"), "port_1 (V)": mla_bias.get("port_1 (V)"), "port_2 (V)": mla_bias.get("port_2 (V)"),
                                         "amplitudes (mV)": amplitudes_dict.get("amplitudes (mV)"), "output_masks": outputs_dict.get("output_masks")}, verbose = False)
         except Exception as e:
             self.logprint(f"Problem encountered while trying to reset the MLA. I could not read the start parameters. {e}", message_type = "error")

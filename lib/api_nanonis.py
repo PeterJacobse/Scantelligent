@@ -1335,47 +1335,13 @@ class NanonisUpdate:
         self.nn: NanonisAPI = parent
         self.instance_name: str = instance_name
 
-    def connection_control(function: Callable):
-        signature = inspect.signature(function)
-        
-        @wraps(function)
-        def wrapper(self, *args, **kwargs):
-            parameters_out = {}
-            error = False
-            
-            try:
-                # Reading the method and its arguments
-                method_name = function.__name__
-                bound = signature.bind(self, *args, **kwargs)
-                bound.apply_defaults()
-                
-                if not self.nn.status == "running": self.nn.link()                
-                if "verbose" in bound.arguments:
-                    verbose = bound.arguments["verbose"]
-                    if verbose:
-                        if "parameters" in bound.arguments:
-                            parameters_in = bound.arguments["parameters"]
-                            if len(parameters_in) > 0:
-                                print(f"{self.instance_name}.{method_name}({parameters_in})")
-                            print(f"{self.instance_name}.{method_name}()")
-                        else:
-                            print(f"{self.instance_name}.{method_name}()")
-                
-                parameters_out, error = function(self, *args, **kwargs)
-                if self.nn.auto_unlink: self.nn.unlink()
-            except Exception as e:
-                print(f"Error encountered while executing a NanonisUpdate.{method_name}:\n{e}")
-
-            return parameters_out, error
-        return wrapper
-
     def echo_function_call(self, function_name: str = "", parameters: dict[str, object] = {}):
         if len(parameters) > 0: self.nn.logprint(f"{self.instance_name}.{function_name}({parameters})", "code")
         else: self.nn.logprint(f"{self.instance_name}.{function_name}()", "code")
 
 
 
-    def bias(self, parameters: dict = {}, *, V: float | int | None = None, dV_mV: float | int | None = None, dt_ms: float | int | None = None, dz_nm: float | int | None = 1, verbose: bool = True) -> tuple[dict, str]:
+    def bias(self, parameters: dict = {}, *, V: float | int | None = None, dV_mV: float | int | None = None, dt_ms: float | int | None = None, dz_nm: float | int | None = 1, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
         """
         Returns the DC bias value, and optionally slews it to a new value.
 
@@ -1452,9 +1418,11 @@ class NanonisUpdate:
             
             self.nn.parameters.emit(output_dict)
             if verbose and len(parameters) < 1: self.nn.logprint(f"{output_dict}", message_type = "result")
-
-        except Exception as e:
-            error = str(e)        
+        
+        except Exception as e: error = str(e)
+        finally:
+            if unlink: self.nn.unlink()
+        
         return output_dict, error
 
     def session_path(self, *, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
@@ -1702,6 +1670,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "tip"}
         core = self.nn.core
+        parameters = parameters.copy()
         
         distance_nm = 0
         z_min = -100

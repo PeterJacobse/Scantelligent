@@ -106,8 +106,8 @@ class MLAAPI(QtCore.QObject):
             except: pass
         return f"MLA status: {self.status}"
 
-    def initialize(self, verbose: bool = True) -> tuple[dict, bool | str]:
-        return self.lockin_update(verbose = verbose)
+    def initialize(self, verbose: bool = True) -> tuple[dict, str]:
+        return self.update.lockin(verbose = verbose)
 
     def start_lockin(self) -> None:
         self.lockin_running = True
@@ -174,11 +174,11 @@ class MLAAPI(QtCore.QObject):
             pix = .01 * rng.random((32, number), dtype = float) + .01j * rng.random((32, number), dtype = float)
             if average: pix = np.average(pix, axis = 1)
             self.parameters.emit({"dict_name": "pixels", "pixels": pix})
-            return (pix, None)
+            return pix, None
         
         if wait_for_new: self.core.lockin.wait_for_new_pixels(number)
         if data_format == "phase": (pix, _) = self.core.lockin.get_pixels(number, data_format == "phase", unit = "deg")
-        else: (pix, _) = self.core.lockin.get_pixels(number)
+        else: pix, _ = self.core.lockin.get_pixels(number)
         
         pix_var = None
         if average:
@@ -256,9 +256,9 @@ class MLAAPI(QtCore.QObject):
 
 
     # 'Update' methods that both take and apply parameters supplied to them and read from the mla. To be deprecated later
-    def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
-        error = False
-        parameters_out = {"dict_name": "mla_parameters"}
+    def lockin_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, str]:
+        error = ""
+        output_dict: dict[str, object] = {"dict_name": "mla_parameters"}
         
         try:
             if verbose:
@@ -270,11 +270,11 @@ class MLAAPI(QtCore.QObject):
             # time_constant_update
             tm = parameters.get("tm (ms)", None)
             df = parameters.get("df (Hz)", None)
-            if isinstance(df, float | int): (time_constant, error) = self.time_constant_update({"df (Hz)": df}, verbose = verbose)
-            elif isinstance(tm, float | int): (time_constant, error) = self.time_constant_update({"tm (ms)": tm}, verbose = verbose)
-            else: (time_constant, error) = self.time_constant_update(verbose = verbose)
+            if isinstance(df, float | int): time_constant, error = self.update.time_constant({"df (Hz)": df}, verbose = verbose)
+            elif isinstance(tm, float | int): time_constant, error = self.update.time_constant({"tm (ms)": tm}, verbose = verbose)
+            else: time_constant, error = self.update.time_constant(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters_out.update({time_constant.get("dict_name"): time_constant})
+            else: output_dict.update({"time_constant": time_constant})
             
             # frequencies_update
             frequencies = parameters.get("frequencies (Hz)", None)
@@ -285,59 +285,59 @@ class MLAAPI(QtCore.QObject):
             elif isinstance(times, list | np.ndarray): (frequencies_dict, error) = self.frequencies_update({"times (ms)": times}, verbose = verbose)
             else: (frequencies_dict, error) = self.frequencies_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters_out.update({frequencies_dict.get("dict_name"): frequencies_dict})
+            else: output_dict.update({frequencies_dict.get("dict_name"): frequencies_dict})
             
             # amplitudes update
             amplitudes = parameters.get("amplitudes (mV)", None)
             if isinstance(amplitudes, list | np.ndarray): (amplitudes_dict, error) = self.amplitudes_update({"amplitudes (mV)": amplitudes}, verbose = verbose)
             else: (amplitudes_dict, error) = self.amplitudes_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters_out.update({amplitudes_dict.get("dict_name"): amplitudes_dict})
+            else: output_dict.update({amplitudes_dict.get("dict_name"): amplitudes_dict})
             
             # phases update
             phases = parameters.get("phases (deg)", None)
             if isinstance(phases, list | np.ndarray): (phases_dict, error) = self.phases_update({"phases (deg)": phases}, verbose = verbose)
             else: (phases_dict, error) = self.phases_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters_out.update({phases_dict.get("dict_name"): phases_dict})
+            else: output_dict.update({phases_dict.get("dict_name"): phases_dict})
             
             # outputs update
             outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "output_masks", "mod0", "mod1", "mod2", "mod3"]}
             if len(outputs_keys) > 0: (outputs_dict, error) = self.outputs_update(outputs_keys, verbose = verbose)
             else: (outputs_dict, error) = self.outputs_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters_out.update({outputs_dict.get("dict_name"): outputs_dict})
+            else: output_dict.update({outputs_dict.get("dict_name"): outputs_dict})
 
             # outputs update
             inputs_keys = {key: value for key, value in parameters.items() if key in ["input_mask"]}
             if len(inputs_keys) > 0: (inputs_dict, error) = self.inputs_update(inputs_keys, verbose = verbose)
             else: (inputs_dict, error) = self.inputs_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters_out.update({inputs_dict.get("dict_name"): inputs_dict})
+            else: output_dict.update({inputs_dict.get("dict_name"): inputs_dict})
             
             # bias update
             bias_keys = {key: value for key, value in parameters.items() if key in ["port_1 (V)", "port_2 (V)"]}
             if len(bias_keys) > 0: (bias_dict, error) = self.bias_update(bias_keys, verbose = verbose)
             else: (bias_dict, error) = self.bias_update(verbose = verbose)
             if error: raise Exception(error)
-            else: parameters_out.update({bias_dict.get("dict_name"): bias_dict})
+            else: output_dict.update({bias_dict.get("dict_name"): bias_dict})
             
             # Create an array that stacks all data
             try:
                 output_masks = outputs_dict.get("output_masks")
                 array = np.vstack(np.array([amplitudes_dict.get("amplitudes (mV)"), frequencies_dict.get("frequencies (Hz)"), phases_dict.get("phases (deg)"), output_masks[0], output_masks[1], inputs_dict.get("input_mask")]))
                 array_channels = ["amplitudes (mV)", "frequencies (Hz)", "phases (deg)", "output_mask port 1", "output_mask port 2", "input_mask"]
-                parameters_out.update({"array": array, "array_channels": array_channels})
+                output_dict.update({"array": array, "array_channels": array_channels})
             except:
                 pass
             
-            if verbose and len(parameters) < 1: self.logprint(f"{parameters_out}", message_type = "result", verbose = verbose)
+            if verbose and len(parameters) < 1: self.logprint(f"{output_dict}", message_type = "result", verbose = verbose)
         
         except Exception as e: error = e
         finally:
             if unlink: self.unlink()
         
-        return (parameters_out, error)
+        return output_dict, error
 
     def time_constant_update(self, parameters: dict = {}, unlink: bool = False, verbose: bool = True) -> tuple[dict, bool | str]:
         error = False
@@ -954,46 +954,13 @@ class MLAUpdate:
         self.parent: MLAAPI = parent
         self.instance_name: str = instance_name
 
-    def connection_control(function: Callable) -> Callable:
-        """Wrap an update method with connection setup and error handling."""
-        signature = inspect.signature(function)
-        
-        @wraps(function)
-        def wrapper(self, *args, **kwargs):
-            parameters_out = {}
-            error = ""
-            
-            try:
-                # Reading the method and its arguments
-                method_name = function.__name__
-                bound = signature.bind(self, *args, **kwargs)
-                bound.apply_defaults()
-                
-                if not self.parent.status == "running": self.parent.link()                
-                if "verbose" in bound.arguments:
-                    verbose = bound.arguments["verbose"]
-                    if verbose:
-                        if "parameters" in bound.arguments:
-                            parameters_in = bound.arguments["parameters"]
-                            if len(parameters_in) > 0:
-                                print(f"{self.instance_name}.{method_name}({parameters_in})")
-                            print(f"{self.instance_name}.{method_name}()")
-                        else:
-                            print(f"{self.instance_name}.{method_name}()")
-                
-                parameters_out, error = function(self, *args, **kwargs)
-            except Exception as e:
-                print(f"Error encountered while executing a NanonisUpdate.{method_name}:\n{e}")
-
-            return parameters_out, error
-        return wrapper
-
-    def echo_function_call(self, function_name: str = "", parameters: dict[str, object] = {}):
+    def echo_function_call(self, function_name: str = "", parameters: dict[str, object] = {}) -> None:
         """Log a normalized update-method call."""
         if len(parameters) > 0: self.parent.logprint(f"{self.instance_name}.{function_name}({parameters})", "code")
         else: self.parent.logprint(f"{self.instance_name}.{function_name}()", "code")
+        return
 
-    def bias(self, *, parameters: dict[str, object] = {}, voltage_V: float | int | None = None, port: int | None = None, port1_V: int | float | None = None, port2_V: int | float | None = None, dt_ms: float | int | None = None, dV_mV: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
+    def bias(self, parameters: dict[str, object] = {}, *, voltage_V: float | int | None = None, port: int | None = None, port1_V: int | float | None = None, port2_V: int | float | None = None, dt_ms: float | int | None = None, dV_mV: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """
         Returns the DC bias values on the MLA output ports, and optionally slews the bias on either output port of the MLA to a new value.
 
@@ -1012,6 +979,7 @@ class MLAUpdate:
         """        
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "mla_bias"}
+        parameters = parameters.copy()
         
         try:
             # Read input values
@@ -1068,7 +1036,7 @@ class MLAUpdate:
         
         return output_dict, error
 
-    def time_constant(self, *, parameters: dict[str, object] = {}, tm_ms: float | int | None = None, df_Hz: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
+    def time_constant(self, parameters: dict[str, object] = {}, *, tm_ms: float | int | None = None, df_Hz: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """
         Retrieve the lockin fundamental time constant in ms and frequency resolution in Hz (called 'bandwidth' in IMP nomenclature), and update if desired. Provided values for the time constant override the frequency resolution.
         
@@ -1084,6 +1052,7 @@ class MLAUpdate:
         """
         error = ""
         output_dict: dict[str, object] = {"dict_name": "time_constant"}
+        parameters = parameters.copy()
         
         try:
             # Read input values
@@ -1126,7 +1095,7 @@ class MLAUpdate:
         
         return output_dict, error
 
-    def frequencies(self, *, parameters: dict[str, object] = {}, frequencies_Hz: list | np.ndarray | dict | None = None, numbers: list | np.ndarray | dict | None = None, times_ms: list | np.ndarray | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
+    def frequencies(self, parameters: dict[str, object] = {}, *, frequencies_Hz: list | np.ndarray | dict | None = None, numbers: list | np.ndarray | dict | None = None, times_ms: list | np.ndarray | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """Read or set the MLA lock-in frequencies.
 
         Args:
@@ -1142,6 +1111,7 @@ class MLAUpdate:
         """
         error: str = ""
         freq_dict: dict[str, object] = {"dict_name": "frequencies"}
+        parameters = parameters.copy()
         
         try:
             put_kwargs_in_dict(parameters, {"frequencies (Hz)": (frequencies_Hz, list | np.ndarray | dict), "numbers": (numbers, list | np.ndarray | dict), "times (ms)": (times_ms, list | np.ndarray)})
@@ -1188,95 +1158,7 @@ class MLAUpdate:
         finally:
             if unlink: self.parent.unlink()
         
-        return (freq_dict, error)
-
-    def lockin(self, *, parameters: dict[str, object] = {}, tm_ms: float | int | None = None, df_Hz: float | int | None = None, frequencies_Hz: list | np.ndarray | dict | None = None, numbers: list | np.ndarray | dict | None = None, times_ms: list | np.ndarray | None = None, amplitudes_mV: list | np.ndarray | dict | None = None, phases_deg: list | np.ndarray | dict | None = None, output_masks: np.ndarray | list | None = None, input_mask: np.ndarray | list | None = None, blank: bool | None = None, mod0: dict | None = None, mod1: dict | None = None, mod2: dict | None = None, mod3: dict | None = None, port1_V: float | int | None = None, port2_V: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
-        """
-        Returns all parameters from all update functions simultaneously
-
-        Args:
-            parameters (dict, optional): _description_. Defaults to {}.
-            unlink (bool, optional): _description_. Defaults to False.
-            verbose (bool, optional): _description_. Defaults to True.
-
-        Returns:
-            tuple[dict, str]: _description_
-        """
-        error: str = ""
-        output_dict: dict[str, object] = {"dict_name": "mla_parameters"}
-        
-        try:
-            put_kwargs_in_dict(parameters, {"tm (ms)": (tm_ms, float | int), "df (Hz)": (df_Hz, float | int), "frequencies (Hz)": (frequencies_Hz, list | np.ndarray | dict), "numbers": (numbers, list | np.ndarray | dict), "times (ms)": (times_ms, list | np.ndarray), "amplitudes (mV)": (amplitudes_mV, list | np.ndarray | dict), "phases (deg)": (phases_deg, list | np.ndarray | dict), "output_masks": (output_masks, np.ndarray | list), "input_mask": (input_mask, np.ndarray | list), "blank": (blank, bool), "mod0": (mod0, dict), "mod1": (mod1, dict), "mod2": (mod2, dict), "mod3": (mod3, dict), "port_1 (V)": (port1_V, float | int), "port_2 (V)": (port2_V, float | int)})
-            if verbose: self.echo_function_call("lockin", parameters)            
-            if not self.parent.status == "running" and not self.parent.test_mode: self.parent.link()
-            
-            # time_constant_update
-            [tm, df] = get_parameters_from_tags(parameters, [["tm", "t_m", "tm (ms)", "t_m (ms)", "t", "t (ms)", "tc", "t_c", "tc (ms)", "t_c (ms)"], ["df", "df_Hz", "df (Hz)", "delta_f", "delta_f (Hz)"]])
-            if isinstance(df, float | int): time_constant_dict, error = self.time_constant(parameters = {"df (Hz)": df}, verbose = verbose)
-            elif isinstance(tm, float | int): time_constant_dict, error = self.time_constant(parameters = {"tm (ms)": tm}, verbose = verbose)
-            else: time_constant_dict, error = self.time_constant(verbose = verbose)
-            if error: raise Exception(error)
-            else: output_dict.update({"time_constant": time_constant_dict})
-            
-            # frequencies_update
-            frequencies, numbers, times = get_parameters_from_tags(parameters, [["frequencies", "frequencies_Hz", "frequencies (Hz)"], ["numbers", "frequency_numbers"], ["times", "times_ms", "times (ms)"]])
-            if isinstance(frequencies, list | np.ndarray | dict): frequencies_dict, error = self.frequencies(parameters = {"frequencies (Hz)": frequencies}, verbose = verbose)
-            elif isinstance(numbers, list | np.ndarray | dict): frequencies_dict, error = self.frequencies(parameters = {"numbers": numbers}, verbose = verbose)
-            elif isinstance(times, list | np.ndarray): frequencies_dict, error = self.frequencies(parameters = {"times (ms)": times}, verbose = verbose)
-            else: frequencies_dict, error = self.frequencies(verbose = verbose)
-            if error: raise Exception(error)
-            else: output_dict.update({"frequencies": frequencies_dict})
-
-            amplitudes = get_parameters_from_tags(parameters, [["amplitudes", "amplitudes_mV", "amplitudes (mV)"]])[0]
-            if isinstance(amplitudes, list | np.ndarray | dict): amplitudes_dict, error = self.amplitudes(parameters = {"amplitudes (mV)": amplitudes}, verbose = verbose)
-            else: amplitudes_dict, error = self.amplitudes(verbose = verbose)
-            if error: raise Exception(error)
-            else: output_dict.update({"amplitudes": amplitudes_dict})
-            
-            # phases update
-            phases = get_parameters_from_tags(parameters, [["phases", "phases_deg", "phases (deg)"]])[0]
-            if isinstance(phases, list | np.ndarray): (phases_dict, error) = self.phases_update(parameters = {"phases (deg)": phases}, verbose = verbose)
-            else: (phases_dict, error) = self.phases_update(verbose = verbose)
-            if error: raise Exception(error)
-            else: output_dict.update({"phases": phases_dict})
-            
-            # outputs update
-            outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "output_masks", "mod0", "mod1", "mod2", "mod3"]}
-            if len(outputs_keys) > 0: (outputs_dict, error) = self.outputs_update(parameters = outputs_keys, verbose = verbose)
-            else: (outputs_dict, error) = self.outputs_update(verbose = verbose)
-            if error: raise Exception(error)
-            else: output_dict.update({outputs_dict.get("dict_name"): outputs_dict})
-
-            # outputs update
-            inputs_keys = {key: value for key, value in parameters.items() if key in ["input_mask"]}
-            if len(inputs_keys) > 0: (inputs_dict, error) = self.inputs(parameters = inputs_keys, verbose = verbose)
-            else: (inputs_dict, error) = self.inputs(verbose = verbose)
-            if error: raise Exception(error)
-            else: output_dict.update({inputs_dict.get("dict_name"): inputs_dict})
-            
-            # bias update
-            bias_keys = {key: value for key, value in parameters.items() if key in ["port_1 (V)", "port_2 (V)"]}
-            if len(bias_keys) > 0: (bias_dict, error) = self.bias(parameters = bias_keys, verbose = verbose)
-            else: (bias_dict, error) = self.bias(verbose = verbose)
-            if error: raise Exception(error)
-            else: output_dict.update({bias_dict.get("dict_name"): bias_dict})
-            
-            # Create an array that stacks all data
-            try:
-                output_masks = outputs_dict.get("output_masks")
-                array = np.vstack(np.array([amplitudes_dict.get("amplitudes (mV)"), frequencies_dict.get("frequencies (Hz)"), phases_dict.get("phases (deg)"), output_masks[0], output_masks[1], inputs_dict.get("input_mask")] ))
-                array_channels = ["amplitudes (mV)", "frequencies (Hz)", "phases (deg)", "output_mask port 1", "output_mask port 2", "input_mask"]
-                output_dict.update({"array": array, "array_channels": array_channels})
-            except:
-                pass
-            
-            if verbose and len(parameters) < 1: self.parent.logprint(f"{output_dict}", message_type = "result", verbose = verbose)
-        
-        except Exception as e: error = str(e)
-        finally:
-            if unlink: self.parent.unlink()
-        
-        return output_dict, error
+        return freq_dict, error
 
     def amplitudes(self, parameters: dict[str, object] = {}, *, amplitudes_mV: list | np.ndarray | dict | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """Read or set the MLA lock-in amplitudes.
@@ -1292,6 +1174,7 @@ class MLAUpdate:
         """
         error: str = ""
         amp_dict: dict[str, object] = {"dict_name": "amplitudes"}
+        parameters = parameters.copy()
         
         try:
             put_kwargs_in_dict(parameters, {"amplitudes (mV)": (amplitudes_mV, list | np.ndarray | dict)})
@@ -1341,6 +1224,7 @@ class MLAUpdate:
         """
         error: str = ""
         phase_dict: dict[str, object] = {"dict_name": "phases"}
+        parameters = parameters.copy()
         
         try:
             put_kwargs_in_dict(parameters, {"phases (deg)": (phases_deg, list | np.ndarray | dict)})
@@ -1395,6 +1279,7 @@ class MLAUpdate:
         """
         error: str = ""
         outputs_dict: dict[str, object] = {"dict_name": "outputs"}
+        parameters = parameters.copy()
         
         try:
             put_kwargs_in_dict(parameters, {"blank": (blank, bool), "output_masks": (output_masks, np.ndarray | list), "mod0": (mod0, dict), "mod1": (mod1, dict), "mod2": (mod2, dict), "mod3": (mod3, dict)})
@@ -1453,6 +1338,7 @@ class MLAUpdate:
         """
         error: str = ""
         inputs_dict: dict[str, object] = {"dict_name": "inputs"}
+        parameters = parameters.copy()
         
         try:
             put_kwargs_in_dict(parameters, {"input_mask": (input_mask, np.ndarray | list)})
@@ -1479,6 +1365,95 @@ class MLAUpdate:
         
         return inputs_dict, error
 
+    def lockin(self, parameters: dict[str, object] = {}, *, tm_ms: float | int | None = None, df_Hz: float | int | None = None, frequencies_Hz: list | np.ndarray | dict | None = None, numbers: list | np.ndarray | dict | None = None, times_ms: list | np.ndarray | None = None, amplitudes_mV: list | np.ndarray | dict | None = None, phases_deg: list | np.ndarray | dict | None = None, output_masks: np.ndarray | list | None = None, input_mask: np.ndarray | list | None = None, blank: bool | None = None, mod0: dict | None = None, mod1: dict | None = None, mod2: dict | None = None, mod3: dict | None = None, port1_V: float | int | None = None, port2_V: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
+        """
+        Returns all parameters from all update functions simultaneously
+
+        Args:
+            parameters (dict, optional): _description_. Defaults to {}.
+            unlink (bool, optional): _description_. Defaults to False.
+            verbose (bool, optional): _description_. Defaults to True.
+
+        Returns:
+            tuple[dict, str]: _description_
+        """
+        error: str = ""
+        output_dict: dict[str, object] = {"dict_name": "mla_parameters"}
+        parameters = parameters.copy()
+        
+        try:
+            put_kwargs_in_dict(parameters, {"tm (ms)": (tm_ms, float | int), "df (Hz)": (df_Hz, float | int), "frequencies (Hz)": (frequencies_Hz, list | np.ndarray | dict), "numbers": (numbers, list | np.ndarray | dict), "times (ms)": (times_ms, list | np.ndarray), "amplitudes (mV)": (amplitudes_mV, list | np.ndarray | dict), "phases (deg)": (phases_deg, list | np.ndarray | dict), "output_masks": (output_masks, np.ndarray | list), "input_mask": (input_mask, np.ndarray | list), "blank": (blank, bool), "mod0": (mod0, dict), "mod1": (mod1, dict), "mod2": (mod2, dict), "mod3": (mod3, dict), "port_1 (V)": (port1_V, float | int), "port_2 (V)": (port2_V, float | int)})
+            if verbose: self.echo_function_call("lockin", parameters)            
+            if not self.parent.status == "running" and not self.parent.test_mode: self.parent.link()
+            
+            # time_constant_update
+            [tm, df] = get_parameters_from_tags(parameters, [["tm", "t_m", "tm (ms)", "t_m (ms)", "t", "t (ms)", "tc", "t_c", "tc (ms)", "t_c (ms)"], ["df", "df_Hz", "df (Hz)", "delta_f", "delta_f (Hz)"]])
+            if isinstance(df, float | int): time_constant_dict, error = self.time_constant(df_Hz = df, verbose = verbose)
+            elif isinstance(tm, float | int): time_constant_dict, error = self.time_constant(tm_ms = tm, verbose = verbose)
+            else: time_constant_dict, error = self.time_constant(verbose = verbose)
+            if error: raise Exception(error)
+            else: output_dict.update({"time_constant": time_constant_dict})
+            
+            # frequencies_update
+            frequencies, numbers, times = get_parameters_from_tags(parameters, [["frequencies", "frequencies_Hz", "frequencies (Hz)"], ["numbers", "frequency_numbers"], ["times", "times_ms", "times (ms)"]])
+            if isinstance(frequencies, list | np.ndarray | dict): frequencies_dict, error = self.frequencies(frequencies_Hz = frequencies, verbose = verbose)
+            elif isinstance(numbers, list | np.ndarray | dict): frequencies_dict, error = self.frequencies(numbers = numbers, verbose = verbose)
+            elif isinstance(times, list | np.ndarray): frequencies_dict, error = self.frequencies(times_ms = times, verbose = verbose)
+            else: frequencies_dict, error = self.frequencies(verbose = verbose)
+            if error: raise Exception(error)
+            else: output_dict.update({"frequencies": frequencies_dict})
+
+            amplitudes = get_parameters_from_tags(parameters, [["amplitudes", "amplitudes_mV", "amplitudes (mV)"]])[0]
+            if isinstance(amplitudes, list | np.ndarray | dict): amplitudes_dict, error = self.amplitudes(amplitudes_mV = amplitudes, verbose = verbose)
+            else: amplitudes_dict, error = self.amplitudes(verbose = verbose)
+            if error: raise Exception(error)
+            else: output_dict.update({"amplitudes": amplitudes_dict})
+            
+            # phases update
+            phases = get_parameters_from_tags(parameters, [["phases", "phases_deg", "phases (deg)"]])[0]
+            if isinstance(phases, list | np.ndarray): (phases_dict, error) = self.phases(phases_deg = phases, verbose = verbose)
+            else: phases_dict, error = self.phases(verbose = verbose)
+            if error: raise Exception(error)
+            else: output_dict.update({"phases": phases_dict})
+            
+            # outputs update
+            outputs_keys = {key: value for key, value in parameters.items() if key in ["blank", "output_masks", "mod0", "mod1", "mod2", "mod3"]}
+            if len(outputs_keys) > 0: outputs_dict, error = self.outputs(parameters = outputs_keys, verbose = verbose)
+            else: outputs_dict, error = self.outputs(verbose = verbose)
+            if error: raise Exception(error)
+            else: output_dict.update({"outputs": outputs_dict})
+
+            # outputs update
+            inputs_keys = {key: value for key, value in parameters.items() if key in ["input_mask"]}
+            if len(inputs_keys) > 0: inputs_dict, error = self.inputs(parameters = inputs_keys, verbose = verbose)
+            else: inputs_dict, error = self.inputs(verbose = verbose)
+            if error: raise Exception(error)
+            else: output_dict.update({"inputs": inputs_dict})
+            
+            # bias update
+            bias_keys = {key: value for key, value in parameters.items() if key in ["port_1 (V)", "port_2 (V)"]}
+            if len(bias_keys) > 0: bias_dict, error = self.bias(parameters = bias_keys, verbose = verbose)
+            else: bias_dict, error = self.bias(verbose = verbose)
+            if error: raise Exception(error)
+            else: output_dict.update({"mla_bias": bias_dict})
+            
+            # Create an array that stacks all data
+            try:
+                output_masks = outputs_dict.get("output_masks", np.copy(self.parent.output_masks))
+                array = np.vstack(np.array([amplitudes_dict.get("amplitudes (mV)"), frequencies_dict.get("frequencies (Hz)"), phases_dict.get("phases (deg)"), output_masks[0], output_masks[1], inputs_dict.get("input_mask")] ))
+                array_channels = ["amplitudes (mV)", "frequencies (Hz)", "phases (deg)", "output_mask port 1", "output_mask port 2", "input_mask"]
+                output_dict.update({"array": array, "array_channels": array_channels})
+            except:
+                pass
+            
+            if verbose and len(parameters) < 1: self.parent.logprint(f"{output_dict}", message_type = "result")
+        
+        except Exception as e: error = str(e)
+        finally:
+            if unlink: self.parent.unlink()
+        
+        return output_dict, error
+
 
 
 class MLASweeps:
@@ -1489,8 +1464,7 @@ class MLASweeps:
     # Parameter sweep experiments
     def frequency(self, frequencies: list | np.ndarray, *, settle_pixels: int = 1, pixels_per_datapoint: int = 4,
                   measurement: Callable | None = None, abort_callback: Callable | None = None, data_callback: Callable | None = None, channel_names_callback: Callable | None = None,
-                  tia_gain_V_per_pA: float = 0,
-                  tia_corrections: list | np.ndarray | None = None,
+                  tia_gain_V_per_pA: float = 0, tia_corrections: list | np.ndarray | None = None,
                   modulators: list = [0, 1], output_port: int = 1,                  
                   insert_parameter: tuple[str, float] | None = None,
                   post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray, list[str]]:
@@ -1707,24 +1681,29 @@ class MLASweeps:
         elif post_sweep_outputs == "reset": self.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
         return (measurement_array, error_array, channel_names)
 
-    def voltage(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, tia_gain_V_per_pA: float = 0,
-                      output_port: int = 1, modulators: list = [0], abort_callback: object = None, data_callback: object = None, channel_names_callback: object = None,
-                      insert_parameter: tuple[str, float] = None, return_type: str = "conductance", tia_corrections: list | np.ndarray = None, post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray]:
-        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
-        if measurement: self.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
-        measurement = lambda: self.get_pixels(pixels_per_datapoint, average = True)
-        if not data_callback: data_callback = lambda data_chunk: self.logprint(f"{data_chunk = }", message_type = "result")
+    def voltage(self, voltages = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4,
+                measurement: Callable | None = None, abort_callback: Callable | None = None, data_callback: Callable | None = None, channel_names_callback: Callable | None = None,
+                tia_gain_V_per_pA: float = 0, tia_corrections: list | np.ndarray | None = None,
+                output_port: int = 1, modulators: list = [0],
+                insert_parameter: tuple[str, float] = None, return_type: str = "conductance", post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray]:
+        mla = self.parent
         
-        (start_outputs, error) = self.outputs_update(verbose = False) # Read for resetting after the sweep
-        measurement_output_masks = np.copy(start_outputs.get("output_masks"))
+        # In the future, more complicated data acquisitions can be passed rather than just mla.get_pixels
+        if measurement: mla.logprint(f"Measurements other than data pixel acquisitions are not yet supported for frequency sweeps.", message_type = "error")
+        measurement = lambda: mla.get_pixels(pixels_per_datapoint, average = True)
+        if not data_callback: data_callback = lambda data_chunk: mla.logprint(f"{data_chunk = }", message_type = "result")
+        
+        start_outputs, error = mla.update.outputs(verbose = False) # Read for resetting after the sweep
+        measurement_output_masks = np.copy(start_outputs.get("output_masks", np.zeros((2, 32))))
+        
         for mod_index in modulators: # Set the modulators according to what was passed
             measurement_output_masks[output_port - 1, mod_index] = 1
-        self.outputs_update({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
+        mla.update.outputs({"output_masks": measurement_output_masks}, verbose = False) # Read for resetting after the sweep
         
         # Read the TIA gain and oscillator amplitude to be able to convert values
-        (frequencies_dict, error) = self.frequencies_update()
+        frequencies_dict, error = mla.update.frequencies()
         freqs = frequencies_dict.get("frequencies (Hz)")
-        (amplitudes_dict, error) = self.amplitudes_update(verbose = False)
+        amplitudes_dict, error = mla.update.amplitudes(verbose = False)
         mod_voltage_mV = amplitudes_dict.get("amplitudes (mV)")[0]
         
         # Prepare to plot these channels
