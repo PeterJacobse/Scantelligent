@@ -80,12 +80,12 @@ class HDF5Functions:
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called {name} under {root_or_group}")
 
-    def entry_group(self, root: h5py.File, name: str = "Measurement000", verbose: bool = False) -> h5py.Group:
+    def entry_group(self, root: h5py.File, name: str = "Measurement_000", verbose: bool = False) -> h5py.Group:
         """Finds the entry group in an HDF5 file, first by searching for the default tag at the root, then by trying to find the NXentry tags in the groups at the root level. If the entry group does not exist, it is created.
 
         Args:
             root (h5py.File): HDF5 file
-            name (str, optional): Name of the entry group: only relevant when creating a new group. Defaults to "Measurement000".
+            name (str, optional): Name of the entry group: only relevant when creating a new group. Defaults to "Measurement_000".
             verbose (bool, optional): Whether to output messages. Defaults to False.
 
         Returns:
@@ -169,8 +169,8 @@ class HDF5Functions:
     def create_main_dataset(self, root: h5py.File, name: str = "", *, existsok: bool = True, units: str | None = None, modality: str = "SPM", make_default: bool = True, attributes: dict = {},
                             data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, verbose: bool = False) -> h5py.Dataset:
         try:
-            # Find or create the entry group
-            entry_group = self.entry_group(root, name = "Measurement000", verbose = verbose)
+            # Find or create the entry group            
+            entry_group = self.entry_group(root, name = "Measurement_000", verbose = verbose)
             entry_subgroups = self.get_groups(entry_group)
             
             if name in entry_subgroups.keys():
@@ -183,14 +183,16 @@ class HDF5Functions:
             
             data_type = "2D_image"
             if isinstance(data, np.ndarray):
-                if data.ndim > 2: data_type = "hyperspectral_image"
+                if data.ndim > 2: data_type = "image_stack"
                 elif data.ndim < 2: data_type = "graph"
             if isinstance(shape, tuple):
-                if len(shape) > 2: data_type = "hyperspectral_image"
+                if len(shape) > 2: data_type = "image_stack"
                 elif len(shape) < 2: data_type = "graph"
             
             # Create the dataset
-            dset_attributes = {"units": units, "data_type": data_type, "modality": modality} | attributes
+            root_attrs = self.get_attributes(root)
+            nsid_version = root_attrs.get("nsid_version", "0.0.4")
+            dset_attributes = {"units": units, "data_type": data_type, "modality": modality, "nsid_version": nsid_version} | attributes
             if isinstance(data, np.ndarray): dataset = self.create_dataset(data_group, name, data = data, dtype = dtype, attributes = dset_attributes)
             elif isinstance(shape, tuple): dataset = self.create_dataset(data_group, name, shape = shape, dtype = dtype, attributes = dset_attributes)
             else:
@@ -206,7 +208,7 @@ class HDF5Functions:
                                  data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, verbose: bool = False) -> h5py.Dataset:
         try:
             # Find or create the entry group
-            entry_group = self.entry_group(root, name = "Measurement000", verbose = verbose)
+            entry_group = self.entry_group(root, name = "Measurement_000", verbose = verbose)
             entry_subgroups = self.get_groups(entry_group)
             
             # Find or create the Ancillary group (The group that stores the axes)
@@ -505,7 +507,7 @@ class HDF5Functions:
             pass
         return output_dict
 
-    def create_file(self, file_path: str, close: bool = True, existsok: bool = False, nsid_version: str = "0.0.2") -> None | h5py.File:
+    def create_file(self, file_path: str, close: bool = True, existsok: bool = False, nsid_version: str = "0.0.4") -> None | h5py.File:
         """
         Generate a NSID and NeXus-compatible HDF5 file for n-dimensional parameter space measurements.
 
@@ -514,7 +516,7 @@ class HDF5Functions:
             close (bool, optional): Whether to close the file after creation or keep it open and return a reference to the root. Defaults to True.
             existsok (bool, optional): Whether to overwrite if a file with the same path already exists. Defaults to True.
             channel_names (list | str, optional): Names of the different measurements. Defaults to "Channel_000".
-            nsid_version (str, optional): String reflecting the NSID compatibility version. Defaults to "0.0.2".
+            nsid_version (str, optional): String reflecting the NSID compatibility version. Defaults to "0.0.4".
 
         Returns:
             (None | tuple[h5py.File, h5py.Group, list[h5py.Group]]): None if 'close' is True. Otherwise, a tuple with the file root as first element, the entry group as second argument, and a list of channel groups as the third argument.

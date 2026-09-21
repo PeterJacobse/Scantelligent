@@ -32,6 +32,8 @@ class NanonisAPI(QtCore.QObject):
         if message_callback: self.message_callback = message_callback # For testing, e.g. in Jupyter, the user can pass a message_callback
 
         self.core = NanonisCore(hw_config = hw_config)
+        if hasattr(self.core, "long_name"): self.long_name = self.core.long_name
+        if hasattr(self.core, "vendor"): self.vendor = self.core.vendor
         # nanonis_hardware methods are low-level methods performing direct communication to the Nanonis FPGA over TCP-IP
         # nanonisAPI methods are higher-level methods that incorporate these methods, but provide a friendlier interface
         # The alias core = self.core is typically used within the methods of this API

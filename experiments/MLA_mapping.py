@@ -22,7 +22,8 @@ class Experiment(BaseExperiment):
         
         # Aliases
         nn: NanonisAPI = self.nanonis
-        mla: MLAAPI = self.mla
+        mla = self.mla        
+        if not isinstance(mla, MLAAPI): raise Exception("Error. Cannot access the MLA.")
         
         # Read parameters from gui
         gui_parameters = self.start_parameters["gui"]
@@ -65,48 +66,20 @@ class Experiment(BaseExperiment):
 
 
         # Set up the HDF5 datasets and groups
-        entry_group_attributes = self.io.h5.get_attributes(self.entry_group)
+        x_ds = self.io.h5.create_ancillary_dataset(self.output_file, name = "x", units = "nm", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
+        y_ds = self.io.h5.create_ancillary_dataset(self.output_file, name = "y", units = "nm", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
+        ch_ds = self.io.h5.create_ancillary_dataset(self.output_file, name = "lockin_channel", units = "#", data = np.arange(32).astype(np.float32))
+                
+        lockin_ds = self.io.h5.create_main_dataset(self.output_file, name = "lockin_data", units = "mV", modality = "MLA_map", shape = (32, lines, pixels))
+        lockin_errors_ds = self.io.h5.create_main_dataset(self.output_file, name = "errors", units = "mV", modality = "MLA_map", shape = (32, lines, pixels))
+        z_ds = self.io.h5.create_main_dataset(self.output_file, name = "z", units = "nm", modality = "MLA_map", shape = (pixels, lines), make_default = True)
+        
+        lockin_array = np.zeros(shape = (32, lines, pixels))
+        """
         spec_attributes = {"device": "MLA", "MLA time constant (ms)": time_constant_dict.get("tm (ms)", ""), "MLA df (Hz)": time_constant_dict.get("df (Hz)", ""), "V_port1 (V)": mla_bias.get("port_1 (V)", 0), "V_port2 (V)": mla_bias.get("port_2 (V)", 0),
                       "f / df": 1, "settling time (1 / df)": t_settle, "pixels per datapoint (1 / df)": t_int, "tia gain setting": tia_gain, "tia gain (V/pA)": tia_gain_V_per_pA}
         spec_settings_group = self.io.h5.create_group(self.entry_group, "spectroscopy_settings", attributes = spec_attributes)
-        self.io.h5.create_dataset(spec_settings_group, "MLA_settings", data = mla_setup_array)        
-        
-        main_group_name = entry_group_attributes.get("default", "Channel_000")
-        main_group = self.io.h5.get_object(self.entry_group, main_group_name)
-        assert isinstance(main_group, h5py.Group)
-        
-        main_ds = self.io.h5.create_dataset(main_group, "data", units = "nm", shape = (len(directions), len(sct_names), pixels, lines), dtype = np.float32)
-        dir_ds = self.io.h5.create_dataset(main_group, "direction", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        dir_indices_ds = self.io.h5.create_dataset(main_group, "direction indices", units = "none", data = np.array([0, 1], dtype = np.int32))
-        channel_ds = self.io.h5.create_dataset(main_group, "channel", data = np.array([item.encode("utf-8") for item in sct_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        channel_indices_ds = self.io.h5.create_dataset(main_group, "channel indices", units = "none", data = np.arange(len(sct_names), dtype = np.int32))
-        x_ds = self.io.h5.create_dataset(main_group, "x", data = x_values, units = "nm", dtype = np.float32)
-        y_ds = self.io.h5.create_dataset(main_group, "y", data = y_values, units = "nm", dtype = np.float32)
-        self.io.h5.attach_axes_to_dataset(main_ds, axes_datasets = [dir_indices_ds, channel_indices_ds, x_ds, y_ds])
-        
-        channel_ds = main_group.create_dataset("channel axis", data = np.array([item.encode("utf-8") for item in channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-        channel_indices_ds = main_group.create_dataset("channel index axis", data = np.arange(len(channel_names), dtype = np.int32))
-        channel_indices_ds.make_scale("channel indices")
-        x_ds = main_group.create_dataset("x axis", data = np.linspace(-width_nm / 2, width_nm / 2, pixels), dtype = np.float32)
-        x_ds.make_scale("x values")
-        y_ds = main_group.create_dataset("y axis", data = np.linspace(-height_nm / 2, height_nm / 2, lines), dtype = np.float32)
-        y_ds.make_scale("y values")
-        
-        map_array = np.empty((n_channels, lines, pixels), dtype = np.float32)
-        map_ds = main_group.create_dataset("map", shape = ((n_channels, lines, pixels)), dtype = np.float32)
-        map_ds.dims[0].attach_scale(channel_indices_ds)
-        map_ds.dims[1].attach_scale(y_ds)
-        map_ds.dims[2].attach_scale(x_ds)
-        map_errors_ds = main_group.create_dataset("map_errors", shape = ((n_channels, lines, pixels)), dtype = np.float32)
-        map_errors_ds.dims[0].attach_scale(channel_indices_ds)
-        map_errors_ds.dims[1].attach_scale(y_ds)
-        map_errors_ds.dims[2].attach_scale(x_ds)
-        
-        main_group.attrs.update({"signal": "map"})
-        main_group.attrs.update({"axes": ["channel index axis", "y axis", "x axis"]})
-        main_group.attrs.update({"units": ["", "nm", "nm"]})
-        
-
+        """
 
         # Main loop
         t_start = time.time()
@@ -118,9 +91,9 @@ class Experiment(BaseExperiment):
                 x_nm = x_grid[line_index, pix_index]
                 y_nm = y_grid[line_index, pix_index]
 
-                (tip_status, error) = nn.tip_update({"x (nm)": x_nm, "y (nm)": y_nm}, wait = True, fast_mode = True, verbose = False) # Wait for move
+                tip_status, error = nn.update.tip({"x (nm)": x_nm, "y (nm)": y_nm}, wait = True, fast_mode = True, verbose = False) # Wait for move
                 mla.get_pixels(1 + t_settle) # Settle
-                if not error: [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(key) for key in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
+                if not error: [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(key, 0) for key in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
                 t_elapsed = time.time() - t_start
                 
                 # Safetip
@@ -133,7 +106,7 @@ class Experiment(BaseExperiment):
                     raise Exception("Aborting")
 
                 data_chunk = np.array([t_elapsed, V_dc, x_nm, y_nm, z_nm, I_pA])
-                (pix_V, pix_V_var) = mla.get_pixels(t_int, average = True)
+                pix_V, pix_V_var = mla.get_pixels(t_int, average = True)
                 pix_V_std_dev = np.sqrt(pix_V_var)
                 
                 if isinstance(tia_corrections, list | np.ndarray): # Apply correction for tia response if desired
@@ -159,11 +132,11 @@ class Experiment(BaseExperiment):
                 error_pixel = np.zeros_like(combined_pixel)
                 error_pixel[6 : len(pix_nS_std_dev) + 6] = pix_nS_std_dev
                 
-                map_ds[:, line_index, pix_index] = combined_pixel
-                map_array[:, line_index, pix_index] = combined_pixel
+                lockin_ds[:, line_index, pix_index] = combined_pixel
+                lockin_array[:, line_index, pix_index] = combined_pixel
                 
                 channel_index = self.scan_processing_flags.get("channel_index")                
-                try: self.image.emit(map_array[channel_index])
+                try: self.image.emit(lockin_array[channel_index])
                 except: pass                
             
                 self.check_abort_request()

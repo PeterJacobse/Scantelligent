@@ -73,8 +73,8 @@ class SCTWidgets:
                 super().mouseClickEvent(event)
 
     class ArrayItem(pg.ImageItem):
-        def __init__(self, name: str = "", array: np.ndarray = None, frame: dict = {}, x_axis: int = 0, y_axis: int = 1, color_image: bool = False,
-                     axes: list | np.ndarray = None, axis_0_labels: list | np.ndarray = None, axis_1_labels: list | np.ndarray = None, axis_2_labels: list | np.ndarray = None, axis_3_labels: list | np.ndarray = None):
+        def __init__(self, name: str = "", array: np.ndarray | None = None, frame: dict = {}, x_axis: int = 0, y_axis: int = 1, color_image: bool = False,
+                     axes: list | np.ndarray | None = None, axis_0_labels: list | np.ndarray | None = None, axis_1_labels: list | np.ndarray | None = None, axis_2_labels: list | np.ndarray | None = None, axis_3_labels: list | np.ndarray | None = None):
             super().__init__()
             self.setOpts(axisOrder = "row-major")
 
@@ -124,16 +124,16 @@ class SCTWidgets:
             self.slice_label.setPos(width /2, height)
             return
 
-        def setAxisText(self, x_axis: str = None, y_axis: str = None) -> None:
-            if isinstance(x_axis, str): self.x_label.setText(x_axis)
-            if isinstance(y_axis, str): self.y_label.setText(y_axis)
+        def setAxisText(self, x_axis: str = "", y_axis: str = "") -> None:
+            if x_axis: self.x_label.setText(x_axis)
+            if y_axis: self.y_label.setText(y_axis)
             return
         
-        def setSliceText(self, slice_text: str = None) -> None:
+        def setSliceText(self, slice_text: str | None = None) -> None:
             if isinstance(slice_text, str): self.slice_label.setText(slice_text)
             return
 
-        def setImage(self, image: np.ndarray = None, autoLevels = False, levelSamples = 65536, **kwargs) -> None:
+        def setImage(self, image: np.ndarray | None = None, autoLevels = False, levelSamples = 65536, **kwargs) -> None:
             if not isinstance(image, np.ndarray): return
             
             if image.dtype.kind in ["f", "u"]:
@@ -187,7 +187,7 @@ class SCTWidgets:
         def getName(self) -> str:
             return self.name
         
-        def setArray(self, array: np.ndarray) -> None: # Sets the scan object
+        def setArray(self, array: np.ndarray | None) -> None: # Sets the scan object
             if not isinstance(array, np.ndarray): array = np.zeros((2, 2)) # Instantiate with dummy data if no valid np array is provided
             
             shape = array.shape
@@ -359,8 +359,8 @@ class SCTWidgets:
             self.angle = angle_deg
             return
 
-        def updateFrame(self, frame: dict = None) -> None:
-            if not isinstance(frame, dict): return
+        def updateFrame(self, frame: dict = {}) -> None:
+            if not frame: return
             [scan_range, offset, angle] = [frame.get(key, None) for key in ["domain (nm)", "center (nm)", "angle (deg)"]]
             self.frame = {}            
             if isinstance(scan_range, list | np.ndarray):
@@ -443,10 +443,10 @@ class SCTWidgets:
            
             if isinstance(name, str): self.setObjectName(name)
             if isinstance(states, list):
-                self.states = states
+                self.states: list = states
             else:
                 # Default for when no different states are provided
-                self.states = [{"name": "unchecked", "color": "#101010"}]
+                self.states: list = [{"name": "unchecked", "color": "#101010"}]
             
             self.button_size = [24, 24]
             if isinstance(size, int): self.button_size = [size, size]
@@ -503,7 +503,7 @@ class SCTWidgets:
             self.setFixedSize(self.button_size[0] + 6, self.button_size[1] + 6)
             return
 
-        def setState(self, value = 0) -> None:
+        def setState(self, value: str | int = 0) -> None:
             if isinstance(value, int): # Index given
                 if value > -1: self.state_index = value # Valid index given: set
                 else: self.state_index += 1 # No index given: tally

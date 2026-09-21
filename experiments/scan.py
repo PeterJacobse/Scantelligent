@@ -52,35 +52,47 @@ class Experiment(BaseExperiment):
         nn.update.scan_metadata({"channel_indices": nanonis_channel_indices}, verbose = False) # Bounce the channel indices back to Nanonis with the z channel included, so it will be recorded
 
         # Retrieve the names of the recorded channels and define the two scan directions. Use preferred units of pA and nm
-        nanonis_channel_names = [inverted_signal_dict.get(index) for index in nanonis_channel_indices]        
-        sct_names = []
+        nanonis_channel_names = [inverted_signal_dict.get(index) for index in nanonis_channel_indices]
+        sct_channel_names = []
         for nanonis_name in nanonis_channel_names:
             quantity, unit, backward, error = self.data.split_physical_quantity(nanonis_name)
             if unit == "A": unit = "pA"
             if unit == "m": unit = "nm"
-            sct_names.append(" ".join((quantity.lower(), f"({unit})")))
+            sct_channel_names.append(" ".join((quantity.lower(), f"({unit})")))
         directions = ["forward", "backward"]
 
         # Create the ArrayItem (for the GUI) and the hdf5 datasets to store the measurement data        
         self.create_array_item(name = f"{os.path.basename(self.experiment_file)}", axes = ["direction", "channel", "x (nm)", "y (nm)"],
-                               shape = (len(directions), len(sct_names), pixels, lines), frame = grid, dtype = np.float32, axis_values = [directions, sct_names, x_values, y_values])
+                               shape = (len(directions), len(sct_channel_names), pixels, lines), frame = grid, dtype = np.float32, axis_values = [directions, sct_channel_names, x_values, y_values])
+
+
 
         # Start writing initial data to file and then start the experiment
         if direction in ["up", "down"]:
-            main_ds = self.io.h5.create_main_dataset(self.output_file, "data", units = "nm", shape = (len(directions), len(sct_names), pixels, lines), dtype = np.float32)
+            # Ancillary datasets (axes)
             dir_indices_ds = self.io.h5.create_ancillary_dataset(self.output_file, "direction_indices", data = np.array([0, 1], dtype = np.int32))
-            channel_indices_ds = self.io.h5.create_ancillary_dataset(self.output_file, "channel_indices", data = np.arange(len(sct_names), dtype = np.int32))
+            channel_indices_ds = self.io.h5.create_ancillary_dataset(self.output_file, "channel_indices", data = np.arange(len(sct_channel_names), dtype = np.int32))
             x_ds = self.io.h5.create_ancillary_dataset(self.output_file, "x", units = "nm", data = x_values)
             y_ds = self.io.h5.create_ancillary_dataset(self.output_file, "y", units = "nm", data = y_values)            
             dir_ds = self.io.h5.create_ancillary_dataset(self.output_file, "direction", data = np.array([item.encode("utf-8") for item in ["forward", "backward"]]), dtype = h5py.string_dtype(encoding = "utf-8"))
-            channel_ds = self.io.h5.create_ancillary_dataset(self.output_file, "channel", data = np.array([item.encode("utf-8") for item in sct_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
-                        
+            channel_ds = self.io.h5.create_ancillary_dataset(self.output_file, "channel", data = np.array([item.encode("utf-8") for item in sct_channel_names]), dtype = h5py.string_dtype(encoding = "utf-8"))
+            
+            # Main datasets (channels)
+            main_datasets = []
+            for channel_name in sct_channel_names:
+                for direction in directions:
+                    full_channel_name = "_".join([channel_name, direction])
+                    channel_ds = self.io.h5.create_main_dataset(self.output_file, name = full_channel_name, units = "nm", shape = (pixels, lines), dtype = np.float32)
+                    [self.io.h5.attach_axis(channel_ds, dataset, axis) for axis, dataset in enumerate([x_ds, y_ds])]                    
+                    main_datasets.append(channel_ds)
+
             # Start the scan. Passing the dataset will allow it to be updated during scanning
             self.set_view("nanonis")
-            self.nanonis_scan(direction = direction, dataset = main_ds, verbose = False)
+            self.nanonis_scan(direction = direction, datasets = main_datasets, verbose = False)
 
 
 
+        # Gaussian Process Regression
         elif direction == "gaussian_process":
             n_points = 160
             n_iterations = 8

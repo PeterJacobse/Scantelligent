@@ -5,6 +5,7 @@ from functools import wraps
 from PyQt6 import QtCore
 import numpy as np
 from .helper_funcs import get_parameters_from_tags, put_kwargs_in_dict
+from typing import Callable
 
 
 
@@ -21,42 +22,47 @@ class MLAAPI(QtCore.QObject):
     frequency = QtCore.pyqtSignal(float)
     task_progress = QtCore.pyqtSignal(int)
 
-    def __init__(self, hw_config: dict = {}, message_callback: object = None, status_callback: object = None, test_mode: bool = False):
+    def __init__(self, library_path: str = "", hw_config: dict = {}, message_callback: Callable | None = None, status_callback: Callable | None = None, test_mode: bool = False):
         super().__init__()
-
-        self.status_callback = lambda status: self.send_status(status) # Use a parameter dict to signal the status to ParameterManager
+        
         if status_callback: self.status_callback = status_callback # If the user provides a callback function, use that instead
-        self.message_callback = lambda message_str, message_type: self.logprint(message_str = message_str, message_type = message_type) # Default to PyQt signal-slot signaling
+        else: self.status_callback = lambda status: self.send_status(status) # Use a parameter dict to signal the status to ParameterManager
         if message_callback: self.message_callback = message_callback # For testing, e.g. in Jupyter, the user can pass a message_callback
+        else: self.message_callback = lambda message_str, message_type: self.logprint(message_str = message_str, message_type = message_type) # Default to PyQt signal-slot signaling
 
         self.test_mode = test_mode
-        
-        mla_path = False
+                
+        mla_path = ""
         if "mla" in hw_config.keys():
             mla_dict: dict = hw_config.get("mla", {})
-            mla_path = mla_dict.get("library_path")
+            mla_path = mla_dict.get("library_path", "")
+            if "long_name" in mla_dict.keys(): self.long_name = mla_dict["long_name"]
+            if "vendor" in mla_dict.keys(): self.vendor = mla_dict["vendor"]
+        
+        if library_path and not mla_path and os.path.isdir(library_path): mla_path = library_path
         
         if not isinstance(mla_path, str): raise Exception("Could not read the MLA library path")
         if not os.path.isdir(mla_path): raise IOError("The library path provided does not point to a valid folder")
-
         self.core_path = mla_path
 
-        sys.path.insert(0, mla_path)
 
-        from mlaapi import mla_globals # These packages should become available if the MLA path is correct
+        
+        # These packages should become available if the MLA path is correct
+        sys.path.insert(0, mla_path)
+        from mlaapi import mla_globals
         from mlaapi import mla_api
         
         settings = mla_globals.read_config()
         self.core = mla_api.MLA(settings) # Low-level library
         self.update = MLAUpdate(parent = self, instance_name = "mla.update")
-        #self.sweep = MLASweeps(parent = self, instance_name = "mla.experiments")
+        self.sweep = MLASweeps(parent = self, instance_name = "mla.sweep")
         self.lockin_running = False
         self.parameters_init()
 
 
 
     def parameters_init(self) -> None:
-        self.df = 100 # Defaults, to be overwritten by the first call to time_constant_update()
+        self.df = 100 # Default, to be overwritten by the first call to time_constant_update()
         self.tm = 10
         self.V = [0., 0.]
         self.output_masks = np.zeros((2, 32), dtype = int)
@@ -987,8 +993,6 @@ class MLAUpdate:
         if len(parameters) > 0: self.parent.logprint(f"{self.instance_name}.{function_name}({parameters})", "code")
         else: self.parent.logprint(f"{self.instance_name}.{function_name}()", "code")
 
-
-
     def bias(self, *, parameters: dict[str, object] = {}, voltage_V: float | int | None = None, port: int | None = None, port1_V: int | float | None = None, port2_V: int | float | None = None, dt_ms: float | int | None = None, dV_mV: float | int | None = None, unlink: bool = False, verbose: bool = True) -> tuple[dict[str, object], str]:
         """
         Returns the DC bias values on the MLA output ports, and optionally slews the bias on either output port of the MLA to a new value.
@@ -1484,11 +1488,10 @@ class MLASweeps:
 
     # Parameter sweep experiments
     def frequency(self, frequencies: list | np.ndarray, *, settle_pixels: int = 1, pixels_per_datapoint: int = 4,
-                  measurement: Callable | None = None,
+                  measurement: Callable | None = None, abort_callback: Callable | None = None, data_callback: Callable | None = None, channel_names_callback: Callable | None = None,
                   tia_gain_V_per_pA: float = 0,
                   tia_corrections: list | np.ndarray | None = None,
-                  modulators: list = [0, 1], output_port: int = 1,
-                  abort_callback: Callable | None = None, data_callback: Callable | None = None, channel_names_callback: Callable | None = None,
+                  modulators: list = [0, 1], output_port: int = 1,                  
                   insert_parameter: tuple[str, float] | None = None,
                   post_sweep_outputs: str = "reset") -> tuple[np.ndarray, np.ndarray, list[str]]:
         """
@@ -1499,13 +1502,13 @@ class MLASweeps:
             settle_pixels (int, optional): Number of lockin time constants to settle (throw away) before recording a measurement at each frequency datapoint. Defaults to 1.
             pixels_per_datapoint (int, optional): Number of pixels to record and average over per datapoint. Defaults to 4.
             measurement (Callable | None, optional): Measurement callback. Defaults to None, in which case it just acquires a pixel.
+            abort_callback (Callable | None, optional): Hook to enable graceful abort of the experiment. Defaults to None.
+            data_callback (Callable | None, optional): _description_. Defaults to None.
+            channel_names_callback (Callable | None, optional): _description_. Defaults to None.
             tia_gain_V_per_pA (float, optional): Gain of the transimpedance amplifier. Defaults to 0.
             tia_corrections (list | np.ndarray | None, optional): _description_. Defaults to None.
             modulators (list, optional): _description_. Defaults to [0, 1].
             output_port (int, optional): _description_. Defaults to 1.
-            abort_callback (Callable | None, optional): _description_. Defaults to None.
-            data_callback (Callable | None, optional): _description_. Defaults to None.
-            channel_names_callback (Callable | None, optional): _description_. Defaults to None.
             insert_parameter (tuple[str, float] | None, optional): _description_. Defaults to None.
             post_sweep_outputs (str, optional): _description_. Defaults to "reset".
 
@@ -1552,7 +1555,7 @@ class MLASweeps:
             w = 2 * np.pi * int(f) # Frequency in rad per s
             self.parent.time_constant_update({"df (Hz)": int(f)}, verbose = False)
             (frequencies_dict, error) = self.parent.frequencies_update({"numbers": [1, 1, 2, 3]}, verbose = False)
-            freqs = frequencies_dict.get("frequencies (Hz)")
+            freqs = frequencies_dict.get("frequencies (Hz)", [])
             
             self.parent.get_pixels(settle_pixels) # Wait settle_pixels number of pixels
             (pix_V, pix_V_var) = measurement()
@@ -1584,7 +1587,7 @@ class MLASweeps:
                 a1_std_dev_pA = a1_std_dev_mV / (1000 * tia_gain_V_per_pA)
                 a2_std_dev_pA = a2_std_dev_mV / (1000 * tia_gain_V_per_pA)
                 
-                if mod_voltage_mV > .01: # Convert to femtofarad
+                if mod_voltage_mV > .01: # Convert to femtoFarad
                     #a1abs_nS = a1abs_pA / mod_voltage_mV # Reactance
                     #a2abs_nS = a2abs_pA / mod_voltage_mV
                     
@@ -1617,7 +1620,7 @@ class MLASweeps:
         self.parent.task_progress.emit(100) # Signal that the measurement is done
         if post_sweep_outputs == "blank": self.parent.outputs_update({"output_masks": np.zeros((2, 32), dtype = int)}) # Reset outputs
         elif post_sweep_outputs == "reset": self.parent.outputs_update({"output_masks": start_outputs.get("output_masks")}) # Reset outputs
-        return (measurement_array, error_array, channel_names)
+        return measurement_array, error_array, channel_names
 
     def amplitude(self, amplitudes = np.ndarray, settle_pixels: int = 1, pixels_per_datapoint: int = 4, measurement: object = None, tia_gain_V_per_pA: float = 0,
                         output_port: int = 1, modulators: list = [0], abort_callback: object = None, data_callback: object = None, channel_names_callback: object = None,

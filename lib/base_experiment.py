@@ -33,7 +33,6 @@ class BaseExperiment(QObject):
         self.experiment_file: str = kwargs.pop("experiment_file", "") # This is simply the path
         self.sct_folder: str = kwargs.pop("scantelligent_folder", "")
         self.output_file: h5py.File
-        self.entry_group: h5py.Group
         
         self.nanonis: NanonisAPI = kwargs.pop("nanonis", None)
         self.mla: MLAAPI | None = kwargs.pop("mla", None)
@@ -101,14 +100,18 @@ class BaseExperiment(QObject):
         return
 
     def prepare_hdf5(self, file_path: str = "") -> h5py.File:
+        # Create the HDF5 file
         root = self.io.h5.create_file(file_path, close = False, existsok = True)
         if not isinstance(root, h5py.File): raise Exception(f"Could not create the HDF5 output file {self.experiment_file}.")
         self.io.h5.create_group(root, "date_time", attributes = {"date": datetime.now().strftime("%Y/%m/%d"), "start_time": datetime.now().strftime("%H:%M:%S")})
         
-        stm_group = self.io.h5.create_instrument(root, "LT-STM", vendor = "CreaTec Fischer & Co. GMBH", long_name = "Low-Temperature Scanning Tunneling Microscope")
+        
+        
+        # Start an STM instrument group
+        vendor = self.nanonis.vendor if hasattr(self.nanonis, "vendor") and isinstance(self.nanonis.vendor, str) else "unknown"
+        long_name = self.nanonis.long_name if hasattr(self.nanonis, "long_name") and isinstance(self.nanonis.long_name, str) else "unknown"        
+        stm_group = self.io.h5.create_instrument(root, "LT-STM", vendor = vendor, long_name = long_name)
         stm_parameters_group = self.io.h5.create_group(stm_group, "parameters")
-        
-        
         
         # Fetch the temperature using a Nanonis call and conversion using a lookup table
         if "DT-670" in self.luts.keys():
@@ -147,6 +150,15 @@ class BaseExperiment(QObject):
         
         self.io.h5.create_group(stm_parameters_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
         self.io.h5.create_group(stm_parameters_group, "feedback_settings", attributes = feedback_attributes)        
+        
+        
+        
+        # Start an MLA instrument group
+        if isinstance(self.mla, MLAAPI):
+            vendor = self.mla.vendor if hasattr(self.mla, "vendor") and isinstance(self.mla.vendor, str) else "unknown"
+            long_name = self.mla.long_name if hasattr(self.mla, "long_name") and isinstance(self.mla.long_name, str) else "unknown"
+            mla_group = self.io.h5.create_instrument(root, "MLA", vendor = vendor, long_name = long_name)
+            mla_parameters_group = self.io.h5.create_group(mla_group, "parameters")        
         return root
 
     def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = False) -> str:
@@ -272,10 +284,15 @@ class BaseExperiment(QObject):
             except Exception as e:
                 self.logprint(f"Error: {e}", message_type = "error")
                 self.abort_requested = True
+            
+            
+            
+            # Wrap up
             finally:
                 try:
-                    date_time_group = self.entry_group["date_time"]
-                    self.io.h5.create_attributes(date_time_group, {"end_time": datetime.now().strftime("%H:%M:%S"), "experiment_aborted": self.abort_requested})
+                    dt_group = self.output_file["date_time"]
+                    assert isinstance(dt_group, h5py.Group)
+                    self.io.h5.create_attributes(dt_group, {"end_time": datetime.now().strftime("%H:%M:%S"), "experiment_aborted": self.abort_requested})
                 except:
                     pass
                 try: self.output_file.close()
@@ -283,46 +300,7 @@ class BaseExperiment(QObject):
                 self.finish_experiment()
         return wrapper
 
-    def nanonis_scan_old(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset | None = None, iterations: int = 10, verbose: bool = True) -> tuple[np.ndarray, np.ndarray]:
-        if verbose: self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
-        self.nanonis.scan_action({"action": "start", "direction": direction})
-        
-        scan_metadata, error = self.nanonis.scan_metadata_update(verbose = False) # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
-        channel_dict: dict = scan_metadata.get("channel_dict", {})
-        channel_indices = list(channel_dict.values())
-        
-        # Loop to check scan progress
-        t_start = time.time()
-        t_elapsed = 0
-        scan_finished = False
-        for iteration in range(1000000):
-            # Monitor and emit data while scanning
-            (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)
-            if not error:
-                [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
-                self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA], dtype = np.float32))
-            
-            channel_index = self.scan_processing_flags.get("channel_index")
-            backward = self.scan_processing_flags.get("backward")
-            
-            if channel_index in channel_indices:
-                scan_image, error = self.nanonis.scan_update(channel = channel_index, backward = backward, verbose = False)
-                nan_mask = np.isnan(scan_image)
-                scan_finished = not bool(np.any(nan_mask))
-            
-            if iteration % iterations == 0: self.scan_data_update(channel_indices, dataset) # Every so many iterations, retrieve all data by looping over all recorded channels and scan directions and save to the dataset
-            
-            self.check_abort_request()
-            time.sleep(.05)            
-            t_elapsed = time.time() - t_start
-            if t_elapsed > timeout_s: break
-            if scan_finished:
-                self.logprint("Scan finished", message_type = "message")
-                break
-        
-        scan_data = self.scan_data_update(channel_indices, dataset)        
-        if verbose: self.logprint(f"Scan completed", message_type = "success")
-        return scan_image, scan_data
+
 
     def scan_data_update(self, channel_indices: list | np.ndarray, dataset: h5py.Dataset | None = None) -> np.ndarray:
         if not isinstance(dataset, h5py.Dataset): return np.zeros((2, 2))
@@ -338,51 +316,56 @@ class BaseExperiment(QObject):
             scan_data[1, index] = backward_scan
         return scan_data
 
-    def nanonis_scan(self, direction: str = "down", timeout_s: int = 100000, dataset: h5py.Dataset | None = None, verbose: bool = True) -> np.ndarray:
+    def nanonis_scan(self, direction: str = "down", timeout_s: int = 100000, datasets: list[h5py.Dataset] | None = None, verbose: bool = True) -> None:
         if verbose: self.logprint(f"Starting a scan in the {direction} direction", message_type = "message")
         self.nanonis.scan_action({"action": "start", "direction": direction})
         
-        (scan_metadata, error) = self.nanonis.scan_metadata_update(verbose = verbose) # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
-        [signal_dict, channel_dict] = [scan_metadata.get(key) for key in ["signal_dict", "channel_dict"]]
+        scan_metadata, error = self.nanonis.update.scan_metadata(verbose = verbose) # Calling scan_metadata_update refreshes the channels that are being recorded, so that they can be selected
+        [signal_dict, channel_dict] = [scan_metadata.get(key, {}) for key in ["signal_dict", "channel_dict"]]
         nanonis_channel_indices = list(channel_dict.values())
         inverted_signal_dict = {value: key for key, value in signal_dict.items()}
-        nanonis_channel_names = [inverted_signal_dict.get(index) for index in nanonis_channel_indices]
+        nanonis_channel_names = [inverted_signal_dict.get(index, "") for index in nanonis_channel_indices]
         self.data_array.emit(np.array(["time (s)", "x (nm)", "y (nm)", "z (nm)", "I (pA)"], dtype = np.str_))
         
         sct_names = []
         for nanonis_name in nanonis_channel_names:
-            (quantity, unit, backward, error) = self.data.split_physical_quantity(nanonis_name)
+            quantity, unit, backward, error = self.data.split_physical_quantity(nanonis_name)
             if unit == "A": unit = "pA"
             if unit == "m": unit = "nm"
             sct_names.append(" ".join((quantity.lower(), f"({unit})")))
-        
+
 
 
         # Loop to check scan progress
         t_start = time.time()
         t_elapsed = 0
         scan_finished = False
+        
+        print(f"{datasets = }")
+        
         for iteration in range(1000000):
             channel_index = iteration % len(nanonis_channel_indices)
             nanonis_name = nanonis_channel_names[channel_index]
             nanonis_index = nanonis_channel_indices[channel_index]
             
             # 1. Monitor and emit 'tip status' data while scanning
-            (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)
+            tip_status, error = self.nanonis.update.tip(wait = False, fast_mode = True, verbose = False)
             if not error:
                 [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
                 self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA], dtype = np.float32))
             
             # 2. Request and emit data slices
-            (scan_image, error) = self.nanonis.scan_update(nanonis_index, backward = False, emit_image = False, verbose = False)
-            self.io.convert_data_to_unit(scan_image, nanonis_name) # This rescales the data slice to preferred nm, pA units
-            self.array_slice.emit(scan_image.transpose(), [0, channel_index], [0, 1])
-            dataset[0, channel_index] = scan_image.transpose()
+            fwd_scan, error = self.nanonis.update.scan(nanonis_index, backward = False, emit_image = False, verbose = False)
+            self.io.convert_data_to_unit(fwd_scan, nanonis_name) # This rescales the data slice to preferred nm, pA units
+            self.array_slice.emit(fwd_scan.transpose(), [0, channel_index], [0, 1])
+            try: datasets[2 * channel_index][:] = fwd_scan.transpose()
+            except: pass
             
-            (scan_image_bwd, error) = self.nanonis.scan_update(nanonis_index, backward = True, emit_image = False, verbose = False)
-            self.io.convert_data_to_unit(scan_image_bwd, nanonis_name)
-            self.array_slice.emit(scan_image_bwd.transpose(), [1, channel_index], [0, 1])
-            dataset[1, channel_index] = scan_image_bwd.transpose()
+            bwd_scan, error = self.nanonis.update.scan(nanonis_index, backward = True, emit_image = False, verbose = False)
+            self.io.convert_data_to_unit(bwd_scan, nanonis_name)
+            self.array_slice.emit(bwd_scan.transpose(), [1, channel_index], [0, 1])
+            try: datasets[2 * channel_index + 1][:] = bwd_scan.transpose()
+            except: pass
 
             # 3. Check exit conditions
             self.check_abort_request()
@@ -391,39 +374,38 @@ class BaseExperiment(QObject):
             t_elapsed = time.time() - t_start
             if t_elapsed > timeout_s: break
             
-            nan_mask = np.isnan(scan_image_bwd)
+            nan_mask = np.isnan(bwd_scan)
             scan_finished = not bool(np.any(nan_mask))
             if scan_finished:
                 self.logprint("Scan finished", message_type = "message")
                 break
         
-        # Iterate through all channels one final time
-        output_array = np.empty(shape = dataset.shape, dtype = dataset.dtype)
         
+        
+        # Iterate through all channels one final time        
         for channel_index in range(len(nanonis_channel_indices)):
             nanonis_name = nanonis_channel_names[channel_index]
             nanonis_index = nanonis_channel_indices[channel_index]
             
             # 1. Monitor and emit 'tip status' data while scanning
-            (tip_status, error) = self.nanonis.tip_update(wait = False, fast_mode = True, verbose = False)
+            tip_status, error = self.nanonis.update.tip(wait = False, fast_mode = True, verbose = False)
             if not error:
                 [x_nm, y_nm, z_nm, I_pA] = [tip_status.get(parameter) for parameter in ["x (nm)", "y (nm)", "z (nm)", "I (pA)"]]
                 self.data_array.emit(np.array([t_elapsed, x_nm, y_nm, z_nm, I_pA], dtype = np.float32))
             
             # 2. Request and emit data slices
-            (scan_image, error) = self.nanonis.scan_update(nanonis_index, backward = False, emit_image = False, verbose = False)
-            self.io.convert_data_to_unit(scan_image, nanonis_name) # This rescales the data slice to preferred nm, pA units
-            self.array_slice.emit(scan_image.transpose(), [0, channel_index], [0, 1])
-            dataset[0, channel_index] = scan_image.transpose()
-            output_array[0, channel_index] = scan_image.transpose()
+            fwd_scan, error = self.nanonis.update.scan(nanonis_index, backward = False, emit_image = False, verbose = False)
+            self.io.convert_data_to_unit(fwd_scan, nanonis_name) # This rescales the data slice to preferred nm, pA units
+            self.array_slice.emit(fwd_scan.transpose(), [0, channel_index], [0, 1])
+            try: datasets[2 * channel_index] = fwd_scan.transpose()
+            except: pass
             
-            (scan_image_bwd, error) = self.nanonis.scan_update(nanonis_index, backward = True, emit_image = False, verbose = False)
-            self.io.convert_data_to_unit(scan_image_bwd, nanonis_name)
-            self.array_slice.emit(scan_image_bwd.transpose(), [1, channel_index], [0, 1])
-            dataset[1, channel_index] = scan_image_bwd.transpose()
-            output_array[1, channel_index] = scan_image.transpose()        
-        
-        return output_array
+            bwd_scan, error = self.nanonis.update.scan(nanonis_index, backward = True, emit_image = False, verbose = False)
+            self.io.convert_data_to_unit(bwd_scan, nanonis_name)
+            self.array_slice.emit(bwd_scan.transpose(), [1, channel_index], [0, 1])
+            try: datasets[2 * channel_index + 1] = bwd_scan.transpose()
+            except: pass        
+        return
 
     def check_abort_request(self, withdraw: bool = False) -> None:
         if self.thread().isInterruptionRequested():

@@ -28,6 +28,7 @@ class Scantelligent(QtCore.QObject):
 
 
 
+    # Part of the init
     def parameters_init(self) -> None:
         # Cleanup
         atexit.register(self.exit)
@@ -116,7 +117,7 @@ class Scantelligent(QtCore.QObject):
         
         # Comboboxes
         experiments = self.io.find_experiment_files(self.paths["experiments_folder"])
-        self.experiments = [experiment for experiment in experiments if not experiment in ["spectroscopy", "auto_approach"]]
+        self.experiments = [experiment for experiment in experiments if not experiment in {"auto_approach"}]
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
         self.gui.comboboxes["experiment"].currentIndexChanged.connect(lambda: self.gui.buttons["start_stop"].setState("load"))

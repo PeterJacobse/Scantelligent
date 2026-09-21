@@ -57,7 +57,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
 
 
     # 1: Read icons from file.
-    def get_icons(self) -> dict:
+    def get_icons(self) -> dict[str, QtGui.QIcon]:
         lib_folder = os.path.dirname(os.path.abspath(__file__))
         project_folder = os.path.dirname(lib_folder)
         sys_folder = os.path.join(project_folder, "sys")
@@ -430,7 +430,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         [comboboxes[name].changeToolTip(f"gui.comboboxes[\"{name}\"]", line = 10) for name in comboboxes.keys()]        
         return comboboxes
 
-    def make_line_edits(self) -> dict[str, QtWidgets.QLineEdit]:
+    def make_line_edits(self) -> dict[str, SCTWidgets.PhysicsLineEdit]:
         LE = SCTWidgets.PhysicsLineEdit
         ILE = SCTWidgets.InputLineEdit
         RG = SCTWidgets.ReciprocalGroup
@@ -710,7 +710,7 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         path_pdi.setZValue(82)
         return (piezo_frame, frame, new_frame, tip_target, target0, path_pdi)
 
-    def make_custom_widgets(self) -> tuple[dict[str, QtWidgets.QWidget], CurrentHeightIndicatorWidget, MinMaxMethods, SCTWidgets.PlotWidget, SCTWidgets.PhaseSlider]:
+    def make_custom_widgets(self) -> tuple[dict[str, QtWidgets.QWidget], CurrentHeightIndicatorWidget, MinMaxMethods, SCTWidgets.PlotWidget, dict[str, SCTWidgets.PhaseSlider]]:
         QWgt = QtWidgets.QWidget
         
         widgets = {
@@ -752,8 +752,8 @@ class ScantelligentGUI(QtWidgets.QMainWindow):
         grapher.setVLines(0) # Create axes through the origin
         grapher.setHLines(0)
         
-        sliders = {"phase": SCTWidgets.PhaseSlider(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
-        return (widgets, current_height_widget, limits_widget, grapher, sliders)
+        sliders: dict[str, SCTWidgets.PhaseSlider] = {"phase": SCTWidgets.PhaseSlider(tooltip = "Set complex phase phi\n(= multiplication by exp(i * pi * phi rad / (180 deg)))", unit = "deg", phase_0_icon = self.icons.get("0"), phase_180_icon = self.icons.get("180"))}
+        return widgets, current_height_widget, limits_widget, grapher, sliders
 
     def make_consoles(self) -> dict[str, SCTWidgets.Console]:
         consoles = {

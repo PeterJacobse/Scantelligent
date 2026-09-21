@@ -57,7 +57,7 @@ class NanonisCore:
     Low-level API for communicating with Nanonis.
     Allows faster hardware communication but is trickier to use, with stricter and typically not self-descriptive input/output and less error/connection handling.
     """
-    def __init__(self, hw_config: dict):
+    def __init__(self, hw_config: dict[str, object]):
         self.configure(hw_config) # Extract the TCP parameters from the provided hardware dict
         self.conv = Conversions() # Load the conversions
         self.headers = self.prepare_headers() # Make the headers
@@ -78,9 +78,8 @@ class NanonisCore:
         self.version = 13000
         self.max_buf_size = 200
 
-        if "nanonis" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["nanonis"], dict): nn_config = hw_config.get("nanonis")
+        if "nanonis" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["nanonis"], dict): nn_config = hw_config["nanonis"]
         else: nn_config = hw_config
-        assert isinstance(nn_config, dict)
 
         ip_tags = ["tcp_ip", "ip", "ip_address", "nanonis_ip"]
         port_tags = ["tcp_port", "port", "nanonis_port"]
@@ -88,9 +87,12 @@ class NanonisCore:
             if key.lower() in ip_tags: self.ip = value
             if key.lower() in port_tags: self.port = value
         
-        if not (self.ip and self.port and self.version):
-            raise Exception("Could not extract the required TCP-IP parameters from the provided hardware dictionary")
-        
+        if "stm" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["stm"], dict): stm_config = hw_config["stm"]
+        for key, value in stm_config.items():
+            if key.lower() == "long_name": self.long_name = value
+            if key.lower() == "vendor": self.vendor = value
+            
+        if not (self.ip and self.port and self.version): raise Exception("Could not extract the required TCP-IP parameters from the provided hardware dictionary")
         return
 
     def prepare_headers(self) -> dict:
