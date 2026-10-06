@@ -4,7 +4,7 @@ from datetime import datetime
 import sklearn.gaussian_process as gp
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
-from lib import BaseExperiment
+from scantelligent import BaseExperiment
 
 
 

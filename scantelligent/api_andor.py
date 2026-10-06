@@ -4,7 +4,7 @@ from PyQt6 import QtCore
 import pylablib
 from pylablib.devices import Andor
 from typing import Literal
-from lib import NanonisAPI # For type checking
+from scantelligent import NanonisAPI # For type checking
 from concurrent.futures import ThreadPoolExecutor
 
 

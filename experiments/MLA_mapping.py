@@ -1,7 +1,7 @@
 import sys, os, time
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable to find the APIs for type checking
-from lib import BaseExperiment, MLAAPI, NanonisAPI, KeithleyAPI
+from scantelligent import BaseExperiment, MLAAPI, NanonisAPI, KeithleyAPI
 
 
 

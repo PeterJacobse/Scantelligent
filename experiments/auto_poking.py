@@ -3,7 +3,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Add the lib folder to the path variable
-from lib import BaseExperiment
+from scantelligent import BaseExperiment
 
 
 

@@ -2,9 +2,9 @@ import os, sys, html, atexit, re, copy, time
 import pandas as pd
 import numpy as np
 from PyQt6 import QtGui, QtCore, sip
-from lib import Spectelligent, SCTWidgets, ScantelligentGUI
-from lib import DataProcessing, IOFunctions, ParameterManager, UserData, AudioGenerator
-from lib import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
+from scantelligent import Spectelligent, SCTWidgets, ScantelligentGUI
+from scantelligent import DataProcessing, IOFunctions, ParameterManager, UserData, AudioGenerator
+from scantelligent import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
 
 
