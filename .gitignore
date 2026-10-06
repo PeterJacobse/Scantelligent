@@ -1,7 +1,13 @@
 .vscode/launch.json
 scantelligent_control.ipynb
-pyproject.toml
+tests.ipynb
 sys/config.yml
+sys/LUTs.hdf5
+sys/splash_scree.svg
+uv.lock
+.vscode/
+Scantelligent.code_workspace
+lib/Scantelligent.code_workspace
 lib/__pycache__/image_functions.cpython-314.pyc
 lib/__pycache__/hw.cpython-314.pyc
 lib/__pycache__/gui_functions.cpython-314.pyc

@@ -63,7 +63,7 @@ class NanonisCore:
         self.headers = self.prepare_headers() # Make the headers
         connected = self.link()
         if not connected == True: pass # raise Exception(connected)
-        self.check_version()    
+        self.check_version()
         self.unlink()
 
 
@@ -79,7 +79,7 @@ class NanonisCore:
         self.max_buf_size = 200
 
         if "nanonis" in [key.lower() for key in hw_config.keys()] and isinstance(hw_config["nanonis"], dict): nn_config = hw_config["nanonis"]
-        else: nn_config = hw_config
+        else: nn_config = hw_config.copy()
 
         ip_tags = ["tcp_ip", "ip", "ip_address", "nanonis_ip"]
         port_tags = ["tcp_port", "port", "nanonis_port"]

@@ -94,7 +94,7 @@ class BaseExperiment(QObject):
 
     def create_array_item(self, name: str | None = None, shape: list | tuple = (), dtype: np.dtype = np.float32, axes: list[str] | np.ndarray = [], axis_values: list[np.ndarray] | list[list] = [np.empty((0,))], frame: dict = {}) -> None:
         for index, values in enumerate(axis_values):
-            if isinstance(values, list): axis_values[index] = np.array(values)        
+            if isinstance(values, list): axis_values[index] = np.array(values)
         array_dict = {"dict_name": "array_item", "name": name, "shape": shape, "dtype": dtype, "axes": axes, "axis_values": axis_values, "frame": frame}
         self.parameters.emit(array_dict)
         return
@@ -142,12 +142,14 @@ class BaseExperiment(QObject):
         assert isinstance(bias, dict) and isinstance(feedback, dict) and isinstance(tip, dict) and isinstance(hardware, dict) and isinstance(grid, dict)
         feedback_attributes = {"V_Nanonis (V)": bias.get(f"V (V)", 0)} | feedback | {"feedback": tip.get("feedback", True)}
         feedback_attributes.pop("dict_name")
+        grid.pop("dict_name")
         
         [tia_gain, tia_gain_V_per_pA] = [hardware.get(key, "unknown") for key in ["current_gain", "gain (V/pA)"]]
         self.io.h5.create_attributes(stm_parameters_group, {"TIA gain setting": tia_gain, "TIA gain (V/pA)": tia_gain_V_per_pA})
         
         self.io.h5.create_group(stm_parameters_group, "tip_status", attributes = {"start_location (x, y, z) (nm)": [tip.get(f"{dim} (nm)") for dim in ["x", "y", "z"]], "start_current (pA)": tip.get(f"I (pA)")})
-        self.io.h5.create_group(stm_parameters_group, "feedback_settings", attributes = feedback_attributes)        
+        self.io.h5.create_group(stm_parameters_group, "feedback_settings", attributes = feedback_attributes)
+        self.io.h5.create_group(stm_parameters_group, "grid", attributes = grid)
         
         
         
@@ -167,6 +169,9 @@ class BaseExperiment(QObject):
             self.io.h5.create_dataset(mla_parameters_group, name = "frequencies (Hz)", data = frequencies.get("frequencies (Hz)", []))
             self.io.h5.create_dataset(mla_parameters_group, name = "numbers", data = frequencies.get("numbers", []))
             self.io.h5.create_dataset(mla_parameters_group, name = "amplitudes (mV)", data = amplitudes.get("amplitudes (mV)", []))
+            self.io.h5.create_dataset(mla_parameters_group, name = "times (ms)", data = frequencies.get("times (ms)", []))
+            self.io.h5.create_dataset(mla_parameters_group, name = "phases (deg)", data = phases.get("phases (deg)", []))
+            #self.io.h5.create_dataset(mla_parameters_group, name = "output_masks", data = amplitudes.get("amplitudes (mV)", []))
         return root
 
     def connection_test(self, amplitude_mV: float = 200, frequency_Hz: float = 600, output_port: int = 1, verbose: bool = True, autophase: bool = False) -> str:
@@ -349,8 +354,6 @@ class BaseExperiment(QObject):
         t_elapsed = 0
         scan_finished = False
         
-        print(f"{datasets = }")
-        
         for iteration in range(1000000):
             channel_index = iteration % len(nanonis_channel_indices)
             nanonis_name = nanonis_channel_names[channel_index]
@@ -386,6 +389,7 @@ class BaseExperiment(QObject):
             scan_finished = not bool(np.any(nan_mask))
             if scan_finished:
                 self.logprint("Scan finished", message_type = "message")
+                time.sleep(2)
                 break
         
         

@@ -1249,6 +1249,30 @@ class NanonisAPI(QtCore.QObject):
             
         return results_dict, error
 
+    def poke_and_return(self, tip_poke_center: list | np.ndarray = [-300, -300], tip_poke_frame_size: list | np.ndarray = [160, 160]):
+        tip_poke_center = np.asarray(tip_poke_center)
+        tip_poke_frame_size = np.asarray(tip_poke_frame_size)
+        
+        tip_status, error = self.update.tip()
+        [x_start, y_start] = [tip_status.get(key, 0.) for key in ["x (nm)", "y (nm)"]]
+        speeds_dict, error = self.speeds_update()
+        v_start = speeds_dict.get("v_fwd (nm/s)", 40.)
+        
+        poke_position = np.random.uniform(tip_poke_center - .5 * tip_poke_frame_size, tip_poke_center + .5 * tip_poke_frame_size, size = (2))
+        self.update.speeds({"v_fwd (nm/s)": 800, "v_bwd (nm/s)": 800, "v_tip (nm/s)": 800, "v_xy (nm/s)": 800})
+        self.update.tip(withdraw = True)
+        self.update.tip(x_nm = float(poke_position[0]), y_nm = float(poke_position[1]), wait = True)
+        self.update.tip(feedback = True)
+        time.sleep(5)
+        self.shape_tip()
+
+        self.update.tip(withdraw = True)
+        self.update.tip(x_nm = float(x_start), y_nm = float(y_start), wait = True)
+        self.update.tip(feedback = True)
+        self.update.speeds({"v_fwd (nm/s)": v_start, "v_bwd (nm/s)": v_start, "v_tip (nm/s)": v_start, "v_xy (nm/s)": v_start})
+        time.sleep(5)        
+        return
+
 
 
     # Advanced actions. Can be incorporated in experiments, with a reference to an abort function passed to it to enable aborting
@@ -1368,6 +1392,7 @@ class NanonisUpdate:
         error: str = ""        
         output_dict: dict[str, object] = {"dict_name": "bias"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             # Read input values
@@ -1528,6 +1553,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "signals"}
         core = self.nn.core
+        parameters = parameters.copy()
         
         try:
             put_kwargs_in_dict(parameters, {"signals": (signals, str | list | int), "samples": (samples, int), "name_lookup": (name_lookup, bool)})
@@ -1601,6 +1627,7 @@ class NanonisUpdate:
         error: str = ""        
         output_dict: dict[str, object] = {"dict_name": "hardware"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             put_kwargs_in_dict(parameters, {"gain": (gain, int | str)})
@@ -1768,6 +1795,7 @@ class NanonisUpdate:
         error: str = ""        
         output_dict: dict[str, object] = {"dict_name": "coarse_parameters"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             put_kwargs_in_dict(parameters, {"V_motor (V)": (V_motor, float | int), "f_motor (Hz)": (f_motor, float | int)})
@@ -1810,6 +1838,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "speeds"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             put_kwargs_in_dict(parameters, {"v_fwd (nm/s)": (v_fwd_nm_per_s, float | int), "v_bwd (nm/s)": (v_bwd_nm_per_s, float | int), "t_fwd (s)": (t_fwd_s, float | int), "t_bwd (s)": (t_bwd_s, float | int), "lock_v_or_t": (lock_v_or_t, int | str)})
@@ -1852,6 +1881,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "tip_shaper"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             if verbose: self.echo_function_call("tip_shaper", parameters)
@@ -1889,6 +1919,7 @@ class NanonisUpdate:
         error: str = ""        
         output_dict: dict[str, object] = {"dict_name": "feedback"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         feedback = parameters.get("feedback", None)
         controller = parameters.get("active_controller", None)
@@ -1950,6 +1981,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "gains"}       
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             if verbose: self.echo_function_call("gains", parameters)
@@ -1993,6 +2025,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "frame"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             put_kwargs_in_dict(parameters, {"width (nm)": (width_nm, float | int), "height (nm)": (height_nm, float | int), "x (nm)": (x_nm, float | int), "y (nm)": (y_nm, float | int), "angle (deg)": (angle_deg, float | int)})
@@ -2060,6 +2093,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "grid"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             put_kwargs_in_dict(parameters, {"pixels": (pixels, int), "lines": (lines, int)})
@@ -2147,6 +2181,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "lockin"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             put_kwargs_in_dict(parameters, {"mod1": (mod1, dict), "mod2": (mod2, dict), "name_lookup": (name_lookup, bool)})
@@ -2241,6 +2276,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "sts"}
         core = self.nn.core
+        parameters = parameters.copy()
 
         try:
             if verbose: self.echo_function_call("sts", parameters)
@@ -2273,6 +2309,7 @@ class NanonisUpdate:
         error: str = ""
         output_dict: dict[str, object] = {"dict_name": "scan_metadata"}
         core = self.nn.core
+        parameters = parameters.copy()
         
         try:
             put_kwargs_in_dict(parameters, {"channel_indices": (channel_indices, list)})

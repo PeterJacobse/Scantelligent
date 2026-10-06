@@ -155,10 +155,10 @@ class HDF5Functions:
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called \"thumbnail\" under {root_or_group}")
 
-    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, **kwargs) -> h5py.Dataset:
+    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, **kwargs) -> h5py.Dataset:
         try:            
             if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, dtype = dtype, *kwargs)
-            else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, *kwargs)
+            else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, chunks = True, maxshape = maxshape, *kwargs)
             
             attributes.update({"title": name, "quantity": name, "long_name": name})
             if isinstance(units, str): attributes.update({"units": units})
@@ -168,7 +168,7 @@ class HDF5Functions:
             raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name} under {root_or_group}: {e}")
 
     def create_main_dataset(self, root: h5py.File, name: str = "", *, existsok: bool = True, units: str | None = None, modality: str = "SPM", make_default: bool = True, attributes: dict = {},
-                            data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, verbose: bool = False) -> h5py.Dataset:
+                            data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, verbose: bool = False) -> h5py.Dataset:
         try:
             # Find or create the entry group            
             entry_group = self.entry_group(root, name = "Measurement_000", verbose = verbose)
@@ -180,7 +180,7 @@ class HDF5Functions:
                     data_group = entry_subgroups[name]
                 else:
                     raise Exception(f"Error: A dataset with the same name ({name}) was already found in this HDF5 file. Aborting.")
-            else: data_group = self.create_group(entry_group, name, attributes = {"signal": name, "NX_class": "NXdata"})
+            else: data_group = self.create_group(entry_group, name, attributes = {"signal": name, "NX_class": "NXdata", "units": units})
             
             data_type = "2D_image"
             if isinstance(data, np.ndarray):
@@ -195,7 +195,7 @@ class HDF5Functions:
             nsid_version = root_attrs.get("nsid_version", "0.0.4")
             dset_attributes = {"units": units, "data_type": data_type, "modality": modality, "nsid_version": nsid_version} | attributes
             if isinstance(data, np.ndarray): dataset = self.create_dataset(data_group, name, data = data, dtype = dtype, attributes = dset_attributes)
-            elif isinstance(shape, tuple): dataset = self.create_dataset(data_group, name, shape = shape, dtype = dtype, attributes = dset_attributes)
+            elif isinstance(shape, tuple): dataset = self.create_dataset(data_group, name, shape = shape, maxshape = maxshape, dtype = dtype, attributes = dset_attributes)
             else:
                 raise Exception("Neither data nor shape were provided when attempting to create a dataset")
             
@@ -206,7 +206,7 @@ class HDF5Functions:
             raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name}: {e}")
 
     def create_ancillary_dataset(self, root: h5py.File, name: str = "", *, existsok: bool = True, units: str | None = None, attributes: dict = {},
-                                 data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, verbose: bool = False) -> h5py.Dataset:
+                                 data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, verbose: bool = False) -> h5py.Dataset:
         try:
             # Find or create the entry group
             entry_group = self.entry_group(root, name = "Measurement_000", verbose = verbose)
@@ -229,7 +229,7 @@ class HDF5Functions:
             # Create the dataset
             dset_attributes = {"NX_class": "NXaxis", "units": units, "dimension_type": dimension_type} | attributes
             if isinstance(data, np.ndarray): dataset = self.create_dataset(ancillary_group, name, data = data, dtype = dtype, attributes = dset_attributes)
-            elif isinstance(shape, tuple): dataset = self.create_dataset(ancillary_group, name, shape = shape, dtype = dtype, attributes = dset_attributes)
+            elif isinstance(shape, tuple): dataset = self.create_dataset(ancillary_group, name, shape = shape, maxshape = maxshape, dtype = dtype, attributes = dset_attributes)
             else: raise Exception("Neither data nor shape were provided when attempting to create a dataset")
             return dataset
         

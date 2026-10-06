@@ -277,7 +277,7 @@ class Scantelligent(QtCore.QObject):
         if target.lower() == "nanonis" or target.lower() == "all":
             try:
                 # Instantiate
-                nanonis_config = self.hw_config.get("nanonis")
+                nanonis_config = self.hw_config.get("nanonis", {}) | self.hw_config.get("stm", {})
                 nanonis_ports = nanonis_config.get("tcp_ports")
                 
                 nanonis_config0 = nanonis_config.copy()
