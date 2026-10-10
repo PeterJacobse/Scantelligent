@@ -155,10 +155,31 @@ class HDF5Functions:
         except:
             raise Exception(f"Error encountered while attempting to create a new h5py group called \"thumbnail\" under {root_or_group}")
 
-    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, **kwargs) -> h5py.Dataset:
-        try:            
-            if isinstance(data, np.ndarray): dataset = root_or_group.create_dataset(name, data = data, dtype = dtype, *kwargs)
-            else: dataset = root_or_group.create_dataset(name, dtype = dtype, shape = shape, chunks = True, maxshape = maxshape, *kwargs)
+    def create_dataset(self, root_or_group: h5py.File | h5py.Group, name: str = "", *, units: str | None = None, attributes: dict = {}, data: np.ndarray | None = None,
+                       dtype: np.typing.DTypeLike | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, **kwargs) -> h5py.Dataset:
+        try:
+            if dtype is None and isinstance(data, np.ndarray): parsed_dtype = data.dtype
+            else: parsed_dtype = np.dtype(dtype)
+            
+            match parsed_dtype.kind:
+                case "U":
+                    char_len = parsed_dtype.itemsize // 4
+                    target_dtype = h5py.string_dtype(encoding = "utf-8", length = char_len if char_len > 0 else None)
+                case "S" | "O":
+                    target_dtype = h5py.string_dtype(encoding = "utf-8")
+                case "i" | "u" | "f" | "b":
+                    target_dtype = parsed_dtype
+                case _:
+                    raise TypeError(f"Unsupported data type family for h5py: {parsed_dtype}")
+            
+            if isinstance(data, np.ndarray):
+                if parsed_dtype.kind == "U":
+                    dataset = root_or_group.create_dataset(name, shape = data.shape, dtype = target_dtype, **kwargs)
+                    dataset[...] = data.astype("O")
+                else:
+                    dataset = root_or_group.create_dataset(name, data = data, dtype = target_dtype, **kwargs)
+            else:
+                dataset = root_or_group.create_dataset(name, dtype = target_dtype, shape = shape, chunks = True, maxshape = maxshape, *kwargs)
             
             attributes.update({"title": name, "quantity": name, "long_name": name})
             if isinstance(units, str): attributes.update({"units": units})
@@ -168,7 +189,7 @@ class HDF5Functions:
             raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name} under {root_or_group}: {e}")
 
     def create_main_dataset(self, root: h5py.File, name: str = "", *, existsok: bool = True, units: str | None = None, modality: str = "SPM", make_default: bool = True, attributes: dict = {},
-                            data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, verbose: bool = False) -> h5py.Dataset:
+                            data: np.ndarray | None = None, dtype: np.typing.DTypeLike | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, verbose: bool = False) -> h5py.Dataset:
         try:
             # Find or create the entry group            
             entry_group = self.entry_group(root, name = "Measurement_000", verbose = verbose)
@@ -206,8 +227,8 @@ class HDF5Functions:
             raise Exception(f"Error encountered while attempting to create a new h5py dataset called {name}: {e}")
 
     def create_ancillary_dataset(self, root: h5py.File, name: str = "", *, existsok: bool = True, units: str | None = None, attributes: dict = {},
-                                 data: np.ndarray | None = None, dtype: h5py.Datatype | np.dtype | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, verbose: bool = False) -> h5py.Dataset:
-        try:
+                                 data: np.ndarray | None = None, dtype: np.typing.DTypeLike | None = None, shape: tuple | None = None, maxshape: tuple | int | None = None, verbose: bool = False) -> h5py.Dataset:
+        try:            
             # Find or create the entry group
             entry_group = self.entry_group(root, name = "Measurement_000", verbose = verbose)
             entry_subgroups = self.get_groups(entry_group)
@@ -256,8 +277,8 @@ class HDF5Functions:
             axis_units = axis_attrs.get("units", "none")        
             axis_dtype = ancillary_dataset.dtype
             axis_data = ancillary_dataset[:]
-            axis_range = np.array([min(axis_data), max(axis_data)], dtype = axis_dtype)
             axis_dpoints = len(axis_data)
+            axis_is_strings = (axis_dtype.kind in ('O', 'S', 'U')) or (h5py.check_string_dtype(axis_dtype) is not None)
         
             # Put the axis dataset in the main dataset group in the form of a soft link to its origin in the Ancillary group
             main_dataset_group[axis_name] = h5py.SoftLink(axis_dataset_path)
@@ -270,16 +291,27 @@ class HDF5Functions:
             
             # Find the declared axes (NeXus) attribute in the main dataset group and update it with the name of the axis dataset
             main_dataset_axes = main_dataset_group_attrs.get("axes", None)
-            if not isinstance(main_dataset_axes, list | np.ndarray) or not len(main_dataset_axes) == main_dataset_rank: main_dataset_axes = ["none" for _ in range(main_dataset_rank)]        
-            main_dataset_axes[axis] = axis_name
-            self.create_attributes(main_dataset_group, {"axes": main_dataset_axes})
+            if not isinstance(main_dataset_axes, list | np.ndarray) or not len(main_dataset_axes) == main_dataset_rank: main_dataset_axes = ["." for _ in range(main_dataset_rank)]        
             
-            # Attributes for Gwyddion compatibility
-            match axis:
-                case 0: [self.create_attributes(target, {"X Range": axis_range, "X Units": axis_units, "X No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
-                case 1: [self.create_attributes(target, {"Y Range": axis_range, "Y Units": axis_units, "Y No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
-                case 2: [self.create_attributes(target, {"Z Range": axis_range, "Z Units": axis_units, "Z No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
-                case _: pass
+            nexus_attributes = {}
+            if axis_is_strings:
+                main_dataset_axes[axis] = "." # NeXus/H5Web compliance: Provide "." as the axis placeholder so it renders as numeric indices
+                nexus_attributes.update({f"{axis_name}_indices": [axis]})
+            else:
+                main_dataset_axes[axis] = axis_name
+                axis_range = np.array([min(axis_data), max(axis_data)], dtype = axis_dtype)
+                
+                # Attributes for Gwyddion compatibility
+                gwyddion_attributes = {}                
+                match axis:
+                    case 0: [self.create_attributes(target, {"X Range": axis_range, "X Units": axis_units, "X No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
+                    case 1: [self.create_attributes(target, {"Y Range": axis_range, "Y Units": axis_units, "Y No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
+                    case 2: [self.create_attributes(target, {"Z Range": axis_range, "Z Units": axis_units, "Z No": axis_dpoints}) for target in [main_dataset, main_dataset_group]]
+                    case _: pass                
+                if gwyddion_attributes: [self.create_attributes(target, gwyddion_attributes) for target in [main_dataset, main_dataset_group]]
+            
+            nexus_attributes.update({"axes": main_dataset_axes})            
+            self.create_attributes(main_dataset_group, nexus_attributes)
         
         except Exception as e:
             print(f"Failed to attach dataset {axis_name} to axis {axis} of {main_dataset_name}: {e}")

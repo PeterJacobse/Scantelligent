@@ -57,14 +57,15 @@ class AndorAPI(QtCore.QObject):
         spec.setup_pixels_from_camera(cam) # Set up the calibrations
 
         # Make sure the camera is cooled and the shutter is closed
-        cam.setup_shutter(mode = "closed")
-
         cam.set_acquisition_mode("single") # We want to acquire single spectra
         cam.set_exposure(3.0) # Targeted exposure time in seconds
+        cam.set_read_mode("fvb")
+        cam.set_amp_mode(channel = 0, oamp = 1, hsspeed = 0, preamp = 2)
+        cam.set_vsspeed(1)
         
         self.cam = cam
         self.spec = spec
-        self.cam.set_cooler(on = False)
+        self.close_shutter()
         if cooldown: self.cooldown(T_setpoint = T_setpoint)
         
         print(f"Initialization successful. The camera and spectrograph are accessible as attributes 'cam' and 'spec', respectively.")
@@ -75,7 +76,7 @@ class AndorAPI(QtCore.QObject):
         spectrograph = self.spec
         if wait_for_warmup: cooler_off = True
         
-        camera.setup_shutter("closed") # Close the shutter
+        self.close_shutter()
         camera.set_cooler(on = not cooler_off)
         spectrograph.close()
         print(f"Andor spectrograph is closed")
@@ -187,7 +188,7 @@ class AndorAPI(QtCore.QObject):
         if close: self.cam.setup_shutter("closed")
         else: self.cam.setup_shutter("open")
 
-    def get_spectrum(self, time_s: float = 3, max_temperature_difference: float = 8) -> np.ndarray:
+    def get_spectrum(self, time_s: float = 3, max_temperature_difference: float = 8, auto_open_shutter: bool = True) -> np.ndarray:
         """Acquire a spectrum from the Andor camera. A spectrum will not be acquired if the camera is too warm.
 
         Args:
@@ -210,7 +211,9 @@ class AndorAPI(QtCore.QObject):
             print(f"The camera temperature ({T_camera = } C) is too far from the setpoint temperature ({T_setpoint = } C). Aborting the acquisition.")
             intensities = np.zeros_like(wavelengths_nm)
         else:
-            if not shutter == "open": print(f"Warning. Acquiring a spectrum with the shutter closed.")    
+            if not shutter == "open":
+                if auto_open_shutter: self.open_shutter()
+                else: print(f"Warning. Acquiring a spectrum with the shutter closed.")    
             self.cam.set_exposure(time_s)
             intensities = camera.snap(timeout = time_s + 1.)[0]
         
@@ -368,7 +371,7 @@ class AndorExperiments:
             # Go into emission mode (bright mode)
             nanonis.update.tip(feedback = False, z_rel_nm = 0.)
             time.sleep(.2)
-            nanonis.update.tip(feedback = False, z_rel_nm = 1.)
+            nanonis.update.tip(feedback = False, z_rel_nm = 1., verbose = verbose)
             nanonis.update.bias(V = V, dV_mV = 40)
             nanonis.update.feedback(I_fb_pA = I_fb_pA, p_gain_pm = p_gain_pm, t_const_us = t_const_us)
             nanonis.update.tip(feedback = True, z_rel_nm = 0.)
@@ -406,9 +409,6 @@ class AndorExperiments:
             combined_spectra = np.array([spectrum[0], bg_spectrum[1], spectrum[1], diff_spectrum[1]], dtype = np.float32)
             output_dict.update({"combined_spectra": combined_spectra})
             
-            if max(diff_spectrum[1]) > 200:
-                print("The difference spectrum has a peak at over 200 counts. That seems interesting.")
-
         except Exception as e:
             print(f"Error running get_spectra_at_feedback: {e}")
         
