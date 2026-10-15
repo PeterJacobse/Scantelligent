@@ -13,13 +13,13 @@ def get_file_path_from_dialog(extensions: list[str] | None = None) -> str:
         tk_filter = [("All Files", "*.*")]
     
     # Check for an active PyQt6 App
-    try:
-        from PyQt6.QtWidgets import QApplication, QFileDialog
-        if QApplication.instance():
-            file_path, _ = QFileDialog.getOpenFileName(None, "Select File", "", pyqt_filter)
-            return file_path
-    except ImportError:
-        pass
+    #try:
+    #    from PyQt6.QtWidgets import QApplication, QFileDialog
+    #    if QApplication.instance():
+    #        file_path, _ = QFileDialog.getOpenFileName(None, "Select File", "", pyqt_filter)
+    #        return file_path
+    #except ImportError:
+    #    pass
 
     # Fallback to Tkinter only if running as a standard desktop script
     try:
