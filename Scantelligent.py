@@ -6,6 +6,7 @@ from scantelligent import Spectelligent, SCTWidgets, ScantelligentGUI
 from scantelligent import DataProcessing, IOFunctions, ParameterManager, UserData, AudioGenerator
 from scantelligent import NanonisAPI, KeithleyAPI, CameraAPI, MLAAPI
 from datetime import datetime
+from scantelligent import io
 
 
 
@@ -54,7 +55,7 @@ class Scantelligent(QtCore.QObject):
 
         # Important classes and objects
         self.user = UserData()
-        self.io = IOFunctions()
+        self.io_f = IOFunctions()
         self.data = DataProcessing() # Class for data processing and analysis
         self.lines = [] # Lines for plotting in the graph
         self.parameters = ParameterManager(parent = self) # Intantiate the ParameterManger, which implements easy parameter getting, setting, loading and saving
@@ -116,7 +117,7 @@ class Scantelligent(QtCore.QObject):
         self.gui.sliders["phase"].valueChanged.connect(self.update_processing_flags)
         
         # Comboboxes
-        experiments = self.io.find_experiment_files(self.paths["experiments_folder"])
+        experiments = self.io_f.find_experiment_files(self.paths["experiments_folder"])
         self.experiments = [experiment for experiment in experiments if not experiment in {"auto_approach"}]
         self.experiments.append("")
         self.gui.comboboxes["experiment"].addItems(self.experiments)
@@ -167,7 +168,7 @@ class Scantelligent(QtCore.QObject):
         self.logprint(f"Attempting to connect to the following hardware: {target}", message_type = "message")
 
         # Read hardware configurations from file
-        hw_config = self.io.yaml.load(self.paths.get("config_file", ""))
+        hw_config = self.io_f.yaml.load(path = self.paths.get("config_file", ""))
         if not isinstance(hw_config, dict):
             self.logprint(".\\sys\\config.yml: Problem loading the hardware configurations from file", message_type = "error")
             return
@@ -176,7 +177,7 @@ class Scantelligent(QtCore.QObject):
         self.hw_config = hw_config
 
         # MLA (library)
-        mla_config = hw_config.get("mla")
+        mla_config = hw_config.get("mla", "")
         if isinstance(mla_config, dict):
             mla_path = mla_config.get("library_path", "")
             if os.path.isdir(mla_path):
@@ -223,7 +224,7 @@ class Scantelligent(QtCore.QObject):
 
         # Scanalyzer
         if target.lower() == "scanalyzer" or target.lower() == "all":
-            scanalyzer_path = hw_config.get("scanalyzer_path")
+            scanalyzer_path = hw_config.get("scanalyzer_path", "")
             if os.path.isfile(scanalyzer_path):
                 self.paths.update({"scanalyzer": scanalyzer_path})
                 
@@ -234,23 +235,23 @@ class Scantelligent(QtCore.QObject):
                 self.gui.buttons["scanalyzer"].setState("offline")
 
         # Keithley
-        if target.lower() == "keithley" or target.lower() == "all":
-            try:
-                # Instantiate
-                self.keithley = KeithleyAPI(hw_config = self.hw_config)
-                
-                # Set up signal-slot connections
-                # Keithley -> Scantelligent
-                self.keithley.parameters.connect(self.parameters.receive)
-                
-                # Get parameters from Keithley
-                self.keithley.initialize()
-                
-                self.logprint("Keithley: Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
-                self.gui.buttons["keithley"].setState("online")
-            except Exception as e:
-                self.logprint(f"Keithley: Unable to connect to the Keithley source meter: {e}", "warning")
-                self.gui.buttons["keithley"].setState("offline")
+        #if target.lower() == "keithley" or target.lower() == "all":
+        #    try:
+        #        # Instantiate
+        #        self.keithley = KeithleyAPI(hw_config = self.hw_config)
+        #        
+        #        # Set up signal-slot connections
+        #        # Keithley -> Scantelligent
+        #        self.keithley.parameters.connect(self.parameters.receive)
+        #        
+        #        # Get parameters from Keithley
+        #        self.keithley.initialize()
+        #        
+        #        self.logprint("Keithley: Found the Keithley source meter and instantiated KeithleyAPI as keithley", "success")
+        #        self.gui.buttons["keithley"].setState("online")
+        #    except Exception as e:
+        #        self.logprint(f"Keithley: Unable to connect to the Keithley source meter: {e}", "warning")
+        #        self.gui.buttons["keithley"].setState("offline")
 
         # MLA
         if target.lower() == "mla" or target.lower() == "all":
@@ -596,7 +597,7 @@ class Scantelligent(QtCore.QObject):
 
     def populate_completer(self) -> None:
         # Populate the command input completer with all attributes and methods of self and self.gui
-        all_attributes = self.io.trace_attributes(self)    
+        all_attributes = self.io_f.trace_attributes(self)
         completer = SCTWidgets.Completer(all_attributes, self.gui)
         completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         completer.setCompletionMode(SCTWidgets.Completer.CompletionMode.PopupCompletion)
@@ -682,7 +683,7 @@ class Scantelligent(QtCore.QObject):
         frame = None
 
         try:
-            file_data = self.io.read_file(file_path)
+            file_data = self.io_f.read_file(file_path)
             [dataset, frame, axes, axes_data] = [file_data.get(key, None) for key in ["dataset", "frame", "axes", "axes_data"]]
         except Exception as e:
             self.logprint(f"Could not open this file: {e}", message_type = "error")
@@ -1095,7 +1096,7 @@ class Scantelligent(QtCore.QObject):
                     self.active_item.setSlice(axis = axis_name, slice = slice_index)
                     
                     slice_label = cbb.currentText()
-                    (quantity, unit, _, _) = self.io.split_physical_quantity(slice_label)
+                    (quantity, unit, _, _) = self.io_f.split_physical_quantity(slice_label)
                     if isinstance(unit, str):
                         self.gui.image_view.setHistogramUnit(unit)
                         self.gui.limits_widget.setUnit("absolute", unit)
@@ -1143,13 +1144,13 @@ class Scantelligent(QtCore.QObject):
             flags.update({"background": f"{bg_method[3:]}", "rotation": rot_trans, "offset": rot_trans})
             
             # Limits
-            (min_method, min_value) = self.gui.limits_widget.getMin()
-            (max_method, max_value) = self.gui.limits_widget.getMax()
+            min_method, min_value = self.gui.limits_widget.getMin()
+            max_method, max_value = self.gui.limits_widget.getMax()
             if isinstance(min_value, float | int) and isinstance(max_value, float | int): flags.update({"min_method": f"{min_method}", "min_method_value": f"{min_value}", "max_method": f"{max_method}", "max_method_value": f"{max_value}"})
 
             # Channel, direction, projection
             selected_channel = self.gui.comboboxes["slice_0"].name
-            (quantity, unit, backward, error) = self.io.split_physical_quantity(selected_channel)
+            quantity, unit, backward, error = self.io_f.split_physical_quantity(selected_channel)
             if isinstance(unit, str):
                 self.gui.limits_widget.setUnit("full", unit)
                 self.gui.limits_widget.setUnit("absolute", unit)
@@ -1439,7 +1440,7 @@ class Scantelligent(QtCore.QObject):
                     case _:
                         pass
                 
-                [previous_filename, next_filename] = self.io.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".h5")
+                [previous_filename, next_filename] = self.io_f.get_next_indexed_filename(self.paths["session_path"], experiment_name, ".h5")
                 experiment_filename = next_filename
                 if self.gui.buttons["save"].state_name == "data_present": experiment_filename = previous_filename # Overwrite the previous file if it was not saved
                 
@@ -1458,7 +1459,7 @@ class Scantelligent(QtCore.QObject):
                     if hasattr(self, "andor"): andor_pointer = self.andor
                     else: andor_pointer = None
                     
-                    self.experiment = self.io.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scantelligent_folder = self.paths["parent_folder"], scan_processing_flags = self.data.scan_processing_flags,
+                    self.experiment = self.io_f.load_experiment_from_file(experiment_path, hw_config = self.hw_config, experiment_file = experiment_filepath, scantelligent_folder = self.paths["parent_folder"], scan_processing_flags = self.data.scan_processing_flags,
                                                                         nanonis = self.nanonis1, mla = mla_pointer, keithley = keithley_pointer, andor = andor_pointer)
                     self.experiment_thread = QtCore.QThread()
                     self.experiment.moveToThread(self.experiment_thread)
